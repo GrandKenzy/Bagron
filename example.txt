@@ -1,0 +1,3 @@
+int    edad    = 10
+char   b       = "b"
+double decimal = 1.0
