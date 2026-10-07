@@ -7,6 +7,7 @@ i8 a = 10
 int indented_func():
     return 20
 
-int enclosed_func() {
+int enclosed_func(int edad, int ball) {
+    int x = 10
     return 20
 }
