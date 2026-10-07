@@ -1,3 +1,12 @@
-int    edad    = 10
-char   b       = "b"
-double decimal = 1.0
+int edad = 10
+char   CHARACTER = "b"
+double _decimal = 1.0
+
+i8 a = 10
+
+int indented_func():
+    return 20
+
+int enclosed_func() {
+    return 20
+}

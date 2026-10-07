@@ -1,26 +1,14 @@
 import gram
+from core.processor.visitors import *
+from core.processor import objects
 
-def visit_decl(node: gram.ASTNode):
-    t, name, value = node.values
-    
-    # acá hacer cualquier lógica de backend
-    
-    # luego vamos a transformar a C
-    
-    if t == 'char':
-        value = f"'{value}'"
-    
-    code = f"{t} {name} = {value}"; print(code); return code 
-    
-    
 
 def process(ast: gram.ASTProgram):
     
-    
-    for node in ast.blocks():
-        # hay que sacar el nodo de la lista de valores del DECLARADOR
-        child = node.children[0] 
+    for node in ast.walk():
+        if node.name == 'var declaration':
+            var_decl.visit(node)
+        else:
+            print('Falta por procedsar o node: ', node.name)
         
-        if child.name == 'var declaration':
-            visit_decl(child)
-        
+    return  objects.get_items()

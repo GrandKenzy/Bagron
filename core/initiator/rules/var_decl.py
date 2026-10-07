@@ -6,6 +6,9 @@ class EC_VAR_DECL(gram.RuleItem):
     name='var declaration'
     code=100000
     grammar=gram.Seq(
+        gram.Opt(
+            gram.MatchGroup('privacity'),
+        ),
         gram.MatchGroup('types'),
         gram.MatchToken('IDENT'),
         gram.MatchToken('ASSIGN'),

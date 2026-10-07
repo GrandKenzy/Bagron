@@ -9,3 +9,4 @@ class EC_VALUE(gram.RuleItem):
         gram.MatchToken('IDENT'),
         gram.MatchToken('STRING'),
     )
+    

@@ -1,15 +1,14 @@
-import core, gram
 
-class EC_DECLARATION(gram.RuleItem):
-    code = 100_002
-    name = 'DECLARATION'
-    grammar = gram.Alt(
-        gram.Ref(core.initiator.EC_VAR_DECL)
-    )
+import core, gram
+from core.initiator import rules
 
 
 grammar = {
     gram.PROGRAM: gram.Many(
-        gram.Ref(EC_DECLARATION)
+        gram.Ref(gram.DECLARATION)
+    ),
+    gram.DECLARATION: gram.Alt(
+        gram.Ref(rules.EC_VAR_DECL),
+        gram.Ref(rules.EC_FUNC_DECL)
     )
 }

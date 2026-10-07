@@ -2,6 +2,8 @@ import core.grammar
 import gram
 import core
 
+from core.backend import c
+
 
 
 
@@ -9,12 +11,11 @@ import core
 def procesar():
     ast = gram.process(
         core.grammar.grammar,
-        'example.txt'
+        source_or_file='example.txt'
     )
     
-    print(ast.dump()); core.processor.process(ast)
-
-
+    content = core.processor.process(ast)
+    c.process(content)
 
 if __name__ == '__main__':
     gram.config.LEXER_COMMENT_TOKEN = ';'
