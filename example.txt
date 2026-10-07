@@ -4,10 +4,7 @@ double _decimal = 1.0
 
 i8 a = 10
 
-int indented_func():
-    return 20
-
-int enclosed_func(int edad, int ball) {
+int indented_func(int ball):
     int x = 10
-    return 20
-}
+    int y = ball
+    return ball

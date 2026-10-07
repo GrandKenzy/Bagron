@@ -2,12 +2,12 @@ import gram
 from core.processor.objects import *
 from core.processor.visitors import var_decl
 
+
 def visit(node: gram.ASTNode):
     return_type, name = node.values
     params = []
-    body =  []
-    returned =  []
-    
+    body =  {}
+    returned: Returned | None = None 
     
     
     for child in node.children:
@@ -18,11 +18,12 @@ def visit(node: gram.ASTNode):
         elif child.name == 'func body':
             for statement in child.children:
                 if statement.name == 'var declaration':
-                    v = var_decl.visit(statement)
-                    v.ignore()
-                    body.append(v)
+                    v = var_decl.visit(statement).ignore()
+                    body[v] = 'Variable'
                 elif statement.name == 'return':
-                    v = statement.values[1:]
-                    returned.append((return_type, v))
-                    
-    func = Function(name, body, return_type, params, privacity='public')
+                    returned = Returned(statement.values[1]).ignore()
+                else:
+                    print('falta por procesar', statement.name)
+    func = Function(name, body, return_type, params, privacity='public').rescope()
+    func.returned = returned
+    return func

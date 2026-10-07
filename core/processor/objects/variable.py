@@ -9,7 +9,20 @@ class Variable(Object):
         self.type = type
         self.privacity = privacity
         self.is_constant = is_constant
+        self.ref: bool = False
+        self.compiled = ''
+
         super().__init__()
+        
+    def is_valid(self):
+        if self.in_scope:
+            if self.uses == 0:
+                return False 
+        else:
+            if self.privacity == 'private' and self.uses == 0:
+                return False
+        return True
         
     def __repr__(self) -> str:
         return f'Variable(name={self.name}, value={self.type}, type={self.type}, const={self.is_constant}, privacity={self.privacity})'
+    

@@ -6,6 +6,11 @@ from core.backend import c
 
 
 
+def write(output: str, lines: list[str]):
+    with open(output, 'w') as f:
+        for line in lines:
+            f.write(line + '\n')
+
 
 
 def procesar():
@@ -15,7 +20,20 @@ def procesar():
     )
     
     content = core.processor.process(ast)
+    lines = [
+        "#include <stdint.h>",
+        "#include <stdio.h>",
+        "#include <stdbool.h>"
+    ]
+    
     c.process(content)
+ 
+    for item in core.processor.objects.get_items():
+        print(item.compiled)
+        if item.is_valid():
+            lines.append(item.compiled)
+ 
+    write('output.c', lines)
 
 if __name__ == '__main__':
     gram.config.LEXER_COMMENT_TOKEN = ';'

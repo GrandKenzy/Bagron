@@ -10,8 +10,8 @@ class EC_RETURN(gram.RuleItem):
         gram.Ref(EC_VALUE)
     )
 
-class EC_FUNC_INDENT_BODY(gram.RuleItem):
-    name = 'func indent body'
+class EC_FUNC_BODY(gram.RuleItem):
+    name = 'func body'
     code = 100_006
     grammar = gram.Seq(
         gram.MatchToken('COLON'),
@@ -25,19 +25,19 @@ class EC_FUNC_INDENT_BODY(gram.RuleItem):
         gram.MatchToken('DEDENT')
     )
     
-class EC_FUNC_BODY(gram.RuleItem):
-    name = 'func body'
-    code = 100_007
-    grammar = gram.Enclosed(
-        open=gram.Token.LBRACE,
-        content=gram.Some(
-            gram.Alt(
-                gram.Ref(EC_VAR_DECL),
-                gram.Ref(EC_RETURN)
-            )
-        ),
-        close=gram.Token.RBRACE
-    )
+# class EC_FUNC_BODY(gram.RuleItem):
+#     name = 'func body'
+#     code = 100_007
+#     grammar = gram.Enclosed(
+#         open=gram.Token.LBRACE,
+#         content=gram.Some(
+#             gram.Alt(
+#                 gram.Ref(EC_VAR_DECL),
+#                 gram.Ref(EC_RETURN)
+#             )
+#         ),
+#         close=gram.Token.RBRACE
+#     )
         
 
 
@@ -56,6 +56,5 @@ class EC_FUNC_DECL(gram.RuleItem):
         ),
         gram.Alt(
             gram.Ref(EC_FUNC_BODY),
-            gram.Ref(EC_FUNC_INDENT_BODY)
         )
     )
