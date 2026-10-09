@@ -45,6 +45,28 @@ def resolve_source_and_main(source_path: str | Path) -> tuple[Path, Path]:
         return p / 'source', nested_source
     raise FileNotFoundError(f"No se encontró 'main.egl' en la ruta especificada: {source_path}")
 
+def find_module_file(mod_name: str, source_dir: Path, target: str) -> Path | None:
+    clean_mod = mod_name.strip('"\'')
+    if clean_mod.endswith('.egl'):
+        clean_mod = clean_mod[:-4]
+    backend = target[4:].lower() if target.lower().startswith('egl-') else target.lower()
+    base_core_dir = Path(__file__).resolve().parent
+
+    candidates = [
+        source_dir / 'modules' / f'{clean_mod}.egl',
+        source_dir / f'{clean_mod}.egl',
+        source_dir / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
+        source_dir.parent / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
+        base_core_dir / 'backend' / backend / 'libraries' / f'{clean_mod}.egl',
+        Path.cwd() / 'core' / 'backend' / backend / 'libraries' / f'{clean_mod}.egl',
+        Path.cwd() / 'source' / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
+    ]
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
 def extract_clauses(ast: gram.ASTProgram) -> dict[str, str]:
     clauses = {}
     for node in ast.walk(0):
@@ -163,11 +185,10 @@ def compile_project(
             continue
         loaded_modules.add(mod_name)
 
-        mod_file = source_dir / 'modules' / f'{mod_name}.egl'
-        if not mod_file.is_file():
-            mod_file = source_dir / f'{mod_name}.egl'
-        if not mod_file.is_file():
-            raise FileNotFoundError(f"No se encontró el módulo '{mod_name}' en 'source/modules/{mod_name}.egl'")
+        mod_file = find_module_file(mod_name, source_dir, target)
+        if not mod_file:
+            backend = target[4:].lower() if target.lower().startswith('egl-') else target.lower()
+            raise FileNotFoundError(f"No se encontró el módulo o librería '{mod_name}' en 'source/modules/{mod_name}.egl' ni en las librerías del target '{backend}'.")
 
         mod_code = mod_file.read_text(encoding='utf-8')
         mod_ast = gram.process(core.grammar.grammar, source_or_file=mod_code)

@@ -6,29 +6,36 @@ Easy-C (EGL) cuenta con un sistema de modulos estricto que permite descomponer a
 
 ## Especificacion Tecnica
 
-### Ubicacion y Estructura de Modulos
+### Ubicacion y Resolucion de Modulos y Librerias
 
-Los modulos deben residir obligatoriamente en la carpeta `modules/` dentro del arbol fuente del proyecto:
+La sentencia `import` resuelve tanto modulos de usuario (`.egl`) como librerias del target activo (`.egl`):
 
 ```
 source/
 ├── main.egl
-└── modules/
-    ├── utilidades.egl
-    └── matematicas.egl
+├── modules/
+│   ├── utilidades.egl
+│   └── matematicas.egl
+└── targets/
+    └── c/
+        └── libraries/
+            └── red.egl
 ```
 
-Para importar un modulo desde `main.egl` u otro modulo, se utiliza la sentencia `import`:
+Para importar un modulo o libreria desde `main.egl` u otro modulo, se utiliza la sentencia `import`:
 
 ```easy-c
 import matematicas
-import utilidades as Utils
+import standard
+import red as Net
 ```
 
-El resolvedor de archivos en `core/compiler.py` busca el modulo bajo el siguiente orden de precedencia:
-1. `source_dir / 'modules' / f'{mod_name}.egl'`
-2. `source_dir / f'{mod_name}.egl'`
-3. Si no existe en ninguna de las rutas, detiene la compilacion con `FileNotFoundError`.
+El resolvedor `find_module_file()` en `core/compiler.py` busca el archivo bajo el siguiente orden de precedencia:
+1. `source_dir / 'modules' / f'{mod_name}.egl'` (Modulos de usuario en la carpeta `modules/`).
+2. `source_dir / f'{mod_name}.egl'` (Modulos de usuario en la raiz del proyecto).
+3. `source_dir / 'targets' / backend / 'libraries' / f'{mod_name}.egl'` (Librerias de target locales del proyecto).
+4. `core/backend/<backend>/libraries/<mod_name>.egl` (Librerias de target base provistas por el compilador, ej. `standard.egl`, `os.egl`).
+5. Si no existe en ninguna de las rutas, detiene la compilacion con `FileNotFoundError`.
 
 ### Verificacion Estricta de la Clausula `Target`
 

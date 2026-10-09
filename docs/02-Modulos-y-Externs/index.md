@@ -16,8 +16,8 @@ Esta seccion documenta el subsistema de modularizacion e integracion con codigo 
 
 El compilador distingue claramente entre dos fuentes de codigo externo:
 
-1. **Modulos EGL Propios (`import`):**
-   * Codigo fuente nativo escrito en Easy-C ubicado en `source/modules/<nombre>.egl`.
+1. **Modulos EGL y Librerias de Target (`import`):**
+   * Codigo fuente nativo escrito en Easy-C ubicado en `source/modules/<nombre>.egl`, en librerias de proyecto `source/targets/<backend>/libraries/<nombre>.egl` o en librerias base del compilador (`core/backend/<backend>/libraries/<nombre>.egl`).
    * Se compila junto con el proyecto y sus funciones son renombradas con prefijo de modulo para evitar colisiones en C.
 2. **Librerias Nativas del Backend (`include`):**
    * Cabeceras de C (ej. `stdio`, `stdlib`, `string`) cuyas firmas estan documentadas en archivos `.externs.egl`.
