@@ -1,10 +1,23 @@
-int edad = 10
-char   CHARACTER = "b"
-double _decimal = 1.0
+clause Visibility "public"
+clause Target "egl-c"
+clause Arch "amd64"
+clause System "win"
+clause StackLimit 16384
 
-i8 a = 10
+int duplicar(int n):
+    int resultado = n
+    return resultado
 
-int indented_func(int ball):
-    int x = 10
-    int y = ball
-    return ball
+int contador = 0
+
+for i in ran 5:
+    contador = i
+
+ptr puntero_buffer = malloc(int, 10)
+
+if not puntero_buffer:
+    print("no se pudo crear el espacio")
+else:
+    puntero_buffer = 42
+    print("El valor del buffer es", puntero_buffer)
+    free(puntero_buffer)

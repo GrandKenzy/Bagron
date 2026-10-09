@@ -3,8 +3,30 @@ from core.processor.objects.variable import Variable
 from core.processor.objects.base import Object
 from core.processor.objects.returned import Returned
 
+class FunctionParam:
+    def __init__(self, param_type: str, name: str, is_variadic: bool = False, default: Any = None, has_default: bool = False):
+        self.type = param_type
+        self.name = name
+        self.is_variadic = is_variadic
+        self.default = default
+        self.has_default = has_default
+
+    def __iter__(self):
+        return iter((self.type, self.name))
+
+    def __getitem__(self, idx):
+        return (self.type, self.name)[idx]
+
+    def __len__(self):
+        return 2
+
+    def __repr__(self) -> str:
+        star = '*' if self.is_variadic else ''
+        def_str = f'={self.default!r}' if self.has_default else ''
+        return f'{self.type} {star}{self.name}{def_str}'
+
 class Function(Object):
-    def __init__(self, name: str, body: dict[Object, str], retur_type: str, parameters: list[tuple[str, str]], privacity: Literal['public', 'private'] = 'public'):
+    def __init__(self, name: str, body: dict[Object, str], retur_type: str, parameters: list[Any], privacity: Literal['public', 'private'] = 'public'):
         self.name = name
         self.return_type = retur_type
         self.returned: Returned | None = None

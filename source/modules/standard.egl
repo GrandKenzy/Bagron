@@ -1,0 +1,60 @@
+clause Visibility "private"
+
+type array:
+    __init__ type Type
+    __init__ int long = 0
+    __setv__ ptr Type items = Null
+
+    Type __getter__(int index):
+        return this.items[index]
+
+    Type __setter__(int index, this.Type value):
+        this.items[index] = value
+
+type str:
+    __init__ int long = 0
+    __setv__ array[char, long] buffer
+
+    __member__ int size:
+        return __size__(this.buffer) ; __size__ si es una variable mágica.
+
+    __method__ void replace(str target, str value):
+        ; pendiente
+        pass
+
+    __method__ int index(str target):
+        int temp_founds = 0
+
+        for i rand this.size:
+            if temp_founds == 0: 
+                if this.buffer[i] == target[0]:
+                    temp_founds += 1
+            elif founds == 1:
+                if this.buffer[i] == target[1]:
+                    temp_founds += 1
+                else:
+                    temp_founds = 0
+            else:
+                if this.buffer[i] == target[2]:
+                    return i
+                temp_founds = 0
+        return -1
+
+    __method__ int count(str target):
+        int founds = 0
+        int temp_founds = 0
+
+        for i rand this.size:
+            if temp_founds == 0: 
+                if this.buffer[i] == target[0]:
+                    temp_founds += 1
+            elif founds == 1:
+                if this.buffer[i] == target[1]:
+                    temp_founds += 1
+                else:
+                    temp_founds = 0
+            else:
+                if this.buffer[i] == target[2]:
+                    founds += 1
+                temp_founds = 0
+

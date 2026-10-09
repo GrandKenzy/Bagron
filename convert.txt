@@ -1,0 +1,29 @@
+; string tendrá un formato hibrido. Estará puesto a nivel de lenguaje y a nivel C.
+
+
+; supports
+str name = "1"
+str[50] name = "Hola"
+
+; partes Backend
+en partes backend, por ejemplo, C. si se soportará nativamente string usando structs o formas optimas.
+
+; los metodos y su lógica estarán dispuestos en EGL. Ejemplo:
+
+
+name.replace("H", "b") ;
+
+; para ello vamos a crear extensors.py que extiende metodos directos de tipos y metodos productos de tipos.
+; Un ejemplo de ello es size.
+; todo tipo tiene type.size  que es un atributo directo
+
+
+Ejemplos:
+
+ext = extensors.add('str')
+
+
+ext.type_attribute('size', process_function=type_size_attribute) ; solo para el tipo
+ext.prod_attribute('len', process_function=string_len) ; solo para el producto
+ext.prod_method('replace', process_function=string_replace_method) ; solo para el producto 
+

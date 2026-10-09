@@ -1,0 +1,66 @@
+include "stdio.h" as STDIO_C
+
+clause Visibility "private"
+
+ptr aux_open(str filepath, str mode = "rb"):
+    ptr handle = STDIO_C.fopen(filepath, mode)
+    if not handle:
+        return Null
+    return handle
+
+public type File:
+    __setv__ str filepath
+    ptr handle = Null
+
+    __method__ bool open(str filepath, str mode = "rb"):
+        this.filepath = filepath
+        this.handle = aux_open(filepath, mode)
+        if not this.handle:
+            print("Error: No se pudo abrir el archivo")
+            return False
+        return True
+
+    __method__ int64 get_size():
+        if not this.handle:
+            if this.filepath:
+                if not this.open(this.filepath):
+                    return -1
+            else:
+                print("Error: El archivo no está abierto")
+                return -1
+
+        STDIO_C.fseek(this.handle, 0, 2)
+        int64 size = STDIO_C.ftell(this.handle)
+        STDIO_C.fseek(this.handle, 0, 0)
+        return size
+
+    __method__ void close():
+        if this.handle:
+            STDIO_C.fclose(this.handle)
+            this.handle = Null
+
+    __method__ bool read(str buffer):
+        if not this.handle:
+            if this.filepath:
+                if not this.open(this.filepath):
+                    print("Error: El archivo no está abierto")
+                    return False
+            else:
+                print("Error: El archivo no está abierto")
+                return False
+
+        int64 size = this.get_size()
+        if size > buffer.size:
+            print("Error: El buffer es demasiado pequeño")
+            return False
+
+        STDIO_C.fread(buffer, 1, size, this.handle)
+        return True
+
+int64 get_size(str filename):
+    File file = filename
+    if not file.open(filename):
+        return -1
+    int64 size = file.get_size()
+    file.close()
+    return size

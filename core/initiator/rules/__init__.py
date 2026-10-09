@@ -1,9 +1,116 @@
-from core.initiator.rules.value import EC_VALUE
-from core.initiator.rules.var_decl import EC_VAR_DECL
-from core.initiator.rules.func_decl import EC_FUNC_DECL
+import gram
+
+gram.SetCode(100_000)
+
+from core.initiator.rules.value import EGL_VALUE, EC_VALUE
+from core.initiator.rules.expression import (
+    EGL_ADDITIVE,
+    EGL_BITWISE_AND,
+    EGL_BITWISE_OR,
+    EGL_BITWISE_XOR,
+    EGL_COMPARISON,
+    EGL_EQUALITY,
+    EGL_EXPRESSION,
+    EGL_LOGICAL_AND,
+    EGL_MULTIPLICATIVE,
+    EGL_POWER,
+    EGL_PRIMARY,
+    EGL_SHIFT,
+    EGL_UNARY,
+)
+from core.initiator.rules.call import EGL_ARGUMENTS, EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS
+from core.initiator.rules.var_decl import EGL_VAR_DECL, EC_VAR_DECL
+from core.initiator.rules.params import EGL_PARAM, EGL_PARAMS, EC_PARAM, EC_PARAMS
+from core.initiator.rules.func_decl import EGL_FUNC_DECL, EGL_FUNC_BODY, EC_FUNC_DECL, EC_FUNC_BODY
+from core.initiator.rules.statement import (
+    EGL_CONDITION,
+    EGL_RETURN,
+    EGL_ASSIGN,
+    EGL_STATEMENT,
+    EGL_STMT_BODY,
+    EGL_ELIF_STATEMENT,
+    EGL_ELSE_STATEMENT,
+    EGL_IF_STATEMENT,
+    Condition,
+    EC_RETURN,
+    EC_ASSIGN,
+    EC_STATEMENT,
+    EC_STMT_BODY,
+    ELIF_Statement,
+    ELSE_Statement,
+    IF_Statement,
+)
+from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_LOOP_MODE, FOR_Statement, Loop_Mode
+from core.initiator.rules.imports import EGL_CLASS, EGL_IMPORT, EGL_INCLUDE
+from core.initiator.rules.clauses import EGL_CLAUSE
+from core.initiator.rules.type_decl import (
+    EGL_TYPE_SPEC,
+    EGL_TYPE_INIT,
+    EGL_TYPE_SETV,
+    EGL_TYPE_MEMBER,
+    EGL_TYPE_METHOD,
+    EGL_TYPE_FIELD,
+    EGL_PASS,
+    EGL_TYPE_STMT,
+    EGL_TYPE_BODY,
+    EGL_TYPE_DECL,
+)
 
 __all__ = [
+    'EGL_VALUE',
+    'EGL_VAR_DECL',
+    'EGL_PARAM',
+    'EGL_PARAMS',
+    'EGL_FUNC_DECL',
+    'EGL_FUNC_BODY',
+    'EGL_CONDITION',
+    'EGL_RETURN',
+    'EGL_ASSIGN',
+    'EGL_STATEMENT',
+    'EGL_STMT_BODY',
+    'EGL_ELIF_STATEMENT',
+    'EGL_ELSE_STATEMENT',
+    'EGL_IF_STATEMENT',
+    'EGL_FOR_STATEMENT',
+    'EGL_LOOP_MODE',
+    'FOR_Statement',
+    'Loop_Mode',
+    'EGL_ARGUMENTS',
+    'EGL_CALL',
+    'EGL_METHOD_CALL',
+    'EGL_MEMBER_ACCESS',
+    'EGL_CLASS',
+    'EGL_IMPORT',
+    'EGL_INCLUDE',
+    'EGL_CLAUSE',
+    'EGL_TYPE_DECL',
+    'EGL_TYPE_SPEC',
+    'EGL_TYPE_SETV',
+    'EGL_PASS',
+    'EGL_EXPRESSION',
+    'EGL_LOGICAL_AND',
+    'EGL_BITWISE_OR',
+    'EGL_BITWISE_XOR',
+    'EGL_BITWISE_AND',
+    'EGL_EQUALITY',
+    'EGL_COMPARISON',
+    'EGL_SHIFT',
+    'EGL_ADDITIVE',
+    'EGL_MULTIPLICATIVE',
+    'EGL_POWER',
+    'EGL_UNARY',
+    'EGL_PRIMARY',
     'EC_VALUE',
     'EC_VAR_DECL',
-    'EC_FUNC_DECL'
+    'EC_FUNC_DECL',
+    'EC_PARAM',
+    'EC_PARAMS',
+    'Condition',
+    'EC_RETURN',
+    'EC_ASSIGN',
+    'EC_STATEMENT',
+    'EC_STMT_BODY',
+    'ELIF_Statement',
+    'ELSE_Statement',
+    'IF_Statement',
 ]

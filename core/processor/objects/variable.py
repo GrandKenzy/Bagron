@@ -10,11 +10,16 @@ class Variable(Object):
         self.privacity = privacity
         self.is_constant = is_constant
         self.ref: bool = False
+        self.is_pointer: bool = False
+        self.pointer_base_type: str | None = None
+        self.fixed_size: int | None = None
         self.compiled = ''
 
         super().__init__()
         
     def is_valid(self):
+        if self.type == 'type':
+            return False
         if self.in_scope:
             if self.uses == 0:
                 return False 

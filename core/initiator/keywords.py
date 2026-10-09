@@ -1,28 +1,70 @@
 import gram
 
-gram.words.add_group('types')
-gram.words.add_group('privacity')
+GROUPS = [
+    'imports',
+    'types',
+    'privacity',
+    'clauses',
+    'properties',
+    'keywords',
+    'conditional_statement',
+    'loops',
+]
 
-gram.words.add_keyword('void', group='types')
-gram.words.add_keyword('char', group='types')
+for group in GROUPS:
+    gram.words.add_group(group)
 
-gram.words.add_keyword('double', group='types') # float64
-gram.words.add_keyword('float', group='types') # float32
-gram.words.add_keyword('middle', group='types') # float 16
+TYPES = [
+    'void',
+    'char',
+    'double',
+    'float',
+    'middle',
+    'int',
+    'int8',
+    'int16',
+    'int32',
+    'int64',
+    'uint',
+    'uint8',
+    'uint16',
+    'uint32',
+    'uint64',
+    'str',
+    'ptr',
+    'bool',
+    'type',
+]
 
-gram.words.add_keyword('int', group='types')
-gram.words.add_keyword('i8', group='types')
-gram.words.add_keyword('i16', group='types')
-gram.words.add_keyword('i32', group='types')
-gram.words.add_keyword('i64', group='types')
+ADVANCE_TYPES = [
+    'struct',
+    'enum'
+]
 
-gram.words.add_keyword('uint', group='types')
-gram.words.add_keyword('ui8', group='types')
-gram.words.add_keyword('ui16', group='types')
-gram.words.add_keyword('ui32', group='types')
-gram.words.add_keyword('ui64', group='types')
+SPECIAL_KEYWORDS = [
+    'lambda',
+    'unsafe',
+    'try',
+    'catch',
+]
 
-gram.words.add_keyword('public', group='privacity')
-gram.words.add_keyword('private', group='privacity')
+KEYWORDS_BY_GROUP = {
+    'imports': ['include', 'import', 'class'],
+    'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLImit', 'StackLimit'],
+    'properties': ['mode'],
+    'privacity': ['public', 'private'],
+    'conditional_statement': ['if', 'elif', 'else', 'not'],
+    'loops': ['for', 'ran', 'rand', 'in'],
+    'keywords': ['as', 'clause', 'property', 'return', '__init__', '__setv__', '__member__', '__method__', 'pass', 'this', '__size__'],
+}
 
-gram.words.add_keyword('return', group='keywords')
+for kw in TYPES:
+    gram.words.add_keyword(kw, group='types')
+
+for group, words in KEYWORDS_BY_GROUP.items():
+    for word in words:
+        gram.words.add_keyword(word, group=group, allow_override=True)
+
+for kw in ['name', 'sep', 'only', 'exclude', 'symbols', 'values', 'mode']:
+    if gram.words.keyword_exists(kw):
+        gram.words.remove_keyword(kw)
