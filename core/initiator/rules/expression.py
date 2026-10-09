@@ -63,6 +63,53 @@ class EGL_UNARY(gram.RuleItem):
     name = 'EGL_UNARY'
     code = gram.AutoCode()
 
+class EGL_LIST_LITERAL(gram.RuleItem):
+    name = 'EGL_LIST_LITERAL'
+    code = gram.AutoCode()
+    grammar = gram.Alt(
+        gram.Seq(
+            gram.MatchToken(gram.Token.LBRACKET),
+            gram.MatchToken(gram.Token.RBRACKET)
+        ),
+        gram.Enclosed(
+            open=gram.Token.LBRACKET,
+            content=gram.Separator(
+                sep=gram.Token.COMMA,
+                values=[gram.Ref(EGL_EXPRESSION)],
+                allow_trailing=True
+            ),
+            close=gram.Token.RBRACKET
+        )
+    )
+
+class EGL_TABLE_PAIR(gram.RuleItem):
+    name = 'EGL_TABLE_PAIR'
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.Ref(EGL_EXPRESSION),
+        gram.MatchToken('COLON'),
+        gram.Ref(EGL_EXPRESSION)
+    )
+
+class EGL_TABLE_LITERAL(gram.RuleItem):
+    name = 'EGL_TABLE_LITERAL'
+    code = gram.AutoCode()
+    grammar = gram.Alt(
+        gram.Seq(
+            gram.MatchToken(gram.Token.LBRACE),
+            gram.MatchToken(gram.Token.RBRACE)
+        ),
+        gram.Enclosed(
+            open=gram.Token.LBRACE,
+            content=gram.Separator(
+                sep=gram.Token.COMMA,
+                values=[gram.Ref(EGL_TABLE_PAIR)],
+                allow_trailing=True
+            ),
+            close=gram.Token.RBRACE
+        )
+    )
+
 class EGL_PRIMARY(gram.RuleItem):
     name = 'EGL_PRIMARY'
     code = gram.AutoCode()
@@ -76,6 +123,10 @@ EGL_PRIMARY.grammar = gram.Alt(
     gram.MatchToken(gram.Token.IDENT),
     gram.MatchGroup('types'),
     gram.MatchKeyword('this'),
+    gram.MatchKeyword('self'),
+    gram.MatchKeyword('__fronted__'),
+    gram.MatchKeyword('__items__'),
+    gram.MatchKeyword('__slot__'),
     gram.Enclosed(
         open=gram.Token.LPAREN,
         content=gram.Ref(EGL_EXPRESSION),
@@ -92,6 +143,8 @@ EGL_UNARY.grammar = gram.Alt(
             gram.MatchToken(gram.Token.NOT_LOGIC),
             gram.MatchToken(gram.Token.NOT),
             gram.MatchKeyword('not'),
+            gram.MatchToken(gram.Token.AND),
+            gram.MatchToken(gram.Token.STAR),
         ),
         gram.Ref(EGL_UNARY),
     ),
@@ -164,4 +217,7 @@ __all__ = [
     'EGL_POWER',
     'EGL_UNARY',
     'EGL_PRIMARY',
+    'EGL_LIST_LITERAL',
+    'EGL_TABLE_PAIR',
+    'EGL_TABLE_LITERAL',
 ]

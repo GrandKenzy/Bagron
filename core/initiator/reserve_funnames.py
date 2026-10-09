@@ -4,7 +4,6 @@ DEFAULTS = [
     'print',
     'input',
     'EGL_Version',
-    'malloc',
     'free',
     '__size__',
 ]
@@ -125,6 +124,5 @@ def exists(resname: str):
 r_print = ReservedFuncName('print', {'*values': 'type', 'sep': ('str', ' ')}, 'void')
 r_input = ReservedFuncName('input', {'content': ('str', '')}, 'str')
 r_version = ReservedFuncName('EGL_Version', {}, 'str')
-r_malloc = ReservedFuncName('malloc', {'Type': 'type', 'size': ('int', 1)}, 'ptr')
 r_free = ReservedFuncName('free', {'ptr': 'ptr'}, 'void')
 r_size = ReservedFuncName('__size__', {'type': 'type'}, 'int')

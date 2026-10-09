@@ -1,0 +1,2 @@
+__size_t__ strlen(__void_p_t__ __char_t__ STR)
+__void_p_t__ __char_t__ strcpy(__void_p_t__ __char_t__ dest, __void_p_t__ __char_t__ SRC)

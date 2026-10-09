@@ -36,7 +36,11 @@ STDLIB_SYMBOLS = {
 }
 
 def detect_stdint(type_name: str | None) -> bool:
-    return bool(type_name and type_name in STDINT_TYPES)
+    if not type_name:
+        return False
+    from core.processor.type_system import resolve_c_type
+    c_t = resolve_c_type(type_name)
+    return bool(type_name in STDINT_TYPES or c_t in STDINT_TYPES or (type_name.startswith('__') and 'int' in type_name))
 
 def detect_stdbool(type_name: str | None, value: Any = None) -> bool:
     if type_name and type_name in STDBOOL_TYPES:
@@ -55,7 +59,7 @@ def detect_stdlib(symbol_name: str | None) -> bool:
 
 def detect_from_variable(var: Variable) -> list[str]:
     headers: list[str] = []
-    if detect_stdint(var.type) or (var.is_pointer and detect_stdint(var.pointer_base_type)):
+    if detect_stdint(var.type) or detect_stdint(getattr(var, 'element_type', None)) or (var.is_pointer and detect_stdint(var.pointer_base_type)):
         headers.append('<stdint.h>')
     if detect_stdbool(var.type, var.value):
         headers.append('<stdbool.h>')

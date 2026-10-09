@@ -15,6 +15,11 @@ class EGL_FUNC_BODY(gram.RuleItem):
             gram.MatchToken('DEDENT')
         ),
         gram.Seq(
+            gram.MatchToken('COLON'),
+            gram.Ref(EGL_STATEMENT),
+            gram.Opt(gram.MatchToken('COMMENT'))
+        ),
+        gram.Seq(
             gram.MatchToken('LBRACE'),
             gram.Opt(gram.MatchToken('INDENT')),
             gram.Some(
@@ -30,7 +35,13 @@ class EGL_FUNC_DECL(gram.RuleItem):
     code = gram.AutoCode()
     grammar = gram.Seq(
         gram.Opt(
+            gram.MatchKeyword('__inline__')
+        ),
+        gram.Opt(
             gram.MatchGroup('privacity'),
+        ),
+        gram.Opt(
+            gram.MatchKeyword('__inline__')
         ),
         gram.Alt(
             gram.MatchGroup('types'),

@@ -1,0 +1,7 @@
+clause Visibility "private"
+
+int FPS = 10
+
+
+public int get_fps():
+    return FPS

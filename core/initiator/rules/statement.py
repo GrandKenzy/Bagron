@@ -2,7 +2,7 @@ import gram
 from core.initiator.rules.expression import EGL_EXPRESSION
 from core.initiator.rules.var_decl import EGL_VAR_DECL
 from core.initiator.rules.value import EGL_VALUE
-from core.initiator.rules.call import EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS
+from core.initiator.rules.call import EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS, EGL_INDEX_ACCESS
 
 class EGL_CONDITION(gram.RuleItem):
     name = 'EGL_CONDITION'
@@ -23,12 +23,11 @@ class EGL_ASSIGN(gram.RuleItem):
     code = gram.AutoCode()
     grammar = gram.Seq(
         gram.Alt(
-            gram.Seq(
-                gram.MatchKeyword('this'),
-                gram.MatchToken(gram.Token.DOT),
-                gram.MatchToken('IDENT'),
-            ),
+            gram.Ref(EGL_INDEX_ACCESS),
+            gram.Ref(EGL_MEMBER_ACCESS),
             gram.MatchToken('IDENT'),
+            gram.MatchKeyword('__items__'),
+            gram.MatchKeyword('__slot__'),
         ),
         gram.MatchToken('ASSIGN'),
         gram.Ref(EGL_VALUE),

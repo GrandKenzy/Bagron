@@ -1,0 +1,9 @@
+clause Target 'egl-c'
+
+include "stdio"
+include "stdlib" as C_STDLIB
+import myModule
+
+int val = 21
+int res = myModule.saludar(val)
+print("Resultado de saludar:", res)

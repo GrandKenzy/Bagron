@@ -1,3 +1,4 @@
+import re
 import difflib
 from core.processor.objects import *
 
@@ -13,7 +14,9 @@ def similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 def resolve_variable(name: Any, block: Function | None = None) -> Variable | None:
-    str_name = str(name.value if hasattr(name, 'value') else name)
+    str_name = str(name.value if hasattr(name, 'value') else name).strip()
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', str_name):
+        return None
     if block and hasattr(block, 'get_vars'):
         for v in block.get_vars():
             if v.name == str_name:
@@ -75,34 +78,24 @@ def check_variable_defined(variable: Variable, block: Function | None = None):
     return False
 
 def convert_type(type: str) -> str:
-    if type == 'integer':
-        return 'int'
-    if type in ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64'):
-        return f'{type}_t'
-    elif type.startswith('i') and type[1:].isdigit():
-        return f'int{type[1:]}_t'
-    elif type.startswith('ui') and type[2:].isdigit():
-        return f'uint{type[2:]}_t'
-    elif type == 'str':
-        return 'char*'
-    elif type in ('bool', 'boolean'):
-        return 'bool'
-    else:
-        return type
+    from core.processor.type_system import resolve_c_type
+    return resolve_c_type(type)
 
 def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
-    if type in ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t']:
+    c_type = convert_type(type)
+    if 'int' in c_type:
         return isinstance(value, int) and not isinstance(value, bool)
-    elif type in ['float', 'double']:
-        return isinstance(value, float)
-    elif type == 'str':
+    elif c_type in ('float', 'double', '_Float16'):
+        return isinstance(value, (float, int)) and not isinstance(value, bool)
+    elif c_type in ('char*', 'str'):
         return isinstance(value, str)
-    elif type == 'char':
+    elif c_type == 'char':
         return isinstance(value, str) and len(value.strip('\'')) == 1
-    elif type == 'bool':
+    elif c_type == 'bool':
         return isinstance(value, bool) or (isinstance(value, str) and value.lower() in ('true', 'false'))
-    else:
-        return False
+    elif c_type in ('void*', 'ptr') or c_type.endswith('*'):
+        return True
+    return True
 
 def same_type(ref: list[str] | Variable, type: str):
     if isinstance(ref, Variable):
@@ -130,11 +123,20 @@ def visit(variable: Variable, block: Function | None = None):
             variable.is_pointer = True
             if compiled_call.target_type:
                 variable.pointer_base_type = compiled_call.target_type
+    elif hasattr(variable.value, '__class__') and variable.value.__class__.__name__ == 'MethodCall':
+        from core.backend.c.visitors import method_call
+        ret_type = getattr(variable.value, 'returntype', 'void')
+        compiled_call = method_call.visit(variable.value, is_statement=False, block=block)
+        variable.value = compiled_call
+        if ret_type == 'ptr' or variable.type == 'ptr':
+            variable.is_pointer = True
 
-    if variable.is_pointer or variable.type == 'ptr':
-        base = variable.pointer_base_type or 'void'
+    if variable.is_pointer or variable.type in ('ptr', '__void_p_t__', 'pointer'):
+        base = variable.pointer_base_type or ('void' if variable.type in ('ptr', '__void_p_t__', 'pointer') else variable.type)
         t = f'{convert_type(base)}*'
-        variable.compiled = f'{"static " if variable.privacity == "private" else ""}{t} {variable.name} = {variable.value};'
+        from core.backend.c.visitors.expression import format_expression
+        val = format_expression(variable.value, block) if variable.value is not None else 'NULL'
+        variable.compiled = f'{"static " if variable.privacity == "private" else ""}{t} {variable.name} = {val};'
         return
 
     reference = None
@@ -149,6 +151,10 @@ def visit(variable: Variable, block: Function | None = None):
     t = convert_type(variable.type)
     
     value = variable.value
+    from core.backend.c.visitors.expression import format_expression
+    if isinstance(value, str) and variable.type != 'str':
+        value = format_expression(value, block)
+
     if variable.type == 'str':
         val_clean = str(value).strip('\"\'')
         value = f'"{val_clean}"'
@@ -157,12 +163,28 @@ def visit(variable: Variable, block: Function | None = None):
             return
         variable.compiled = f'{"static " if variable.privacity == "private" else ""}char* {variable.name} = {value};'
         return
+    elif variable.type == 'array' or variable.type == 'chain' or (variable.fixed_size and variable.type != 'str'):
+        elem_t = convert_type(getattr(variable, 'element_type', None) or 'int')
+        if elem_t == 'char' and isinstance(value, str) and (value.startswith('"') or not value.startswith("'")):
+            val_clean = str(value).strip('\"\'')
+            if variable.value is not None:
+                variable.compiled = f'{"static " if variable.privacity == "private" else ""}char {variable.name}[{variable.fixed_size}] = "{val_clean}";'
+            else:
+                variable.compiled = f'{"static " if variable.privacity == "private" else ""}char {variable.name}[{variable.fixed_size}];'
+            return
+        if variable.value is not None:
+            init_val = format_expression(str(variable.value), block)
+            variable.compiled = f'{"static " if variable.privacity == "private" else ""}{elem_t} {variable.name}[{variable.fixed_size}] = {init_val};'
+        else:
+            variable.compiled = f'{"static " if variable.privacity == "private" else ""}{elem_t} {variable.name}[{variable.fixed_size}];'
+        return
     elif t == 'char':
         value = f"'{value}'"
     elif t == 'bool':
         value = 'true' if (value is True or str(value).lower() == 'true') else 'false'
     
-    if not reference and not type_is_compatible(value, t):
+    is_expr = isinstance(value, str) and ('(' in value or '.' in value or '->' in value or '[' in value)
+    if not reference and not is_expr and not type_is_compatible(value, t):
         raise Exception(f'Value {value} is not compatible with type {variable.type}')
     elif reference:
         same_type(reference, variable.type)

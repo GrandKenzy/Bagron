@@ -53,6 +53,7 @@ class EGL_METHOD_CALL(gram.RuleItem):
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),
             gram.MatchKeyword('this'),
+            gram.MatchKeyword('self'),
         ),
         gram.MatchToken(gram.Token.DOT),
         gram.MatchToken('IDENT'),
@@ -72,15 +73,45 @@ class EGL_MEMBER_ACCESS(gram.RuleItem):
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),
             gram.MatchKeyword('this'),
+            gram.MatchKeyword('self'),
         ),
         gram.MatchToken(gram.Token.DOT),
-        gram.MatchToken('IDENT')
+        gram.Alt(
+            gram.MatchToken('IDENT'),
+            gram.MatchKeyword('type'),
+            gram.MatchKeyword('Type'),
+            gram.MatchKeyword('value'),
+            gram.MatchKeyword('ptr'),
+            gram.MatchKeyword('size'),
+            gram.MatchKeyword('__const__'),
+            gram.MatchKeyword('__visibility__'),
+            gram.MatchGroup('types'),
+        )
+    )
+
+class EGL_INDEX_ACCESS(gram.RuleItem):
+    name = "EGL_INDEX_ACCESS"
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.Alt(
+            gram.Ref(EGL_MEMBER_ACCESS),
+            gram.MatchToken('IDENT'),
+            gram.MatchGroup('types'),
+            gram.MatchGroup('keywords'),
+            gram.MatchKeyword('this'),
+        ),
+        gram.Enclosed(
+            open=gram.Token.LBRACKET,
+            content=gram.Ref(EGL_EXPRESSION),
+            close=gram.Token.RBRACKET
+        )
     )
 
 _primary_grammar = EGL_PRIMARY.grammar
 assert _primary_grammar is not None
 
 EGL_PRIMARY.grammar = gram.Alt(
+    gram.Ref(EGL_INDEX_ACCESS),
     gram.Ref(EGL_METHOD_CALL),
     gram.Ref(EGL_MEMBER_ACCESS),
     gram.Ref(EGL_CALL),
@@ -89,4 +120,4 @@ EGL_PRIMARY.grammar = gram.Alt(
 
 EGL_VALUE.grammar = gram.Ref(EGL_EXPRESSION)
 
-__all__ = ['EGL_ARGUMENTS', 'EGL_ARG_ITEM', 'EGL_NAMED_ARG', 'EGL_CALL', 'EGL_METHOD_CALL', 'EGL_MEMBER_ACCESS']
+__all__ = ['EGL_ARGUMENTS', 'EGL_ARG_ITEM', 'EGL_NAMED_ARG', 'EGL_CALL', 'EGL_METHOD_CALL', 'EGL_MEMBER_ACCESS', 'EGL_INDEX_ACCESS']

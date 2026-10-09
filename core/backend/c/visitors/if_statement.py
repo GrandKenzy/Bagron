@@ -1,4 +1,4 @@
-from core.processor.objects import IfStatement, ForStatement, Call, Assign, Variable, Function
+from core.processor.objects import IfStatement, ForStatement, Call, Assign, Variable, Function, MethodCall
 from core.backend.c.deffunc import deffunc
 from core.backend.c.visitors import variable, assign
 from core.backend.c.visitors.variable import resolve_variable
@@ -41,6 +41,10 @@ def _compile_block(stmts: list, block: Function | None = None) -> list[str]:
             lines.append(f'    {item.compiled}')
         elif isinstance(item, Assign):
             assign.visit(item, block)
+            lines.append(f'    {item.compiled}')
+        elif isinstance(item, MethodCall):
+            from core.backend.c.visitors import method_call
+            method_call.visit(item, is_statement=True, block=block)
             lines.append(f'    {item.compiled}')
         elif isinstance(item, Variable):
             variable.visit(item, block)

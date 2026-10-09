@@ -22,7 +22,7 @@ def procesar():
     content = core.processor.process(ast)
     print()
     c.process(content)
-    lines = list(c.includes)
+    lines = list(c.includes) + list(getattr(c, 'typedefs', []))
  
     for item in core.processor.objects.get_items():
         if item.is_valid():

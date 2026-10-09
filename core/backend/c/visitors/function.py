@@ -40,6 +40,10 @@ def _format_c_literal(value: int | float | str, type: str) -> str:
     return str(value)
 
 def visit(function: Function, processor: Callable):
+    if function.is_inline:
+        function.compiled = ""
+        return
+
     ret = function.returned
 
 
@@ -68,28 +72,37 @@ def visit(function: Function, processor: Callable):
             else:
                 raise Exception(f'Variable {v.value} is not defined')
         
-        if isinstance(reference, (list, tuple)):
+        if isinstance(reference, (list, tuple)) or hasattr(reference, '__getitem__'):
             returned = reference[0]
         elif isinstance(reference, Variable):
+            returned = reference.type
+        elif hasattr(reference, 'type'):
             returned = reference.type
         else:
             raise TypeError(f'No se puede determinar el tipo de retorno de {ret.value!r}')
 
         return_expression = str(ret.value)
     elif ret:
-        literal_is_compatible = (
-            isinstance(ret.value, str) and len(ret.value) == 1
-            if function.return_type == 'char'
-            else type_is_compatible(ret.value, function.return_type)
-        )
-        if not literal_is_compatible:
-            raise TypeError(
-                f'El literal de retorno {ret.value!r} no es compatible con '
-                f'el tipo {function.return_type!r} en {function.name}'
+        val_str = str(ret.value)
+        is_expr = isinstance(ret.value, str) and any(op in val_str for op in ('+', '-', '*', '/', '%', '==', '!=', '<', '>', '(', ')', '.'))
+        if is_expr:
+            returned = function.return_type
+            from core.backend.c.visitors.expression import format_expression
+            return_expression = format_expression(val_str, function)
+        else:
+            literal_is_compatible = (
+                isinstance(ret.value, str) and len(ret.value) == 1
+                if function.return_type == 'char'
+                else type_is_compatible(ret.value, function.return_type)
             )
+            if not literal_is_compatible:
+                raise TypeError(
+                    f'El literal de retorno {ret.value!r} no es compatible con '
+                    f'el tipo {function.return_type!r} en {function.name}'
+                )
 
-        returned = function.return_type
-        return_expression = _format_c_literal(ret.value, function.return_type)
+            returned = function.return_type
+            return_expression = _format_c_literal(ret.value, function.return_type)
     
     
     returned_c = convert_type(returned)
@@ -98,7 +111,7 @@ def visit(function: Function, processor: Callable):
     if returned_c != type_c:
         raise RuntimeError(f'Tipo de vuelta incompatible. Se retorna {returned_c} pero se esperaba {type_c} en {function.name}')
     
-    params = ", ".join([' '.join(p) for p in function.parameters])
+    params = ", ".join([f'{convert_type(p[0])} {p[1]}' for p in function.parameters])
     
     
     
@@ -107,8 +120,9 @@ def visit(function: Function, processor: Callable):
     body = ''
     
     for b in function.body.keys():
-        if b.uses:
-            body += f'\n    {b.compiled}'
+        if not isinstance(b, Variable) or b.uses > 0:
+            if getattr(b, 'compiled', ''):
+                body += f'\n    {b.compiled}'
   
     footer = f"\n    return {return_expression};\n}}" if ret else "\n}"
     

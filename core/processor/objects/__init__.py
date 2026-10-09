@@ -9,12 +9,17 @@ from core.processor.objects.if_statement import IfStatement
 from core.processor.objects.for_statement import ForStatement
 from core.processor.objects.method_call import MethodCall
 from core.processor.objects.member_access import MemberAccess
+from core.processor.objects.type_decl import TypeDecl
+from core.processor.objects.class_decl import ClassDecl, ClassMethod
 
 def get_items():
     return base.ITEMS
 
 def get_vars():
     return [item for item in get_items() if isinstance(item, Variable)]
+
+def clear():
+    base.ITEMS.clear()
 
 __all__ = [
     'Variable',
@@ -28,6 +33,9 @@ __all__ = [
     'ForStatement',
     'MethodCall',
     'MemberAccess',
+    'TypeDecl',
+    'ClassDecl',
+    'ClassMethod',
     'get_items',
     'get_vars',
 ]

@@ -4,6 +4,7 @@ from core.backend.c.detectors import detect_includes
 from core.backend.c.deffunc import deffunc
 
 includes: list[str] = []
+typedefs: list[str] = []
 
 def add_include(header: str):
     if not header.startswith('#include'):
@@ -13,9 +14,15 @@ def add_include(header: str):
     if header not in includes:
         includes.append(header)
 
+def clear():
+    includes.clear()
+    typedefs.clear()
+
+def add_typedef(definition: str):
+    if definition not in typedefs:
+        typedefs.append(definition)
+
 def process(content: dict[Object, str], block: Function | None = None):
-    if block is None:
-        includes.clear()
     for item, _ in list(content.items()):
         for inc in detect_includes(item):
             add_include(inc)
@@ -32,3 +39,5 @@ def process(content: dict[Object, str], block: Function | None = None):
         elif isinstance(item, Call):
             compiled_call = deffunc(item.name, item.args, getattr(item, 'kwargs', {}), is_statement=True, block=block)
             item.compiled = compiled_call.compiled
+        elif isinstance(item, MethodCall):
+            method_call.visit(item, is_statement=True, block=block)

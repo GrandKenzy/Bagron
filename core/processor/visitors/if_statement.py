@@ -10,11 +10,18 @@ def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | 
     elif stmt_node.name in ('EGL_METHOD_CALL', 'method call'):
         target = stmt_node.values[0]
         method = stmt_node.values[2] if len(stmt_node.values) >= 3 else stmt_node.values[1]
-        args = list(stmt_node.children[0].values) if stmt_node.children else []
+        args, _ = extract_call_args(stmt_node)
         return MethodCall(target, method, args, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_ASSIGN', 'assign'):
-        target = stmt_node.values[0]
-        val = stmt_node.children[0].values[0] if stmt_node.children and stmt_node.children[0].values else None
+        val_nodes = stmt_node.find('EGL_VALUE')
+        val = val_nodes[0].values[0] if val_nodes and val_nodes[0].values else None
+        idx_nodes = stmt_node.find('EGL_INDEX_ACCESS')
+        if idx_nodes:
+            toks = [str(t.value if hasattr(t, 'value') else t) for t in getattr(stmt_node, 'all_tokens', [])]
+            eq_idx = toks.index('=') if '=' in toks else -1
+            target = f'{toks[0]}[{toks[1]}]' if eq_idx > 1 else stmt_node.values[0]
+        else:
+            target = stmt_node.values[0]
         return Assign(target, val, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_VAR_DECL', 'EC_VAR_DECL', 'var declaration'):
         from core.processor.visitors import var_decl

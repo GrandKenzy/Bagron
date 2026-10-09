@@ -31,6 +31,10 @@ def _compile_block(stmts: list, block: Function | None = None) -> list[str]:
         elif isinstance(item, Assign):
             assign.visit(item, block)
             lines.append(f'    {item.compiled}')
+        elif isinstance(item, MethodCall):
+            from core.backend.c.visitors import method_call
+            method_call.visit(item, is_statement=True, block=block)
+            lines.append(f'    {item.compiled}')
         elif isinstance(item, Variable):
             variable.visit(item, block)
             lines.append(f'    {item.compiled}')

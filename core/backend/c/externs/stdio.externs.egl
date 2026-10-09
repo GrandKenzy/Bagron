@@ -1,0 +1,5 @@
+ptr fopen(str filepath, str mode = "rb")
+int fclose(ptr stream)
+int fseek(ptr stream, int64 offset, int origin)
+int64 ftell(ptr stream)
+int fread(str buffer, int size, int count, ptr stream)

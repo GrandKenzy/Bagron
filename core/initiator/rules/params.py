@@ -1,10 +1,15 @@
 import gram
 from core.initiator.rules.value import EGL_VALUE
+from core.initiator.rules.type_spec import EGL_TYPE_SPEC
 
 class EGL_PARAM(gram.RuleItem):
     name = 'EGL_PARAM'
     code = gram.AutoCode()
     grammar = gram.Alt(
+        gram.Alt(
+            gram.MatchKeyword('self'),
+            gram.MatchKeyword('this'),
+        ),
         gram.Seq(
             gram.Alt(
                 gram.Seq(
@@ -12,8 +17,7 @@ class EGL_PARAM(gram.RuleItem):
                     gram.MatchToken(gram.Token.DOT),
                     gram.MatchToken('IDENT'),
                 ),
-                gram.MatchGroup('types'),
-                gram.MatchToken('IDENT'),
+                gram.Ref(EGL_TYPE_SPEC),
             ),
             gram.Opt(gram.MatchToken(gram.Token.STAR)),
             gram.MatchToken('IDENT'),
@@ -43,13 +47,13 @@ class EGL_PARAMS(gram.RuleItem):
         open=gram.Token.LPAREN,
         content=gram.Opt(
             gram.Alt(
+                gram.MatchKeyword('void'),
                 gram.Separator(
                     sep=gram.Token.COMMA,
                     values=[
                         gram.Ref(EGL_PARAM)
                     ]
-                ),
-                gram.MatchKeyword('void')
+                )
             ),
         ),
         close=gram.Token.RPAREN

@@ -26,7 +26,7 @@ class FunctionParam:
         return f'{self.type} {star}{self.name}{def_str}'
 
 class Function(Object):
-    def __init__(self, name: str, body: dict[Object, str], retur_type: str, parameters: list[Any], privacity: Literal['public', 'private'] = 'public'):
+    def __init__(self, name: str, body: dict[Object, str], retur_type: str, parameters: list[Any], privacity: Literal['public', 'private'] = 'public', is_inline: bool = False, inline_target: Any = None):
         self.name = name
         self.return_type = retur_type
         self.returned: Returned | None = None
@@ -34,10 +34,12 @@ class Function(Object):
         self.body = body
         self.privacity = privacity
         self.compiled = ""
+        self.is_inline = is_inline
+        self.inline_target = inline_target
         super().__init__()
         
     def is_valid(self):
-        return True
+        return not self.is_inline
         
     def get_vars(self):
         vars = []

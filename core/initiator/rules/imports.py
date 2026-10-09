@@ -34,11 +34,11 @@ class EGL_INCLUDE(gram.RuleItem):
         )
     )
 
-class EGL_CLASS(gram.RuleItem):
-    name = "EGL_CLASS"
+class EGL_OBJECT(gram.RuleItem):
+    name = "EGL_OBJECT"
     code = gram.AutoCode()
     grammar = gram.Seq(
-        gram.MatchKeyword('class'),
+        gram.MatchKeyword('object'),
         gram.MatchToken('IDENT'),
         gram.Opt(
             gram.Seq(
@@ -47,3 +47,5 @@ class EGL_CLASS(gram.RuleItem):
             )
         )
     )
+
+EGL_CLASS = EGL_OBJECT

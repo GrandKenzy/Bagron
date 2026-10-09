@@ -12,7 +12,8 @@ class CompiledCall:
         self.compiled = compiled
 
 def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
-    raw_str = str(arg.value if hasattr(arg, 'value') else arg)
+    from core.processor.type_system import get_format_specifier
+    raw_str = str(arg.value if hasattr(arg, 'value') else arg).strip()
     if (raw_str.startswith('"') and raw_str.endswith('"')) or (raw_str.startswith("'") and raw_str.endswith("'")):
         clean_val = raw_str[1:-1]
         return '%s', f'"{clean_val}"'
@@ -22,21 +23,81 @@ def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
         return '%d', str(arg)
     if isinstance(arg, float):
         return '%f', str(arg)
-    
+
+    if '.' in raw_str:
+        base_name, prop = raw_str.split('.', 1)
+        base_resolved = resolve_variable(base_name.strip(), block)
+        if base_resolved:
+            if prop == 'type':
+                base_resolved.uses += 1
+                if getattr(base_resolved, 'type_args', None):
+                    args_s = ', '.join(str(a) for a in base_resolved.type_args)
+                    return '%s', f'"{base_resolved.type}[{args_s}]"'
+                return '%s', f'"{base_resolved.type}"'
+            if prop == 'ptr':
+                base_resolved.uses += 1
+                return '%p', f'(void*)&{base_resolved.name}'
+            if prop == 'size':
+                base_resolved.uses += 1
+                from core.backend.c.visitors.variable import convert_type
+                if getattr(base_resolved, 'fixed_size', None) and getattr(base_resolved, 'element_type', None):
+                    return '%zu', f'sizeof({convert_type(base_resolved.element_type)}) * {base_resolved.fixed_size}'
+                return '%zu', f'sizeof({convert_type(base_resolved.type)})'
+            if prop == 'len' and getattr(base_resolved, 'fixed_size', None):
+                base_resolved.uses += 1
+                return '%d', str(base_resolved.fixed_size)
+            if prop in ('__const__', 'const'):
+                base_resolved.uses += 1
+                return '%d', ('1' if base_resolved.is_constant else '0')
+            if prop in ('__visibility__', 'visibility'):
+                base_resolved.uses += 1
+                return '%d', ('0' if base_resolved.privacity == 'private' else '1')
+            if prop == 'value':
+                raise Exception(f"Member '.value' of type '{base_resolved.type}' is private and not directly accessible")
+
+    if '[' in raw_str and raw_str.endswith(']'):
+        base_name, idx_part = raw_str[:-1].split('[', 1)
+        base_resolved = resolve_variable(base_name.strip(), block)
+        if base_resolved:
+            base_resolved.uses += 1
+            elem_type = getattr(base_resolved, 'element_type', None) or 'int'
+            spec = get_format_specifier(elem_type)
+            from core.backend.c.visitors.expression import format_expression
+            fmt_idx = format_expression(idx_part, block)
+            idx_val = f'{base_resolved.name}[{fmt_idx}]'
+            from core.processor.type_system import resolve_c_type
+            if resolve_c_type(elem_type) == '_Float16':
+                idx_val = f'(double){idx_val}'
+            return spec, idx_val
+
     resolved = resolve_variable(raw_str, block)
     if resolved:
         resolved.uses += 1
         if resolved.is_pointer:
+            if resolved.type == 'ptr' or not resolved.pointer_base_type:
+                return '%p', resolved.name
             base = resolved.pointer_base_type or 'int'
-            spec = '%d' if 'int' in base else ('%f' if 'float' in base or 'double' in base else '%s')
+            spec = get_format_specifier(base)
             return spec, f'*{resolved.name}'
-        spec = '%s' if resolved.type == 'str' else ('%d' if 'int' in resolved.type else '%f')
-        return spec, resolved.name
+        from core.backend.c.visitors.variable import convert_type
+        if resolved.type == 'chain' or (getattr(resolved, 'fixed_size', None) and convert_type(getattr(resolved, 'element_type', '')) == 'char'):
+            spec = '%s'
+        else:
+            spec = get_format_specifier(resolved.type)
+        arg_val = resolved.name
+        from core.processor.type_system import resolve_c_type
+        if resolve_c_type(resolved.type) == '_Float16':
+            arg_val = f'(double){resolved.name}'
+        return spec, arg_val
 
     if raw_str.isdigit():
         return '%d', raw_str
 
-    return '%s', f'"{raw_str}"'
+    from core.backend.c.visitors.expression import format_expression
+    fmt_expr = format_expression(raw_str, block)
+    if fmt_expr.startswith('"') and fmt_expr.endswith('"'):
+        return '%s', fmt_expr
+    return '%d', fmt_expr
 
 def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: bool = False, block: Any = None) -> CompiledCall:
     import core.backend.c as c_backend
@@ -46,27 +107,30 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
     kwargs = kwargs or {}
 
     clean_name = str(name.value if hasattr(name, 'value') else name)
+
+    from core.backend.c.inline import find_inline_function, expand_inline_call
+    inline_func = find_inline_function(clean_name)
+    if inline_func:
+        expanded = expand_inline_call(inline_func, args, kwargs, is_statement=is_statement, block=block)
+        if expanded is not None:
+            return expanded
+
     reserved = reserve_funnames.get_items().get(clean_name)
     ret_type = reserved.returntype if reserved else 'void'
     is_ptr = (ret_type == 'ptr')
     target_type = None
     bound = reserved.bind_args(args, kwargs) if reserved else {}
 
-    if clean_name == 'malloc':
-        c_backend.add_include('<stdlib.h>')
-        raw_type = str(bound.get('Type') if bound.get('Type') is not None else (args[0].value if hasattr(args[0], 'value') else args[0]) if len(args) > 0 else 'void')
-        count = str(bound.get('size') if bound.get('size') is not None else (args[1].value if hasattr(args[1], 'value') else args[1]) if len(args) > 1 else '1')
-        resolved_t = resolve_variable(raw_type, block)
-        if resolved_t and resolved_t.type == 'type':
-            resolved_t.uses += 1
-            if resolved_t.value:
-                raw_type = str(resolved_t.value)
-            else:
-                raw_type = resolved_t.name
-        target_type = raw_type
-        c_type = convert_type(raw_type)
-        compiled = f'({c_type}*)malloc(sizeof({c_type}) * {count})'
-        return CompiledCall(clean_name, args, 'ptr', True, target_type, compiled)
+    if not reserved:
+        from core.externs.manager import manager
+        extern_sym = manager.find_backend_symbol(clean_name)
+        if extern_sym:
+            sym_info, header = extern_sym
+            if header:
+                c_backend.add_include(header)
+            ret_type = sym_info.get('return_type', 'void')
+            is_ptr = (ret_type == 'ptr' or sym_info.get('is_pointer', False))
+            bound = manager.bind_args(sym_info, args, kwargs)
 
     if clean_name == 'free':
         c_backend.add_include('<stdlib.h>')

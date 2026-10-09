@@ -1,6 +1,7 @@
-include "stdio.h" as STDIO_C
-
+clause Target 'egl-c'
 clause Visibility "private"
+
+include "stdio.h" as STDIO_C
 
 ptr aux_open(str filepath, str mode = "rb"):
     ptr handle = STDIO_C.fopen(filepath, mode)
@@ -57,7 +58,7 @@ public type File:
         STDIO_C.fread(buffer, 1, size, this.handle)
         return True
 
-int64 get_size(str filename):
+public int64 get_size(str filename):
     File file = filename
     if not file.open(filename):
         return -1

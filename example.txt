@@ -13,7 +13,7 @@ int contador = 0
 for i in ran 5:
     contador = i
 
-ptr puntero_buffer = malloc(int, 10)
+ptr puntero_buffer = malloc(40)
 
 if not puntero_buffer:
     print("no se pudo crear el espacio")
