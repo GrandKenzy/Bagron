@@ -4,6 +4,8 @@ clause Arch "amd64"
 clause System "win"
 clause StackLimit 16384
 
+print('Hola')
+
 int duplicar(int n):
     int resultado = n
     return resultado

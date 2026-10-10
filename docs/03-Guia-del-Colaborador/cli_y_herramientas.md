@@ -9,7 +9,8 @@ Easy-C (EGL) incluye una interfaz de linea de comandos moderna y minimalista dis
 ### Sintaxis General
 
 ```bash
-egl compile <ruta> [-o <salida.c>] [--run] [--cc <compilador>]
+egl compile [ruta] [-o <salida.c>] [--run] [--cc <compilador>]
+egl run [ruta] [-o <salida.c>] [--cc <compilador>]
 egl --version
 egl --help
 ```
@@ -18,9 +19,10 @@ egl --help
 
 | Opcion / Argumento | Tipo | Valor por Defecto | Descripcion |
 | :--- | :--- | :--- | :--- |
-| `compile <ruta>` | Comando | Obligatorio | Compila el proyecto ubicado en `<ruta>`. Requiere que el directorio contenga un archivo `main.egl`. |
+| `compile [ruta]` | Comando | `'source'` o `'.'` | Compila el proyecto EGL. Si no se especifica ruta, busca automaticamente en `source` o el directorio actual. |
+| `run [ruta]` | Comando | `'source'` o `'.'` | Compila y ejecuta el proyecto directamente (equivalente abreviado a `compile [ruta] --run`). |
+| `-r`, `--run` | Flag | `False` | Tras generar el archivo C, invoca el compilador nativo (GCC) y ejecuta el binario inmediatamente. Puede posicionarse antes o despues de la ruta. |
 | `-o`, `--output` | Opcion | `program.c` | Nombre o ruta del archivo de codigo C monolitico generado. |
-| `-r`, `--run` | Flag | `False` | Tras generar el archivo C, invoca el compilador nativo (GCC) y ejecuta el binario inmediatamente. |
 | `--cc` | Opcion | `gcc` | Compilador de C a invocar cuando se utiliza el flag `--run` (ej. `gcc`, `clang`, `tcc`). |
 | `-v`, `--version` | Flag | N/A | Muestra la version actual del compilador Easy-C. |
 | `-h`, `--help` | Flag | N/A | Muestra la guia de uso y catalogo de opciones en consola. |

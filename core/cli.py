@@ -8,16 +8,18 @@ VERSION = "0.2.0"
 def print_help():
     print("Easy-C (EGL) Compiler CLI")
     print("Uso:")
-    print("  egl compile <ruta> [-o <salida.c>] [--run]")
+    print("  egl compile [ruta] [-o <salida.c>] [--run] [--cc <compilador>]")
+    print("  egl run [ruta] [-o <salida.c>] [--cc <compilador>]")
     print("  egl --version")
     print("  egl --help")
     print("")
     print("Comandos:")
-    print("  compile <ruta>   Compila un proyecto EGL con 'main.egl' en la ruta especificada.")
+    print("  compile [ruta]   Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
+    print("  run [ruta]       Compila y ejecuta el proyecto directamente.")
     print("")
     print("Opciones:")
-    print("  -o, --output     Nombre del archivo C monolítico generado (default: program.c).")
     print("  -r, --run        Compila el archivo C generado con GCC y lo ejecuta inmediatamente.")
+    print("  -o, --output     Nombre del archivo C monolítico generado (default: program.c).")
     print("  --cc             Compilador de C a utilizar para --run (default: gcc).")
     print("  -v, --version    Muestra la versión de EGL.")
     print("  -h, --help       Muestra este mensaje de ayuda.")
@@ -35,20 +37,28 @@ def main(args: list[str] | None = None) -> int:
         return 0
 
     command = args[0]
-    if command != 'compile':
+    do_run = False
+    start_idx = 1
+
+    if command in ('compile', 'build'):
+        start_idx = 1
+    elif command == 'run':
+        do_run = True
+        start_idx = 1
+    elif command in ('-r', '--run'):
+        do_run = True
+        start_idx = 0
+    elif not command.startswith('-'):
+        start_idx = 0
+    else:
         print(f"Error: Comando desconocido '{command}'. Usa 'egl --help' para ver los comandos disponibles.")
         return 1
 
-    if len(args) < 2:
-        print("Error: Falta la ruta del proyecto. Uso: egl compile <ruta>")
-        return 1
-
-    source_path = args[1]
+    source_path = None
     output_file = 'program.c'
-    do_run = False
     cc = 'gcc'
 
-    i = 2
+    i = start_idx
     while i < len(args):
         arg = args[i]
         if arg in ('-o', '--output', '--out'):
@@ -70,8 +80,20 @@ def main(args: list[str] | None = None) -> int:
             else:
                 print("Error: Se requiere el nombre del compilador para --cc.")
                 return 1
+        elif not arg.startswith('-') and source_path is None:
+            source_path = arg
+            i += 1
         else:
             i += 1
+
+    if source_path is None:
+        if Path('source/main.egl').is_file():
+            source_path = 'source'
+        elif Path('main.egl').is_file():
+            source_path = '.'
+        else:
+            print("Error: Falta la ruta del proyecto. Uso: egl compile [ruta] [--run]")
+            return 1
 
     try:
         print(f"[EGL] Compilando proyecto en: '{source_path}'", flush=True)
