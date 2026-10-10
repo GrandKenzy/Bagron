@@ -7,3 +7,5 @@ import testlib
 import winapi
 
 
+winapi.create_window(Null, "Hola", "titulo", 0)
+
