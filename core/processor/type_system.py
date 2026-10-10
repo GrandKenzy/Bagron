@@ -15,7 +15,6 @@ INTRINSIC_TYPES: dict[str, str] = {
     '__middle_t__': '_Float16',
     '__double_t__': 'double',
     '__char_t__': 'char',
-    '__str_t__': 'char*',
     '__bool_t__': 'bool',
     '__ptr_t__': 'void*',
     '__void_t__': 'void',
@@ -104,17 +103,13 @@ def resolve_c_type(type_name: str) -> str:
         return INTRINSIC_TYPES[t_str]
     if t_str in ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64'):
         return f'{t_str}_t'
-    if t_str == 'integer':
-        return 'int'
     if t_str == 'middle':
         return '_Float16'
-    if t_str == 'chain':
+    if t_str in ('pstring', 'chain'):
         return 'char*'
     if t_str in ('type', '__arrof__'):
         return ''
-    if t_str == 'str':
-        return 'char*'
-    if t_str in ('bool', 'boolean'):
+    if t_str == 'bool':
         return 'bool'
     if t_str in ('ptr', 'pointer'):
         return 'void*'
@@ -122,7 +117,7 @@ def resolve_c_type(type_name: str) -> str:
 
 def get_format_specifier(type_name: str) -> str:
     c_t = resolve_c_type(type_name)
-    if c_t in ('char*', 'str') or type_name == 'chain':
+    if c_t == 'char*' or type_name == 'chain':
         return '%s'
     if c_t in ('float', 'double', '_Float16'):
         return '%f'
@@ -153,7 +148,6 @@ DEFAULT_BUILTINS: list[tuple[str, str]] = [
     ('middle', '__middle_t__'),
     ('double', '__double_t__'),
     ('char', '__char_t__'),
-    ('str', '__str_t__'),
     ('bool', '__bool_t__'),
     ('ptr', '__ptr_t__'),
     ('pointer', '__void_p_t__'),

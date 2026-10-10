@@ -53,7 +53,7 @@ def visit(stmt: ForStatement, block: Function | None = None):
     body_lines = _compile_block(stmt.body, block)
     body_str = '\n'.join(body_lines)
     
-    if stmt.mode in ('ran', 'rand'):
+    if stmt.mode == 'ran':
         if isinstance(stmt.target, list) and len(stmt.target) == 2 and isinstance(stmt.target[0], list):
             start_val = _format_expr(stmt.target[0], block)
             limit_val = _format_expr(stmt.target[1], block)

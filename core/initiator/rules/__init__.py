@@ -2,7 +2,7 @@ import gram
 
 gram.SetCode(100_000)
 
-from core.initiator.rules.value import EGL_VALUE, EC_VALUE
+from core.initiator.rules.value import EGL_VALUE
 from core.initiator.rules.expression import (
     EGL_ADDITIVE,
     EGL_BITWISE_AND,
@@ -19,9 +19,9 @@ from core.initiator.rules.expression import (
     EGL_UNARY,
 )
 from core.initiator.rules.call import EGL_ARGUMENTS, EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS, EGL_INDEX_ACCESS
-from core.initiator.rules.var_decl import EGL_VAR_DECL, EC_VAR_DECL
-from core.initiator.rules.params import EGL_PARAM, EGL_PARAMS, EC_PARAM, EC_PARAMS
-from core.initiator.rules.func_decl import EGL_FUNC_DECL, EGL_FUNC_BODY, EC_FUNC_DECL, EC_FUNC_BODY
+from core.initiator.rules.var_decl import EGL_VAR_DECL
+from core.initiator.rules.params import EGL_PARAM, EGL_PARAMS
+from core.initiator.rules.func_decl import EGL_FUNC_DECL, EGL_FUNC_BODY
 from core.initiator.rules.statement import (
     EGL_CONDITION,
     EGL_RETURN,
@@ -31,17 +31,9 @@ from core.initiator.rules.statement import (
     EGL_ELIF_STATEMENT,
     EGL_ELSE_STATEMENT,
     EGL_IF_STATEMENT,
-    Condition,
-    EC_RETURN,
-    EC_ASSIGN,
-    EC_STATEMENT,
-    EC_STMT_BODY,
-    ELIF_Statement,
-    ELSE_Statement,
-    IF_Statement,
 )
-from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_LOOP_MODE, FOR_Statement, Loop_Mode
-from core.initiator.rules.imports import EGL_IMPORT, EGL_INCLUDE, EGL_OBJECT
+from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_LOOP_MODE
+from core.initiator.rules.imports import EGL_IMPORT, EGL_INCLUDE, EGL_OBJECT, EGL_DECLARE
 from core.initiator.rules.class_decl import EGL_CLASS_DECL, EGL_METHOD_DECL, EGL_CLASS_BODY, EGL_CLASS_STMT
 EGL_CLASS = EGL_CLASS_DECL
 from core.initiator.rules.clauses import EGL_CLAUSE
@@ -80,8 +72,6 @@ __all__ = [
     'EGL_IF_STATEMENT',
     'EGL_FOR_STATEMENT',
     'EGL_LOOP_MODE',
-    'FOR_Statement',
-    'Loop_Mode',
     'EGL_ARGUMENTS',
     'EGL_CALL',
     'EGL_METHOD_CALL',
@@ -94,6 +84,7 @@ __all__ = [
     'EGL_IMPORT',
     'EGL_INCLUDE',
     'EGL_OBJECT',
+    'EGL_DECLARE',
     'EGL_CLAUSE',
     'EGL_TYPE_DECL',
     'EGL_TYPE_SPEC',
@@ -112,17 +103,4 @@ __all__ = [
     'EGL_POWER',
     'EGL_UNARY',
     'EGL_PRIMARY',
-    'EC_VALUE',
-    'EC_VAR_DECL',
-    'EC_FUNC_DECL',
-    'EC_PARAM',
-    'EC_PARAMS',
-    'Condition',
-    'EC_RETURN',
-    'EC_ASSIGN',
-    'EC_STATEMENT',
-    'EC_STMT_BODY',
-    'ELIF_Statement',
-    'ELSE_Statement',
-    'IF_Statement',
 ]

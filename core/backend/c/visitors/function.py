@@ -26,9 +26,9 @@ def _format_c_literal(value: int | float | str, type: str) -> str:
         }))
         return f"'{escaped}'"
 
-    if type == 'str':
+    if type in ('pstring', 'chain') or type == 'char*':
         if not isinstance(value, str):
-            raise TypeError(f'El valor {value!r} no puede emitirse como literal str')
+            raise TypeError(f'El valor {value!r} no puede emitirse como literal string')
         escaped = value.translate(str.maketrans({
             '\\': '\\\\',
             '"': '\\"',
@@ -140,7 +140,7 @@ def visit(function: Function, processor: Callable):
     body = ''
     
     for b in function.body.keys():
-        if not isinstance(b, Variable) or b.uses > 0:
+        if not isinstance(b, Variable) or b.uses > 0 or b.name.startswith(('self.', 'this.')):
             if getattr(b, 'compiled', ''):
                 body += f'\n    {b.compiled}'
   

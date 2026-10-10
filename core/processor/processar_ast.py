@@ -4,15 +4,15 @@ from core.processor import objects
 
 def process(ast: gram.ASTProgram):
     for node in ast.walk(0):
-        if node.name in ('EGL_VAR_DECL', 'EC_VAR_DECL', 'var declaration'):
+        if node.name in ('EGL_VAR_DECL', 'var declaration'):
             var_decl.visit(node)
-        elif node.name in ('EGL_TYPE_DECL', 'EC_TYPE_DECL', 'type declaration'):
+        elif node.name in ('EGL_TYPE_DECL', 'type declaration'):
             type_decl.visit(node)
         elif node.name in ('EGL_CLASS_DECL', 'class declaration'):
             class_decl.visit(node)
-        elif node.name in ('EGL_FUNC_DECL', 'EC_FUNC_DECL', 'func declaration'):
+        elif node.name in ('EGL_FUNC_DECL', 'func declaration'):
             func_decl.visit(node)
-        elif node.name in ('EGL_IF_STATEMENT', 'IF_STATEMENT', 'if statement'):
+        elif node.name in ('EGL_IF_STATEMENT', 'if statement'):
             if_statement.visit(node)
         elif node.name in ('EGL_FOR_STATEMENT', 'for statement'):
             for_statement.visit(node)
@@ -74,7 +74,7 @@ def process(ast: gram.ASTProgram):
                 if len(node.values) >= 4 and str(node.values[2]) == 'as':
                     alias = str(node.values[3].value if hasattr(node.values[3], 'value') else node.values[3])
                 manager.load_include(header, alias)
-        elif node.name in ('EGL_IMPORT', 'import'):
+        elif node.name in ('EGL_IMPORT', 'import', 'EGL_DECLARE', 'declare'):
             pass
         else:
             print('Falta por procesar nodo: ', node.name)

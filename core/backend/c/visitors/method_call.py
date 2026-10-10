@@ -38,7 +38,7 @@ def visit(item: MethodCall, is_statement: bool = False, block: Function | None =
             if resolved and resolved.type:
                 t = resolved.type.rstrip('*')
                 if t in CUSTOM_TYPES and CUSTOM_TYPES[t].get('is_class'):
-                    class_name = t
+                    class_name = CUSTOM_TYPES[t].get('c_type') or t
                     self_arg = target_str if (resolved.is_pointer or resolved.type.endswith('*')) else f'&{target_str}'
                 else:
                     from core.processor import objects

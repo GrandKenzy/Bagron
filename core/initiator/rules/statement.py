@@ -110,15 +110,6 @@ EGL_STATEMENT.grammar = gram.Alt(
     gram.MatchKeyword('pass'),
 )
 
-Condition = EGL_CONDITION
-EC_RETURN = EGL_RETURN
-EC_ASSIGN = EGL_ASSIGN
-EC_STATEMENT = EGL_STATEMENT
-EC_STMT_BODY = EGL_STMT_BODY
-ELIF_Statement = EGL_ELIF_STATEMENT
-ELSE_Statement = EGL_ELSE_STATEMENT
-IF_Statement = EGL_IF_STATEMENT
-
 __all__ = [
     'EGL_CONDITION',
     'EGL_RETURN',
@@ -129,12 +120,4 @@ __all__ = [
     'EGL_ELSE_STATEMENT',
     'EGL_IF_STATEMENT',
     'EGL_FOR_STATEMENT',
-    'Condition',
-    'EC_RETURN',
-    'EC_ASSIGN',
-    'EC_STATEMENT',
-    'EC_STMT_BODY',
-    'ELIF_Statement',
-    'ELSE_Statement',
-    'IF_Statement',
 ]

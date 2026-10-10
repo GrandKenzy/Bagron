@@ -201,16 +201,24 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
     is_class_ctor = False
     if clean_name in CUSTOM_TYPES and CUSTOM_TYPES[clean_name].get('is_class'):
         is_class_ctor = True
-    else:
-        from core.processor import objects
-        for it in objects.get_items().keys():
-            if hasattr(it, '__class__') and it.__class__.__name__ == 'ClassDecl' and getattr(it, 'name', None) == clean_name:
-                is_class_ctor = True
+
+    target_class_decl = None
+    from core.processor import objects
+    for it in objects.get_items().keys():
+        if hasattr(it, '__class__') and it.__class__.__name__ == 'ClassDecl':
+            if getattr(it, 'name', None) == clean_name or f'{getattr(it, "name", None)}_create' == clean_name:
+                target_class_decl = it
                 break
 
-    if is_class_ctor:
+    if target_class_decl or is_class_ctor:
+        ctor_func = getattr(target_class_decl, 'constructor_func', None)
+        if ctor_func and hasattr(ctor_func, 'parameters'):
+            for p in ctor_func.parameters[len(args):]:
+                if getattr(p, 'has_default', False) and getattr(p, 'default', None) is not None:
+                    args.append(p.default)
         compiled_args = [_format_call_arg(a, block) for a in args]
-        call_expr = f'{clean_name}_create({", ".join(compiled_args)})'
+        fn_to_call = clean_name if clean_name.endswith('_create') else f'{clean_name}_create'
+        call_expr = f'{fn_to_call}({", ".join(compiled_args)})'
         compiled = (call_expr + ';') if is_statement else call_expr
         return CompiledCall(clean_name, args, clean_name, False, None, compiled)
 

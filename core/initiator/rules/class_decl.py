@@ -86,7 +86,10 @@ class EGL_CLASS_DECL(gram.RuleItem):
         gram.Opt(
             gram.MatchGroup('privacity')
         ),
-        gram.MatchKeyword('class'),
+        gram.Alt(
+            gram.MatchKeyword('class'),
+            gram.MatchKeyword('struct'),
+        ),
         gram.Alt(
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),

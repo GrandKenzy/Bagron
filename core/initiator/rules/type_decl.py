@@ -256,7 +256,6 @@ class EGL_TYPE_DECL(gram.RuleItem):
             ),
             gram.MatchKeyword('Type'),
             gram.MatchKeyword('type'),
-            gram.MatchKeyword('struct'),
             gram.MatchKeyword('enum'),
         ),
         gram.Alt(

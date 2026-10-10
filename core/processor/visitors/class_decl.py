@@ -16,23 +16,56 @@ def visit(node: gram.ASTNode) -> ClassDecl:
         CUSTOM_TYPES[name]['is_class'] = True
 
     fields = []
-    body_nodes = node.find('EGL_CLASS_BODY')
-    body_children = body_nodes[0].children if body_nodes else []
+    field_map = {}
 
-    for c in body_children:
-        if c.name in ('EGL_VAR_DECL', 'var declaration'):
-            toks = [str(getattr(t, 'value', t)) for t in getattr(c, 'all_tokens', [])]
-            spec = c.find('EGL_TYPE_SPEC')
-            f_type = spec[0].values[0] if spec and spec[0].values else (toks[0] if toks else 'any')
-            f_name = c.values[-1] if c.values else (toks[-1] if toks else '')
-            fields.append({'name': str(f_name), 'type': str(f_type)})
+    for v_decl in node.find('EGL_VAR_DECL'):
+        spec = v_decl.find('EGL_TYPE_SPEC')
+        f_type = spec[0].values[0] if spec and spec[0].values else None
 
-    for ass in (body_nodes[0].find('EGL_ASSIGN') if body_nodes else []):
+        mem_acc = v_decl.find('EGL_MEMBER_ACCESS')
+        if mem_acc:
+            mem_vals = [str(getattr(v, 'value', v)) for v in mem_acc[0].values]
+            if len(mem_vals) >= 2 and mem_vals[0] in ('self', 'this'):
+                f_name = mem_vals[1]
+                if f_type is None:
+                    raise TypeError(f"El campo 'self.{f_name}' de la clase '{name}' debe tener un tipo explícito.")
+                field_map[f_name] = str(f_type)
+                continue
+
+        toks = [str(getattr(t, 'value', t)) for t in getattr(v_decl, 'all_tokens', [])]
+        f_name_raw = v_decl.values[-1] if v_decl.values else (toks[-1] if toks else '')
+        f_name_str = str(getattr(f_name_raw, 'value', f_name_raw))
+        if f_name_str and not f_name_str.startswith(('self.', 'this.')):
+            if f_type is None:
+                raise TypeError(f"El campo '{f_name_str}' de la clase '{name}' debe tener un tipo explícito.")
+            field_map[f_name_str] = str(f_type)
+
+    for ass in node.find('EGL_ASSIGN'):
         toks = [str(getattr(t, 'value', t)) for t in getattr(ass, 'all_tokens', [])]
-        if len(toks) >= 3 and toks[0] == 'self' and toks[1] == '.':
+        if len(toks) >= 3 and toks[0] in ('self', 'this') and toks[1] == '.':
             f_name = toks[2]
-            if not any(f['name'] == f_name for f in fields):
-                fields.append({'name': f_name, 'type': 'ptr' if 'handle' in f_name.lower() or 'ptr' in f_name.lower() else 'any'})
+            if f_name not in field_map:
+                inferred = None
+                call_nodes = ass.find('EGL_CALL')
+                if call_nodes:
+                    call_name = str(call_nodes[0].values[0] if call_nodes[0].values else '')
+                    from core.externs.manager import manager
+                    ext_sym = manager.find_backend_symbol(call_name)
+                    if ext_sym:
+                        inferred = ext_sym[0].get('return_type')
+                    elif hasattr(node, 'parent') and node.parent:
+                        for fn in node.parent.find('EGL_FUNC_DECL'):
+                            fn_spec = fn.find('EGL_TYPE_SPEC')
+                            fn_name = fn.values[-1] if fn.values else ''
+                            if str(fn_name) == call_name and fn_spec:
+                                inferred = str(fn_spec[0].values[0])
+                                break
+                if not inferred:
+                    raise TypeError(f"El campo 'self.{f_name}' de la clase '{name}' debe tener un tipo explícito.")
+                field_map[f_name] = inferred
+
+    for f_name, f_type in field_map.items():
+        fields.append({'name': f_name, 'type': f_type})
 
     methods = {}
     generated_functions = []
@@ -44,6 +77,20 @@ def visit(node: gram.ASTNode) -> ClassDecl:
         ret_type = str(spec_nodes[0].values[0]) if spec_nodes and spec_nodes[0].values else 'void'
         m_name = str(m.values[-1]) if m.values else '__init__'
 
+        is_magic = m_name.startswith('__') and m_name.endswith('__')
+        all_tok_values = [str(getattr(t, 'value', t)) for t in getattr(m, 'all_tokens', [])]
+        has_method_dec = False
+        for i, tok_val in enumerate(all_tok_values):
+            if tok_val == '@' and i + 1 < len(all_tok_values) and all_tok_values[i + 1] == 'method':
+                has_method_dec = True
+                break
+            if tok_val == '@method':
+                has_method_dec = True
+                break
+
+        if not is_magic and not has_method_dec:
+            raise SyntaxError(f"El método '{m_name}' de la clase '{name}' debe llevar el decorador '@method'.")
+
         params = []
         user_params = []
         for p in m.find('EGL_PARAM'):
@@ -52,8 +99,8 @@ def visit(node: gram.ASTNode) -> ClassDecl:
             if v_str in ('self', 'this') or (tok_strs and tok_strs[0] in ('self', 'this')):
                 continue
             parsed_p = _parse_param(p)
-            params.append((parsed_p.type, parsed_p.name))
-            user_params.append((parsed_p.type, parsed_p.name))
+            params.append(parsed_p)
+            user_params.append(parsed_p)
 
         all_params = [(f'{name}*', 'self')] + params
 
@@ -74,17 +121,23 @@ def visit(node: gram.ASTNode) -> ClassDecl:
         if m_name in ('__init__', 'init') and init_func is None:
             init_func = (m_name, user_params)
 
-    ctor_params = init_func[1] if init_func else []
-    ctor_call_args = [p[1] for p in ctor_params]
-    ctor_fn_name = f'{name}_create'
-    ctor_fn = Function(ctor_fn_name, {}, name, ctor_params, privacity='public')
-
+    from core.processor.objects.function import FunctionParam
     if init_func:
+        ctor_params = init_func[1]
+        ctor_call_args = [p[1] for p in ctor_params]
         init_m_name = init_func[0]
         args_str = (', ' + ', '.join(ctor_call_args)) if ctor_call_args else ''
         init_call = f'{name}_{init_m_name}(&self{args_str});'
+    elif fields:
+        ctor_params = [FunctionParam(f['type'], f['name'], has_default=True, default=0) for f in fields]
+        field_assignments = '\n'.join([f'    self.{f["name"]} = {f["name"]};' for f in fields])
+        init_call = field_assignments
     else:
+        ctor_params = []
         init_call = ''
+
+    ctor_fn_name = f'{name}_create'
+    ctor_fn = Function(ctor_fn_name, {}, name, ctor_params, privacity='public')
 
     from core.backend.c.visitors.variable import convert_type
     c_param_decls = [f'{convert_type(p[0])} {p[1]}' for p in ctor_params]

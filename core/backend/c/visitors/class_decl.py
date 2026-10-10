@@ -11,8 +11,8 @@ def visit(class_obj: ClassDecl, processor: Callable):
     for f in class_obj.fields:
         f_name = f['name']
         f_type = convert_type(f['type'])
-        if f_type in ('', 'any', 'auto'):
-            f_type = 'void*' if 'handle' in f_name.lower() or 'ptr' in f_name.lower() else 'int'
+        if not f_type or f_type in ('any', 'auto'):
+            f_type = 'void*'
         fields_code.append(f'    {f_type} {f_name};')
 
     if not fields_code:

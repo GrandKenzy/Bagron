@@ -40,7 +40,6 @@ KEYWORD_SPECIFIC_COLORS = {
     '__middle_t__': '#3B82F6',
     '__double_t__': '#3B82F6',
     '__char_t__': '#3B82F6',
-    '__str_t__': '#3B82F6',
     '__bool_t__': '#3B82F6',
     '__ptr_t__': '#3B82F6',
     '__void_t__': '#3B82F6',
@@ -57,11 +56,6 @@ KEYWORD_SPECIFIC_COLORS = {
     'for': '#D16969',
     'in': '#D16969',
     'ran': '#D16969',
-    'rand': '#D16969',
-    'unsafe': '#B03A2E',
-    'try': '#B03A2E',
-    'catch': '#B03A2E',
-    'lambda': '#B03A2E',
     '__init__': '#E2B93D',
     '__new__': '#E2B93D',
     '__fronted__': '#E2B93D',
@@ -107,7 +101,6 @@ INTRINSIC_TYPES = [
     '__middle_t__',
     '__double_t__',
     '__char_t__',
-    '__str_t__',
     '__bool_t__',
     '__ptr_t__',
     '__void_t__',
@@ -134,7 +127,6 @@ TYPES = list(INTRINSIC_TYPES) + [
     'uint16',
     'uint32',
     'uint64',
-    'str',
     'ptr',
     'bool',
     'type',
@@ -147,20 +139,13 @@ ADVANCE_TYPES = [
     'enum'
 ]
 
-SPECIAL_KEYWORDS = [
-    'lambda',
-    'unsafe',
-    'try',
-    'catch',
-]
-
 KEYWORDS_BY_GROUP = {
-    'imports': ['include', 'import', 'object'],
-    'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLImit', 'StackLimit'],
+    'imports': ['include', 'import', 'object', 'declare'],
+    'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLimit'],
     'properties': ['mode'],
     'privacity': ['public', 'private'],
     'conditional_statement': ['if', 'elif', 'else', 'not'],
-    'loops': ['for', 'ran', 'rand', 'in'],
+    'loops': ['for', 'ran', 'in'],
     'keywords': ['as', 'clause', 'property', 'return', '__init__', '__new__', '__fronted__', '__setv__', '__member__', '__method__', 'pass', 'this', 'self', '__size__', '__inline__', '__slot__', '__type__', '__items__', '__dtype__', '__getter__', '__setter__', '__getitem__', '__setitem__', '__const__', '__visibility__', 'Type', 'type', 'struct', 'enum', 'method', 'class'],
 }
 

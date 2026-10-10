@@ -58,6 +58,3 @@ class EGL_PARAMS(gram.RuleItem):
         ),
         close=gram.Token.RPAREN
     )
-
-EC_PARAM = EGL_PARAM
-EC_PARAMS = EGL_PARAMS

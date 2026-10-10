@@ -25,5 +25,3 @@ class EGL_VAR_DECL(gram.RuleItem):
             gram.MatchToken('COMMENT')
         )
     )
-
-EC_VAR_DECL = EGL_VAR_DECL

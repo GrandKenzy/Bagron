@@ -113,7 +113,7 @@ def mangle_module_symbols(mod_ast: gram.ASTProgram, mod_name: str) -> dict[str, 
         if node.name in ('EGL_FUNC_DECL', 'func declaration'):
             for t in getattr(node, 'tokens', []):
                 val_s = str(t.value)
-                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', '__inline__', 'void', 'int', 'int8', 'int16', 'int32', 'int64', 'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'float', 'double', 'char', 'bool', 'str', 'ptr')):
+                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', '__inline__', 'void', 'int', 'int8', 'int16', 'int32', 'int64', 'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'float', 'double', 'char', 'bool', 'ptr')):
                     orig = val_s
                     mangled = f'inmodule_{mod_name}_{orig}'
                     symbol_map[orig] = mangled
@@ -122,7 +122,7 @@ def mangle_module_symbols(mod_ast: gram.ASTProgram, mod_name: str) -> dict[str, 
         elif node.name in ('EGL_CLASS_DECL', 'class declaration'):
             for t in getattr(node, 'tokens', []):
                 val_s = str(t.value)
-                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', 'class')):
+                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', 'class', 'struct')):
                     orig = val_s
                     mangled = f'inmodule_{mod_name}_{orig}'
                     symbol_map[orig] = mangled
@@ -130,12 +130,28 @@ def mangle_module_symbols(mod_ast: gram.ASTProgram, mod_name: str) -> dict[str, 
                     break
     return symbol_map
 
+def scan_declarations(ast: gram.ASTProgram) -> dict[str, str]:
+    declarations = {}
+    for node in ast.walk():
+        if node.name in ('EGL_DECLARE', 'declare'):
+            toks = [str(getattr(t, 'value', t)) for t in getattr(node, 'all_tokens', [])]
+            if 'as' in toks:
+                as_idx = toks.index('as')
+                target = ''.join(toks[1:as_idx]).replace(' ', '')
+                alias = toks[as_idx + 1] if as_idx + 1 < len(toks) else ''
+                if target and alias:
+                    declarations[alias] = target
+    return declarations
+
 def rewrite_mangled_calls(ast: gram.ASTProgram, mangled_map: dict[str, str], module_aliases: dict[str, str]):
     for node in ast.walk():
         if node.name in ('EGL_CALL', 'call') and getattr(node, 'tokens', None):
             for t in node.tokens:
                 name_str = str(t.value)
-                if name_str in mangled_map:
+                if f'{name_str}_create' in mangled_map:
+                    t.value = mangled_map[f'{name_str}_create']
+                    break
+                elif name_str in mangled_map:
                     t.value = mangled_map[name_str]
                     break
         elif node.name in ('EGL_METHOD_CALL', 'method call') and len(getattr(node, 'tokens', [])) >= 3:
@@ -143,7 +159,13 @@ def rewrite_mangled_calls(ast: gram.ASTProgram, mangled_map: dict[str, str], mod
             method = str(node.tokens[2].value)
             actual_mod = module_aliases.get(target, target)
             qualified_key = f'{actual_mod}.{method}'
-            if qualified_key in mangled_map:
+            if f'{qualified_key}_create' in mangled_map:
+                new_func = mangled_map[f'{qualified_key}_create']
+                node.name = 'EGL_CALL'
+                tok = node.tokens[0]
+                tok.value = new_func
+                node.tokens = [tok]
+            elif qualified_key in mangled_map:
                 new_func = mangled_map[qualified_key]
                 node.name = 'EGL_CALL'
                 tok = node.tokens[0]
@@ -210,6 +232,29 @@ def compile_project(
                 pending_imports.append(mi)
 
         module_asts.append((mod_name, mod_ast))
+
+    main_declarations = scan_declarations(main_ast)
+    for mod_name, mod_ast in module_asts:
+        main_declarations.update(scan_declarations(mod_ast))
+
+    from core.processor.type_system import register_type, CUSTOM_TYPES
+    for alias, target in main_declarations.items():
+        matched_sym = None
+        for sym_k, sym_v in all_mangled_symbols.items():
+            if sym_k.lower() == target.lower():
+                matched_sym = sym_v
+                break
+        if not matched_sym:
+            matched_sym = all_mangled_symbols.get(target)
+
+        if matched_sym:
+            all_mangled_symbols[alias] = matched_sym
+            all_mangled_symbols[f'{alias}_create'] = f'{matched_sym}_create'
+            all_mangled_symbols[f'{target}_create'] = f'{matched_sym}_create'
+            register_type(alias, matched_sym)
+            if alias in CUSTOM_TYPES:
+                CUSTOM_TYPES[alias]['c_type'] = matched_sym
+                CUSTOM_TYPES[alias]['is_class'] = True
 
     for mod_name, mod_ast in module_asts:
         rewrite_mangled_calls(mod_ast, all_mangled_symbols, module_aliases)

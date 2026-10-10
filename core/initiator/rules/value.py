@@ -8,5 +8,3 @@ class EGL_VALUE(gram.RuleItem):
         gram.MatchToken('IDENT'),
         gram.MatchToken('STRING'),
     )
-
-EC_VALUE = EGL_VALUE

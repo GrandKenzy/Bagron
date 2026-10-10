@@ -10,16 +10,12 @@ def visit(node: gram.ASTNode, parent_scope: Object | None = None) -> ForStatemen
         mode_vals = [str(v.value if hasattr(v, 'value') else v) for v in mode_node.values]
         if 'ran' in mode_vals:
             mode = 'ran'
-        elif 'rand' in mode_vals:
-            mode = 'rand'
         else:
             mode = 'in'
     elif len(node.values) > 2:
         val2 = str(node.values[2].value if hasattr(node.values[2], 'value') else node.values[2])
         if 'ran' in val2:
             mode = 'ran'
-        elif 'rand' in val2:
-            mode = 'rand'
     
     expr_targets = []
     body_stmts = []

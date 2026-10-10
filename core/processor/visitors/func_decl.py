@@ -47,12 +47,12 @@ def parse_body_statements(statements: list[gram.ASTNode], is_inline: bool = Fals
     returned = None
     inline_target = None
     for statement in statements:
-        if statement.name in ('EGL_STATEMENT', 'EC_STATEMENT', 'statement') and statement.children:
+        if statement.name in ('EGL_STATEMENT', 'statement') and statement.children:
             statement = statement.children[0]
-        if statement.name in ('EGL_VAR_DECL', 'EC_VAR_DECL', 'var declaration'):
+        if statement.name in ('EGL_VAR_DECL', 'var declaration'):
             v = var_decl.visit(statement).ignore()
             body[v] = 'Variable'
-        elif statement.name in ('EGL_RETURN', 'EC_RETURN', 'return'):
+        elif statement.name in ('EGL_RETURN', 'return'):
             mc_nodes = statement.find('EGL_METHOD_CALL')
             c_nodes = statement.find('EGL_CALL')
             if mc_nodes:
@@ -171,10 +171,10 @@ def visit(node: gram.ASTNode):
     inline_target = None
 
     for child in node.children:
-        if child.name in ('EGL_PARAMS', 'EC_PARAMS', 'ec_params'):
+        if child.name in ('EGL_PARAMS', 'params'):
             for param in child.children:
                 params.append(_parse_param(param))
-        elif child.name in ('EGL_FUNC_BODY', 'EC_FUNC_BODY', 'func body'):
+        elif child.name in ('EGL_FUNC_BODY', 'func body'):
             parsed_b, parsed_ret, parsed_inline = parse_body_statements(child.children, is_inline)
             body.update(parsed_b)
             if parsed_ret:
@@ -183,7 +183,7 @@ def visit(node: gram.ASTNode):
                 inline_target = parsed_inline
 
     if returned is None:
-        return_nodes = node.find('EGL_RETURN') or node.find('EC_RETURN') or node.find('return')
+        return_nodes = node.find('EGL_RETURN') or node.find('return')
         if return_nodes:
             stmt_node = return_nodes[0]
             mc_nodes = stmt_node.find('EGL_METHOD_CALL')

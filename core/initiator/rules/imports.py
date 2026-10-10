@@ -48,4 +48,27 @@ class EGL_OBJECT(gram.RuleItem):
         )
     )
 
-EGL_CLASS = EGL_OBJECT
+class EGL_DECLARE(gram.RuleItem):
+    name = "EGL_DECLARE"
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.MatchKeyword('declare'),
+        gram.Alt(
+            gram.Seq(
+                gram.MatchToken('IDENT'),
+                gram.MatchToken(gram.Token.DOT),
+                gram.MatchToken('IDENT'),
+            ),
+            gram.MatchToken('IDENT'),
+        ),
+        gram.MatchKeyword('as'),
+        gram.MatchToken('IDENT'),
+        gram.Opt(gram.MatchToken('COMMENT'))
+    )
+
+__all__ = [
+    'EGL_IMPORT',
+    'EGL_INCLUDE',
+    'EGL_OBJECT',
+    'EGL_DECLARE',
+]

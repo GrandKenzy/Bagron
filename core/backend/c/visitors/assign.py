@@ -25,7 +25,7 @@ def visit(assign: Assign, block: Function | None = None):
         resolved.uses += 1
         if resolved.is_pointer:
             val_resolved = resolve_variable(val_str, block)
-            if fmt_val == 'NULL' or fmt_val.startswith('&') or resolved.type == 'ptr' or (val_resolved and val_resolved.is_pointer):
+            if fmt_val == 'NULL' or fmt_val.startswith('&') or fmt_val.startswith('"') or resolved.type in ('ptr', 'pstring', 'chain') or convert_type(resolved.type) == 'char*' or (val_resolved and val_resolved.is_pointer):
                 assign.compiled = f'{resolved.name} = {fmt_val};'
             else:
                 assign.compiled = f'*{resolved.name} = {fmt_val};'

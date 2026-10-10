@@ -2,6 +2,7 @@ clause Target 'egl-c'
 clause Visibility "private"
 include "stdio.h" as C_STDIO
 include "stdlib.h" as C_STDLIB
+include "string.h" as STRING_C
 
 public struct Type int:
     __int_t__ value
@@ -72,22 +73,27 @@ public struct Type buffer_t:
     __void_p_t__ value = C_STDLIB.malloc(T.size * S)
 
 
-; public class str:
-;     void __new__(self):
-;         __void_p_t__ __char_t__ value 
-;         value = __fronted__
-;         __void_p_t__ __char_t__ self._ptr
-;         __size_t__ size = STRING_C.strlen(value)
-;         self._ptr = C_STDLIB.malloc((char.size * size) + 1)
-;         __size_t__ self._len = size
-;         STRING_C.strcpy(self._ptr, value)
-;     void __init__(self):
-;         pass
-;     void __size__(self):
-;         return self._len + 1
-;     @method
-;     int len(self):
-;         return self.str
+public class str:
+    ptr _ptr
+    uint64 _len
+
+    void __new__(self):
+        __void_p_t__ __char_t__ value 
+        value = __fronted__ 
+        __size_t__ size = STRING_C.strlen(value)
+        self._ptr = C_STDLIB.malloc((char.size * size) + 1)
+        self._len = size
+        STRING_C.strcpy(self._ptr, value)
+
+    void __init__(self):
+        pass
+
+    int __size__(self): 
+        return self._len + 1
+
+    @method
+    int len(self):
+        return self._len
         
 
 

@@ -89,7 +89,7 @@ def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
     elif c_type in ('float', 'double', '_Float16'):
         return isinstance(value, (float, int)) and not isinstance(value, bool)
-    elif c_type in ('char*', 'str'):
+    elif c_type == 'char*':
         return isinstance(value, str)
     elif c_type == 'char':
         if isinstance(value, str):
@@ -121,6 +121,21 @@ def same_type(ref: list[str] | Variable, type: str):
 def visit(variable: Variable, block: Function | None = None):
     if variable.type == 'type':
         variable.compiled = ''
+        return
+
+    if variable.name.startswith(('self.', 'this.')):
+        arrow_target = variable.name.replace('self.', 'self->').replace('this.', 'this->')
+        if hasattr(variable.value, '__class__') and variable.value.__class__.__name__ == 'Call':
+            from core.backend.c.deffunc import deffunc
+            compiled_call = deffunc(variable.value.name, variable.value.args, getattr(variable.value, 'kwargs', {}), is_statement=False, block=block)
+            variable.value = compiled_call.compiled
+        elif hasattr(variable.value, '__class__') and variable.value.__class__.__name__ == 'MethodCall':
+            from core.backend.c.visitors import method_call
+            compiled_call = method_call.visit(variable.value, is_statement=False, block=block)
+            variable.value = compiled_call
+        from core.backend.c.visitors.expression import format_expression
+        val = format_expression(variable.value, block) if variable.value is not None else 'NULL'
+        variable.compiled = f'{arrow_target} = {val};'
         return
 
     if hasattr(variable.value, '__class__') and variable.value.__class__.__name__ == 'Call':
@@ -161,11 +176,15 @@ def visit(variable: Variable, block: Function | None = None):
     value = variable.value
     from core.backend.c.visitors.expression import format_expression
     if value is None or str(getattr(value, 'value', value)).strip() in ('Null', 'None', 'null', 'NULL'):
-        value = 'NULL'
-    elif isinstance(value, str) and variable.type != 'str':
+        from core.processor.type_system import CUSTOM_TYPES
+        if variable.type in CUSTOM_TYPES and CUSTOM_TYPES[variable.type].get('is_class'):
+            value = '{0}'
+        else:
+            value = 'NULL'
+    elif isinstance(value, str) and convert_type(variable.type) != 'char*':
         value = format_expression(value, block)
 
-    if variable.type == 'str':
+    if variable.type in ('pstring', 'chain') or convert_type(variable.type) == 'char*':
         val_clean = str(value).strip('\"\'')
         value = f'"{val_clean}"'
         if variable.fixed_size:
@@ -173,7 +192,7 @@ def visit(variable: Variable, block: Function | None = None):
             return
         variable.compiled = f'{"static " if variable.privacity == "private" else ""}char* {variable.name} = {value};'
         return
-    elif variable.type == 'array' or variable.type == 'chain' or (variable.fixed_size and variable.type != 'str'):
+    elif variable.type == 'array' or (variable.fixed_size and convert_type(variable.type) != 'char*'):
         elem_t = convert_type(getattr(variable, 'element_type', None) or 'int')
         if elem_t == 'char' and isinstance(value, str) and (value.startswith('"') or not value.startswith("'")):
             val_clean = str(value).strip('\"\'')

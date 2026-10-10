@@ -57,6 +57,3 @@ class EGL_FUNC_DECL(gram.RuleItem):
             gram.Ref(EGL_FUNC_BODY),
         )
     )
-
-EC_FUNC_BODY = EGL_FUNC_BODY
-EC_FUNC_DECL = EGL_FUNC_DECL

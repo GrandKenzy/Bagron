@@ -13,6 +13,7 @@ grammar = {
         gram.Ref(rules.EGL_FOR_STATEMENT),
         gram.Ref(rules.EGL_INCLUDE),
         gram.Ref(rules.EGL_IMPORT),
+        gram.Ref(rules.EGL_DECLARE),
         gram.Ref(rules.EGL_OBJECT),
         gram.Ref(rules.EGL_CLASS_DECL),
         gram.Ref(rules.EGL_CLAUSE),
