@@ -13,7 +13,14 @@ class CompiledCall:
 
 def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
     from core.processor.type_system import get_format_specifier
-    raw_str = str(arg.value if hasattr(arg, 'value') else arg).strip()
+    if arg is None:
+        return '%p', 'NULL'
+    raw_val = arg.value if hasattr(arg, 'value') else arg
+    if raw_val is None:
+        return '%p', 'NULL'
+    raw_str = str(raw_val).strip()
+    if raw_str in ('Null', 'None', 'null', 'NULL'):
+        return '%p', 'NULL'
     if (raw_str.startswith('"') and raw_str.endswith('"')) or (raw_str.startswith("'") and raw_str.endswith("'")):
         clean_val = raw_str[1:-1]
         return '%s', f'"{clean_val}"'
@@ -99,6 +106,22 @@ def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
         return '%s', fmt_expr
     return '%d', fmt_expr
 
+def _format_call_arg(a: Any, block: Any = None) -> str:
+    if a is None:
+        return 'NULL'
+    raw_val = a.value if hasattr(a, 'value') else a
+    if raw_val is None:
+        return 'NULL'
+    a_str = str(raw_val).strip()
+    if a_str in ('Null', 'None', 'null', 'NULL'):
+        return 'NULL'
+    resolved = resolve_variable(a_str, block)
+    if resolved:
+        resolved.uses += 1
+        return resolved.name
+    from core.backend.c.visitors.expression import format_expression
+    return format_expression(a, block)
+
 def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: bool = False, block: Any = None) -> CompiledCall:
     import core.backend.c as c_backend
     if isinstance(kwargs, bool):
@@ -182,40 +205,16 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
                 var_vals = bound.get(p.name, [])
                 if isinstance(var_vals, list):
                     for a in var_vals:
-                        a_str = str(a.value if hasattr(a, 'value') else a)
-                        resolved = resolve_variable(a_str, block)
-                        if resolved:
-                            resolved.uses += 1
-                            compiled_args.append(resolved.name)
-                        else:
-                            compiled_args.append(a_str)
+                        compiled_args.append(_format_call_arg(a, block))
             else:
                 val = bound.get(p.name)
                 if val is not None:
-                    a_str = str(val.value if hasattr(val, 'value') else val)
-                    resolved = resolve_variable(a_str, block)
-                    if resolved:
-                        resolved.uses += 1
-                        compiled_args.append(resolved.name)
-                    else:
-                        compiled_args.append(a_str)
+                    compiled_args.append(_format_call_arg(val, block))
         for extra in bound.get('_extra_args', []):
-            a_str = str(extra.value if hasattr(extra, 'value') else extra)
-            resolved = resolve_variable(a_str, block)
-            if resolved:
-                resolved.uses += 1
-                compiled_args.append(resolved.name)
-            else:
-                compiled_args.append(a_str)
+            compiled_args.append(_format_call_arg(extra, block))
     else:
         for a in args:
-            a_str = str(a.value if hasattr(a, 'value') else a)
-            resolved = resolve_variable(a_str, block)
-            if resolved:
-                resolved.uses += 1
-                compiled_args.append(resolved.name)
-            else:
-                compiled_args.append(a_str)
+            compiled_args.append(_format_call_arg(a, block))
     call_expr = f'{clean_name}({", ".join(compiled_args)})'
     compiled = (call_expr + ';') if is_statement else call_expr
     return CompiledCall(clean_name, args, ret_type, is_ptr, target_type, compiled)

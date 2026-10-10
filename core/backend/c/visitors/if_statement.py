@@ -17,6 +17,8 @@ def _compile_condition(condition: any, block: Function | None = None) -> str:
             val = str(p.value if hasattr(p, 'value') else p)
             if val == 'not':
                 parts.append('!')
+            elif val in ('Null', 'None', 'null', 'NULL'):
+                parts.append('NULL')
             else:
                 resolved = resolve_variable(val, block)
                 if resolved:
@@ -26,6 +28,8 @@ def _compile_condition(condition: any, block: Function | None = None) -> str:
                     parts.append(val)
         return ' '.join(parts)
     cond_str = str(condition.value if hasattr(condition, 'value') else condition)
+    if cond_str in ('Null', 'None', 'null', 'NULL'):
+        return 'NULL'
     resolved = resolve_variable(cond_str, block)
     if resolved:
         resolved.uses += 1

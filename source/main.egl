@@ -4,9 +4,6 @@ include "stdio"
 include "stdlib" as C_STDLIB
 import myModule
 import testlib
+import winapi
 
-int val = 21
-int res = myModule.saludar(val)
-int trip = testlib.triplicar(14)
-print("Resultado de saludar:", res)
-print("Resultado de triplicar:", trip)
+

@@ -12,7 +12,7 @@ public struct Type int8:
 public struct Type int16:
     __int16_t__ value
 
-publc struct Type int32:
+public struct Type int32:
     __int32_t__ value
 
 public struct Type int64:

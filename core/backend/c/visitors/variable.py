@@ -82,6 +82,11 @@ def convert_type(type: str) -> str:
     return resolve_c_type(type)
 
 def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
+    if value is None:
+        return True
+    val_str = str(getattr(value, 'value', value)).strip()
+    if val_str in ('Null', 'None', 'null', 'NULL'):
+        return True
     c_type = convert_type(type)
     if 'int' in c_type:
         return isinstance(value, int) and not isinstance(value, bool)
@@ -90,7 +95,13 @@ def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
     elif c_type in ('char*', 'str'):
         return isinstance(value, str)
     elif c_type == 'char':
-        return isinstance(value, str) and len(value.strip('\'')) == 1
+        if isinstance(value, str):
+            c_val = value.strip('\'"')
+            if c_val in ('', '\\0', '\\n', '\\r', '\\t', '\\\\') or len(c_val) == 1:
+                return True
+            if value.startswith("'") and value.endswith("'"):
+                return True
+        return False
     elif c_type == 'bool':
         return isinstance(value, bool) or (isinstance(value, str) and value.lower() in ('true', 'false'))
     elif c_type in ('void*', 'ptr') or c_type.endswith('*'):
@@ -152,7 +163,9 @@ def visit(variable: Variable, block: Function | None = None):
     
     value = variable.value
     from core.backend.c.visitors.expression import format_expression
-    if isinstance(value, str) and variable.type != 'str':
+    if value is None or str(getattr(value, 'value', value)).strip() in ('Null', 'None', 'null', 'NULL'):
+        value = 'NULL'
+    elif isinstance(value, str) and variable.type != 'str':
         value = format_expression(value, block)
 
     if variable.type == 'str':
@@ -179,11 +192,15 @@ def visit(variable: Variable, block: Function | None = None):
             variable.compiled = f'{"static " if variable.privacity == "private" else ""}{elem_t} {variable.name}[{variable.fixed_size}];'
         return
     elif t == 'char':
-        value = f"'{value}'"
+        clean_c = str(value).strip('\'"')
+        if not clean_c:
+            value = "'\\0'"
+        else:
+            value = f"'{clean_c}'"
     elif t == 'bool':
         value = 'true' if (value is True or str(value).lower() == 'true') else 'false'
     
-    is_expr = isinstance(value, str) and ('(' in value or '.' in value or '->' in value or '[' in value)
+    is_expr = isinstance(value, str) and ('(' in value or '.' in value or '->' in value or '[' in value or value == 'NULL')
     if not reference and not is_expr and not type_is_compatible(value, t):
         raise Exception(f'Value {value} is not compatible with type {variable.type}')
     elif reference:

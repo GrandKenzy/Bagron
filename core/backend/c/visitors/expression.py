@@ -98,15 +98,20 @@ def _check_value_access(match: re.Match, block: Function | None = None) -> str:
     return match.group(0)
 
 def format_expression(raw: Any, block: Function | None = None) -> str:
-    str_raw = str(raw.value if hasattr(raw, 'value') else raw).strip()
+    if raw is None:
+        return 'NULL'
+    raw_val = raw.value if hasattr(raw, 'value') else raw
+    if raw_val is None:
+        return 'NULL'
+    str_raw = str(raw_val).strip()
+    if str_raw in ('Null', 'None', 'null', 'NULL'):
+        return 'NULL'
     if (str_raw.startswith('"') and str_raw.endswith('"')) or (str_raw.startswith("'") and str_raw.endswith("'")):
         return str_raw
     if str_raw.startswith(('this.', 'self.')):
         return str_raw
     if str_raw.isdigit() or (str_raw.startswith('-') and str_raw[1:].isdigit()):
         return str_raw
-    if str_raw == 'Null':
-        return 'NULL'
     if str_raw.lower() in ('true', 'false'):
         return str_raw.lower()
 
@@ -117,8 +122,11 @@ def format_expression(raw: Any, block: Function | None = None) -> str:
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.len\b', lambda m: _replace_len(m, block), transformed)
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.(?:__const__|const)\b', lambda m: _replace_const(m, block), transformed)
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.(?:__visibility__|visibility)\b', lambda m: _replace_visibility(m, block), transformed)
+    transformed = re.sub(r'\b(Null|None)\b', 'NULL', transformed)
 
     if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', transformed):
+        if transformed in ('NULL', 'true', 'false'):
+            return transformed
         resolved = resolve_variable(transformed, block)
         if resolved:
             resolved.uses += 1

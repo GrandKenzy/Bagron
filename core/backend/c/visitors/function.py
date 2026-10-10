@@ -11,6 +11,8 @@ from core.backend.c.visitors.variable import (
 
 
 def _format_c_literal(value: int | float | str, type: str) -> str:
+    if value is None or str(getattr(value, 'value', value)).strip() in ('Null', 'None', 'null', 'NULL'):
+        return 'NULL'
     if type == 'char':
         if not isinstance(value, str):
             raise TypeError(f'El valor {value!r} no puede emitirse como literal char')
@@ -61,6 +63,8 @@ def visit(function: Function, processor: Callable):
     
     if not ret and function.return_type != 'void':
         raise RuntimeError('Se prometió un retorno de tipo', function.return_type, 'pero no se encontró')
+    elif not ret:
+        returned = 'void'
     
     if ret and ret.is_identifier():
         v = Variable('temp', ret.value, function.return_type).ignore()
@@ -84,25 +88,29 @@ def visit(function: Function, processor: Callable):
         return_expression = str(ret.value)
     elif ret:
         val_str = str(ret.value)
-        is_expr = isinstance(ret.value, str) and any(op in val_str for op in ('+', '-', '*', '/', '%', '==', '!=', '<', '>', '(', ')', '.'))
-        if is_expr:
+        if ret.value is None or str(getattr(ret.value, 'value', ret.value)).strip() in ('Null', 'None', 'null', 'NULL'):
             returned = function.return_type
-            from core.backend.c.visitors.expression import format_expression
-            return_expression = format_expression(val_str, function)
+            return_expression = 'NULL'
         else:
-            literal_is_compatible = (
-                isinstance(ret.value, str) and len(ret.value) == 1
-                if function.return_type == 'char'
-                else type_is_compatible(ret.value, function.return_type)
-            )
-            if not literal_is_compatible:
-                raise TypeError(
-                    f'El literal de retorno {ret.value!r} no es compatible con '
-                    f'el tipo {function.return_type!r} en {function.name}'
+            is_expr = isinstance(ret.value, str) and any(op in val_str for op in ('+', '-', '*', '/', '%', '==', '!=', '<', '>', '(', ')', '.'))
+            if is_expr:
+                returned = function.return_type
+                from core.backend.c.visitors.expression import format_expression
+                return_expression = format_expression(val_str, function)
+            else:
+                literal_is_compatible = (
+                    isinstance(ret.value, str) and len(ret.value) == 1
+                    if function.return_type == 'char'
+                    else type_is_compatible(ret.value, function.return_type)
                 )
+                if not literal_is_compatible:
+                    raise TypeError(
+                        f'El literal de retorno {ret.value!r} no es compatible con '
+                        f'el tipo {function.return_type!r} en {function.name}'
+                    )
 
-            returned = function.return_type
-            return_expression = _format_c_literal(ret.value, function.return_type)
+                returned = function.return_type
+                return_expression = _format_c_literal(ret.value, function.return_type)
     
     
     returned_c = convert_type(returned)

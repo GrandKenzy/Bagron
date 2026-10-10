@@ -7,7 +7,7 @@ def visit(assign: Assign, block: Function | None = None):
 
     from core.backend.c.visitors.variable import convert_type, resolve_variable
     from core.backend.c.visitors.expression import format_expression
-    fmt_val = format_expression(val_str, block)
+    fmt_val = format_expression(assign.value, block)
 
     if '[' in target_str and target_str.endswith(']'):
         base_name, idx_part = target_str[:-1].split('[', 1)
@@ -25,7 +25,7 @@ def visit(assign: Assign, block: Function | None = None):
         resolved.uses += 1
         if resolved.is_pointer:
             val_resolved = resolve_variable(val_str, block)
-            if fmt_val.startswith('&') or resolved.type == 'ptr' or (val_resolved and val_resolved.is_pointer):
+            if fmt_val == 'NULL' or fmt_val.startswith('&') or resolved.type == 'ptr' or (val_resolved and val_resolved.is_pointer):
                 assign.compiled = f'{resolved.name} = {fmt_val};'
             else:
                 assign.compiled = f'*{resolved.name} = {fmt_val};'
