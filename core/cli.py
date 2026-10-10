@@ -10,17 +10,21 @@ def print_help():
     print("Uso:")
     print("  egl compile [ruta] [-o <salida.c>] [--run] [--cc <compilador>]")
     print("  egl run [ruta] [-o <salida.c>] [--cc <compilador>]")
+    print("  egl extension [--install] [-o <ruta.vsix>]")
     print("  egl --version")
     print("  egl --help")
     print("")
     print("Comandos:")
     print("  compile [ruta]   Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
     print("  run [ruta]       Compila y ejecuta el proyecto directamente.")
+    print("  extension        Genera la extensión oficial de VS Code (.vsix) con sintaxis y tema Noble Dark.")
+    print("                   Usa '--install' para instalarla directamente en Visual Studio Code.")
     print("")
     print("Opciones:")
     print("  -r, --run        Compila el archivo C generado con GCC y lo ejecuta inmediatamente.")
     print("  -o, --output     Nombre del archivo C monolítico generado (default: program.c).")
     print("  --cc             Compilador de C a utilizar para --run (default: gcc).")
+    print("  --install        Instala automáticamente el paquete .vsix en VS Code.")
     print("  -v, --version    Muestra la versión de EGL.")
     print("  -h, --help       Muestra este mensaje de ayuda.")
 
@@ -39,6 +43,27 @@ def main(args: list[str] | None = None) -> int:
     command = args[0]
     do_run = False
     start_idx = 1
+
+    if command in ('extension', 'vsix', 'syntax'):
+        do_install = '--install' in args[1:] or '-i' in args[1:]
+        out_vsix = None
+        i = 1
+        while i < len(args):
+            if args[i] in ('-o', '--output') and i + 1 < len(args):
+                out_vsix = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        from core.extension import compile_extension, install_extension
+        print("[EGL] Empaquetando extensión de VS Code para Easy-C...", flush=True)
+        vsix_file = compile_extension(out_vsix)
+        print(f"[EGL] Extensión VSIX generada exitosamente en: '{vsix_file}'", flush=True)
+        if do_install:
+            print("[EGL] Instalando extensión en Visual Studio Code...", flush=True)
+            ok, msg = install_extension(vsix_file)
+            print(f"[EGL] {msg}", flush=True)
+            return 0 if ok else 1
+        return 0
 
     if command in ('compile', 'build'):
         start_idx = 1
