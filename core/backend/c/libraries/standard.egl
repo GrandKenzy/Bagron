@@ -2,7 +2,6 @@ clause Target 'egl-c'
 clause Visibility "private"
 include "stdio.h" as C_STDIO
 include "stdlib.h" as C_STDLIB
-include "string.h" as STRING_C
 
 public struct Type int:
     __int_t__ value
@@ -13,7 +12,7 @@ public struct Type int8:
 public struct Type int16:
     __int16_t__ value
 
-public struct Type int32:
+publc struct Type int32:
     __int32_t__ value
 
 public struct Type int64:
@@ -57,19 +56,19 @@ public struct Type array:
     __slot__ int N
     __arrof__[T, N] value
 
-struct Type chain:
+public struct Type chain:
     __slot__ int64 N
     __arrof__[__char_t__, N] value
 
-struct Type pstring:
+public struct Type pstring:
     __void_p_t__ __char_t__ value
 
-struct Type pointer:
+public struct Type pointer:
     __void_p_t__ value
 
-struct Type buffer_t:
+public struct Type buffer_t:
     __slot__ __type_t__ T
-    __slot__ __int64_t__ S
+    __slot__ __uint64_t__ S
     __void_p_t__ value = C_STDLIB.malloc(T.size * S)
 
 
@@ -78,14 +77,14 @@ struct Type buffer_t:
 
 
 
-class str:
+public class str:
     void __new__(self):
         __void_p_t__ __char_t__ value 
         value = __fronted__ ; el valor que hay delante. __fronted__ solo lo guarda en compilación al igual que __slot__
         __void_p_t__ __char_t__ self._ptr ; con _ lo hacemos privado para encapsular.
-        int size = STRING_C.strlen(value)
+        __size_t__ size = STRING_C.strlen(value)
         self._ptr = C_STDLIB.malloc((char.size * size) + 1)
-        self._len = size
+        __size_t__ self._len = size
         STRING_C.strcpy(self._ptr, value)
 
     ; los métodos mágicos no requieren @method.
@@ -93,7 +92,7 @@ class str:
         pass
 
     void __size__(self): ; para cuando se llama a .size
-        return self._len
+        return self._len + 1
 
     @method
     int len(self):
