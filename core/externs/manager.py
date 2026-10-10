@@ -10,6 +10,10 @@ class ExternsManager:
         self.namespace_headers: dict[str, str] = {}
         self.base_dir = Path(__file__).resolve().parent.parent
         self.source_dir: Path | None = None
+        self.link_flags: list[str] = []
+        self.bin_files: list[str] = []
+        self.lib_dirs: list[Path] = []
+        self.include_dirs: list[Path] = []
 
     def set_source_dir(self, path: Path | str):
         self.source_dir = Path(path).resolve()
@@ -17,6 +21,32 @@ class ExternsManager:
     def clear(self):
         self.namespaces.clear()
         self.namespace_headers.clear()
+        self.link_flags.clear()
+        self.bin_files.clear()
+        self.lib_dirs.clear()
+        self.include_dirs.clear()
+
+    def _merge_meta(self, target_meta: dict, new_meta: dict, base_dir: Path):
+        if new_meta.get('header'):
+            target_meta['header'] = new_meta['header']
+        for lk in new_meta.get('links', []):
+            if lk not in target_meta.get('links', []):
+                target_meta.setdefault('links', []).append(lk)
+            if lk not in self.link_flags:
+                self.link_flags.append(lk)
+        for bn in new_meta.get('bins', []):
+            if bn not in target_meta.get('bins', []):
+                target_meta.setdefault('bins', []).append(bn)
+            if bn not in self.bin_files:
+                self.bin_files.append(bn)
+        for ld in new_meta.get('lib_dirs', []):
+            p = (base_dir / ld).resolve() if not Path(ld).is_absolute() else Path(ld).resolve()
+            if p not in self.lib_dirs:
+                self.lib_dirs.append(p)
+        for idir in new_meta.get('include_dirs', []):
+            p = (base_dir / idir).resolve() if not Path(idir).is_absolute() else Path(idir).resolve()
+            if p not in self.include_dirs:
+                self.include_dirs.append(p)
 
     def set_target(self, target: str):
         self.active_target = str(target).strip('"\'')
@@ -68,16 +98,24 @@ class ExternsManager:
             raise RuntimeError(f"Librería externa '{clean_header}' no encontrada en backend/{backend}/externs ni extends.")
 
         symbols: dict[str, dict] = {}
+        meta: dict[str, Any] = {'header': None, 'links': [], 'bins': [], 'lib_dirs': [], 'include_dirs': []}
         if extern_file:
-            bs = load_cached_symbols(extern_file)
-            if bs is None:
-                bs = parse_externs(extern_file)
-                save_cached_symbols(extern_file, bs)
+            cached = load_cached_symbols(extern_file)
+            if cached is None:
+                bs, b_meta = parse_externs(extern_file)
+                save_cached_symbols(extern_file, bs, b_meta)
+            else:
+                bs, b_meta = cached
             symbols.update(bs)
+            self._merge_meta(meta, b_meta, extern_file.parent)
 
         if extends_file:
-            es = parse_externs(extends_file)
+            es, e_meta = parse_externs(extends_file)
             symbols.update(es)
+            self._merge_meta(meta, e_meta, extends_file.parent)
+
+        if meta.get('header'):
+            c_header = meta['header']
 
         import core.backend.c as c_backend
         c_backend.add_include(c_header)
@@ -120,18 +158,58 @@ class ExternsManager:
             externs_dir = Path.cwd() / 'core' / 'backend' / backend / 'externs'
         if externs_dir.is_dir():
             for egl_file in externs_dir.glob('*.externs.egl'):
-                symbols = load_cached_symbols(egl_file)
-                if symbols is None:
-                    symbols = parse_externs(egl_file)
-                    save_cached_symbols(egl_file, symbols)
+                cached = load_cached_symbols(egl_file)
+                if cached is None:
+                    symbols, meta = parse_externs(egl_file)
+                    save_cached_symbols(egl_file, symbols, meta)
+                else:
+                    symbols, meta = cached
+                self._merge_meta({}, meta, egl_file.parent)
                 clean_name = egl_file.stem
                 if clean_name.endswith('.externs'):
                     clean_name = clean_name[:-8]
+                h_name = meta.get('header') or f'{clean_name}.h'
                 self.namespaces[clean_name] = symbols
-                self.namespace_headers[clean_name] = f'{clean_name}.h'
+                self.namespace_headers[clean_name] = h_name
                 if symbol_name in symbols:
-                    return symbols[symbol_name], f'{clean_name}.h'
+                    return symbols[symbol_name], h_name
         return None
+
+    def collect_target_conventions(self) -> dict[str, Any]:
+        backend = self.get_backend_name()
+        res = {
+            'include_dirs': list(self.include_dirs),
+            'lib_dirs': list(self.lib_dirs),
+            'link_flags': list(self.link_flags),
+            'bin_files': list(self.bin_files),
+        }
+        search_dirs = []
+        if self.source_dir:
+            search_dirs.append(self.source_dir)
+            search_dirs.append(self.source_dir / 'targets' / backend)
+            search_dirs.append(self.source_dir.parent / 'targets' / backend)
+        search_dirs.append(Path.cwd() / 'source' / 'targets' / backend)
+        search_dirs.append(Path.cwd() / 'targets' / backend)
+        search_dirs.append(Path.cwd() / 'libs')
+
+        for base in search_dirs:
+            if not base.exists():
+                continue
+            inc = base / 'include' if (base / 'include').is_dir() else (base if base.name == 'include' else None)
+            if inc and inc.is_dir() and inc.resolve() not in res['include_dirs']:
+                res['include_dirs'].append(inc.resolve())
+
+            lib = base / 'lib' if (base / 'lib').is_dir() else (base if base.name == 'lib' else None)
+            if lib and lib.is_dir() and lib.resolve() not in res['lib_dirs']:
+                res['lib_dirs'].append(lib.resolve())
+
+            bin_dir = base / 'bin' if (base / 'bin').is_dir() else (base if base.name == 'bin' else None)
+            if bin_dir and bin_dir.is_dir():
+                for f in bin_dir.glob('*'):
+                    if f.suffix.lower() in ('.dll', '.so', '.dylib') and str(f.resolve()) not in res['bin_files']:
+                        res['bin_files'].append(str(f.resolve()))
+
+        return res
 
     def bind_args(self, sym_info: dict, call_args: list, call_kwargs: dict | None = None) -> dict[str, Any]:
         call_kwargs = dict(call_kwargs or {})

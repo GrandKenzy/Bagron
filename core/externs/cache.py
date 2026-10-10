@@ -5,7 +5,7 @@ def get_cache_path(file_path: Path) -> Path:
     cache_dir = file_path.parent / '.cache'
     return cache_dir / f'{file_path.stem}.cache.json'
 
-def load_cached_symbols(file_path: Path) -> dict[str, dict] | None:
+def load_cached_symbols(file_path: Path) -> tuple[dict[str, dict], dict] | None:
     cache_path = get_cache_path(file_path)
     if not cache_path.is_file():
         return None
@@ -14,12 +14,12 @@ def load_cached_symbols(file_path: Path) -> dict[str, dict] | None:
         with open(cache_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         if data.get('mtime_ns') == current_mtime:
-            return data.get('symbols', {})
+            return data.get('symbols', {}), data.get('metadata', {})
     except Exception:
         return None
     return None
 
-def save_cached_symbols(file_path: Path, symbols: dict[str, dict]):
+def save_cached_symbols(file_path: Path, symbols: dict[str, dict], metadata: dict | None = None):
     cache_path = get_cache_path(file_path)
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -27,7 +27,8 @@ def save_cached_symbols(file_path: Path, symbols: dict[str, dict]):
         payload = {
             'mtime_ns': current_mtime,
             'source': str(file_path.name),
-            'symbols': symbols
+            'symbols': symbols,
+            'metadata': metadata or {}
         }
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(payload, f, indent=2)

@@ -1,6 +1,42 @@
 from pathlib import Path
+import re
+from typing import Any
 import gram
 from core.externs.grammar import extern_grammar
+
+def extract_directives(code: str) -> tuple[str, dict[str, Any]]:
+    metadata = {
+        'header': None,
+        'links': [],
+        'bins': [],
+        'lib_dirs': [],
+        'include_dirs': []
+    }
+    clean_lines = []
+    for line in code.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith('@'):
+            match = re.match(r'^@([A-Za-z0-9_]+)\s+(.+)$', trimmed)
+            if match:
+                directive = match.group(1).lower()
+                val = match.group(2).strip().strip('"\'')
+                if directive in ('header', 'c_header'):
+                    metadata['header'] = val
+                elif directive in ('link', 'lib', 'l'):
+                    if val not in metadata['links']:
+                        metadata['links'].append(val)
+                elif directive in ('bin', 'dll', 'so', 'dylib'):
+                    if val not in metadata['bins']:
+                        metadata['bins'].append(val)
+                elif directive in ('lib_dir', 'libdir', 'l_dir'):
+                    if val not in metadata['lib_dirs']:
+                        metadata['lib_dirs'].append(val)
+                elif directive in ('include_dir', 'includedir', 'i_dir'):
+                    if val not in metadata['include_dirs']:
+                        metadata['include_dirs'].append(val)
+            continue
+        clean_lines.append(line)
+    return '\n'.join(clean_lines), metadata
 
 def extract_func(node: gram.ASTNode) -> dict:
     vals_str = [str(v.value if hasattr(v, 'value') else v) for v in node.values]
@@ -65,8 +101,16 @@ def extract_func(node: gram.ASTNode) -> dict:
         'params': params
     }
 
-def parse_externs(source_or_file: str | Path) -> dict[str, dict]:
-    ast = gram.process(extern_grammar, source_or_file=str(source_or_file))
+def parse_externs(source_or_file: str | Path) -> tuple[dict[str, dict], dict[str, Any]]:
+    p = Path(str(source_or_file))
+    if p.is_file():
+        raw_code = p.read_text(encoding='utf-8')
+    else:
+        raw_code = str(source_or_file)
+
+    clean_code, metadata = extract_directives(raw_code)
+
+    ast = gram.process(extern_grammar, source_or_file=clean_code)
     symbols = {}
     if ast and hasattr(ast, 'body'):
         for node in ast.body:
@@ -74,4 +118,4 @@ def parse_externs(source_or_file: str | Path) -> dict[str, dict]:
             symbols[info['name']] = info
             if info['name'] != info['c_name']:
                 symbols[info['c_name']] = info
-    return symbols
+    return symbols, metadata
