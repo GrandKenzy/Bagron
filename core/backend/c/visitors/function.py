@@ -87,30 +87,40 @@ def visit(function: Function, processor: Callable):
 
         return_expression = str(ret.value)
     elif ret:
-        val_str = str(ret.value)
-        if ret.value is None or str(getattr(ret.value, 'value', ret.value)).strip() in ('Null', 'None', 'null', 'NULL'):
+        ret_val = ret.value
+        if hasattr(ret_val, '__class__') and ret_val.__class__.__name__ == 'MethodCall':
+            from core.backend.c.visitors import method_call
+            return_expression = method_call.visit(ret_val, is_statement=False, block=function)
+            returned = getattr(ret_val, 'returntype', None) or function.return_type
+        elif hasattr(ret_val, '__class__') and ret_val.__class__.__name__ == 'Call':
+            from core.backend.c.deffunc import deffunc
+            compiled_call = deffunc(ret_val.name, ret_val.args, getattr(ret_val, 'kwargs', {}), is_statement=False, block=function)
+            return_expression = compiled_call.compiled
+            returned = function.return_type
+        elif ret_val is None or str(getattr(ret_val, 'value', ret_val)).strip() in ('Null', 'None', 'null', 'NULL'):
             returned = function.return_type
             return_expression = 'NULL'
         else:
-            is_expr = isinstance(ret.value, str) and any(op in val_str for op in ('+', '-', '*', '/', '%', '==', '!=', '<', '>', '(', ')', '.'))
+            val_str = str(ret_val)
+            is_expr = isinstance(ret_val, str) and any(op in val_str for op in ('+', '-', '*', '/', '%', '==', '!=', '<', '>', '(', ')', '.'))
             if is_expr:
                 returned = function.return_type
                 from core.backend.c.visitors.expression import format_expression
                 return_expression = format_expression(val_str, function)
             else:
                 literal_is_compatible = (
-                    isinstance(ret.value, str) and len(ret.value) == 1
+                    isinstance(ret_val, str) and len(ret_val) == 1
                     if function.return_type == 'char'
-                    else type_is_compatible(ret.value, function.return_type)
+                    else type_is_compatible(ret_val, function.return_type)
                 )
                 if not literal_is_compatible:
                     raise TypeError(
-                        f'El literal de retorno {ret.value!r} no es compatible con '
+                        f'El literal de retorno {ret_val!r} no es compatible con '
                         f'el tipo {function.return_type!r} en {function.name}'
                     )
 
                 returned = function.return_type
-                return_expression = _format_c_literal(ret.value, function.return_type)
+                return_expression = _format_c_literal(ret_val, function.return_type)
     
     
     returned_c = convert_type(returned)

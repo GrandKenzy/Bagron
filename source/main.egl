@@ -1,9 +1,9 @@
 clause Target 'egl-c'
 
-include "stdio"
-include "stdlib" as C_STDLIB
-import myModule
-import testlib
-import winapi
+import sdl3
 
-winapi.create_window(Null, "Hola", "titulo", 0)
+sdl3.init(0)
+ptr win = sdl3.create_window("Ventana SDL3 en Easy-C", 640, 480, 0)
+sdl3.delay(500)
+sdl3.destroy_window(win)
+sdl3.quit()

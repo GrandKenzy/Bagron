@@ -101,6 +101,13 @@ def format_expression(raw: Any, block: Function | None = None) -> str:
     if raw is None:
         return 'NULL'
     raw_val = raw.value if hasattr(raw, 'value') else raw
+    if hasattr(raw_val, '__class__') and raw_val.__class__.__name__ == 'MethodCall':
+        from core.backend.c.visitors import method_call
+        return method_call.visit(raw_val, is_statement=False, block=block)
+    if hasattr(raw_val, '__class__') and raw_val.__class__.__name__ == 'Call':
+        from core.backend.c.deffunc import deffunc
+        compiled_call = deffunc(raw_val.name, raw_val.args, getattr(raw_val, 'kwargs', {}), is_statement=False, block=block)
+        return compiled_call.compiled
     if raw_val is None:
         return 'NULL'
     str_raw = str(raw_val).strip()

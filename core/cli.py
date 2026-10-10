@@ -214,6 +214,7 @@ def main(args: list[str] | None = None) -> int:
                 return res.returncode
 
             dest_dir = exe_name.parent
+            copied_bins = set()
             for bin_item in conventions.get('bin_files', []):
                 bin_path = Path(bin_item)
                 if not bin_path.is_file():
@@ -231,9 +232,11 @@ def main(args: list[str] | None = None) -> int:
                         bin_path = found_cand
                 if bin_path.is_file():
                     dest_file = dest_dir / bin_path.name
-                    if bin_path.resolve() != dest_file.resolve():
-                        shutil.copy2(bin_path, dest_file)
-                        print(f"[EGL] Binario desplegado: '{bin_path.name}' -> '{dest_dir.name}'", flush=True)
+                    if dest_file.name not in copied_bins:
+                        copied_bins.add(dest_file.name)
+                        if bin_path.resolve() != dest_file.resolve():
+                            shutil.copy2(bin_path, dest_file)
+                            print(f"[EGL] Binario desplegado: '{bin_path.name}' -> '{dest_dir.name}'", flush=True)
 
             if do_run:
                 print(f"[EGL] Ejecutando: '{exe_name.name}'\n--- Salida del programa ---", flush=True)

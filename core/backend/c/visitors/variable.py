@@ -17,6 +17,12 @@ def resolve_variable(name: Any, block: Function | None = None) -> Variable | Non
     str_name = str(name.value if hasattr(name, 'value') else name).strip()
     if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', str_name):
         return None
+    if block and hasattr(block, 'parameters'):
+        for p in block.parameters:
+            p_name = p[1] if isinstance(p, (list, tuple)) or hasattr(p, '__getitem__') else getattr(p, 'name', '')
+            if p_name == str_name:
+                p_type = p[0] if isinstance(p, (list, tuple)) or hasattr(p, '__getitem__') else getattr(p, 'type', '')
+                return Variable(p_name, p_name, p_type)
     if block and hasattr(block, 'get_vars'):
         for v in block.get_vars():
             if v.name == str_name:
@@ -24,15 +30,6 @@ def resolve_variable(name: Any, block: Function | None = None) -> Variable | Non
     for v in get_vars():
         if v.name == str_name:
             return v
-    best_match = None
-    best_sim = 0.0
-    for v in get_vars():
-        sim = similarity(v.name, str_name)
-        if sim > best_sim:
-            best_sim = sim
-            best_match = v
-    if best_sim >= 0.5:
-        return best_match
     return None
 
 def check_variable_defined(variable: Variable, block: Function | None = None):
