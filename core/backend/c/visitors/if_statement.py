@@ -2,8 +2,9 @@ from core.processor.objects import IfStatement, ForStatement, Call, Assign, Vari
 from core.backend.c.deffunc import deffunc
 from core.backend.c.visitors import variable, assign
 from core.backend.c.visitors.variable import resolve_variable
+from typing import Any
 
-def _compile_condition(condition: any, block: Function | None = None) -> str:
+def _compile_condition(condition: Any, block: Function | None = None) -> str:
     if isinstance(condition, (list, tuple)):
         if len(condition) == 2 and str(condition[0]) == 'not':
             var_target = str(condition[1].value if hasattr(condition[1], 'value') else condition[1])
