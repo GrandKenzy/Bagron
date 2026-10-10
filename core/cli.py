@@ -7,11 +7,30 @@ from core.externs.manager import manager
 
 VERSION = "0.2.0"
 
+def clear_cache(root_dir: Path | None = None) -> int:
+    if root_dir is None:
+        root_dir = Path(__file__).resolve().parent.parent
+    deleted = 0
+    for p in list(root_dir.rglob('*')):
+        if not p.exists():
+            continue
+        if p.is_dir() and p.name in ('__pycache__', '.cache', '.pytest_cache'):
+            shutil.rmtree(p, ignore_errors=True)
+            deleted += 1
+        elif p.is_file() and p.suffix in ('.pyc', '.pyo'):
+            try:
+                p.unlink()
+                deleted += 1
+            except Exception:
+                pass
+    return deleted
+
 def print_help():
     print("Easy-C (EGL) Compiler CLI")
     print("Uso:")
     print("  egl compile [ruta] [-o <salida.c>] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
     print("  egl run [ruta] [-o <salida.c>] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
+    print("  egl cache clear")
     print("  egl extension [--install] [-o <ruta.vsix>]")
     print("  egl --version")
     print("  egl --help")
@@ -19,6 +38,7 @@ def print_help():
     print("Comandos:")
     print("  compile [ruta]   Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
     print("  run [ruta]       Compila, construye el ejecutable y lo ejecuta directamente.")
+    print("  cache clear      Elimina archivos y directorios de caché (.cache, __pycache__, .pyc).")
     print("  extension        Genera la extensión oficial de VS Code (.vsix) con sintaxis y tema Noble Dark.")
     print("                   Usa '--install' para instalarla directamente en Visual Studio Code.")
     print("")
@@ -50,6 +70,17 @@ def main(args: list[str] | None = None) -> int:
     do_run = False
     do_build = False
     start_idx = 1
+
+    if command in ('cache', 'clean'):
+        sub = args[1].lower() if len(args) > 1 else ''
+        if command == 'clean' or sub in ('clear', 'clean', ''):
+            print("[EGL] Limpiando archivos de caché...", flush=True)
+            total = clear_cache()
+            print(f"[EGL] Caché eliminada exitosamente ({total} directorios/archivos eliminados).", flush=True)
+            return 0
+        else:
+            print(f"Error: Subcomando desconocido para cache '{sub}'. Usa 'egl cache clear'.")
+            return 1
 
     if command in ('extension', 'vsix', 'syntax'):
         do_install = '--install' in args[1:] or '-i' in args[1:]

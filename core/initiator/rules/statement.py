@@ -95,11 +95,12 @@ class EGL_IF_STATEMENT(gram.RuleItem):
         )
     )
 
-from core.initiator.rules.loops import EGL_FOR_STATEMENT
+from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_WHILE_STATEMENT
 
 EGL_STATEMENT.grammar = gram.Alt(
     gram.Ref(EGL_IF_STATEMENT),
     gram.Ref(EGL_FOR_STATEMENT),
+    gram.Ref(EGL_WHILE_STATEMENT),
     gram.Ref(EGL_VAR_DECL),
     gram.Ref(EGL_RETURN),
     gram.Ref(EGL_ASSIGN),
@@ -120,4 +121,5 @@ __all__ = [
     'EGL_ELSE_STATEMENT',
     'EGL_IF_STATEMENT',
     'EGL_FOR_STATEMENT',
+    'EGL_WHILE_STATEMENT',
 ]

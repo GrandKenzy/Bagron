@@ -13,15 +13,21 @@ def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | 
         args, _ = extract_call_args(stmt_node)
         return MethodCall(target, method, args, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_ASSIGN', 'assign'):
-        val_nodes = stmt_node.find('EGL_VALUE')
-        val = val_nodes[0].values[0] if val_nodes and val_nodes[0].values else None
+        toks = [str(t.value if hasattr(t, 'value') else t) for t in getattr(stmt_node, 'all_tokens', [])]
+        eq_idx = toks.index('=') if '=' in toks else -1
         idx_nodes = stmt_node.find('EGL_INDEX_ACCESS')
         if idx_nodes:
-            toks = [str(t.value if hasattr(t, 'value') else t) for t in getattr(stmt_node, 'all_tokens', [])]
-            eq_idx = toks.index('=') if '=' in toks else -1
             target = f'{toks[0]}[{toks[1]}]' if eq_idx > 1 else stmt_node.values[0]
         else:
             target = stmt_node.values[0]
+
+        val_nodes = stmt_node.find('EGL_VALUE')
+        if eq_idx != -1 and len(toks) > eq_idx + 2:
+            val = ' '.join(toks[eq_idx + 1:])
+        elif val_nodes and val_nodes[0].values:
+            val = val_nodes[0].values[0]
+        else:
+            val = toks[-1] if toks else None
         return Assign(target, val, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_VAR_DECL', 'EC_VAR_DECL', 'var declaration'):
         from core.processor.visitors import var_decl
@@ -31,11 +37,37 @@ def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | 
     elif stmt_node.name in ('EGL_FOR_STATEMENT', 'for statement'):
         from core.processor.visitors import for_statement
         return for_statement.visit(stmt_node, parent_scope).ignore()
+    elif stmt_node.name in ('EGL_WHILE_STATEMENT', 'while statement'):
+        from core.processor.visitors import while_statement
+        return while_statement.visit(stmt_node, parent_scope).ignore()
     elif stmt_node.name in ('EGL_IF_STATEMENT', 'if statement'):
         stmt = visit(stmt_node).ignore()
         stmt.in_scope = parent_scope
         return stmt
     return None
+
+def parse_condition_node(cond_node: gram.ASTNode, parent_scope: Object) -> list[Any]:
+    calls = cond_node.find('EGL_CALL') + cond_node.find('EGL_METHOD_CALL')
+    if calls:
+        call_obj = _parse_stmt_node(calls[0], parent_scope)
+        toks = [str(getattr(t, 'value', t)) for t in getattr(cond_node, 'all_tokens', cond_node.values)]
+        ops = ['==', '!=', '<=', '>=', '<', '>']
+        found_op = None
+        for op in ops:
+            if op in toks:
+                found_op = op
+                break
+        if found_op:
+            op_idx = toks.index(found_op)
+            rhs = ' '.join(toks[op_idx + 1:])
+            return [call_obj, found_op, rhs]
+        if 'not' in toks:
+            return ['not', call_obj]
+        return [call_obj]
+    if cond_node.values:
+        return list(cond_node.values)
+    toks = [str(getattr(t, 'value', t)) for t in getattr(cond_node, 'all_tokens', [])]
+    return toks
 
 def visit(node: gram.ASTNode) -> IfStatement:
     cond_values = []
@@ -46,7 +78,7 @@ def visit(node: gram.ASTNode) -> IfStatement:
 
     for child in node.children:
         if child.name in ('EGL_CONDITION', 'condition'):
-            cond_values = list(child.values)
+            cond_values = parse_condition_node(child, stmt_obj)
         elif child.name in ('EGL_STMT_BODY', 'stmt body'):
             for sub in child.children:
                 parsed = _parse_stmt_node(sub, stmt_obj)

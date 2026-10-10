@@ -27,7 +27,7 @@ def extract_call_args(call_node: gram.ASTNode) -> tuple[list[Any], dict[str, Any
                     pos_args.append(idx_node.values[0])
             elif hasattr(child, 'all_tokens') and len(child.all_tokens) > 1:
                 tokens_str = [str(getattr(t, 'value', t)) for t in child.all_tokens]
-                cleaned = ' '.join(tokens_str).replace(' . ', '.').replace('. ', '.').replace(' .', '.')
+                cleaned = ' '.join(tokens_str).replace(' . ', '.').replace('. ', '.').replace(' .', '.').replace('& ', '&')
                 pos_args.append(cleaned)
             elif child.children and child.children[0].values:
                 pos_args.append(child.children[0].values[0])

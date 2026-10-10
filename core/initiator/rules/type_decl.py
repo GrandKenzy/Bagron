@@ -166,16 +166,6 @@ class EGL_TYPE_ITEMS(gram.RuleItem):
         )
     )
 
-class EGL_TYPE_DTYPE(gram.RuleItem):
-    name = "EGL_TYPE_DTYPE"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('__dtype__'),
-        gram.MatchToken('ASSIGN'),
-        gram.Ref(EGL_VALUE),
-        gram.Opt(gram.MatchToken('COMMENT'))
-    )
-
 class EGL_TYPE_ACCESSOR(gram.RuleItem):
     name = "EGL_TYPE_ACCESSOR"
     code = gram.AutoCode()
@@ -206,7 +196,6 @@ class EGL_TYPE_STMT(gram.RuleItem):
         gram.Ref(EGL_TYPE_SLOT),
         gram.Ref(EGL_TYPE_KIND),
         gram.Ref(EGL_TYPE_ITEMS),
-        gram.Ref(EGL_TYPE_DTYPE),
         gram.Ref(EGL_TYPE_ACCESSOR),
         gram.Ref(EGL_TYPE_INIT),
         gram.Ref(EGL_TYPE_SETV),
@@ -256,7 +245,6 @@ class EGL_TYPE_DECL(gram.RuleItem):
             ),
             gram.MatchKeyword('Type'),
             gram.MatchKeyword('type'),
-            gram.MatchKeyword('enum'),
         ),
         gram.Alt(
             gram.MatchToken('IDENT'),
@@ -270,7 +258,6 @@ __all__ = [
     'EGL_TYPE_SLOT',
     'EGL_TYPE_KIND',
     'EGL_TYPE_ITEMS',
-    'EGL_TYPE_DTYPE',
     'EGL_TYPE_ACCESSOR',
     'EGL_TYPE_INIT',
     'EGL_TYPE_SETV',

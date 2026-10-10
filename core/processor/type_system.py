@@ -16,11 +16,10 @@ INTRINSIC_TYPES: dict[str, str] = {
     '__double_t__': 'double',
     '__char_t__': 'char',
     '__bool_t__': 'bool',
-    '__ptr_t__': 'void*',
-    '__void_t__': 'void',
     '__type_t__': '',
     '__arrof__': '',
     '__void_p_t__': 'void*',
+    '__void_t__': 'void',
     '__size_t__': 'size_t',
 }
 
@@ -103,6 +102,16 @@ def resolve_c_type(type_name: str) -> str:
         return INTRINSIC_TYPES[t_str]
     if t_str in ('int8', 'int16', 'int32', 'int64', 'uint8', 'uint16', 'uint32', 'uint64'):
         return f'{t_str}_t'
+    if t_str == 'int':
+        return 'int'
+    if t_str == 'uint':
+        return 'unsigned int'
+    if t_str == 'float':
+        return 'float'
+    if t_str == 'double':
+        return 'double'
+    if t_str == 'char':
+        return 'char'
     if t_str == 'middle':
         return '_Float16'
     if t_str in ('pstring', 'chain'):
@@ -113,6 +122,8 @@ def resolve_c_type(type_name: str) -> str:
         return 'bool'
     if t_str in ('ptr', 'pointer'):
         return 'void*'
+    if t_str == 'void':
+        return 'void'
     return t_str
 
 def get_format_specifier(type_name: str) -> str:
@@ -133,27 +144,7 @@ def get_format_specifier(type_name: str) -> str:
         return '%c'
     return '%s'
 
-DEFAULT_BUILTINS: list[tuple[str, str]] = [
-    ('int', '__int64_t__'),
-    ('int8', '__int8_t__'),
-    ('int16', '__int16_t__'),
-    ('int32', '__int32_t__'),
-    ('int64', '__int64_t__'),
-    ('uint', '__uint64_t__'),
-    ('uint8', '__uint8_t__'),
-    ('uint16', '__uint16_t__'),
-    ('uint32', '__uint32_t__'),
-    ('uint64', '__uint64_t__'),
-    ('float', '__float_t__'),
-    ('middle', '__middle_t__'),
-    ('double', '__double_t__'),
-    ('char', '__char_t__'),
-    ('bool', '__bool_t__'),
-    ('ptr', '__ptr_t__'),
-    ('pointer', '__void_p_t__'),
-    ('void', '__void_t__'),
-    ('type', '__type_t__'),
-]
+DEFAULT_BUILTINS: list[tuple[str, str]] = []
 
 for _b_name, _b_intr in DEFAULT_BUILTINS:
     register_type(_b_name, _b_intr)

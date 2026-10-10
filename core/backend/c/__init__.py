@@ -34,6 +34,8 @@ def process(content: dict[Object, str], block: Function | None = None):
             if_statement.visit(item, block)
         elif isinstance(item, ForStatement):
             for_statement.visit(item, block)
+        elif isinstance(item, WhileStatement):
+            while_statement.visit(item, block)
         elif isinstance(item, Assign):
             assign.visit(item, block)
         elif isinstance(item, Call):
@@ -43,3 +45,5 @@ def process(content: dict[Object, str], block: Function | None = None):
             method_call.visit(item, is_statement=True, block=block)
         elif isinstance(item, ClassDecl):
             class_decl.visit(item, process)
+        elif isinstance(item, EnumDecl):
+            enum_decl.visit(item)

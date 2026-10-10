@@ -31,6 +31,7 @@ El flujo de transformacion de Easy-C opera en cinco etapas secuenciales:
 * **[Sistema de Modulos y Mangling](02-Modulos-y-Externs/modulos_y_mangling.md):** Resolucion de `import`, verificacion de Target y reescritura de simbolos.
 * **[Includes y Externs](02-Modulos-y-Externs/externs_e_includes.md):** Semantica de `include` con y sin alias, parser de `.externs.egl` y cache binario.
 * **[Sistema Extends](02-Modulos-y-Externs/sistema_extends.md):** Fusión transparente de librerias del usuario en `source/targets/<backend>/extends/`.
+* **[Librerias Compiladas Nativas (SDL3)](02-Modulos-y-Externs/librerias_compiladas.md):** Guia paso a paso para anadir e integrar bibliotecas compiladas C/C++ (`.dll`, `.a`, `.so`) con directivas `@header`, `@link` y `@bin`.
 
 ### 3. Guia del Colaborador
 * **[Vision General del Colaborador](03-Guia-del-Colaborador/index.md):** Requisitos de desarrollo, organizacion de carpetas y flujo de trabajo.

@@ -9,8 +9,10 @@ Easy-C (EGL) incluye una interfaz de linea de comandos moderna y minimalista dis
 ### Sintaxis General
 
 ```bash
-egl compile [ruta] [-o <salida.c>] [--run] [--cc <compilador>]
-egl run [ruta] [-o <salida.c>] [--cc <compilador>]
+egl compile [ruta] [-o <salida.c>] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]
+egl run [ruta] [-o <salida.c>] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]
+egl cache clear
+egl extension [--install] [-o <ruta.vsix>]
 egl --version
 egl --help
 ```
@@ -20,10 +22,17 @@ egl --help
 | Opcion / Argumento | Tipo | Valor por Defecto | Descripcion |
 | :--- | :--- | :--- | :--- |
 | `compile [ruta]` | Comando | `'source'` o `'.'` | Compila el proyecto EGL. Si no se especifica ruta, busca automaticamente en `source` o el directorio actual. |
-| `run [ruta]` | Comando | `'source'` o `'.'` | Compila y ejecuta el proyecto directamente (equivalente abreviado a `compile [ruta] --run`). |
-| `-r`, `--run` | Flag | `False` | Tras generar el archivo C, invoca el compilador nativo (GCC) y ejecuta el binario inmediatamente. Puede posicionarse antes o despues de la ruta. |
-| `-o`, `--output` | Opcion | `program.c` | Nombre o ruta del archivo de codigo C monolitico generado. |
-| `--cc` | Opcion | `gcc` | Compilador de C a invocar cuando se utiliza el flag `--run` (ej. `gcc`, `clang`, `tcc`). |
+| `run [ruta]` | Comando | `'source'` o `'.'` | Compila, construye el ejecutable nativo y lo ejecuta directamente (equivalente a `compile [ruta] --run`). |
+| `cache clear` | Comando | N/A | Limpia y elimina todos los archivos y carpetas de cache del proyecto (`.cache`, `__pycache__`, `.pyc`). Alias: `clean`. |
+| `extension` | Comando | N/A | Genera el paquete oficial de extension para VS Code (`.vsix`) con resaltado de sintaxis TextMate y tema Noble Dark. Aliases: `vsix`, `syntax`. |
+| `-b`, `--build` | Flag | `False` | Tras generar el archivo C, invoca el compilador nativo (GCC) para generar el ejecutable (`program.exe` en Windows o `program` en POSIX). |
+| `-r`, `--run` | Flag | `False` | Compila con GCC y ejecuta el binario inmediatamente. Puede posicionarse antes o despues de la ruta. |
+| `-o`, `--output` | Opcion | `program.c` | Nombre o ruta del archivo de codigo C monolitico generado (o ruta destino del `.vsix` en el comando `extension`). |
+| `--cc` | Opcion | `gcc` | Compilador de C a invocar cuando se utiliza `--build` o `--run` (ej. `gcc`, `clang`, `tcc`). |
+| `-l`, `--link` | Opcion | N/A | Enlaza una libreria externa adicional al invocar el compilador de C (ej. `-l SDL3`). Admite multiples ocurrencias. |
+| `-I`, `--include` | Opcion | N/A | Agrega una carpeta de cabeceras de C (`.h`) a la linea de compilacion de GCC (`-I <dir>`). |
+| `-L`, `--lib-dir` | Opcion | N/A | Agrega una carpeta de librerias binarias al linker de GCC (`-L <dir>`). |
+| `--install` | Flag | `False` | Utilizado con `extension`: instala de forma automatica el `.vsix` en Visual Studio Code mediante el comando `code --install-extension`. |
 | `-v`, `--version` | Flag | N/A | Muestra la version actual del compilador Easy-C. |
 | `-h`, `--help` | Flag | N/A | Muestra la guia de uso y catalogo de opciones en consola. |
 
@@ -35,17 +44,35 @@ egl --help
 El archivo `egl.bat` en la raiz del proyecto actua como puente directo con el interprete de Python activo:
 
 ```cmd
-egl.bat compile source --run
+egl.bat compile source --build
+egl.bat run source
+egl.bat extension --install
 ```
 
 ### 2. Ejecucion Multiplataforma (Linux / macOS / Windows)
 Directamente a traves del interprete de Python:
 
 ```bash
-python egl.py compile source -o salida.c --run
+python egl.py compile source --build
+python egl.py run source
+python egl.py extension --install
 ```
 
-### 3. Salida Estandar del Comando `--run`
+### 3. Generacion e Instalacion de la Extension para VS Code (`vsix`)
+Easy-C incluye un generador dinámico de sintaxis TextMate sincronizado con las palabras clave reales del compilador. Para empaquetar la extension oficial de Visual Studio Code:
+
+```bash
+# Generar el archivo .vsix en la raiz del proyecto:
+python egl.py extension
+
+# Generar e instalar automaticamente en VS Code:
+python egl.py extension --install
+
+# Especificar un archivo de salida personalizado:
+python egl.py extension -o dist/easy-c-syntax.vsix
+```
+
+### 4. Salida Estandar del Comando `--run`
 Al ejecutar con `--run`, el CLI imprime de forma ordenada los hitos del proceso y enmarca la salida directa del binario:
 
 ```text

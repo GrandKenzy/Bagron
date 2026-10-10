@@ -3,17 +3,29 @@ clause Target 'egl-c'
 import sdl3
 import standard
 
-declare sdl3.window as Window
-declare sdl3.Rect as Rect
-
-Rect r = Rect(10, 20, 100, 200)
-Rect r2
-
-for i ran 3:
-    print(i)
+declare sdl3.Window as Window
+declare sdl3.Event as Event
+declare sdl3.FRect as FRect
+declare sdl3.EventType as EventType
 
 sdl3.init(0)
-Window mi_ventana = Window("Hola desde Window en Easy-C")
-sdl3.delay(500)
-mi_ventana.destroy()
+
+Window ventana = Window("Easy-C SDL3 - Rectangulo y Eventos", 640, 480)
+FRect rect = FRect(220.0, 165.0, 200.0, 150.0)
+
+bool running = true
+Event event
+
+while running:
+    while sdl3.poll_event(&event):
+        if event.type == EventType.QUIT:
+            running = false
+    sdl3.set_draw_color(ventana._renderer, 30, 30, 45, 255)
+    sdl3.clear(ventana._renderer)
+    sdl3.set_draw_color(ventana._renderer, 80, 180, 240, 255)
+    sdl3.fill_rect(ventana._renderer, &rect)
+    sdl3.present(ventana._renderer)
+    sdl3.delay(16)
+
+ventana.destroy()
 sdl3.quit()

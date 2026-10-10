@@ -46,6 +46,11 @@ def _compile_block(stmts: list, block: Function | None = None) -> list[str]:
             visit(item, block)
             for sub_l in item.compiled.split('\n'):
                 lines.append(f'    {sub_l}')
+        elif isinstance(item, WhileStatement):
+            from core.backend.c.visitors import while_statement
+            while_statement.visit(item, block)
+            for sub_l in item.compiled.split('\n'):
+                lines.append(f'    {sub_l}')
     return lines
 
 def visit(stmt: ForStatement, block: Function | None = None):

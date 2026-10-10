@@ -111,23 +111,42 @@ def mangle_module_symbols(mod_ast: gram.ASTProgram, mod_name: str) -> dict[str, 
     symbol_map = {}
     for node in mod_ast.walk():
         if node.name in ('EGL_FUNC_DECL', 'func declaration'):
-            for t in getattr(node, 'tokens', []):
-                val_s = str(t.value)
-                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', '__inline__', 'void', 'int', 'int8', 'int16', 'int32', 'int64', 'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'float', 'double', 'char', 'bool', 'ptr')):
-                    orig = val_s
-                    mangled = f'inmodule_{mod_name}_{orig}'
-                    symbol_map[orig] = mangled
-                    t.value = mangled
-                    break
+            toks = [t for t in getattr(node, 'tokens', []) if str(t.value) not in ('public', 'private', '__inline__')]
+            if len(toks) >= 2:
+                name_tok = toks[2] if (len(toks) > 2 and toks[1].value == '*') else toks[1]
+                orig = str(name_tok.value)
+                mangled = f'inmodule_{mod_name}_{orig}'
+                symbol_map[orig] = mangled
+                name_tok.value = mangled
         elif node.name in ('EGL_CLASS_DECL', 'class declaration'):
-            for t in getattr(node, 'tokens', []):
-                val_s = str(t.value)
-                if getattr(t, 'token', None) == gram.Token.IDENT or (isinstance(t.value, str) and val_s not in ('public', 'private', 'class', 'struct')):
-                    orig = val_s
-                    mangled = f'inmodule_{mod_name}_{orig}'
-                    symbol_map[orig] = mangled
-                    t.value = mangled
-                    break
+            toks = [t for t in getattr(node, 'tokens', []) if str(t.value) not in ('public', 'private', 'class', 'struct')]
+            if toks:
+                name_tok = toks[0]
+                orig = str(name_tok.value)
+                mangled = f'inmodule_{mod_name}_{orig}'
+                symbol_map[orig] = mangled
+                name_tok.value = mangled
+        elif node.name in ('EGL_ENUM_DECL', 'enum declaration'):
+            enum_name = None
+            toks = [t for t in getattr(node, 'tokens', []) if str(t.value) not in ('public', 'private', 'enum')]
+            if toks:
+                name_tok = toks[0]
+                orig = str(name_tok.value)
+                mangled = f'inmodule_{mod_name}_{orig}'
+                symbol_map[orig] = mangled
+                name_tok.value = mangled
+                enum_name = orig
+            if enum_name:
+                for item_node in node.find('EGL_ENUM_ITEM'):
+                    for it in getattr(item_node, 'tokens', []):
+                        val_it = str(it.value)
+                        if getattr(it, 'token', None) == gram.Token.IDENT or (isinstance(it.value, str) and val_it not in ('=', ',')):
+                            orig_item = val_it
+                            mangled_item = f'inmodule_{mod_name}_{orig_item}'
+                            symbol_map[orig_item] = mangled_item
+                            symbol_map[f'{enum_name}.{orig_item}'] = mangled_item
+                            it.value = mangled_item
+                            break
     return symbol_map
 
 def scan_declarations(ast: gram.ASTProgram) -> dict[str, str]:
@@ -255,6 +274,13 @@ def compile_project(
             if alias in CUSTOM_TYPES:
                 CUSTOM_TYPES[alias]['c_type'] = matched_sym
                 CUSTOM_TYPES[alias]['is_class'] = True
+            for sym_k, sym_v in list(all_mangled_symbols.items()):
+                if sym_k.startswith(f'{target}.'):
+                    member_name = sym_k[len(target) + 1:]
+                    all_mangled_symbols[f'{alias}.{member_name}'] = sym_v
+                    if alias in CUSTOM_TYPES:
+                        CUSTOM_TYPES[alias].setdefault('enum_members', {})[member_name] = sym_v
+                        CUSTOM_TYPES[alias]['is_enum'] = True
 
     for mod_name, mod_ast in module_asts:
         rewrite_mangled_calls(mod_ast, all_mangled_symbols, module_aliases)
@@ -299,12 +325,13 @@ def compile_project(
                         forward_decls.append(f'{sig};')
                     if f_code not in func_impls:
                         func_impls.append(f_code)
-        elif isinstance(item, objects.TypeDecl):
+        elif isinstance(item, (objects.TypeDecl, objects.EnumDecl)):
             continue
         else:
-            line = getattr(item, 'compiled', '').strip()
-            if line:
-                main_body_lines.append(f'    {line}')
+            code = getattr(item, 'compiled', '').strip()
+            if code:
+                for sub_line in code.split('\n'):
+                    main_body_lines.append(f'    {sub_line}')
 
     output_lines = []
     for h in headers:

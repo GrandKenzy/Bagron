@@ -42,20 +42,94 @@ Este documento contiene la especificacion normativa de los tipos nativos, palabr
 | `ptr`, `pointer` | `__void_p_t__` | `void*` | Puntero opaco generico a memoria. |
 | `void` | N/A | `void` | Ausencia de valor o tipo de retorno vacio. |
 | `bool`, `boolean` | N/A | `bool` | Booleano (`true` o `false`, requiere `<stdbool.h>`). |
-| `type` | N/A | Metatipo | Representa un identificador de tipo como parametro o valor. |
+| `type` | `__type_t__` | Metatipo | Representa un identificador de tipo como parametro o valor. |
+| `any` | N/A | `void*` | Tipo comodin generico. Se utiliza para representar valores o punteros sin restriccion de tipo estricta, mapeandose a `void*` en C. |
 
 ---
 
 ## Tipos Genericos y Contenedores
 
-Easy-C soporta la instanciacion de contenedores de tamaño fijo mediante la notacion de corchetes:
+Easy-C soporta la instanciacion de contenedores de tamaño fijo y tipos genericos:
 
 * `array[T, N]`: Define un arreglo unidimensional contiguo de `N` elementos de tipo `T`.
   * Ejemplo: `array[int, 10] numeros` produce `int64_t numeros[10];`.
 * `chain[N]`: Define una cadena de longitud fija `N`.
   * Ejemplo: `chain[64] buffer` produce `char buffer[64];`.
 * `ptr T` o `__void_p_t__ T`: Define un puntero especifico a un tipo base `T`.
-  * Ejemplo: `ptr int cursor` produce `int64_t* cursor;`.
+  * Ejemplo: `__void_p_t__ FRect rect` produce `FRect* rect;`.
+  * Ejemplo: `__void_p_t__ char cursor` produce `char* cursor;`.
+
+### Intrinsic `__arrof__`
+
+El intrinsic `__arrof__` es el mecanismo primitivo interno sobre el que se implementa la construccion de arreglos estaticos (`array[T, N]`). Permite parametrizar el tipo de elemento (`T`) y la dimension estatica (`N`), siendo resuelto en tiempo de compilacion por el sistema de tipos (`resolve_generic_type`) para emitir la dimension y el tipo en C (`T nombre[N];`).
+
+### Simbolo `__fronted__`
+
+El identificador magico `__fronted__` es un meta-simbolo interno del compilador utilizado en definiciones de tipos primitivos (como `pstring` y cadenas nativas) para apuntar directamente a la direccion frontal del buffer subyacente en tiempo de compilacion, emitiendo una referencia vacia/frontal directa sin sobrecosto de abstraccion.
+
+### Operador `sizeof(...)`
+
+Easy-C provee la funcion intrinseca `sizeof(T)` o `sizeof(variable)` que se traduce directamente al operador nativo `sizeof(...)` en C, complementando el acceso mediante la propiedad `variable.size`.
+
+---
+
+## Constantes en Easy-C (Norma de Identificadores)
+
+> [!IMPORTANT]
+> **Easy-C NO utiliza la palabra reservada `const`.**
+> La inmutabilidad se define de forma estricta mediante la nomenclatura del identificador:
+> **Todo identificador escrito en MAYUSCULAS es una constante inmutable.**
+>
+> * Ejemplo: `uint32 EVENT_QUIT = 256` o `float VELOCIDAD_LUZ = 299792458.0`.
+> * En C, el compilador emite el calificador nativo `const` (ej. `const uint32_t EVENT_QUIT = 256;`).
+> * Si el codigo intenta reasignar una constante (`EVENT_QUIT = 0`), el compilador detiene el proceso con un error estatico en tiempo de compilacion.
+
+---
+
+## Enumeraciones (`enum`)
+
+Easy-C soporta la definicion ergonomica de enumeraciones que se compilan a `typedef enum` nativos en C:
+
+### 1. Sintaxis Soportadas
+
+* **Multilínea con valores explícitos:**
+  ```egl
+  enum EventType:
+      QUIT = 256
+      KEY_DOWN = 257
+  ```
+
+* **Multilínea secuencial automática:**
+  ```egl
+  enum Color:
+      RED
+      GREEN
+      BLUE
+  ```
+
+* **Línea única separada por comas:**
+  ```egl
+  enum Direction: NORTH, SOUTH, EAST, WEST
+  ```
+
+* **Sintaxis de llaves:**
+  ```egl
+  enum Mode {
+      READ = 1,
+      WRITE = 2
+  }
+  ```
+
+### 2. Uso y Resolución de Miembros
+
+Los miembros del enum pueden accederse con el espacio de nombres del enum o directamente si están en el ámbito:
+```egl
+Color c = Color.RED
+if event.type == EventType.QUIT:
+    running = false
+```
+
+Al importar desde módulos, se puede usar `declare <modulo>.<Enum> as <Enum>` para resolver miembros calificados sin colisiones de nombres en C.
 
 ---
 
@@ -69,8 +143,8 @@ El lenguaje expone propiedades de introspeccion estatica accesibles sobre identi
 | `variable.ptr` | `&variable` | Obtiene la direccion de memoria de la variable como puntero. |
 | `variable.size` | `sizeof(...)` | Emite el tamaño en bytes ocupado por la variable o estructura. |
 | `variable.len` | `N` | Longitud fija declarada en arrays o cadenas `chain`. |
-| `variable.__const__`, `.const` | `1` o `0` | Indicador binario en tiempo de compilacion sobre si la variable es constante. |
-| `variable.__visibility__`, `.visibility`| `1` o `0` | Indicador binario: `0` si es privada; `1` si es publica. |
+| `variable.const` | `1` o `0` | Indicador binario en tiempo de compilacion sobre si la variable es constante. |
+| `variable.visibility` | `1` o `0` | Indicador binario: `0` si es privada; `1` si es publica. |
 | `variable.value` | **Error** | Prohibido. Lanza un fallo en compilacion para proteger encapsulamiento interno. |
 
 ---
@@ -79,16 +153,25 @@ El lenguaje expone propiedades de introspeccion estatica accesibles sobre identi
 
 ```
 # Control de Flujo:
-if, else, for, return
+if, elif, else, for, while, ran, in, return, pass
 
 # Declaracion y Estructura:
-struct, class, type, object, int, uint, float, double, middle, char, bool, str, ptr, void
+enum, struct, class, Type, type
+
+# Tipos Intrínsecos Primitivos (Backend):
+__int_t__, __int8_t__, __int16_t__, __int32_t__, __int64_t__, __uint_t__, __uint8_t__, __uint16_t__, __uint32_t__, __uint64_t__, __float_t__, __middle_t__, __double_t__, __char_t__, __bool_t__, __void_t__, __void_p_t__, __type_t__, __arrof__, __size_t__
+
+# Tipos Definidos en standard.egl:
+int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float, double, middle, char, bool, ptr, pointer, void, any, array, chain, pstring
 
 # Modificadores de Visibilidad y Optimizacion:
 public, private, __inline__
 
 # Modulos e Integracion:
-clause, include, import, as
+clause, include, import, load, declare, as
+
+# Operadores e Intrinsics:
+sizeof
 
 # Literales del Sistema:
 true, false, Null

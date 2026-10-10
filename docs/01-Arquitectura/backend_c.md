@@ -44,8 +44,8 @@ Normaliza y reescribe expresiones EGL para C:
   * `v.ptr` -> Direccion de memoria de la variable (`&v`).
   * `v.size` -> Expresion de tamaño (`sizeof(tipo)` o `sizeof(elem) * N`).
   * `v.len` -> Longitud estatica del buffer o array.
-  * `v.__const__` / `v.const` -> `"1"` si la variable es inmutable; `"0"` en caso contrario.
-  * `v.__visibility__` / `v.visibility` -> `"0"` si es privada; `"1"` si es publica.
+  * `v.const` -> `"1"` si la variable es inmutable; `"0"` en caso contrario.
+  * `v.visibility` -> `"0"` si es privada; `"1"` si es publica.
   * `v.value` -> Lanza una excepcion en tiempo de compilacion, protegiendo el acceso a la representacion interna del tipo.
 * **Control de Identificadores:** Unicamente resuelve nombres de variables individuales mediante expresiones regulares estrictas (`^[A-Za-z_][A-Za-z0-9_]*$`), evitando que operadores aritmeticos sean confundidos con identificadores existentes.
 
@@ -53,7 +53,7 @@ Normaliza y reescribe expresiones EGL para C:
 Controla la emision de llamadas a funciones (`Call`):
 * `print(...)`: Formatea automaticamente los especificadores de conversion (`%lld`, `%s`, `%d`, `%f`, `%p`) e inyecta la llamada `printf("...", args);` con salto de linea implicito.
 * `free(ptr)`: Inyecta llamada nativa de liberacion de memoria y asegura inclusion de `<stdlib.h>`.
-* `__size__(T)`: Emite `sizeof(T)` directamente a nivel de compilador.
+* `sizeof(T)`: Emite `sizeof(T)` directamente a nivel de compilador.
 * Funciones `inline`: Expande inline las funciones registradas mediante `core/backend/c/inline.py`.
 
 ---

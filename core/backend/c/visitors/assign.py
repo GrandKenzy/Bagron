@@ -22,6 +22,8 @@ def visit(assign: Assign, block: Function | None = None):
 
     resolved = resolve_variable(target_str, block)
     if resolved:
+        if resolved.is_constant or target_str.strip('_').isupper():
+            raise TypeError(f"No se puede reasignar la constante '{resolved.name}'. Los identificadores en MAYUSCULAS son constantes inmutables.")
         resolved.uses += 1
         if resolved.is_pointer:
             val_resolved = resolve_variable(val_str, block)
@@ -32,6 +34,8 @@ def visit(assign: Assign, block: Function | None = None):
             return
         assign.compiled = f'{resolved.name} = {fmt_val};'
         return
+    if target_str.strip('_').isupper():
+        raise TypeError(f"No se puede reasignar la constante '{target_str}'. Los identificadores en MAYUSCULAS son constantes inmutables.")
     if target_str.startswith(('self.', 'this.')):
         arrow_target = target_str.replace('self.', 'self->').replace('this.', 'this->')
         assign.compiled = f'{arrow_target} = {fmt_val};'

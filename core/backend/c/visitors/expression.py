@@ -5,7 +5,8 @@ from core.processor.objects import Function
 from core.backend.c.visitors.variable import convert_type, resolve_variable
 
 def is_type_symbol(target: str, block: Function | None = None) -> bool:
-    if target in TYPES:
+    from core.processor.type_system import CUSTOM_TYPES
+    if target in TYPES or target in CUSTOM_TYPES:
         return True
     if block and hasattr(block, 'parameters'):
         for p in block.parameters:
@@ -41,6 +42,10 @@ def _replace_type(match: re.Match, block: Function | None = None) -> str:
         return match.group(0)
     resolved = resolve_variable(target, block)
     if resolved:
+        from core.processor.type_system import CUSTOM_TYPES
+        type_info = CUSTOM_TYPES.get(resolved.type)
+        if type_info and (type_info.get('is_class') or type_info.get('slots') or str(type_info.get('c_type', '')).startswith('inmodule_')):
+            return match.group(0)
         resolved.uses += 1
         if getattr(resolved, 'type_args', None):
             args_str = ', '.join(str(a) for a in resolved.type_args)
@@ -64,6 +69,10 @@ def _replace_ptr(match: re.Match, block: Function | None = None) -> str:
         return match.group(0)
     resolved = resolve_variable(target, block)
     if resolved:
+        from core.processor.type_system import CUSTOM_TYPES
+        type_info = CUSTOM_TYPES.get(resolved.type)
+        if type_info and type_info.get('is_class'):
+            return match.group(0)
         resolved.uses += 1
         return f'&{resolved.name}'
     return match.group(0)
@@ -95,6 +104,21 @@ def _check_value_access(match: re.Match, block: Function | None = None) -> str:
     resolved = resolve_variable(target, block)
     if resolved:
         raise Exception(f"Member '.value' of type '{resolved.type}' is private and not directly accessible")
+    return match.group(0)
+
+def _replace_enum_member(match: re.Match, block: Function | None = None) -> str:
+    from core.processor.type_system import CUSTOM_TYPES
+    full_target = match.group(1)
+    member = match.group(2)
+    short_target = full_target.split('.')[-1]
+    for key in (full_target, short_target):
+        type_info = CUSTOM_TYPES.get(key)
+        if type_info and type_info.get('is_enum'):
+            members = type_info.get('enum_members', {})
+            if member in members:
+                return str(members[member])
+            c_base = type_info.get('c_type', short_target)
+            return f'{c_base}_{member}'
     return match.group(0)
 
 def format_expression(raw: Any, block: Function | None = None) -> str:
@@ -131,8 +155,9 @@ def format_expression(raw: Any, block: Function | None = None) -> str:
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.value\b', lambda m: _check_value_access(m, block), transformed)
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.size\b', lambda m: _replace_size(m, block), transformed)
     transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.len\b', lambda m: _replace_len(m, block), transformed)
-    transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.(?:__const__|const)\b', lambda m: _replace_const(m, block), transformed)
-    transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.(?:__visibility__|visibility)\b', lambda m: _replace_visibility(m, block), transformed)
+    transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.const\b', lambda m: _replace_const(m, block), transformed)
+    transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*)\.visibility\b', lambda m: _replace_visibility(m, block), transformed)
+    transformed = re.sub(r'\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\.([A-Za-z_][A-Za-z0-9_]*)\b', lambda m: _replace_enum_member(m, block), transformed)
     transformed = re.sub(r'\b(Null|None)\b', 'NULL', transformed)
 
     if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', transformed):

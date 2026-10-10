@@ -34,7 +34,6 @@ class EGL_METHOD_DECL(gram.RuleItem):
             gram.MatchToken('IDENT'),
             gram.MatchKeyword('__new__'),
             gram.MatchKeyword('__init__'),
-            gram.MatchKeyword('__size__'),
             gram.MatchGroup('keywords'),
         ),
         gram.Ref(EGL_PARAMS),

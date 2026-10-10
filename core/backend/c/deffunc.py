@@ -53,10 +53,10 @@ def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
             if prop == 'len' and getattr(base_resolved, 'fixed_size', None):
                 base_resolved.uses += 1
                 return '%d', str(base_resolved.fixed_size)
-            if prop in ('__const__', 'const'):
+            if prop == 'const':
                 base_resolved.uses += 1
                 return '%d', ('1' if base_resolved.is_constant else '0')
-            if prop in ('__visibility__', 'visibility'):
+            if prop == 'visibility':
                 base_resolved.uses += 1
                 return '%d', ('0' if base_resolved.privacity == 'private' else '1')
             if prop == 'value':
@@ -185,7 +185,7 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
         compiled = f'printf("{fmt}"{args_part});' if is_statement else f'printf("{fmt}"{args_part})'
         return CompiledCall(clean_name, args, 'void', False, None, compiled)
 
-    if clean_name == '__size__':
+    if clean_name == 'sizeof':
         raw_type = str(bound.get('type') if bound.get('type') is not None else (args[0].value if hasattr(args[0], 'value') else args[0]) if args else 'int')
         resolved_t = resolve_variable(raw_type, block)
         if resolved_t and resolved_t.type == 'type':
@@ -195,7 +195,8 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
             else:
                 raw_type = resolved_t.name
         c_type = convert_type(raw_type)
-        return CompiledCall(clean_name, args, 'int', False, None, compiled)
+        compiled_sizeof = f'sizeof({c_type});' if is_statement else f'sizeof({c_type})'
+        return CompiledCall(clean_name, args, 'int', False, None, compiled_sizeof)
 
     from core.processor.type_system import CUSTOM_TYPES
     is_class_ctor = False
@@ -237,8 +238,14 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
         for extra in bound.get('_extra_args', []):
             compiled_args.append(_format_call_arg(extra, block))
     else:
-        for a in args:
-            compiled_args.append(_format_call_arg(a, block))
+        for idx, a in enumerate(args):
+            fmt = _format_call_arg(a, block)
+            if not reserved and extern_sym:
+                params = extern_sym[0].get('params', [])
+                if idx < len(params) and params[idx].get('type') in ('ptr', 'pointer'):
+                    if fmt.startswith('&') and not fmt.startswith('(void*)'):
+                        fmt = f'(void*){fmt}'
+            compiled_args.append(fmt)
     call_expr = f'{clean_name}({", ".join(compiled_args)})'
     compiled = (call_expr + ';') if is_statement else call_expr
     return CompiledCall(clean_name, args, ret_type, is_ptr, target_type, compiled)

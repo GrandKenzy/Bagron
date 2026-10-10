@@ -68,13 +68,6 @@ def visit(node: gram.ASTNode) -> TypeDecl:
                     kind = raw_kind.strip('\"\'')
             elif stmt.name in ('EGL_TYPE_ITEMS', 'type items'):
                 items = _extract_items(stmt)
-            elif stmt.name in ('EGL_TYPE_DTYPE', 'type dtype'):
-                all_toks = getattr(stmt, 'all_tokens', None)
-                if all_toks:
-                    tok_vals = [t for t in all_toks if str(t.value if hasattr(t, 'value') else t) not in ('__dtype__', '=')]
-                    dtype = _format_expr(tok_vals)
-                elif len(stmt.values) >= 2:
-                    dtype = str(stmt.values[1].value if hasattr(stmt.values[1], 'value') else stmt.values[1])
             elif stmt.name in ('EGL_TYPE_ACCESSOR', 'type accessor'):
                 acc_name = None
                 for val in stmt.values:

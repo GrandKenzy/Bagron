@@ -7,7 +7,15 @@ from typing import Any
 def _compile_condition(condition: Any, block: Function | None = None) -> str:
     if isinstance(condition, (list, tuple)):
         if len(condition) == 2 and str(condition[0]) == 'not':
-            var_target = str(condition[1].value if hasattr(condition[1], 'value') else condition[1])
+            target_obj = condition[1]
+            if isinstance(target_obj, Call):
+                call_res = deffunc(target_obj.name, target_obj.args, getattr(target_obj, 'kwargs', {}), is_statement=False, block=block)
+                return f'!({call_res.compiled})'
+            elif isinstance(target_obj, MethodCall):
+                from core.backend.c.visitors import method_call
+                call_res = method_call.visit(target_obj, is_statement=False, block=block)
+                return f'!({call_res})'
+            var_target = str(target_obj.value if hasattr(target_obj, 'value') else target_obj)
             resolved = resolve_variable(var_target, block)
             if resolved:
                 resolved.uses += 1
@@ -15,19 +23,34 @@ def _compile_condition(condition: Any, block: Function | None = None) -> str:
             return f'!{var_target}'
         parts = []
         for p in condition:
-            val = str(p.value if hasattr(p, 'value') else p)
-            if val == 'not':
+            if isinstance(p, Call):
+                call_res = deffunc(p.name, p.args, getattr(p, 'kwargs', {}), is_statement=False, block=block)
+                parts.append(call_res.compiled)
+            elif isinstance(p, MethodCall):
+                from core.backend.c.visitors import method_call
+                call_res = method_call.visit(p, is_statement=False, block=block)
+                parts.append(call_res)
+            elif str(p) == 'not':
                 parts.append('!')
-            elif val in ('Null', 'None', 'null', 'NULL'):
+            elif str(p) in ('Null', 'None', 'null', 'NULL'):
                 parts.append('NULL')
             else:
+                val = str(p.value if hasattr(p, 'value') else p)
                 resolved = resolve_variable(val, block)
                 if resolved:
                     resolved.uses += 1
                     parts.append(resolved.name)
                 else:
                     parts.append(val)
-        return ' '.join(parts)
+        raw_cond = ' '.join(parts).replace(' . ', '.')
+        from core.backend.c.visitors.expression import format_expression
+        return format_expression(raw_cond, block)
+    if isinstance(condition, Call):
+        call_res = deffunc(condition.name, condition.args, getattr(condition, 'kwargs', {}), is_statement=False, block=block)
+        return call_res.compiled
+    if isinstance(condition, MethodCall):
+        from core.backend.c.visitors import method_call
+        return method_call.visit(condition, is_statement=False, block=block)
     cond_str = str(condition.value if hasattr(condition, 'value') else condition)
     if cond_str in ('Null', 'None', 'null', 'NULL'):
         return 'NULL'
@@ -35,7 +58,8 @@ def _compile_condition(condition: Any, block: Function | None = None) -> str:
     if resolved:
         resolved.uses += 1
         return resolved.name
-    return cond_str
+    from core.backend.c.visitors.expression import format_expression
+    return format_expression(cond_str, block)
 
 def _compile_block(stmts: list, block: Function | None = None) -> list[str]:
     lines = []
@@ -61,6 +85,11 @@ def _compile_block(stmts: list, block: Function | None = None) -> list[str]:
         elif isinstance(item, ForStatement):
             from core.backend.c.visitors import for_statement
             for_statement.visit(item, block)
+            for sub_l in item.compiled.split('\n'):
+                lines.append(f'    {sub_l}')
+        elif isinstance(item, WhileStatement):
+            from core.backend.c.visitors import while_statement
+            while_statement.visit(item, block)
             for sub_l in item.compiled.split('\n'):
                 lines.append(f'    {sub_l}')
     return lines

@@ -20,7 +20,14 @@ def visit(item: MethodCall, is_statement: bool = False, block: Function | None =
             c_backend.add_include(header)
         item.returntype = sym_info.get('return_type', 'void')
         c_name = sym_info.get('c_name', method_str)
-        c_args = [_format_arg(a, block) for a in item.args]
+        c_args = []
+        params = sym_info.get('params', [])
+        for idx, a in enumerate(item.args):
+            fmt = _format_arg(a, block)
+            if idx < len(params) and params[idx].get('type') in ('ptr', 'pointer'):
+                if fmt.startswith('&') and not fmt.startswith('(void*)'):
+                    fmt = f'(void*){fmt}'
+            c_args.append(fmt)
         call_code = f'{c_name}({", ".join(c_args)})'
         compiled = f'{call_code};' if is_statement else call_code
         item.compiled = compiled

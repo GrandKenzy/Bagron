@@ -122,10 +122,8 @@ EGL_PRIMARY.grammar = gram.Alt(
     gram.MatchToken(gram.Token.NULL),
     gram.MatchToken(gram.Token.IDENT),
     gram.MatchGroup('types'),
-    gram.MatchKeyword('this'),
     gram.MatchKeyword('self'),
     gram.MatchKeyword('__fronted__'),
-    gram.MatchKeyword('__items__'),
     gram.MatchKeyword('__slot__'),
     gram.Enclosed(
         open=gram.Token.LPAREN,

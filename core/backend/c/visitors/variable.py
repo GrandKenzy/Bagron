@@ -78,6 +78,13 @@ def convert_type(type: str) -> str:
     from core.processor.type_system import resolve_c_type
     return resolve_c_type(type)
 
+def is_enum_member(val_str: str) -> bool:
+    from core.processor.type_system import CUSTOM_TYPES
+    for t_info in CUSTOM_TYPES.values():
+        if t_info.get('is_enum') and (val_str in t_info.get('enum_members', {}) or val_str in t_info.get('enum_members', {}).values()):
+            return True
+    return False
+
 def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
     if value is None:
         return True
@@ -86,9 +93,23 @@ def type_is_compatible(value: int | float | str | bool, type: str) -> bool:
         return True
     c_type = convert_type(type)
     if 'int' in c_type:
-        return isinstance(value, int) and not isinstance(value, bool)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return True
+        if is_enum_member(val_str):
+            return True
+        if val_str.isdigit() or (val_str.startswith('-') and val_str[1:].isdigit()):
+            return True
+        return False
     elif c_type in ('float', 'double', '_Float16'):
-        return isinstance(value, (float, int)) and not isinstance(value, bool)
+        if isinstance(value, (float, int)) and not isinstance(value, bool):
+            return True
+        if is_enum_member(val_str):
+            return True
+        try:
+            float(val_str)
+            return True
+        except ValueError:
+            return False
     elif c_type == 'char*':
         return isinstance(value, str)
     elif c_type == 'char':
@@ -154,12 +175,15 @@ def visit(variable: Variable, block: Function | None = None):
         if ret_type == 'ptr' or variable.type == 'ptr':
             variable.is_pointer = True
 
+    const_kw = 'const ' if variable.is_constant else ''
+    static_kw = 'static ' if variable.privacity == 'private' else ''
+
     if variable.is_pointer or variable.type in ('ptr', '__void_p_t__', 'pointer'):
         base = variable.pointer_base_type or ('void' if variable.type in ('ptr', '__void_p_t__', 'pointer') else variable.type)
         t = f'{convert_type(base)}*'
         from core.backend.c.visitors.expression import format_expression
         val = format_expression(variable.value, block) if variable.value is not None else 'NULL'
-        variable.compiled = f'{"static " if variable.privacity == "private" else ""}{t} {variable.name} = {val};'
+        variable.compiled = f'{static_kw}{const_kw}{t} {variable.name} = {val};'
         return
 
     reference = None
@@ -188,24 +212,24 @@ def visit(variable: Variable, block: Function | None = None):
         val_clean = str(value).strip('\"\'')
         value = f'"{val_clean}"'
         if variable.fixed_size:
-            variable.compiled = f'{"static " if variable.privacity == "private" else ""}char {variable.name}[{variable.fixed_size}] = {value};'
+            variable.compiled = f'{static_kw}{const_kw}char {variable.name}[{variable.fixed_size}] = {value};'
             return
-        variable.compiled = f'{"static " if variable.privacity == "private" else ""}char* {variable.name} = {value};'
+        variable.compiled = f'{static_kw}{const_kw}char* {variable.name} = {value};'
         return
     elif variable.type == 'array' or (variable.fixed_size and convert_type(variable.type) != 'char*'):
         elem_t = convert_type(getattr(variable, 'element_type', None) or 'int')
         if elem_t == 'char' and isinstance(value, str) and (value.startswith('"') or not value.startswith("'")):
             val_clean = str(value).strip('\"\'')
             if variable.value is not None:
-                variable.compiled = f'{"static " if variable.privacity == "private" else ""}char {variable.name}[{variable.fixed_size}] = "{val_clean}";'
+                variable.compiled = f'{static_kw}{const_kw}char {variable.name}[{variable.fixed_size}] = "{val_clean}";'
             else:
-                variable.compiled = f'{"static " if variable.privacity == "private" else ""}char {variable.name}[{variable.fixed_size}];'
+                variable.compiled = f'{static_kw}{const_kw}char {variable.name}[{variable.fixed_size}];'
             return
         if variable.value is not None:
             init_val = format_expression(str(variable.value), block)
-            variable.compiled = f'{"static " if variable.privacity == "private" else ""}{elem_t} {variable.name}[{variable.fixed_size}] = {init_val};'
+            variable.compiled = f'{static_kw}{const_kw}{elem_t} {variable.name}[{variable.fixed_size}] = {init_val};'
         else:
-            variable.compiled = f'{"static " if variable.privacity == "private" else ""}{elem_t} {variable.name}[{variable.fixed_size}];'
+            variable.compiled = f'{static_kw}{const_kw}{elem_t} {variable.name}[{variable.fixed_size}];'
         return
     elif t == 'char':
         clean_c = str(value).strip('\'"')
@@ -216,13 +240,13 @@ def visit(variable: Variable, block: Function | None = None):
     elif t == 'bool':
         value = 'true' if (value is True or str(value).lower() == 'true') else 'false'
     
-    is_expr = isinstance(value, str) and ('(' in value or '.' in value or '->' in value or '[' in value or value == 'NULL')
+    is_expr = isinstance(value, str) and ('(' in value or '.' in value or '->' in value or '[' in value or value == 'NULL' or is_enum_member(value))
     if not reference and not is_expr and not type_is_compatible(value, t):
         raise Exception(f'Value {value} is not compatible with type {variable.type}')
     elif reference:
         same_type(reference, variable.type)
 
-    variable.compiled = f'{"static " if variable.privacity == "private" else ""}{t} {variable.name} = {value};'
+    variable.compiled = f'{static_kw}{const_kw}{t} {variable.name} = {value};'
 
 def get_most_similarity_comparison():
     return most_similarity_comparison

@@ -67,6 +67,18 @@ public struct Type pstring:
 public struct Type pointer:
     __void_p_t__ value
 
+public struct Type ptr:
+    __void_p_t__ value
+
+public struct Type bool:
+    __bool_t__ value
+
+public struct Type void:
+    __void_t__ value
+
+public struct Type any:
+    __void_p_t__ value
+
 public struct Type buffer_t:
     __slot__ __type_t__ T
     __slot__ __uint64_t__ S
@@ -87,9 +99,6 @@ public class str:
 
     void __init__(self):
         pass
-
-    int __size__(self): 
-        return self._len + 1
 
     @method
     int len(self):

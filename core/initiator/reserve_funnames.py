@@ -5,7 +5,7 @@ DEFAULTS = [
     'input',
     'EGL_Version',
     'free',
-    '__size__',
+    'sizeof',
 ]
 
 class ReservedParam:
@@ -121,8 +121,9 @@ def get_items():
 def exists(resname: str):
     return resname in ReservedFuncName._ITEMS_
 
-r_print = ReservedFuncName('print', {'*values': 'type', 'sep': ('str', ' ')}, 'void')
-r_input = ReservedFuncName('input', {'content': ('str', '')}, 'str')
-r_version = ReservedFuncName('EGL_Version', {}, 'str')
-r_free = ReservedFuncName('free', {'ptr': 'ptr'}, 'void')
-r_size = ReservedFuncName('__size__', {'type': 'type'}, 'int')
+
+r_print = ReservedFuncName('print', {'*values': 'type', 'sep': ('pstring', ' ')}, 'void')
+r_input = ReservedFuncName('input', {'content': ('pstring', '')}, 'pstring')
+r_version = ReservedFuncName('EGL_Version', {}, 'pstring')
+r_free = ReservedFuncName('free', {'ptr': '__void_p_t__'}, 'void')
+r_sizeof = ReservedFuncName('sizeof', {'type': 'type'}, 'int')

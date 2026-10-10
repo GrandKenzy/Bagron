@@ -6,19 +6,9 @@ class EGL_PARAM(gram.RuleItem):
     name = 'EGL_PARAM'
     code = gram.AutoCode()
     grammar = gram.Alt(
-        gram.Alt(
-            gram.MatchKeyword('self'),
-            gram.MatchKeyword('this'),
-        ),
+        gram.MatchKeyword('self'),
         gram.Seq(
-            gram.Alt(
-                gram.Seq(
-                    gram.MatchKeyword('this'),
-                    gram.MatchToken(gram.Token.DOT),
-                    gram.MatchToken('IDENT'),
-                ),
-                gram.Ref(EGL_TYPE_SPEC),
-            ),
+            gram.Ref(EGL_TYPE_SPEC),
             gram.Opt(gram.MatchToken(gram.Token.STAR)),
             gram.MatchToken('IDENT'),
             gram.Opt(

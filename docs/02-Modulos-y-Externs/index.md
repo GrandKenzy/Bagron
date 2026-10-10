@@ -9,6 +9,7 @@ Esta seccion documenta el subsistema de modularizacion e integracion con codigo 
 * **[Sistema de Modulos y Mangling](modulos_y_mangling.md):** Convenciones de ubicacion de modulos, resolucion jerarquica de dependencias, verificacion de la clausula `Target` y renombrado de simbolos (`inmodule_`).
 * **[Includes y Externs](externs_e_includes.md):** Sintaxis de `include` con y sin alias (`as`), especificacion de archivos `.externs.egl`, serializacion en cache binario y resolucion de tipos C foraneos.
 * **[Sistema Extends](sistema_extends.md):** Mecanismo de extension modular local en `source/targets/<backend>/extends/` y estrategia de fusion no destructiva con librerias del sistema.
+* **[Librerias Compiladas Nativas (SDL3)](librerias_compiladas.md):** Guia paso a paso para anadir e integrar bibliotecas compiladas C/C++ (`.dll`, `.a`, `.so`) con directivas `@header`, `@link` y `@bin`.
 
 ---
 

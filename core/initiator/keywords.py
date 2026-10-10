@@ -41,11 +41,10 @@ KEYWORD_SPECIFIC_COLORS = {
     '__double_t__': '#3B82F6',
     '__char_t__': '#3B82F6',
     '__bool_t__': '#3B82F6',
-    '__ptr_t__': '#3B82F6',
-    '__void_t__': '#3B82F6',
     '__type_t__': '#3B82F6',
     '__arrof__': '#3B82F6',
     '__void_p_t__': '#3B82F6',
+    '__void_t__': '#3B82F6',
     '__size_t__': '#3B82F6',
     'return': '#C0392B',
     'pass': '#C0392B',
@@ -54,26 +53,13 @@ KEYWORD_SPECIFIC_COLORS = {
     'else': '#C0392B',
     'not': '#C0392B',
     'for': '#D16969',
+    'while': '#D16969',
     'in': '#D16969',
     'ran': '#D16969',
-    '__init__': '#E2B93D',
-    '__new__': '#E2B93D',
     '__fronted__': '#E2B93D',
-    '__setv__': '#E2B93D',
-    '__member__': '#E2B93D',
-    '__method__': '#E2B93D',
-    '__size__': '#E2B93D',
     '__inline__': '#E2B93D',
     '__slot__': '#E2B93D',
-    '__type__': '#E2B93D',
-    '__items__': '#E2B93D',
-    '__dtype__': '#E2B93D',
-    '__getter__': '#E2B93D',
-    '__setter__': '#E2B93D',
-    '__getitem__': '#E2B93D',
-    '__setitem__': '#E2B93D',
-    '__const__': '#E2B93D',
-    '__visibility__': '#E2B93D',
+    'sizeof': '#E2B93D',
     'class': '#17A2B8',
     'struct': '#17A2B8',
     'enum': '#17A2B8',
@@ -82,8 +68,6 @@ KEYWORD_SPECIFIC_COLORS = {
     'Null': '#48C78E',
     'true': '#48C78E',
     'false': '#48C78E',
-    'this': '#5DADE2',
-    'self': '#5DADE2',
 }
 
 INTRINSIC_TYPES = [
@@ -102,51 +86,28 @@ INTRINSIC_TYPES = [
     '__double_t__',
     '__char_t__',
     '__bool_t__',
-    '__ptr_t__',
-    '__void_t__',
     '__type_t__',
     '__arrof__',
     '__void_p_t__',
+    '__void_t__',
     '__size_t__',
 ]
 
-TYPES = list(INTRINSIC_TYPES) + [
-    'pointer',
-    'void',
-    'char',
-    'double',
-    'float',
-    'middle',
-    'int',
-    'int8',
-    'int16',
-    'int32',
-    'int64',
-    'uint',
-    'uint8',
-    'uint16',
-    'uint32',
-    'uint64',
-    'ptr',
-    'bool',
-    'type',
-    '__dtype__',
-    'any',
-]
+TYPES = list(INTRINSIC_TYPES)
 
 ADVANCE_TYPES = [
     'struct',
-    'enum'
+    'enum',
 ]
 
 KEYWORDS_BY_GROUP = {
-    'imports': ['include', 'import', 'object', 'declare'],
+    'imports': ['include', 'import', 'load', 'declare'],
     'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLimit'],
     'properties': ['mode'],
     'privacity': ['public', 'private'],
     'conditional_statement': ['if', 'elif', 'else', 'not'],
-    'loops': ['for', 'ran', 'in'],
-    'keywords': ['as', 'clause', 'property', 'return', '__init__', '__new__', '__fronted__', '__setv__', '__member__', '__method__', 'pass', 'this', 'self', '__size__', '__inline__', '__slot__', '__type__', '__items__', '__dtype__', '__getter__', '__setter__', '__getitem__', '__setitem__', '__const__', '__visibility__', 'Type', 'type', 'struct', 'enum', 'method', 'class'],
+    'loops': ['for', 'while', 'ran', 'in'],
+    'keywords': ['as', 'clause', 'property', 'return', 'pass', '__fronted__', '__inline__', '__slot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
 }
 
 for group in GROUPS:
@@ -170,6 +131,6 @@ for kw, color in KEYWORD_SPECIFIC_COLORS.items():
         if k_obj:
             k_obj.hex_color = color
 
-for kw in ['name', 'sep', 'only', 'exclude', 'symbols', 'values', 'mode']:
+for kw in ['name', 'sep', 'only', 'exclude', 'symbols', 'values', 'mode', 'any']:
     if gram.words.keyword_exists(kw):
         gram.words.remove_keyword(kw)

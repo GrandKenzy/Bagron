@@ -88,6 +88,10 @@ def parse_body_statements(statements: list[gram.ASTNode], is_inline: bool = Fals
             from core.processor.visitors import for_statement
             v = for_statement.visit(statement).ignore()
             body[v] = 'ForStatement'
+        elif statement.name in ('EGL_WHILE_STATEMENT', 'while statement'):
+            from core.processor.visitors import while_statement
+            v = while_statement.visit(statement).ignore()
+            body[v] = 'WhileStatement'
         elif statement.name in ('EGL_ASSIGN', 'assign'):
             val_nodes = statement.find('EGL_VALUE')
             toks = [str(getattr(t, 'value', t)) for t in getattr(statement, 'all_tokens', [])]

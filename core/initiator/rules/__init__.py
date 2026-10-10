@@ -32,17 +32,17 @@ from core.initiator.rules.statement import (
     EGL_ELSE_STATEMENT,
     EGL_IF_STATEMENT,
 )
-from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_LOOP_MODE
+from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_WHILE_STATEMENT, EGL_LOOP_MODE
 from core.initiator.rules.imports import EGL_IMPORT, EGL_INCLUDE, EGL_OBJECT, EGL_DECLARE
 from core.initiator.rules.class_decl import EGL_CLASS_DECL, EGL_METHOD_DECL, EGL_CLASS_BODY, EGL_CLASS_STMT
 EGL_CLASS = EGL_CLASS_DECL
 from core.initiator.rules.clauses import EGL_CLAUSE
+from core.initiator.rules.enum_decl import EGL_ENUM_DECL
 from core.initiator.rules.type_decl import (
     EGL_TYPE_SPEC,
     EGL_TYPE_SLOT,
     EGL_TYPE_KIND,
     EGL_TYPE_ITEMS,
-    EGL_TYPE_DTYPE,
     EGL_TYPE_ACCESSOR,
     EGL_TYPE_INIT,
     EGL_TYPE_SETV,
@@ -71,6 +71,7 @@ __all__ = [
     'EGL_ELSE_STATEMENT',
     'EGL_IF_STATEMENT',
     'EGL_FOR_STATEMENT',
+    'EGL_WHILE_STATEMENT',
     'EGL_LOOP_MODE',
     'EGL_ARGUMENTS',
     'EGL_CALL',
@@ -86,6 +87,7 @@ __all__ = [
     'EGL_OBJECT',
     'EGL_DECLARE',
     'EGL_CLAUSE',
+    'EGL_ENUM_DECL',
     'EGL_TYPE_DECL',
     'EGL_TYPE_SPEC',
     'EGL_TYPE_SETV',

@@ -35,7 +35,8 @@ class EGL_CALL(gram.RuleItem):
     grammar = gram.Seq(
         gram.Alt(
             gram.MatchToken('IDENT'),
-            gram.MatchKeyword('__size__'),
+            gram.MatchGroup('types'),
+            gram.MatchKeyword('sizeof'),
         ),
         gram.Enclosed(
             open=gram.Token.LPAREN,
@@ -52,7 +53,6 @@ class EGL_METHOD_CALL(gram.RuleItem):
         gram.Alt(
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),
-            gram.MatchKeyword('this'),
             gram.MatchKeyword('self'),
         ),
         gram.MatchToken(gram.Token.DOT),
@@ -72,7 +72,6 @@ class EGL_MEMBER_ACCESS(gram.RuleItem):
         gram.Alt(
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),
-            gram.MatchKeyword('this'),
             gram.MatchKeyword('self'),
         ),
         gram.MatchToken(gram.Token.DOT),
@@ -83,8 +82,8 @@ class EGL_MEMBER_ACCESS(gram.RuleItem):
             gram.MatchKeyword('value'),
             gram.MatchKeyword('ptr'),
             gram.MatchKeyword('size'),
-            gram.MatchKeyword('__const__'),
-            gram.MatchKeyword('__visibility__'),
+            gram.MatchKeyword('const'),
+            gram.MatchKeyword('visibility'),
             gram.MatchGroup('types'),
         )
     )
@@ -98,7 +97,6 @@ class EGL_INDEX_ACCESS(gram.RuleItem):
             gram.MatchToken('IDENT'),
             gram.MatchGroup('types'),
             gram.MatchGroup('keywords'),
-            gram.MatchKeyword('this'),
         ),
         gram.Enclosed(
             open=gram.Token.LBRACKET,

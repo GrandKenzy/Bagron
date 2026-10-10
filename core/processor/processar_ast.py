@@ -6,6 +6,8 @@ def process(ast: gram.ASTProgram):
     for node in ast.walk(0):
         if node.name in ('EGL_VAR_DECL', 'var declaration'):
             var_decl.visit(node)
+        elif node.name in ('EGL_ENUM_DECL', 'enum declaration'):
+            enum_decl.visit(node)
         elif node.name in ('EGL_TYPE_DECL', 'type declaration'):
             type_decl.visit(node)
         elif node.name in ('EGL_CLASS_DECL', 'class declaration'):
@@ -16,6 +18,8 @@ def process(ast: gram.ASTProgram):
             if_statement.visit(node)
         elif node.name in ('EGL_FOR_STATEMENT', 'for statement'):
             for_statement.visit(node)
+        elif node.name in ('EGL_WHILE_STATEMENT', 'while statement'):
+            while_statement.visit(node)
         elif node.name in ('EGL_METHOD_CALL', 'method call'):
             from core.externs.manager import manager
             target = node.values[0]

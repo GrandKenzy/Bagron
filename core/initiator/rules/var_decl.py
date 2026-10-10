@@ -14,6 +14,7 @@ class EGL_VAR_DECL(gram.RuleItem):
         gram.Alt(
             gram.Ref(EGL_MEMBER_ACCESS),
             gram.MatchToken('IDENT'),
+            gram.MatchKeyword('type'),
         ),
         gram.Opt(
             gram.Seq(
