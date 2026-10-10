@@ -34,6 +34,8 @@ class ClassDecl(Object):
         self.methods = methods or {}
         self.fields = fields or []
         self.privacity = privacity
+        self.constructor_func: Any = None
+        self.generated_functions: list[Any] = []
         super().__init__()
 
     def is_valid(self):

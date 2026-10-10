@@ -244,7 +244,17 @@ def compile_project(
                     if sig:
                         forward_decls.append(f'{sig};')
                     func_impls.append(f_code)
-        elif isinstance(item, (objects.TypeDecl, objects.ClassDecl)):
+        elif isinstance(item, objects.ClassDecl):
+            for fn in getattr(item, 'generated_functions', []):
+                f_code = getattr(fn, 'compiled', '').strip()
+                if f_code:
+                    first_brace = f_code.find('{')
+                    sig = f_code[:first_brace].strip() if first_brace != -1 else ''
+                    if sig and f'{sig};' not in forward_decls:
+                        forward_decls.append(f'{sig};')
+                    if f_code not in func_impls:
+                        func_impls.append(f_code)
+        elif isinstance(item, objects.TypeDecl):
             continue
         else:
             line = getattr(item, 'compiled', '').strip()

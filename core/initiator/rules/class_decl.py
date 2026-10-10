@@ -27,7 +27,9 @@ class EGL_METHOD_DECL(gram.RuleItem):
         gram.Opt(
             gram.MatchKeyword('__inline__')
         ),
-        gram.Ref(EGL_TYPE_SPEC),
+        gram.Opt(
+            gram.Ref(EGL_TYPE_SPEC)
+        ),
         gram.Alt(
             gram.MatchToken('IDENT'),
             gram.MatchKeyword('__new__'),

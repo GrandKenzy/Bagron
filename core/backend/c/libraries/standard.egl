@@ -72,31 +72,22 @@ public struct Type buffer_t:
     __void_p_t__ value = C_STDLIB.malloc(T.size * S)
 
 
-
-; ignora lo de abajo por ahora
-
-
-
-public class str:
-    void __new__(self):
-        __void_p_t__ __char_t__ value 
-        value = __fronted__ ; el valor que hay delante. __fronted__ solo lo guarda en compilación al igual que __slot__
-        __void_p_t__ __char_t__ self._ptr ; con _ lo hacemos privado para encapsular.
-        __size_t__ size = STRING_C.strlen(value)
-        self._ptr = C_STDLIB.malloc((char.size * size) + 1)
-        __size_t__ self._len = size
-        STRING_C.strcpy(self._ptr, value)
-
-    ; los métodos mágicos no requieren @method.
-    void __init__(self):
-        pass
-
-    void __size__(self): ; para cuando se llama a .size
-        return self._len + 1
-
-    @method
-    int len(self):
-        return self.str
+; public class str:
+;     void __new__(self):
+;         __void_p_t__ __char_t__ value 
+;         value = __fronted__
+;         __void_p_t__ __char_t__ self._ptr
+;         __size_t__ size = STRING_C.strlen(value)
+;         self._ptr = C_STDLIB.malloc((char.size * size) + 1)
+;         __size_t__ self._len = size
+;         STRING_C.strcpy(self._ptr, value)
+;     void __init__(self):
+;         pass
+;     void __size__(self):
+;         return self._len + 1
+;     @method
+;     int len(self):
+;         return self.str
         
 
 

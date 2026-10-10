@@ -42,6 +42,8 @@ def _format_c_literal(value: int | float | str, type: str) -> str:
     return str(value)
 
 def visit(function: Function, processor: Callable):
+    if function.compiled:
+        return
     if function.is_inline:
         function.compiled = ""
         return

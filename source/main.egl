@@ -2,8 +2,17 @@ clause Target 'egl-c'
 
 import sdl3
 
+class Window:
+    ptr handle
+
+    void __init__(self, str title):
+        self.handle = sdl3.create_window(title, 640, 480, 0)
+
+    void destroy(self):
+        sdl3.destroy_window(self.handle)
+
 sdl3.init(0)
-ptr win = sdl3.create_window("Ventana SDL3 en Easy-C", 640, 480, 0)
+Window mi_ventana = Window("Hola desde Window en Easy-C")
 sdl3.delay(500)
-sdl3.destroy_window(win)
+mi_ventana.destroy()
 sdl3.quit()

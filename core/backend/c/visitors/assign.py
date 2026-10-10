@@ -32,4 +32,8 @@ def visit(assign: Assign, block: Function | None = None):
             return
         assign.compiled = f'{resolved.name} = {fmt_val};'
         return
+    if target_str.startswith(('self.', 'this.')):
+        arrow_target = target_str.replace('self.', 'self->').replace('this.', 'this->')
+        assign.compiled = f'{arrow_target} = {fmt_val};'
+        return
     assign.compiled = f'{target_str} = {fmt_val};'

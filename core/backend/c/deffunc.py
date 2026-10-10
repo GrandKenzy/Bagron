@@ -195,8 +195,24 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
             else:
                 raw_type = resolved_t.name
         c_type = convert_type(raw_type)
-        compiled = f'sizeof({c_type})'
         return CompiledCall(clean_name, args, 'int', False, None, compiled)
+
+    from core.processor.type_system import CUSTOM_TYPES
+    is_class_ctor = False
+    if clean_name in CUSTOM_TYPES and CUSTOM_TYPES[clean_name].get('is_class'):
+        is_class_ctor = True
+    else:
+        from core.processor import objects
+        for it in objects.get_items().keys():
+            if hasattr(it, '__class__') and it.__class__.__name__ == 'ClassDecl' and getattr(it, 'name', None) == clean_name:
+                is_class_ctor = True
+                break
+
+    if is_class_ctor:
+        compiled_args = [_format_call_arg(a, block) for a in args]
+        call_expr = f'{clean_name}_create({", ".join(compiled_args)})'
+        compiled = (call_expr + ';') if is_statement else call_expr
+        return CompiledCall(clean_name, args, clean_name, False, None, compiled)
 
     compiled_args = []
     if reserved and reserved.params:

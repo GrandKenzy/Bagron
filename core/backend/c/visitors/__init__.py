@@ -5,6 +5,7 @@ from core.backend.c.visitors import if_statement
 from core.backend.c.visitors import for_statement
 from core.backend.c.visitors import method_call
 from core.backend.c.visitors import expression
+from core.backend.c.visitors import class_decl
 
 __all__ = [
     'variable',
@@ -14,4 +15,5 @@ __all__ = [
     'for_statement',
     'method_call',
     'expression',
+    'class_decl',
 ]

@@ -41,3 +41,5 @@ def process(content: dict[Object, str], block: Function | None = None):
             item.compiled = compiled_call.compiled
         elif isinstance(item, MethodCall):
             method_call.visit(item, is_statement=True, block=block)
+        elif isinstance(item, ClassDecl):
+            class_decl.visit(item, process)

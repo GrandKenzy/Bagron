@@ -116,7 +116,9 @@ def format_expression(raw: Any, block: Function | None = None) -> str:
     if (str_raw.startswith('"') and str_raw.endswith('"')) or (str_raw.startswith("'") and str_raw.endswith("'")):
         return str_raw
     if str_raw.startswith(('this.', 'self.')):
-        return str_raw
+        return str_raw.replace('self.', 'self->').replace('this.', 'this->')
+    str_raw = re.sub(r'\bself\.([A-Za-z_][A-Za-z0-9_]*)', r'self->\1', str_raw)
+    str_raw = re.sub(r'\bthis\.([A-Za-z_][A-Za-z0-9_]*)', r'this->\1', str_raw)
     if str_raw.isdigit() or (str_raw.startswith('-') and str_raw[1:].isdigit()):
         return str_raw
     if str_raw.lower() in ('true', 'false'):
