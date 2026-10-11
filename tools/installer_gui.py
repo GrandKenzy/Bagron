@@ -4,6 +4,7 @@ import json
 import threading
 import subprocess
 import shutil
+import importlib.util
 from pathlib import Path
 
 try:
@@ -15,7 +16,6 @@ except ImportError:
 from tools.installer_core import (
     get_default_install_dir,
     is_python_313_or_higher,
-    install_easy_c,
 )
 
 HTML_CONTENT = """<!DOCTYPE html>
@@ -23,23 +23,29 @@ HTML_CONTENT = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instalador de Easy-C (EGL)</title>
+    <title>Instalador de Easy-C</title>
     <style>
         :root {
-            --bg-base: #0d1117;
-            --bg-card: #161b22;
-            --bg-card-hover: #1f242c;
-            --border: #30363d;
-            --border-glow: #38bdf8;
-            --text-main: #f0f6fc;
-            --text-muted: #8b949e;
-            --accent: #0284c7;
-            --accent-hover: #0369a1;
-            --accent-glow: rgba(56, 189, 248, 0.35);
-            --green: #238636;
-            --green-glow: rgba(46, 160, 67, 0.25);
-            --yellow: #d29922;
-            --blue: #38bdf8;
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --border: #e2e8f0;
+            --border-hover: #cbd5e1;
+            --text-main: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --success-bg: #f0fdf4;
+            --success-border: #bbf7d0;
+            --info: #0284c7;
+            --info-bg: #f0f9ff;
+            --info-border: #bae6fd;
+            --warning: #d97706;
+            --warning-bg: #fffbeb;
+            --warning-border: #fef3c7;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
         }
 
         * {
@@ -51,415 +57,526 @@ HTML_CONTENT = """<!DOCTYPE html>
         }
 
         body {
-            background-color: var(--bg-base);
+            background-color: var(--bg-body);
             color: var(--text-main);
-            min-height: 100vh;
+            height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
+        /* Encabezado */
         header {
-            padding: 18px 28px;
-            background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+            background: #ffffff;
             border-bottom: 1px solid var(--border);
+            padding: 16px 28px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
 
-        .brand {
+        .brand-container {
             display: flex;
             align-items: center;
             gap: 12px;
         }
 
-        .logo-box {
-            width: 38px;
-            height: 38px;
-            background: linear-gradient(135deg, #0284c7 0%, #6366f1 100%);
+        .brand-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--primary);
+            color: #ffffff;
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 900;
-            font-size: 20px;
-            color: #ffffff;
-            box-shadow: 0 0 15px var(--accent-glow);
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
         }
 
-        .brand-title h1 {
-            font-size: 18px;
+        .brand-info h1 {
+            font-size: 16px;
             font-weight: 700;
-            letter-spacing: -0.3px;
+            color: var(--text-main);
         }
 
-        .brand-title p {
+        .brand-info p {
             font-size: 12px;
             color: var(--text-muted);
         }
 
-        .version-badge {
-            background: #1f242c;
-            border: 1px solid var(--border);
-            padding: 4px 10px;
-            border-radius: 20px;
+        /* Indicador de pasos / Wizard */
+        .wizard-steps {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
             font-size: 12px;
             font-weight: 600;
-            color: var(--blue);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: #f1f5f9;
+            transition: all 0.2s ease;
         }
 
+        .step-item.active {
+            background: #eff6ff;
+            color: var(--primary);
+            border: 1px solid #bfdbfe;
+        }
+
+        .step-item.done {
+            background: #f0fdf4;
+            color: var(--success);
+        }
+
+        /* Contenedor principal */
         main {
             flex: 1;
-            padding: 24px 28px;
-            overflow-y: auto;
+            padding: 24px 32px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            overflow-y: auto;
         }
 
-        .view {
+        .step-view {
             display: none;
             flex-direction: column;
-            gap: 18px;
-            animation: fadeIn 0.3s ease-out;
+            gap: 20px;
+            animation: fadeIn 0.2s ease-out;
         }
 
-        .view.active {
+        .step-view.active {
             display: flex;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
+            from { opacity: 0; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .section-title {
-            font-size: 14px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-            margin-bottom: -6px;
+        .title-block h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
         }
 
-        .input-group {
+        .title-block p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        /* Formulario y Controles */
+        .form-group {
             display: flex;
-            gap: 10px;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
         }
 
         input[type="text"] {
             flex: 1;
-            background: var(--bg-card);
+            background: #ffffff;
             border: 1px solid var(--border);
-            color: var(--text-main);
             padding: 10px 14px;
             border-radius: 6px;
             font-size: 13px;
+            color: var(--text-main);
             outline: none;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
         }
 
         input[type="text"]:focus {
-            border-color: var(--blue);
-            box-shadow: 0 0 0 2px var(--accent-glow);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }
 
-        .btn {
-            background: var(--accent);
-            color: #fff;
-            border: none;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            justify-content: center;
-        }
-
-        .btn:hover {
-            background: var(--accent-hover);
-            box-shadow: 0 0 10px var(--accent-glow);
-        }
-
-        .btn-secondary {
-            background: #21262d;
-            border: 1px solid var(--border);
-            color: var(--text-main);
-        }
-
-        .btn-secondary:hover {
-            background: #30363d;
-            box-shadow: none;
-        }
-
-        .btn-large {
-            padding: 14px 24px;
-            font-size: 15px;
-        }
-
-        .grid-cards {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .card {
-            background: var(--bg-card);
+        .checkbox-container {
+            background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 14px;
+            padding: 14px 16px;
             display: flex;
-            flex-direction: column;
-            gap: 8px;
-            transition: all 0.2s;
+            align-items: flex-start;
+            gap: 12px;
+            box-shadow: var(--shadow-sm);
+            cursor: pointer;
+            transition: border-color 0.2s;
         }
 
-        .card-header {
+        .checkbox-container:hover {
+            border-color: var(--border-hover);
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 17px;
+            height: 17px;
+            margin-top: 2px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .checkbox-text h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 2px;
+        }
+
+        .checkbox-text p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Cards de Diagnóstico */
+        .diag-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .diag-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            box-shadow: var(--shadow-sm);
         }
 
-        .card-title {
-            font-size: 13px;
-            font-weight: 600;
+        .diag-left {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 12px;
         }
 
-        .card-desc {
+        .diag-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 700;
+            background: #f1f5f9;
+            color: var(--text-secondary);
+        }
+
+        .diag-text h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .diag-text p {
             font-size: 12px;
-            color: var(--text-muted);
-            line-height: 1.4;
+            color: var(--text-secondary);
         }
 
         .badge {
             font-size: 11px;
             font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 12px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            letter-spacing: 0.2px;
         }
 
-        .badge-green {
-            background: rgba(46, 160, 67, 0.15);
-            color: #3fb950;
-            border: 1px solid rgba(46, 160, 67, 0.4);
+        .badge-success {
+            background: var(--success-bg);
+            color: var(--success);
+            border: 1px solid var(--success-border);
         }
 
-        .badge-yellow {
-            background: rgba(210, 153, 34, 0.15);
-            color: #d29922;
-            border: 1px solid rgba(210, 153, 34, 0.4);
+        .badge-info {
+            background: var(--info-bg);
+            color: var(--info);
+            border: 1px solid var(--info-border);
         }
 
-        .badge-blue {
-            background: rgba(56, 189, 248, 0.15);
-            color: #38bdf8;
-            border: 1px solid rgba(56, 189, 248, 0.4);
+        .badge-warning {
+            background: var(--warning-bg);
+            color: var(--warning);
+            border: 1px solid var(--warning-border);
         }
 
-        .options-box {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px 16px;
+        /* Barra de Progreso */
+        .progress-block {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
+            padding: 10px 0;
         }
 
-        .checkbox-label {
+        .progress-header {
             display: flex;
-            align-items: center;
-            gap: 10px;
+            justify-content: space-between;
             font-size: 13px;
-            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-secondary);
         }
 
-        .checkbox-label input {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--accent);
-            cursor: pointer;
-        }
-
-        /* Progreso */
-        .progress-container {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            padding: 20px 0;
-        }
-
-        .progress-bar-bg {
-            background: #21262d;
-            height: 10px;
-            border-radius: 6px;
+        .progress-track {
+            background: #e2e8f0;
+            height: 8px;
+            border-radius: 4px;
             overflow: hidden;
-            position: relative;
         }
 
-        .progress-bar-fill {
+        .progress-thumb {
+            background: var(--primary);
             height: 100%;
-            background: linear-gradient(90deg, #0284c7, #38bdf8);
             width: 0%;
             transition: width 0.3s ease;
-            box-shadow: 0 0 10px var(--accent-glow);
         }
 
-        .status-text {
-            font-size: 13px;
-            color: var(--text-main);
-            font-weight: 500;
-        }
-
-        .console-box {
-            background: #090d12;
+        .log-box {
+            background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 6px;
             padding: 12px;
-            font-family: "Consolas", monospace;
+            font-family: "Consolas", "Courier New", monospace;
             font-size: 11px;
-            color: #a5d6ff;
-            height: 150px;
+            color: var(--text-secondary);
+            height: 140px;
             overflow-y: auto;
             white-space: pre-wrap;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
         }
 
-        /* Finalización */
-        .success-box {
+        /* Éxito */
+        .success-wrapper {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 30px 10px;
+            padding: 24px 0;
             text-align: center;
-            gap: 14px;
+            gap: 12px;
         }
 
-        .success-icon {
-            width: 60px;
-            height: 60px;
-            background: rgba(46, 160, 67, 0.2);
-            border: 2px solid #3fb950;
+        .success-badge-large {
+            width: 52px;
+            height: 52px;
             border-radius: 50%;
+            background: var(--success-bg);
+            border: 2px solid var(--success-border);
+            color: var(--success);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 30px;
-            color: #3fb950;
+            font-size: 24px;
+            font-weight: 700;
         }
 
+        .code-box {
+            background: #f1f5f9;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-family: monospace;
+            font-size: 13px;
+            color: var(--primary);
+            text-align: left;
+            margin-top: 8px;
+        }
+
+        /* Botones y Footer */
         footer {
-            padding: 14px 28px;
-            background: #0d1117;
+            background: #ffffff;
             border-top: 1px solid var(--border);
+            padding: 16px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        .btn {
+            padding: 9px 18px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .btn-secondary:hover {
+            background: #f1f5f9;
+            border-color: var(--border-hover);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
     <header>
-        <div class="brand">
-            <div class="logo-box">E</div>
-            <div class="brand-title">
+        <div class="brand-container">
+            <div class="brand-icon">E</div>
+            <div class="brand-info">
                 <h1>Easy-C (EGL)</h1>
-                <p>Compilador Nativo & DSL para C</p>
+                <p>Instalador Oficial de Sistema</p>
             </div>
         </div>
-        <div class="version-badge">v0.2.0</div>
+
+        <div class="wizard-steps">
+            <div class="step-item active" id="step-pill-1">1 Ubicación</div>
+            <div class="step-item" id="step-pill-2">2 Diagnóstico</div>
+            <div class="step-item" id="step-pill-3">3 Instalación</div>
+        </div>
     </header>
 
     <main>
-        <!-- VISTA 1: CONFIGURACIÓN -->
-        <div id="view-config" class="view active">
-            <div class="section-title">Directorio de Instalación</div>
-            <div class="input-group">
-                <input type="text" id="install-path" spellcheck="false" />
-                <button class="btn btn-secondary" onclick="browseFolder()">Examinar...</button>
+        <!-- ETAPA 1: RUTA Y PATH -->
+        <div class="step-view active" id="view-step-1">
+            <div class="title-block">
+                <h2>Elige la ruta de instalación</h2>
+                <p>Selecciona la carpeta donde se organizarán los componentes del compilador.</p>
             </div>
 
-            <div class="section-title">Diagnóstico del Sistema</div>
-            <div class="grid-cards">
-                <div class="card" id="card-python">
-                    <div class="card-header">
-                        <span class="card-title">Python 3.13+</span>
-                        <span class="badge" id="badge-python">Comprobando...</span>
-                    </div>
-                    <div class="card-desc" id="desc-python">Analizando entorno local...</div>
-                </div>
-
-                <div class="card" id="card-gram">
-                    <div class="card-header">
-                        <span class="card-title">Librería Gram</span>
-                        <span class="badge" id="badge-gram">Comprobando...</span>
-                    </div>
-                    <div class="card-desc" id="desc-gram">Analizando framework gram...</div>
-                </div>
-
-                <div class="card" id="card-compiler">
-                    <div class="card-header">
-                        <span class="card-title">Compilador C</span>
-                        <span class="badge badge-green" id="badge-compiler">GCC Detectado</span>
-                    </div>
-                    <div class="card-desc" id="desc-compiler">Listo para generar ejecutables binarios.</div>
-                </div>
-
-                <div class="card" id="card-launcher">
-                    <div class="card-header">
-                        <span class="card-title">Lanzador Nativo</span>
-                        <span class="badge badge-blue">bin/egl.exe</span>
-                    </div>
-                    <div class="card-desc">Ejecutable de 0ms de latencia integrado para terminal.</div>
+            <div class="form-group">
+                <label class="form-label">Directorio de instalación</label>
+                <div class="input-row">
+                    <input type="text" id="input-path" spellcheck="false" />
+                    <button class="btn btn-secondary" onclick="browseFolder()">Examinar...</button>
                 </div>
             </div>
 
-            <div class="section-title">Opciones Adicionales</div>
-            <div class="options-box">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="opt-path" checked />
-                    <span>Registrar Easy-C en la variable de entorno <strong>PATH</strong> (recomendado)</span>
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="opt-embed" />
-                    <span>Instalar siempre un entorno aislado de Python 3.13 portable (independiente del sistema)</span>
-                </label>
+            <label class="checkbox-container">
+                <input type="checkbox" id="check-path" checked />
+                <div class="checkbox-text">
+                    <h4>Agregar Easy-C al PATH de Windows (Recomendado)</h4>
+                    <p>Permite ejecutar el comando <code>egl</code> desde cualquier consola (PowerShell, CMD, Git Bash).</p>
+                </div>
+            </label>
+
+            <label class="checkbox-container">
+                <input type="checkbox" id="check-embed" />
+                <div class="checkbox-text">
+                    <h4>Descargar entorno Python 3.13 portable de respaldo</h4>
+                    <p>Mantiene una copia aislada de Python dentro de la carpeta de Easy-C para total independencia.</p>
+                </div>
+            </label>
+        </div>
+
+        <!-- ETAPA 2: COMPROBACIONES DEL SISTEMA -->
+        <div class="step-view" id="view-step-2">
+            <div class="title-block">
+                <h2>Comprobación rápida del entorno</h2>
+                <p>Verificando dependencias necesarias para asegurar el funcionamiento óptimo:</p>
+            </div>
+
+            <div class="diag-grid">
+                <!-- Python Card -->
+                <div class="diag-card">
+                    <div class="diag-left">
+                        <div class="diag-icon">Py</div>
+                        <div class="diag-text">
+                            <h4>Python 3.13+</h4>
+                            <p id="diag-desc-python">Comprobando...</p>
+                        </div>
+                    </div>
+                    <span class="badge" id="diag-badge-python">...</span>
+                </div>
+
+                <!-- Gram Card -->
+                <div class="diag-card">
+                    <div class="diag-left">
+                        <div class="diag-icon">Gr</div>
+                        <div class="diag-text">
+                            <h4>Librería Gram</h4>
+                            <p id="diag-desc-gram">Comprobando...</p>
+                        </div>
+                    </div>
+                    <span class="badge" id="diag-badge-gram">...</span>
+                </div>
+
+                <!-- C Compiler Card -->
+                <div class="diag-card">
+                    <div class="diag-left">
+                        <div class="diag-icon">CC</div>
+                        <div class="diag-text">
+                            <h4>Compilador C</h4>
+                            <p id="diag-desc-compiler">Comprobando...</p>
+                        </div>
+                    </div>
+                    <span class="badge" id="diag-badge-compiler">...</span>
+                </div>
             </div>
         </div>
 
-        <!-- VISTA 2: PROGRESO -->
-        <div id="view-progress" class="view">
-            <div class="progress-container">
-                <div style="display: flex; justify-content: space-between;">
-                    <span class="status-text" id="progress-stage">Iniciando instalación...</span>
-                    <span class="status-text" id="progress-pct" style="font-weight: 700; color: var(--blue);">0%</span>
+        <!-- ETAPA 3: INSTALACIÓN Y CARGA -->
+        <div class="step-view" id="view-step-3">
+            <div class="title-block" id="install-header">
+                <h2>Instalando Easy-C...</h2>
+                <p>Configurando archivos, módulos del backend y variables de entorno.</p>
+            </div>
+
+            <div class="progress-block" id="progress-block">
+                <div class="progress-header">
+                    <span id="progress-status-text">Iniciando...</span>
+                    <span id="progress-percent-text">0%</span>
                 </div>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" id="progress-bar"></div>
+                <div class="progress-track">
+                    <div class="progress-thumb" id="progress-bar"></div>
                 </div>
             </div>
 
-            <div class="section-title">Registro de Instalación</div>
-            <div class="console-box" id="console-logs"></div>
-        </div>
+            <div class="log-box" id="log-output"></div>
 
-        <!-- VISTA 3: FINALIZADO -->
-        <div id="view-success" class="view">
-            <div class="success-box">
-                <div class="success-icon">✓</div>
-                <h2 style="font-size: 20px;">¡Easy-C Instalado con Éxito!</h2>
-                <p style="color: var(--text-muted); font-size: 13px; max-width: 450px;">
-                    Easy-C ya está listo para usarse. Puedes abrir cualquier consola (PowerShell, CMD, Git Bash) y comenzar a compilar.
+            <!-- Éxito Final -->
+            <div class="success-wrapper" id="success-wrapper" style="display: none;">
+                <div class="success-badge-large">✓</div>
+                <h2>¡Easy-C se ha instalado con éxito!</h2>
+                <p style="font-size: 13px; color: var(--text-secondary); max-width: 440px;">
+                    El compilador ya está listo. Abre una nueva consola para comenzar a compilar proyectos:
                 </p>
-                <div style="background: #161b22; border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; font-family: monospace; font-size: 13px; color: #38bdf8;">
+                <div class="code-box">
                     egl --version<br>
                     egl run main.egl
                 </div>
@@ -468,122 +585,176 @@ HTML_CONTENT = """<!DOCTYPE html>
     </main>
 
     <footer>
-        <button class="btn btn-secondary" id="btn-cancel" onclick="exitApp()">Cancelar</button>
-        <div style="display: flex; gap: 10px;">
-            <button class="btn btn-large" id="btn-action" onclick="startInstall()">Instalar Easy-C</button>
+        <button class="btn btn-secondary" id="btn-back" onclick="goBack()" style="visibility: hidden;">← Atrás</button>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary" id="btn-cancel" onclick="exitApp()">Cancelar</button>
+            <button class="btn btn-primary" id="btn-next" onclick="goNext()">Siguiente →</button>
         </div>
     </footer>
 
     <script>
-        let currentStatus = null;
+        let currentStep = 1;
+        let systemData = null;
 
         window.addEventListener('pywebviewready', function() {
-            window.pywebview.api.get_system_status().then(function(status) {
-                currentStatus = status;
-                document.getElementById('install-path').value = status.default_dir;
+            window.pywebview.api.get_system_status().then(function(data) {
+                systemData = data;
+                document.getElementById('input-path').value = data.default_dir;
 
-                // Python card
-                const bPy = document.getElementById('badge-python');
-                const dPy = document.getElementById('desc-python');
-                if (status.python_ok) {
-                    bPy.className = 'badge badge-green';
+                // Actualizar badges de la etapa 2
+                // 1. Python
+                const bPy = document.getElementById('diag-badge-python');
+                const dPy = document.getElementById('diag-desc-python');
+                if (data.python_ok) {
+                    bPy.className = 'badge badge-success';
                     bPy.innerText = 'Detectado';
-                    dPy.innerText = status.python_version + ' disponible en el sistema.';
+                    dPy.innerText = data.python_msg;
                 } else {
-                    bPy.className = 'badge badge-yellow';
+                    bPy.className = 'badge badge-info';
                     bPy.innerText = 'Auto-Instalar';
                     dPy.innerText = 'Se descargará Python 3.13 portable automáticamente.';
-                    document.getElementById('opt-embed').checked = true;
+                    document.getElementById('check-embed').checked = true;
                 }
 
-                // Gram card
-                const bGram = document.getElementById('badge-gram');
-                const dGram = document.getElementById('desc-gram');
-                if (status.gram_ok) {
-                    bGram.className = 'badge badge-green';
-                    bGram.innerText = 'Disponible';
-                    dGram.innerText = 'Gram Framework listo en el entorno.';
+                // 2. Gram
+                const bGr = document.getElementById('diag-badge-gram');
+                const dGr = document.getElementById('diag-desc-gram');
+                if (data.gram_ok) {
+                    bGr.className = 'badge badge-success';
+                    bGr.innerText = 'Disponible';
+                    dGr.innerText = data.gram_msg;
                 } else {
-                    bGram.className = 'badge badge-blue';
-                    bGram.innerText = 'Auto-Descarga';
-                    dGram.innerText = 'Se instalará de forma aislada en vendor/Gram.';
+                    bGr.className = 'badge badge-info';
+                    bGr.innerText = 'Descarga Privada';
+                    dGr.innerText = 'Se configurará de forma aislada en vendor/Gram.';
                 }
 
-                // Compiler card
-                const bComp = document.getElementById('badge-compiler');
-                const dComp = document.getElementById('desc-compiler');
-                if (status.compiler_name) {
-                    bComp.className = 'badge badge-green';
-                    bComp.innerText = status.compiler_name.toUpperCase();
-                    dComp.innerText = status.compiler_detail;
+                // 3. Compiler
+                const bCc = document.getElementById('diag-badge-compiler');
+                const dCc = document.getElementById('diag-desc-compiler');
+                if (data.compiler_name) {
+                    bCc.className = 'badge badge-success';
+                    bCc.innerText = data.compiler_name;
+                    dCc.innerText = data.compiler_msg;
                 } else {
-                    bComp.className = 'badge badge-yellow';
-                    bComp.innerText = 'Pendiente';
-                    dComp.innerText = 'Puedes instalar GCC con egl download gcc.';
+                    bCc.className = 'badge badge-warning';
+                    bCc.innerText = 'Opcional';
+                    dCc.innerText = 'Puedes instalarlo luego con egl download gcc.';
                 }
             });
         });
 
+        function updateStepUI() {
+            // Actualizar vistas
+            document.querySelectorAll('.step-view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-step-' + currentStep).classList.add('active');
+
+            // Actualizar pills
+            for (let i = 1; i <= 3; i++) {
+                const pill = document.getElementById('step-pill-' + i);
+                pill.classList.remove('active', 'done');
+                if (i === currentStep) {
+                    pill.classList.add('active');
+                } else if (i < currentStep) {
+                    pill.classList.add('done');
+                }
+            }
+
+            // Actualizar botones
+            const btnBack = document.getElementById('btn-back');
+            const btnNext = document.getElementById('btn-next');
+            const btnCancel = document.getElementById('btn-cancel');
+
+            if (currentStep === 1) {
+                btnBack.style.visibility = 'hidden';
+                btnNext.innerText = 'Siguiente →';
+                btnNext.style.display = 'inline-flex';
+                btnCancel.style.display = 'inline-flex';
+            } else if (currentStep === 2) {
+                btnBack.style.visibility = 'visible';
+                btnNext.innerText = 'Iniciar Instalación →';
+                btnNext.style.display = 'inline-flex';
+                btnCancel.style.display = 'inline-flex';
+            } else if (currentStep === 3) {
+                btnBack.style.visibility = 'hidden';
+                btnCancel.style.display = 'none';
+                btnNext.style.display = 'none';
+            }
+        }
+
+        function goNext() {
+            if (currentStep === 1) {
+                currentStep = 2;
+                updateStepUI();
+            } else if (currentStep === 2) {
+                currentStep = 3;
+                updateStepUI();
+                startInstallationProcess();
+            }
+        }
+
+        function goBack() {
+            if (currentStep === 2) {
+                currentStep = 1;
+                updateStepUI();
+            }
+        }
+
         function browseFolder() {
             window.pywebview.api.browse_folder().then(function(folder) {
                 if (folder) {
-                    document.getElementById('install-path').value = folder;
+                    document.getElementById('input-path').value = folder;
                 }
             });
         }
 
-        function appendLog(line) {
-            const c = document.getElementById('console-logs');
-            c.innerText += line + '\\n';
-            c.scrollTop = c.scrollHeight;
+        function appendLog(msg) {
+            const el = document.getElementById('log-output');
+            el.innerText += msg + '\\n';
+            el.scrollTop = el.scrollHeight;
         }
 
-        function startInstall() {
-            const targetDir = document.getElementById('install-path').value;
-            const addToPath = document.getElementById('opt-path').checked;
-            const embedPy = document.getElementById('opt-embed').checked;
+        function startInstallationProcess() {
+            const targetDir = document.getElementById('input-path').value;
+            const addPath = document.getElementById('check-path').checked;
+            const embedPy = document.getElementById('check-embed').checked;
 
-            // Cambiar a vista de progreso
-            document.getElementById('view-config').classList.remove('active');
-            document.getElementById('view-progress').classList.add('active');
-            document.getElementById('btn-action').style.display = 'none';
-            document.getElementById('btn-cancel').disabled = true;
-
-            window.pywebview.api.start_install(targetDir, addToPath, embedPy);
+            window.pywebview.api.start_install(targetDir, addPath, embedPy);
         }
 
-        window.onProgress = function(pct, stage, log) {
-            document.getElementById('progress-pct').innerText = pct + '%';
+        window.onProgress = function(pct, statusText, logLine) {
             document.getElementById('progress-bar').style.width = pct + '%';
-            document.getElementById('progress-stage').innerText = stage;
-            if (log) appendLog(log);
+            document.getElementById('progress-percent-text').innerText = pct + '%';
+            document.getElementById('progress-status-text').innerText = statusText;
+            if (logLine) appendLog(logLine);
         };
 
         window.onSuccess = function(targetDir) {
-            document.getElementById('view-progress').classList.remove('active');
-            document.getElementById('view-success').classList.add('active');
-            document.getElementById('btn-cancel').style.display = 'none';
-
-            const btnAction = document.getElementById('btn-action');
-            btnAction.style.display = 'block';
-            btnAction.innerText = 'Abrir Terminal';
-            btnAction.onclick = function() {
-                window.pywebview.api.launch_terminal(targetDir);
-            };
+            document.getElementById('install-header').style.display = 'none';
+            document.getElementById('progress-block').style.display = 'none';
+            document.getElementById('log-output').style.display = 'none';
+            document.getElementById('success-wrapper').style.display = 'flex';
 
             const footer = document.querySelector('footer');
-            const btnExit = document.createElement('button');
-            btnExit.className = 'btn btn-secondary';
-            btnExit.innerText = 'Salir';
-            btnExit.onclick = exitApp;
-            footer.insertBefore(btnExit, footer.firstChild);
+            footer.innerHTML = `
+                <div></div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary" onclick="exitApp()">Finalizar</button>
+                    <button class="btn btn-primary" onclick="window.pywebview.api.launch_terminal('${targetDir.replace(/\\\\/g, '\\\\\\\\')}')">Abrir Terminal</button>
+                </div>
+            `;
         };
 
         window.onError = function(err) {
+            document.getElementById('progress-status-text').innerText = 'Error: ' + err;
+            document.getElementById('progress-status-text').style.color = '#dc2626';
             appendLog('[ERROR FATAL] ' + err);
-            document.getElementById('progress-stage').innerText = 'Fallo en la instalación: ' + err;
-            document.getElementById('progress-stage').style.color = '#f85149';
-            document.getElementById('btn-cancel').disabled = false;
+
+            const footer = document.querySelector('footer');
+            footer.innerHTML = `
+                <div></div>
+                <button class="btn btn-secondary" onclick="exitApp()">Cerrar</button>
+            `;
         };
 
         function exitApp() {
@@ -594,40 +765,83 @@ HTML_CONTENT = """<!DOCTYPE html>
 </html>
 """
 
-class InstallerApi:
+class FastInstallerApi:
     def __init__(self):
         self.window = None
 
     def get_system_status(self) -> dict:
-        py_ok = is_python_313_or_higher()
-        py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        # 1. Comprobación rápida instantánea de Python (< 1ms)
+        py_ok = False
+        py_msg = ""
+        if sys.version_info >= (3, 13):
+            py_ok = True
+            py_msg = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} detectado"
+        else:
+            try:
+                py_root = Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python'
+                if py_root.is_dir():
+                    for f in py_root.iterdir():
+                        if f.name.startswith(('Python313', 'Python314', 'Python315')):
+                            if (f / 'python.exe').is_file():
+                                py_ok = True
+                                py_msg = f"{f.name} encontrado en Programs"
+                                break
+            except Exception:
+                pass
+        if not py_ok:
+            py_msg = "No detectado (se instalará versión portable)"
 
-        # Detección de gram
+        # 2. Comprobación rápida instantánea de Gram (< 1ms)
         gram_ok = False
+        gram_msg = ""
         try:
-            import gram
-            gram_ok = True
-        except ImportError:
+            if importlib.util.find_spec('gram') is not None:
+                gram_ok = True
+                gram_msg = "Framework Gram disponible"
+        except Exception:
             pass
 
-        # Detección de compilador
-        compiler_name = ""
-        compiler_detail = ""
-        gcc = shutil.which('gcc')
-        if gcc:
-            compiler_name = "GCC"
-            compiler_detail = f"Compilador detectado en {gcc}"
-        elif shutil.which('cl'):
-            compiler_name = "MSVC"
-            compiler_detail = "Compilador Microsoft C/C++ detectado"
+        if not gram_ok:
+            local_gram = Path(__file__).resolve().parent.parent / '.egl' / 'vendor' / 'Gram' / 'gram'
+            if local_gram.is_dir():
+                gram_ok = True
+                gram_msg = "Gram disponible en vendor local"
+            else:
+                gram_msg = "Se descargará de forma privada en vendor/Gram"
+
+        # 3. Comprobación rápida instantánea de compilador C (< 1ms)
+        comp_name = ""
+        comp_msg = ""
+        common_gccs = [
+            Path(r"C:\msys64\ucrt64\bin\gcc.exe"),
+            Path(r"C:\msys64\mingw64\bin\gcc.exe"),
+            Path(r"C:\MinGW\bin\gcc.exe"),
+        ]
+        for g in common_gccs:
+            if g.is_file():
+                comp_name = "GCC"
+                comp_msg = f"Detectado en {g.parent}"
+                break
+
+        if not comp_name:
+            gcc = shutil.which('gcc')
+            if gcc:
+                comp_name = "GCC"
+                comp_msg = f"Detectado en PATH"
+            elif shutil.which('cl'):
+                comp_name = "MSVC"
+                comp_msg = "Microsoft C/C++ (cl.exe)"
+            else:
+                comp_msg = "No detectado (disponible con egl download gcc)"
 
         return {
             "default_dir": str(get_default_install_dir()),
             "python_ok": py_ok,
-            "python_version": f"Python {py_ver}",
+            "python_msg": py_msg,
             "gram_ok": gram_ok,
-            "compiler_name": compiler_name,
-            "compiler_detail": compiler_detail,
+            "gram_msg": gram_msg,
+            "compiler_name": comp_name,
+            "compiler_msg": comp_msg,
         }
 
     def browse_folder(self) -> str | None:
@@ -639,13 +853,13 @@ class InstallerApi:
     def start_install(self, target_dir_str: str, add_to_path: bool, force_embed_python: bool):
         target_dir = Path(target_dir_str).resolve()
 
-        def run_thread():
+        def worker():
             try:
                 def notify(pct, stage, log=""):
                     if self.window:
                         self.window.evaluate_js(f"window.onProgress({pct}, {json.dumps(stage)}, {json.dumps(log)});")
 
-                notify(10, "Creando estructura de carpetas...", f"Destino: {target_dir}")
+                notify(10, "Creando carpetas estructuradas...", f"Directorio destino: {target_dir}")
                 repo_root = Path(__file__).resolve().parent.parent
 
                 bin_dir = target_dir / 'bin'
@@ -658,7 +872,7 @@ class InstallerApi:
                 for d in [bin_dir, core_dir, lib_dir, src_dir, vendor_dir]:
                     d.mkdir(parents=True, exist_ok=True)
 
-                notify(25, "Copiando componentes del compilador...", "Copiando core, libraries y plantillas...")
+                notify(25, "Copiando componentes del compilador...", "Instalando core, libraries y plantillas...")
                 for folder_name in ['core', 'libraries', 'source']:
                     src = repo_root / folder_name
                     dst = target_dir / folder_name
@@ -675,15 +889,15 @@ class InstallerApi:
                 # Python embebido
                 need_embed = force_embed_python or not is_python_313_or_higher()
                 if need_embed:
-                    notify(40, "Configurando entorno de Python 3.13...", "Descargando Python portable oficial...")
+                    notify(45, "Descargando entorno Python 3.13 portable...", "Descargando python-3.13.2-embed...")
                     from tools.installer_core import download_embedded_python
                     download_embedded_python(python_dir)
-                    notify(60, "Python 3.13 configurado.", f"Python listo en: {python_dir}")
+                    notify(65, "Python 3.13 configurado.", f"Entorno portable en: {python_dir}")
                 else:
-                    notify(50, "Python del sistema verificado.", f"Usando Python del sistema.")
+                    notify(55, "Python del sistema verificado.", "Python 3.13+ confirmado.")
 
                 # Gram
-                notify(70, "Verificando librería privada 'gram'...", "Configurando vendor/Gram...")
+                notify(75, "Configurando librería Gram aislada...", "Instalando en vendor/Gram...")
                 target_gram = vendor_dir / 'Gram'
                 local_gram = repo_root / '.egl' / 'vendor' / 'Gram'
                 if local_gram.is_dir() and not target_gram.is_dir():
@@ -692,8 +906,8 @@ class InstallerApi:
                     from core.install import install_gram
                     install_gram(target_gram)
 
-                # Compilar / Colocar egl.exe
-                notify(85, "Generando lanzador nativo bin/egl.exe...", "Compilando launcher C nativo...")
+                # Compilador lanzador nativo bin/egl.exe
+                notify(85, "Generando lanzador nativo bin/egl.exe...", "Compilando ejecutable C nativo...")
                 from tools.installer_core import compile_launcher_binary
                 launcher_c = repo_root / 'tools' / 'launcher.c'
                 target_exe = bin_dir / 'egl.exe'
@@ -717,23 +931,22 @@ class InstallerApi:
 
                 # PATH
                 if add_to_path:
-                    notify(95, "Registrando en PATH de Windows...", f"Añadiendo {bin_dir} a HKCU\\Environment...")
+                    notify(95, "Registrando en PATH del usuario...", f"Guardando {bin_dir} en HKCU\\Environment...")
                     from tools.installer_core import add_to_user_path
                     add_to_user_path(bin_dir)
 
-                notify(100, "¡Instalación completada!", "Easy-C configurado con éxito.")
+                notify(100, "¡Instalación completada con éxito!", f"Easy-C instalado en: {target_dir}")
                 if self.window:
                     self.window.evaluate_js(f"window.onSuccess({json.dumps(str(target_dir))});")
             except Exception as e:
                 if self.window:
                     self.window.evaluate_js(f"window.onError({json.dumps(str(e))});")
 
-        threading.Thread(target=run_thread, daemon=True).start()
+        threading.Thread(target=worker, daemon=True).start()
 
     def launch_terminal(self, target_dir_str: str):
         target_dir = Path(target_dir_str)
-        bin_dir = target_dir / 'bin'
-        cmd = f'Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd \\"{target_dir}\\"; Write-Host \\"¡Easy-C (EGL) listo para usar! Prueba: egl --version\\""'
+        cmd = f'Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd \\"{target_dir}\\"; Write-Host \\"¡Easy-C listo! Prueba: egl --version\\""'
         subprocess.Popen(['powershell', '-Command', cmd])
         if self.window:
             self.window.destroy()
@@ -744,17 +957,17 @@ class InstallerApi:
 
 def run_gui():
     if not HAS_WEBVIEW:
-        print("[Installer Warning] pywebview no está disponible en este entorno. Iniciando modo consola...")
+        print("[Installer Warning] pywebview no está disponible. Ejecutando en modo consola...")
         from tools.installer_core import install_easy_c
         return install_easy_c()
 
-    api = InstallerApi()
+    api = FastInstallerApi()
     window = webview.create_window(
         title="Instalador Oficial de Easy-C (EGL)",
         html=HTML_CONTENT,
         js_api=api,
-        width=780,
-        height=620,
+        width=740,
+        height=560,
         resizable=False,
     )
     api.window = window
