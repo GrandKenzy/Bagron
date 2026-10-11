@@ -12,6 +12,17 @@ def get_private_vendor_dir() -> Path:
     base_dir = Path(__file__).resolve().parent.parent
     return base_dir / '.egl' / 'vendor'
 
+def safe_rmtree(path: Path):
+    import stat
+    def on_error(func, p, exc_info):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+    if path.exists():
+        shutil.rmtree(path, onerror=on_error)
+
 def install_gram(target_dir: Path | None = None) -> bool:
     if target_dir is None:
         target_dir = get_private_vendor_dir() / 'Gram'
@@ -22,18 +33,23 @@ def install_gram(target_dir: Path | None = None) -> bool:
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     success = False
 
-    # 1. Intentar clonar mediante git si está disponible en el sistema
+    # 1. Intentar actualizar o clonar mediante git si está disponible
     git_bin = shutil.which('git')
     if git_bin:
         try:
-            print("[EGL] Clonando repositorio público desde GitHub con Git...", flush=True)
-            if target_dir.exists():
-                shutil.rmtree(target_dir, ignore_errors=True)
-            res = subprocess.run([git_bin, 'clone', '--depth', '1', GRAM_REPO_URL, str(target_dir)], capture_output=True, text=True)
-            if res.returncode == 0 and (target_dir / 'gram').is_dir():
-                success = True
-            else:
-                print("[EGL] Git clone no completó, usando descarga directa de archivo ZIP...", flush=True)
+            if (target_dir / '.git').is_dir():
+                print("[EGL] Repositorio Git detectado en vendor. Actualizando con git pull...", flush=True)
+                res = subprocess.run([git_bin, '-C', str(target_dir), 'pull'], capture_output=True, text=True)
+                if res.returncode == 0 and (target_dir / 'gram').is_dir():
+                    success = True
+            if not success:
+                print("[EGL] Clonando repositorio público desde GitHub con Git...", flush=True)
+                safe_rmtree(target_dir)
+                res = subprocess.run([git_bin, 'clone', '--depth', '1', GRAM_REPO_URL, str(target_dir)], capture_output=True, text=True)
+                if res.returncode == 0 and (target_dir / 'gram').is_dir():
+                    success = True
+                else:
+                    print("[EGL] Git clone no completó, usando descarga directa de archivo ZIP...", flush=True)
         except Exception:
             pass
 
@@ -76,6 +92,7 @@ def install_gram(target_dir: Path | None = None) -> bool:
                     break
 
             if found:
+                safe_rmtree(target_dir)
                 shutil.move(str(found), str(target_dir))
                 success = True
 
