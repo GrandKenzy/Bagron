@@ -57,4 +57,6 @@ def main():
     return 0 if ok else 1
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     sys.exit(main())
