@@ -1,5 +1,36 @@
 import sys
+import os
+import multiprocessing
 from pathlib import Path
+
+# Protección contra OSError [Errno 22] Invalid argument en ejecutables GUI de Windows
+class SafeWriter:
+    def __init__(self, original):
+        self.original = original
+    def write(self, s):
+        try:
+            if self.original:
+                return self.original.write(s)
+        except Exception:
+            pass
+    def flush(self):
+        try:
+            if self.original:
+                return self.original.flush()
+        except Exception:
+            pass
+
+try:
+    if sys.stdout is None or not hasattr(sys.stdout, 'write'):
+        sys.stdout = SafeWriter(None)
+    else:
+        sys.stdout = SafeWriter(sys.stdout)
+    if sys.stderr is None or not hasattr(sys.stderr, 'write'):
+        sys.stderr = SafeWriter(None)
+    else:
+        sys.stderr = SafeWriter(sys.stderr)
+except Exception:
+    pass
 
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
