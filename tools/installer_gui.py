@@ -44,7 +44,13 @@ except ImportError:
 
 from tools.installer_core import (
     get_default_install_dir,
+    get_source_root,
+    find_system_python,
     is_python_313_or_higher,
+    ensure_source_files,
+    download_embedded_python,
+    compile_launcher_binary,
+    add_to_user_path,
 )
 
 HTML_CONTENT = """<!DOCTYPE html>
@@ -800,25 +806,9 @@ class FastInstallerApi:
 
     def get_system_status(self) -> dict:
         # 1. Comprobación rápida instantánea de Python (< 1ms)
-        py_ok = False
-        py_msg = ""
-        if sys.version_info >= (3, 13):
-            py_ok = True
-            py_msg = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} detectado"
-        else:
-            try:
-                py_root = Path.home() / 'AppData' / 'Local' / 'Programs' / 'Python'
-                if py_root.is_dir():
-                    for f in py_root.iterdir():
-                        if f.name.startswith(('Python313', 'Python314', 'Python315')):
-                            if (f / 'python.exe').is_file():
-                                py_ok = True
-                                py_msg = f"{f.name} encontrado en Programs"
-                                break
-            except Exception:
-                pass
-        if not py_ok:
-            py_msg = "No detectado (se instalará versión portable)"
+        sys_py = find_system_python()
+        py_ok = sys_py is not None
+        py_msg = f"Python detectado en: {sys_py}" if py_ok else "No detectado (se instalará versión portable)"
 
         # 2. Comprobación rápida instantánea de Gram (< 1ms)
         gram_ok = False
@@ -830,12 +820,14 @@ class FastInstallerApi:
         except Exception:
             pass
 
+        source_root = get_source_root()
         if not gram_ok:
-            local_gram = Path(__file__).resolve().parent.parent / '.egl' / 'vendor' / 'Gram' / 'gram'
-            if local_gram.is_dir():
-                gram_ok = True
-                gram_msg = "Gram disponible en vendor local"
-            else:
+            for cand in [source_root / '.egl' / 'vendor' / 'Gram' / 'gram', source_root / 'vendor' / 'Gram' / 'gram']:
+                if cand.is_dir():
+                    gram_ok = True
+                    gram_msg = "Gram disponible en vendor"
+                    break
+            if not gram_ok:
                 gram_msg = "Se descargará de forma privada en vendor/Gram"
 
         # 3. Comprobación rápida instantánea de compilador C (< 1ms)
@@ -856,7 +848,7 @@ class FastInstallerApi:
             gcc = shutil.which('gcc')
             if gcc:
                 comp_name = "GCC"
-                comp_msg = f"Detectado en PATH"
+                comp_msg = "Detectado en PATH"
             elif shutil.which('cl'):
                 comp_name = "MSVC"
                 comp_msg = "Microsoft C/C++ (cl.exe)"
@@ -889,7 +881,8 @@ class FastInstallerApi:
                         self.window.evaluate_js(f"window.onProgress({pct}, {json.dumps(stage)}, {json.dumps(log)});")
 
                 notify(10, "Creando carpetas estructuradas...", f"Directorio destino: {target_dir}")
-                repo_root = Path(__file__).resolve().parent.parent
+                source_root = get_source_root()
+                source_root = ensure_source_files(source_root, lambda msg: notify(15, "Descargando componentes...", msg))
 
                 bin_dir = target_dir / 'bin'
                 core_dir = target_dir / 'core'
@@ -903,7 +896,7 @@ class FastInstallerApi:
 
                 notify(25, "Copiando componentes del compilador...", "Instalando core, libraries y plantillas...")
                 for folder_name in ['core', 'libraries', 'source']:
-                    src = repo_root / folder_name
+                    src = source_root / folder_name
                     dst = target_dir / folder_name
                     if src.is_dir():
                         if dst.exists():
@@ -911,7 +904,7 @@ class FastInstallerApi:
                         shutil.copytree(src, dst)
 
                 for single_file in ['egl.py', 'README.md', 'LICENSE']:
-                    src = repo_root / single_file
+                    src = source_root / single_file
                     if src.is_file():
                         shutil.copy2(src, target_dir / single_file)
 
@@ -919,32 +912,39 @@ class FastInstallerApi:
                 need_embed = force_embed_python or not is_python_313_or_higher()
                 if need_embed:
                     notify(45, "Descargando entorno Python 3.13 portable...", "Descargando python-3.13.2-embed...")
-                    from tools.installer_core import download_embedded_python
-                    download_embedded_python(python_dir)
+                    download_embedded_python(
+                        python_dir,
+                        progress_cb=lambda pct, msg: notify(45 + int(pct * 0.2), "Descargando Python 3.13...", msg)
+                    )
                     notify(65, "Python 3.13 configurado.", f"Entorno portable en: {python_dir}")
                 else:
-                    notify(55, "Python del sistema verificado.", "Python 3.13+ confirmado.")
+                    notify(55, "Python del sistema verificado.", f"Python 3.13+ detectado.")
 
                 # Gram
                 notify(75, "Configurando librería Gram aislada...", "Instalando en vendor/Gram...")
                 target_gram = vendor_dir / 'Gram'
-                local_gram = repo_root / '.egl' / 'vendor' / 'Gram'
+                local_gram = source_root / '.egl' / 'vendor' / 'Gram'
+                if not local_gram.is_dir():
+                    local_gram = source_root / 'vendor' / 'Gram'
+
                 if local_gram.is_dir() and not target_gram.is_dir():
                     shutil.copytree(local_gram, target_gram)
                 elif not (target_gram / 'gram').is_dir():
-                    from core.install import install_gram
-                    install_gram(target_gram)
+                    try:
+                        from core.install import install_gram
+                        install_gram(target_gram)
+                    except Exception:
+                        pass
 
                 # Compilador lanzador nativo bin/egl.exe
                 notify(85, "Generando lanzador nativo bin/egl.exe...", "Compilando ejecutable C nativo...")
-                from tools.installer_core import compile_launcher_binary
-                launcher_c = repo_root / 'tools' / 'launcher.c'
+                launcher_c = source_root / 'tools' / 'launcher.c'
                 target_exe = bin_dir / 'egl.exe'
                 built_exe = False
                 if launcher_c.is_file():
                     built_exe = compile_launcher_binary(launcher_c, target_exe)
                 if not built_exe:
-                    tools_exe = repo_root / 'tools' / 'egl.exe'
+                    tools_exe = source_root / 'tools' / 'egl.exe'
                     if tools_exe.is_file():
                         shutil.copy2(tools_exe, target_exe)
 
@@ -961,7 +961,6 @@ class FastInstallerApi:
                 # PATH
                 if add_to_path:
                     notify(95, "Registrando en PATH del usuario...", f"Guardando {bin_dir} en HKCU\\Environment...")
-                    from tools.installer_core import add_to_user_path
                     add_to_user_path(bin_dir)
 
                 notify(100, "¡Instalación completada con éxito!", f"Easy-C instalado en: {target_dir}")

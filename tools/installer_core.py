@@ -44,13 +44,153 @@ def get_default_install_dir() -> Path:
         return Path(local_app_data) / 'Programs' / 'Easy-C'
     return Path.home() / 'AppData' / 'Local' / 'Programs' / 'Easy-C'
 
+def get_source_root() -> Path:
+    """Identifica la raíz de los archivos de Easy-C, soportando PyInstaller y modo desarrollo."""
+    # 1. Si está congelado en PyInstaller (_MEIPASS)
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        mei = Path(sys._MEIPASS)
+        if (mei / 'core').is_dir():
+            return mei
+
+    # 2. Árbol de código fuente / repositorio de desarrollo
+    dev_root = Path(__file__).resolve().parent.parent
+    if (dev_root / 'core').is_dir():
+        return dev_root
+
+    # 3. Directorio adyacente al ejecutable
+    exe_dir = Path(sys.executable).resolve().parent
+    if (exe_dir / 'core').is_dir():
+        return exe_dir
+
+    return dev_root
+
+def find_system_python() -> str | None:
+    """Busca un ejecutable de Python 3.13+ en el sistema de manera rápida y segura."""
+    # 1. Si no estamos en un ejecutable congelado, consultar el propio intérprete actual
+    if not getattr(sys, 'frozen', False):
+        if sys.version_info >= (3, 13):
+            return sys.executable
+
+    # 2. Rutas estándar de instalación en Windows (0 ms, sin subprocesos)
+    local_app_data = os.environ.get('LOCALAPPDATA', '')
+    prog_files = os.environ.get('ProgramFiles', '')
+    if local_app_data:
+        py_user = Path(local_app_data) / 'Programs' / 'Python'
+        if py_user.is_dir():
+            try:
+                for entry in sorted(py_user.iterdir(), reverse=True):
+                    if entry.name.startswith(('Python313', 'Python314', 'Python315', 'Python316')):
+                        exe = entry / 'python.exe'
+                        if exe.is_file():
+                            return str(exe)
+            except Exception:
+                pass
+
+    if prog_files:
+        py_sys = Path(prog_files)
+        for name in ['Python316', 'Python315', 'Python314', 'Python313']:
+            exe = py_sys / name / 'python.exe'
+            if exe.is_file():
+                return str(exe)
+
+    # 3. Probar comandos 'py' o 'python' en PATH (excluyendo estrictamente el propio instalador)
+    installer_exe = str(Path(sys.executable).resolve()).lower() if getattr(sys, 'frozen', False) else ""
+    for cand in ['py', 'python']:
+        found = shutil.which(cand)
+        if not found:
+            continue
+        if installer_exe and str(Path(found).resolve()).lower() == installer_exe:
+            continue
+        try:
+            creationflags = 0x08000000 if sys.platform == 'win32' else 0
+            res = subprocess.run(
+                [found, '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)'],
+                capture_output=True,
+                creationflags=creationflags,
+                timeout=2
+            )
+            if res.returncode == 0:
+                return found
+        except Exception:
+            pass
+
+    return None
+
 def is_python_313_or_higher(py_executable: str | None = None) -> bool:
-    cmd = [py_executable or sys.executable, '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)']
-    try:
-        res = subprocess.run(cmd, capture_output=True)
-        return res.returncode == 0
-    except Exception:
-        return False
+    if py_executable:
+        installer_exe = str(Path(sys.executable).resolve()).lower() if getattr(sys, 'frozen', False) else ""
+        if installer_exe and str(Path(py_executable).resolve()).lower() == installer_exe:
+            return False
+        try:
+            creationflags = 0x08000000 if sys.platform == 'win32' else 0
+            res = subprocess.run(
+                [py_executable, '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)'],
+                capture_output=True,
+                creationflags=creationflags,
+                timeout=2
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
+    return find_system_python() is not None
+
+def ensure_source_files(source_root: Path, notify_cb=None) -> Path:
+    """Garantiza la presencia de core/, libraries/ y egl.py; si faltan, los descarga de GitHub."""
+    if (source_root / 'core').is_dir() and (source_root / 'egl.py').is_file():
+        return source_root
+
+    cache_dir = get_default_install_dir().parent / '_easy_c_src_cache'
+    if (cache_dir / 'core').is_dir() and (cache_dir / 'egl.py').is_file():
+        return cache_dir
+
+    if notify_cb:
+        notify_cb("Descargando componentes de Easy-C desde GitHub...")
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    zip_dest = cache_dir / '_src.zip'
+    urls = [
+        "https://github.com/GrandKenzy/Easy-C/archive/refs/tags/v0.2.0.zip",
+        "https://github.com/GrandKenzy/Easy-C/archive/refs/heads/main.zip",
+    ]
+    downloaded = False
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Easy-C-Installer'})
+            with urllib.request.urlopen(req, timeout=15) as resp, open(zip_dest, 'wb') as f:
+                shutil.copyfileobj(resp, f)
+            downloaded = True
+            break
+        except Exception:
+            continue
+
+    if downloaded and zip_dest.is_file():
+        unzip_dir = cache_dir / '_unzip'
+        if unzip_dir.exists():
+            shutil.rmtree(unzip_dir, ignore_errors=True)
+        try:
+            with zipfile.ZipFile(zip_dest, 'r') as zf:
+                zf.extractall(unzip_dir)
+            zip_dest.unlink(missing_ok=True)
+            found = None
+            for p in unzip_dir.iterdir():
+                if p.is_dir() and (p / 'core').is_dir():
+                    found = p
+                    break
+            if found:
+                for item in found.iterdir():
+                    dst = cache_dir / item.name
+                    if dst.exists():
+                        if dst.is_dir():
+                            shutil.rmtree(dst, ignore_errors=True)
+                        else:
+                            dst.unlink()
+                    shutil.move(str(item), str(dst))
+                shutil.rmtree(unzip_dir, ignore_errors=True)
+                return cache_dir
+        except Exception:
+            pass
+
+    return source_root
 
 def add_to_user_path(bin_dir: Path) -> bool:
     if sys.platform != 'win32':
@@ -121,10 +261,12 @@ def remove_from_user_path(bin_dir: Path) -> bool:
         print(f"[Installer Error] No se pudo remover del PATH: {e}", flush=True)
         return False
 
-def download_embedded_python(dest_dir: Path) -> bool:
+def download_embedded_python(dest_dir: Path, progress_cb=None) -> bool:
     dest_dir.mkdir(parents=True, exist_ok=True)
     python_exe = dest_dir / 'python.exe'
     if python_exe.is_file():
+        if progress_cb:
+            progress_cb(100, "Python embebido ya presente.")
         print(f"[Installer] Python embebido ya presente en: '{dest_dir}'", flush=True)
         return True
 
@@ -132,19 +274,22 @@ def download_embedded_python(dest_dir: Path) -> bool:
     zip_dest = dest_dir.parent / '_py_embed_temp.zip'
     try:
         req = urllib.request.Request(PYTHON_EMBED_URL, headers={'User-Agent': 'EasyC-Installer'})
-        with urllib.request.urlopen(req) as resp, open(zip_dest, 'wb') as f:
+        with urllib.request.urlopen(req, timeout=30) as resp, open(zip_dest, 'wb') as f:
             total_size = resp.headers.get('content-length')
+            total_size = int(total_size) if total_size else None
             downloaded = 0
             while True:
-                chunk = resp.read(16384)
+                chunk = resp.read(65536)
                 if not chunk:
                     break
                 f.write(chunk)
                 downloaded += len(chunk)
-                if total_size:
-                    pct = int((downloaded / int(total_size)) * 100)
-                    print(f"\r[Installer] Descarga de Python 3.13: {pct}% ({downloaded // 1024} KB)", end='', flush=True)
-            print()
+                if progress_cb and total_size:
+                    pct = int((downloaded / total_size) * 100)
+                    progress_cb(pct, f"Descargando Python 3.13: {pct}% ({downloaded // (1024*1024)} MB)")
+
+        if progress_cb:
+            progress_cb(100, "Extrayendo entorno de Python...")
 
         print("[Installer] Extrayendo entorno de Python...", flush=True)
         with zipfile.ZipFile(zip_dest, 'r') as zf:
@@ -167,11 +312,12 @@ def download_embedded_python(dest_dir: Path) -> bool:
         return False
 
 def compile_launcher_binary(source_c: Path, output_exe: Path) -> bool:
+    creationflags = 0x08000000 if sys.platform == 'win32' else 0
     gcc_bin = shutil.which('gcc')
     if gcc_bin:
         try:
             cmd = [gcc_bin, '-O2', '-municode', str(source_c), '-o', str(output_exe)]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, creationflags=creationflags)
             if res.returncode == 0 and output_exe.is_file():
                 return True
         except Exception:
@@ -181,7 +327,7 @@ def compile_launcher_binary(source_c: Path, output_exe: Path) -> bool:
     if cl_bin:
         try:
             cmd = [cl_bin, '/O2', str(source_c), f'/Fe:{output_exe}']
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, creationflags=creationflags)
             if res.returncode == 0 and output_exe.is_file():
                 return True
         except Exception:
@@ -199,7 +345,9 @@ def install_easy_c(target_dir: Path | None = None, force_embed_python: bool = Fa
     print(f"[Installer] Directorio de destino: '{target_dir}'", flush=True)
 
     if source_root is None:
-        source_root = Path(__file__).resolve().parent.parent
+        source_root = get_source_root()
+
+    source_root = ensure_source_files(source_root)
 
     # 1. Crear estructura organizada de carpetas
     bin_dir = target_dir / 'bin'
@@ -240,31 +388,19 @@ def install_easy_c(target_dir: Path | None = None, force_embed_python: bool = Fa
     # 4. Asegurar presencia de 'gram' en el vendor privado
     target_gram = vendor_dir / 'Gram'
     local_gram = source_root / '.egl' / 'vendor' / 'Gram'
+    if not local_gram.is_dir():
+        local_gram = source_root / 'vendor' / 'Gram'
+
     if local_gram.is_dir() and not target_gram.is_dir():
         print("[Installer] Copiando libreria privada 'gram' al directorio vendor...", flush=True)
         shutil.copytree(local_gram, target_gram)
     elif not (target_gram / 'gram').is_dir():
-        print("[Installer] Descargando libreria 'gram' en el entorno vendor privado...", flush=True)
+        print("[Installer] Configurando libreria 'gram' en el entorno vendor privado...", flush=True)
         try:
             from core.install import install_gram
             install_gram(target_gram)
         except Exception:
-            # Fallback descarga directa
-            try:
-                import urllib.request
-                GRAM_ZIP_URL = "https://github.com/GrandKenzy/Gram/archive/refs/heads/main.zip"
-                z_tmp = target_dir / '_gram_tmp.zip'
-                urllib.request.urlretrieve(GRAM_ZIP_URL, z_tmp)
-                with zipfile.ZipFile(z_tmp, 'r') as zf:
-                    zf.extractall(target_dir / '_gram_unzip')
-                for p in (target_dir / '_gram_unzip').iterdir():
-                    if p.is_dir() and (p / 'gram').is_dir():
-                        shutil.move(str(p), str(target_gram))
-                        break
-                if z_tmp.exists(): z_tmp.unlink()
-                if (target_dir / '_gram_unzip').exists(): shutil.rmtree(target_dir / '_gram_unzip', ignore_errors=True)
-            except Exception as e_gram:
-                print(f"[Installer Warning] No se pudo descargar 'gram': {e_gram}")
+            pass
 
     # 5. Generar y colocar ejecutable nativo egl.exe en bin/
     print("[Installer] Generando ejecutables del compilador en bin/...", flush=True)

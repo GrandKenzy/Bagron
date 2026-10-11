@@ -1,9 +1,12 @@
 import sys
 import os
 import multiprocessing
-from pathlib import Path
 
-# Protección contra OSError [Errno 22] Invalid argument en ejecutables GUI de Windows
+# IMPORTANTE: freeze_support() DEBE ejecutarse inmediatamente al inicio
+# para prevenir bucles de procesos huérfanos en ejecutables congelados de PyInstaller en Windows.
+multiprocessing.freeze_support()
+
+# Protección contra OSError [Errno 22] Invalid argument en ejecutables GUI de Windows sin consola
 class SafeWriter:
     def __init__(self, original):
         self.original = original
@@ -32,11 +35,13 @@ try:
 except Exception:
     pass
 
+from pathlib import Path
+
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from tools.installer_core import install_easy_c, uninstall_easy_c
+from tools.installer_core import install_easy_c, uninstall_easy_c, get_source_root
 
 def main():
     args = sys.argv[1:]
@@ -53,7 +58,7 @@ def main():
         elif arg in ('--embed-python', '--standalone'):
             force_embed_python = True
             i += 1
-        elif arg in ('--cli', '-c'):
+        elif arg in ('--cli', '--console'):
             force_cli = True
             i += 1
         elif arg in ('--uninstall', '-u'):
@@ -66,7 +71,7 @@ def main():
             print("  python installer.py [opciones]")
             print("")
             print("Opciones:")
-            print("  --cli, -c          Ejecuta la instalacion directamente en consola (sin interfaz gráfica).")
+            print("  --cli, --console   Ejecuta la instalacion directamente en consola (sin interfaz gráfica).")
             print("  --target, -t       Ruta de instalacion personalizada (por defecto: %LOCALAPPDATA%\\Programs\\Easy-C).")
             print("  --embed-python     Descarga e instala Python 3.13 embebido aun si ya existe en el sistema.")
             print("  --uninstall, -u    Desinstala Easy-C y lo remueve del PATH.")
@@ -84,10 +89,8 @@ def main():
         except Exception as e:
             print(f"[Installer Warning] No se pudo iniciar la interfaz grafica ({e}). Usando modo consola...")
 
-    ok = install_easy_c(target_dir=target_dir, force_embed_python=force_embed_python, source_root=ROOT_DIR)
+    ok = install_easy_c(target_dir=target_dir, force_embed_python=force_embed_python, source_root=get_source_root())
     return 0 if ok else 1
 
 if __name__ == '__main__':
-    import multiprocessing
-    multiprocessing.freeze_support()
     sys.exit(main())
