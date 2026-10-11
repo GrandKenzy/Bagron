@@ -1,0 +1,11 @@
+clause Target 'egl-c'
+
+import mylib
+
+int total = mylib.sumar(15, 25)
+print(total)
+
+mylib.Packet pkt = mylib.Packet(1, 1024)
+print(pkt.id)
+print(pkt.length)
+print(sizeof(mylib.Packet))

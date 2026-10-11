@@ -25,13 +25,13 @@ egl --help
 | `run [ruta]` | Comando | `'source'` o `'.'` | Compila, construye el ejecutable nativo y lo ejecuta directamente (equivalente a `compile [ruta] --run`). |
 | `cache clear` | Comando | N/A | Limpia y elimina todos los archivos y carpetas de cache del proyecto (`.cache`, `__pycache__`, `.pyc`). Alias: `clean`. |
 | `extension` | Comando | N/A | Genera el paquete oficial de extension para VS Code (`.vsix`) con resaltado de sintaxis TextMate y tema Noble Dark. Aliases: `vsix`, `syntax`. |
-| `-b`, `--build` | Flag | `False` | Tras generar el archivo C, invoca el compilador nativo (GCC) para generar el ejecutable (`program.exe` en Windows o `program` en POSIX). |
-| `-r`, `--run` | Flag | `False` | Compila con GCC y ejecuta el binario inmediatamente. Puede posicionarse antes o despues de la ruta. |
-| `-o`, `--output` | Opcion | `program.c` | Nombre o ruta del archivo de codigo C monolitico generado (o ruta destino del `.vsix` en el comando `extension`). |
-| `--cc` | Opcion | `gcc` | Compilador de C a invocar cuando se utiliza `--build` o `--run` (ej. `gcc`, `clang`, `tcc`). |
-| `-l`, `--link` | Opcion | N/A | Enlaza una libreria externa adicional al invocar el compilador de C (ej. `-l SDL3`). Admite multiples ocurrencias. |
-| `-I`, `--include` | Opcion | N/A | Agrega una carpeta de cabeceras de C (`.h`) a la linea de compilacion de GCC (`-I <dir>`). |
-| `-L`, `--lib-dir` | Opcion | N/A | Agrega una carpeta de librerias binarias al linker de GCC (`-L <dir>`). |
+| `-b`, `--build` | Flag | `False` | Tras generar el archivo C, delega la construcción del ejecutable binario al backend activo (`core.backend.<target>.compile`) para generar el ejecutable (`program.exe` en Windows o `program` en POSIX). |
+| `-r`, `--run` | Flag | `False` | Delega la compilación al backend y ejecuta el binario inmediatamente. Puede posicionarse antes o después de la ruta. |
+| `-o`, `--output` | Opcion | `program.c` | Nombre o ruta del archivo de código C monolítico generado (o ruta destino del `.vsix` en el comando `extension`). |
+| `--cc` | Opcion | `gcc` | Compilador nativo a invocar mediante el backend (`gcc`, `clang`, `cl` / `msvc`, `tcc`). |
+| `-l`, `--link` | Opcion | N/A | Enlaza una librería externa adicional al invocar el compilador (ej. `-l SDL3`). Admite múltiples ocurrencias. |
+| `-I`, `--include` | Opcion | N/A | Agrega una carpeta de cabeceras C (`.h`) a la compilación (`-I <dir>` o `/I<dir>`). |
+| `-L`, `--lib-dir` | Opcion | N/A | Agrega una carpeta de librerías binarias al linker (`-L <dir>` o `/LIBPATH:<dir>`). |
 | `--install` | Flag | `False` | Utilizado con `extension`: instala de forma automatica el `.vsix` en Visual Studio Code mediante el comando `code --install-extension`. |
 | `-v`, `--version` | Flag | N/A | Muestra la version actual del compilador Easy-C. |
 | `-h`, `--help` | Flag | N/A | Muestra la guia de uso y catalogo de opciones en consola. |

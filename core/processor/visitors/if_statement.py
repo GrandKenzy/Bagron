@@ -4,14 +4,19 @@ from core.processor.visitors.call import extract_call_args
 
 def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | None:
     if stmt_node.name in ('EGL_CALL', 'call'):
+        from core.processor.visitors import expression as expr_visitor
         name = stmt_node.values[0]
         args, kwargs = extract_call_args(stmt_node)
-        return Call(name, args, kwargs, in_scope=parent_scope).ignore()
+        proc_args = [expr_visitor.visit(a, parent_scope) for a in args]
+        proc_kwargs = {k: expr_visitor.visit(v, parent_scope) for k, v in kwargs.items()}
+        return Call(name, proc_args, proc_kwargs, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_METHOD_CALL', 'method call'):
+        from core.processor.visitors import expression as expr_visitor
         target = stmt_node.values[0]
         method = stmt_node.values[2] if len(stmt_node.values) >= 3 else stmt_node.values[1]
         args, _ = extract_call_args(stmt_node)
-        return MethodCall(target, method, args, in_scope=parent_scope).ignore()
+        proc_args = [expr_visitor.visit(a, parent_scope) for a in args]
+        return MethodCall(target, method, proc_args, in_scope=parent_scope).ignore()
     elif stmt_node.name in ('EGL_ASSIGN', 'assign'):
         toks = [str(t.value if hasattr(t, 'value') else t) for t in getattr(stmt_node, 'all_tokens', [])]
         eq_idx = toks.index('=') if '=' in toks else -1
@@ -22,10 +27,11 @@ def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | 
             target = stmt_node.values[0]
 
         val_nodes = stmt_node.find('EGL_VALUE')
-        if eq_idx != -1 and len(toks) > eq_idx + 2:
+        if val_nodes:
+            from core.processor.visitors import expression as expr_visitor
+            val = expr_visitor.visit(val_nodes[0], parent_scope)
+        elif eq_idx != -1 and len(toks) > eq_idx + 1:
             val = ' '.join(toks[eq_idx + 1:])
-        elif val_nodes and val_nodes[0].values:
-            val = val_nodes[0].values[0]
         else:
             val = toks[-1] if toks else None
         return Assign(target, val, in_scope=parent_scope).ignore()
@@ -44,30 +50,24 @@ def _parse_stmt_node(stmt_node: gram.ASTNode, parent_scope: Object) -> Object | 
         stmt = visit(stmt_node).ignore()
         stmt.in_scope = parent_scope
         return stmt
-    return None
+    elif stmt_node.name in ('EGL_RETURN', 'return'):
+        from core.processor.objects.returned import Returned
+        val_nodes = stmt_node.find('EGL_VALUE')
+        if val_nodes:
+            from core.processor.visitors import expression as expr_visitor
+            ret_val = expr_visitor.visit(val_nodes[0], parent_scope)
+        else:
+            ret_val = stmt_node.values[1] if len(stmt_node.values) > 1 else (stmt_node.values[0] if stmt_node.values else None)
+        return Returned(ret_val, in_scope=parent_scope).ignore()
+    elif stmt_node.name in ('EGL_PASS', 'pass', 'COMMENT', 'EGL_COMMENT'):
+        return None
+    else:
+        from core.processor.errors import UnknownASTNodeError
+        raise UnknownASTNodeError(stmt_node)
 
-def parse_condition_node(cond_node: gram.ASTNode, parent_scope: Object) -> list[Any]:
-    calls = cond_node.find('EGL_CALL') + cond_node.find('EGL_METHOD_CALL')
-    if calls:
-        call_obj = _parse_stmt_node(calls[0], parent_scope)
-        toks = [str(getattr(t, 'value', t)) for t in getattr(cond_node, 'all_tokens', cond_node.values)]
-        ops = ['==', '!=', '<=', '>=', '<', '>']
-        found_op = None
-        for op in ops:
-            if op in toks:
-                found_op = op
-                break
-        if found_op:
-            op_idx = toks.index(found_op)
-            rhs = ' '.join(toks[op_idx + 1:])
-            return [call_obj, found_op, rhs]
-        if 'not' in toks:
-            return ['not', call_obj]
-        return [call_obj]
-    if cond_node.values:
-        return list(cond_node.values)
-    toks = [str(getattr(t, 'value', t)) for t in getattr(cond_node, 'all_tokens', [])]
-    return toks
+def parse_condition_node(cond_node: gram.ASTNode, parent_scope: Object) -> Any:
+    from core.processor.visitors import expression as expr_visitor
+    return expr_visitor.visit(cond_node, parent_scope)
 
 def visit(node: gram.ASTNode) -> IfStatement:
     cond_values = []

@@ -146,12 +146,12 @@ class Window:
     ptr _handle
     ptr _renderer
 
-    void __init__(self, pstring title, int width = 640, int height = 480):
+    void __init__(pstring title, int width = 640, int height = 480):
         self._handle = C_SDL3.SDL_CreateWindow(title, width, height, 0)
         self._renderer = C_SDL3.SDL_CreateRenderer(self._handle, Null)
 
     @method
-    void destroy(self):
+    void destroy():
         C_SDL3.SDL_DestroyRenderer(self._renderer)
         C_SDL3.SDL_DestroyWindow(self._handle)
 

@@ -7,3 +7,8 @@ __pycache__/
 *.exe
 *.vsix
 /*.dll
+.egl/
+*.lib.egl
+build/
+dist/
+*.spec

@@ -30,6 +30,14 @@ def _format_print_arg(arg: Any, block: Any = None) -> tuple[str, str]:
         return '%d', str(arg)
     if isinstance(arg, float):
         return '%f', str(arg)
+    if hasattr(arg, '__class__') and arg.__class__.__name__ == 'Call':
+        call_comp = deffunc(arg.name, arg.args, getattr(arg, 'kwargs', {}), is_statement=False, block=block)
+        spec = get_format_specifier(call_comp.returntype)
+        return spec, call_comp.compiled
+    if hasattr(arg, '__class__') and arg.__class__.__name__ in ('MemberAccess', 'IndexAccess', 'BinaryExpr', 'UnaryExpr', 'LiteralExpr', 'VariableExpr'):
+        from core.backend.c.visitors.expression import format_expression
+        fmt_expr = format_expression(arg, block)
+        return '%d', fmt_expr
 
     if '.' in raw_str:
         base_name, prop = raw_str.split('.', 1)
@@ -186,7 +194,14 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
         return CompiledCall(clean_name, args, 'void', False, None, compiled)
 
     if clean_name == 'sizeof':
-        raw_type = str(bound.get('type') if bound.get('type') is not None else (args[0].value if hasattr(args[0], 'value') else args[0]) if args else 'int')
+        raw_arg = bound.get('type') if bound.get('type') is not None else (args[0] if args else 'int')
+        while hasattr(raw_arg, 'values') and raw_arg.values:
+            raw_arg = raw_arg.values[0]
+        if hasattr(raw_arg, 'value'):
+            raw_type = str(raw_arg.value)
+        else:
+            raw_type = str(raw_arg)
+        raw_type = raw_type.strip('\'"')
         resolved_t = resolve_variable(raw_type, block)
         if resolved_t and resolved_t.type == 'type':
             resolved_t.uses += 1

@@ -60,11 +60,12 @@ Durante la carga de cada modulo en `core/compiler.py`, los identificadores decla
 2. **Clases:**
    * Patron: `inmodule_<nombre_modulo>_<nombre_clase>`
    * Ejemplo: La clase `Vector` en `modules/geometria.egl` se convierte en `inmodule_geometria_Vector`.
-3. **Mapeo de Simbolos:**
-   * El compilador registra en `all_mangled_symbols` tres formas de acceso:
-     * Nombre cualificado con modulo: `miModulo.saludar` -> `inmodule_miModulo_saludar`
-     * Nombre cualificado con alias (si aplica): `MM.saludar` -> `inmodule_miModulo_saludar`
-     * Nombre directo del simbolo: `saludar` -> `inmodule_miModulo_saludar`
+3. **Mapeo de Simbolos y Resolucion de Colisiones:**
+   * El compilador registra en `all_mangled_symbols` las formas de acceso cualificado:
+     * Nombre cualificado con modulo: `foo.calcular` -> `inmodule_foo_calcular`
+     * Nombre cualificado con alias (si aplica): `Ops.calcular` -> `inmodule_operaciones_calcular`
+   * **Aislamiento Interno:** Dentro del codigo de un modulo, cualquier llamada interna a sus propias funciones resuelve de forma prioritaria a sus propios simbolos mangled (`local_symbols`), garantizando que `foo` jamas invoque accidentalmente la funcion de `bar`.
+   * **Deteccion de Ambiguedad:** Si multiples modulos exportan el mismo identificador (ej: `foo.calcular` y `bar.calcular`), el compilador detecta la colision. Invocar `calcular()` de manera no cualificada en `main.egl` genera un error sintactico explicito de ambiguedad, exigiendo usar la sintaxis cualificada (`foo.calcular()`) o la sentencia `declare` (ej: `declare foo.calcular as calcular`).
 
 ---
 
@@ -72,7 +73,7 @@ Durante la carga de cada modulo en `core/compiler.py`, los identificadores decla
 
 Tras recopilar el mapa completo de simbolos con mangling de todos los modulos dependientes, el compilador ejecuta una pasada sobre el AST de cada modulo y sobre el AST de `main.egl` antes de ingresarlos al procesador semantico:
 
-* **Llamadas Directas (`EGL_CALL`):** Si un nodo `call` invoca un identificador presente en el mapa (ej. `saludar(21)`), el valor del token en `node.tokens` se reescribe inmediatamente al nombre mangled (`inmodule_miModulo_saludar(21)`).
+* **Llamadas Directas (`EGL_CALL`):** Si un nodo `call` invoca un identificador local o unicamente exportado, se reescribe al nombre mangled correspondiente. Si el identificador es ambiguo y no fue declarado con `declare`, se detiene la compilacion con diagnostico de ambiguedad.
 * **Llamadas Cualificadas (`EGL_METHOD_CALL`):** Si el AST contiene una invocacion del tipo `miModulo.saludar(21)`, el nodo se transforma estructuralmente a un nodo `EGL_CALL` directo con el simbolo `inmodule_miModulo_saludar`, preservando la lista de argumentos `EGL_ARGUMENTS`.
 
 ---

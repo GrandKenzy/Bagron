@@ -1,0 +1,13 @@
+clause Target 'egl-c'
+
+struct NormalHeader:
+    uint8 a
+    uint32 b
+
+struct PackedHeader:
+    uint8 a
+    uint32 b
+    __packed__
+
+print(sizeof(NormalHeader))
+print(sizeof(PackedHeader))

@@ -13,6 +13,7 @@ from core.processor.objects.member_access import MemberAccess
 from core.processor.objects.type_decl import TypeDecl
 from core.processor.objects.enum_decl import EnumDecl
 from core.processor.objects.class_decl import ClassDecl, ClassMethod
+from core.processor.objects.expression import BinaryExpr, UnaryExpr, LiteralExpr, VariableExpr, IndexAccess
 
 def get_items():
     return base.ITEMS
@@ -40,6 +41,11 @@ __all__ = [
     'EnumDecl',
     'ClassDecl',
     'ClassMethod',
+    'BinaryExpr',
+    'UnaryExpr',
+    'LiteralExpr',
+    'VariableExpr',
+    'IndexAccess',
     'get_items',
     'get_vars',
 ]

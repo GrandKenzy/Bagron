@@ -1,0 +1,12 @@
+clause Target 'egl-c'
+
+public int sumar(int a, int b):
+    return a + b
+
+private int secreto():
+    return 42
+
+public struct Packet:
+    uint8 id
+    uint32 length
+    __packed__

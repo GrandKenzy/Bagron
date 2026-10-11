@@ -1,6 +1,7 @@
 import gram
 from core.processor.visitors import *
 from core.processor import objects
+from core.processor.errors import UnknownASTNodeError
 
 def process(ast: gram.ASTProgram):
     for node in ast.walk(0):
@@ -22,22 +23,27 @@ def process(ast: gram.ASTProgram):
             while_statement.visit(node)
         elif node.name in ('EGL_METHOD_CALL', 'method call'):
             from core.externs.manager import manager
+            from core.processor.visitors import expression as expr_visitor
             target = node.values[0]
             method = node.values[2] if len(node.values) >= 3 else node.values[1]
             args, _ = call.extract_call_args(node)
+            proc_args = [expr_visitor.visit(a) for a in args]
             target_str = str(target.value if hasattr(target, 'value') else target)
             method_str = str(method.value if hasattr(method, 'value') else method)
             if manager.has_namespace(target_str):
-                manager.validate_call(target_str, method_str, args)
-            objects.MethodCall(target, method, args)
+                manager.validate_call(target_str, method_str, proc_args)
+            objects.MethodCall(target, method, proc_args)
         elif node.name in ('EGL_MEMBER_ACCESS', 'member access'):
             target = node.values[0]
             member = node.values[2] if len(node.values) >= 3 else node.values[1]
             objects.MemberAccess(target, member)
         elif node.name in ('EGL_CALL', 'call'):
+            from core.processor.visitors import expression as expr_visitor
             name = node.values[0]
             args, kwargs = call.extract_call_args(node)
-            objects.Call(name, args, kwargs)
+            proc_args = [expr_visitor.visit(a) for a in args]
+            proc_kwargs = {k: expr_visitor.visit(v) for k, v in kwargs.items()}
+            objects.Call(name, proc_args, proc_kwargs)
         elif node.name in ('EGL_ASSIGN', 'assign'):
             val_nodes = node.find('EGL_VALUE')
             toks = [str(getattr(t, 'value', t)) for t in getattr(node, 'all_tokens', [])]
@@ -78,8 +84,10 @@ def process(ast: gram.ASTProgram):
                 if len(node.values) >= 4 and str(node.values[2]) == 'as':
                     alias = str(node.values[3].value if hasattr(node.values[3], 'value') else node.values[3])
                 manager.load_include(header, alias)
-        elif node.name in ('EGL_IMPORT', 'import', 'EGL_DECLARE', 'declare'):
+        elif node.name in ('EGL_IMPORT', 'import', 'EGL_DECLARE', 'declare', 'EGL_OBJECT', 'object'):
+            pass
+        elif node.name in ('EGL_PASS', 'pass', 'COMMENT', 'EGL_COMMENT'):
             pass
         else:
-            print('Falta por procesar nodo: ', node.name)
+            raise UnknownASTNodeError(node)
     return objects.get_items()

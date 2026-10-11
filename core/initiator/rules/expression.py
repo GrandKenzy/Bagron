@@ -1,17 +1,31 @@
 import gram
 from gram.plugins.source import expressions as GramExpr
 
-def _left_chain(rule: type[gram.RuleItem], operator_tokens: tuple[gram.Token, ...]):
+from typing import Any
+
+def _left_chain(rule: type[gram.RuleItem], operator_tokens: tuple[Any, ...]):
+    matchers = []
+    for token in operator_tokens:
+        if isinstance(token, str):
+            matchers.append(gram.MatchKeyword(token))
+        else:
+            matchers.append(gram.MatchToken(token))
     return GramExpr.ChainL(
         gram.Ref(rule),
-        gram.Alt(*(gram.MatchToken(token) for token in operator_tokens)),
+        gram.Alt(*matchers),
         reducer=lambda left, operator, right: [left, operator, right],
     )
 
-def _right_chain(rule: type[gram.RuleItem], operator_tokens: tuple[gram.Token, ...]):
+def _right_chain(rule: type[gram.RuleItem], operator_tokens: tuple[Any, ...]):
+    matchers = []
+    for token in operator_tokens:
+        if isinstance(token, str):
+            matchers.append(gram.MatchKeyword(token))
+        else:
+            matchers.append(gram.MatchToken(token))
     return GramExpr.ChainR(
         gram.Ref(rule),
-        gram.Alt(*(gram.MatchToken(token) for token in operator_tokens)),
+        gram.Alt(*matchers),
         reducer=lambda left, operator, right: [left, operator, right],
     )
 
@@ -138,6 +152,7 @@ EGL_UNARY.grammar = gram.Alt(
         gram.Alt(
             gram.MatchToken(gram.Token.PLUS),
             gram.MatchToken(gram.Token.MINUS),
+            gram.MatchToken(gram.Token.EXCLAMATION),
             gram.MatchToken(gram.Token.NOT_LOGIC),
             gram.MatchToken(gram.Token.NOT),
             gram.MatchKeyword('not'),
@@ -194,11 +209,11 @@ EGL_BITWISE_OR.grammar = _left_chain(
 )
 EGL_LOGICAL_AND.grammar = _left_chain(
     EGL_BITWISE_OR,
-    (gram.Token.AND_LOGIC, gram.Token.LOGIC_AND),
+    (gram.Token.AND_LOGIC, gram.Token.LOGIC_AND, 'and'),
 )
 EGL_EXPRESSION.grammar = _left_chain(
     EGL_LOGICAL_AND,
-    (gram.Token.OR_LOGIC, gram.Token.LOGIC_OR),
+    (gram.Token.OR_LOGIC, gram.Token.LOGIC_OR, 'or'),
 )
 
 __all__ = [

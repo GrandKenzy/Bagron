@@ -74,17 +74,21 @@ class EGL_MEMBER_ACCESS(gram.RuleItem):
             gram.MatchGroup('types'),
             gram.MatchKeyword('self'),
         ),
-        gram.MatchToken(gram.Token.DOT),
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchKeyword('type'),
-            gram.MatchKeyword('Type'),
-            gram.MatchKeyword('value'),
-            gram.MatchKeyword('ptr'),
-            gram.MatchKeyword('size'),
-            gram.MatchKeyword('const'),
-            gram.MatchKeyword('visibility'),
-            gram.MatchGroup('types'),
+        gram.Some(
+            gram.Seq(
+                gram.MatchToken(gram.Token.DOT),
+                gram.Alt(
+                    gram.MatchToken('IDENT'),
+                    gram.MatchKeyword('type'),
+                    gram.MatchKeyword('Type'),
+                    gram.MatchKeyword('value'),
+                    gram.MatchKeyword('ptr'),
+                    gram.MatchKeyword('size'),
+                    gram.MatchKeyword('const'),
+                    gram.MatchKeyword('visibility'),
+                    gram.MatchGroup('types'),
+                )
+            )
         )
     )
 

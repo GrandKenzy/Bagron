@@ -14,17 +14,15 @@ def visit(node: gram.ASTNode, parent_scope: Object | None = None) -> WhileStatem
                 if parsed:
                     body_stmts.append(parsed)
         elif child.name in ('EGL_WHILE_COND', 'EGL_CONDITION', 'condition'):
-            from core.processor.visitors.if_statement import parse_condition_node
-            cond_values = parse_condition_node(child, stmt_obj)
+            from core.processor.visitors import expression as expr_visitor
+            cond_values = expr_visitor.visit(child, stmt_obj)
         else:
-            all_toks = getattr(child, 'all_tokens', None)
-            if all_toks:
-                cond_values = [getattr(t, 'value', t) for t in all_toks]
-            elif child.values:
-                cond_values.extend(list(child.values))
+            from core.processor.visitors import expression as expr_visitor
+            cond_values = expr_visitor.visit(child, stmt_obj)
 
     if not cond_values and len(node.values) > 1:
-        cond_values = list(node.values[1:])
+        from core.processor.visitors import expression as expr_visitor
+        cond_values = expr_visitor.visit(node.values[1], stmt_obj)
 
     stmt_obj.condition = cond_values
     stmt_obj.body = body_stmts

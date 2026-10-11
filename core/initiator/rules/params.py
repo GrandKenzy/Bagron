@@ -6,7 +6,6 @@ class EGL_PARAM(gram.RuleItem):
     name = 'EGL_PARAM'
     code = gram.AutoCode()
     grammar = gram.Alt(
-        gram.MatchKeyword('self'),
         gram.Seq(
             gram.Ref(EGL_TYPE_SPEC),
             gram.Opt(gram.MatchToken(gram.Token.STAR)),

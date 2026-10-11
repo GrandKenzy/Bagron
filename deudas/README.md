@@ -8,8 +8,7 @@ Este directorio registra los puntos de deuda técnica identificados en el desarr
 
 | ID | Título | Prioridad | Estado | Archivo |
 | :--- | :--- | :--- | :--- | :--- |
-| **01** | Árbol de Expresiones Unificado en AST | Alta | Pendiente | [01_arbol_expresiones_ast.md](./01_arbol_expresiones_ast.md) |
-| **02** | Migración de Tipos Simples a `Type` | Media | Completado | [02_migracion_tipos_simples_a_struct_type.md](./02_migracion_tipos_simples_a_struct_type.md) |
+| **01** | Árbol de Expresiones Unificado en AST | Alta | Resuelta | [01_arbol_expresiones_ast.md](./01_arbol_expresiones_ast.md) |
 
 ---
 

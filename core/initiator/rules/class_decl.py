@@ -5,18 +5,23 @@ from core.initiator.rules.type_spec import EGL_TYPE_SPEC
 from core.initiator.rules.var_decl import EGL_VAR_DECL
 from core.initiator.rules.statement import EGL_STATEMENT
 
+class EGL_DECORATOR(gram.RuleItem):
+    name = "EGL_DECORATOR"
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.MatchToken(gram.Token.AT),
+        gram.Alt(
+            gram.MatchToken('IDENT'),
+            gram.MatchGroup('keywords'),
+        )
+    )
+
 class EGL_METHOD_DECL(gram.RuleItem):
     name = "EGL_METHOD_DECL"
     code = gram.AutoCode()
     grammar = gram.Seq(
         gram.Opt(
-            gram.Seq(
-                gram.MatchToken(gram.Token.AT),
-                gram.Alt(
-                    gram.MatchToken('IDENT'),
-                    gram.MatchGroup('keywords'),
-                )
-            )
+            gram.Ref(EGL_DECORATOR)
         ),
         gram.Opt(
             gram.MatchKeyword('__inline__')
@@ -43,6 +48,14 @@ class EGL_METHOD_DECL(gram.RuleItem):
         gram.Ref(EGL_FUNC_BODY),
     )
 
+class EGL_PACKED(gram.RuleItem):
+    name = "EGL_PACKED"
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.MatchKeyword('__packed__'),
+        gram.Opt(gram.MatchToken('COMMENT'))
+    )
+
 class EGL_CLASS_STMT(gram.RuleItem):
     name = "EGL_CLASS_STMT"
     code = gram.AutoCode()
@@ -51,6 +64,7 @@ class EGL_CLASS_STMT(gram.RuleItem):
         gram.Ref(EGL_METHOD_DECL),
         gram.Ref(EGL_VAR_DECL),
         gram.Ref(EGL_STATEMENT),
+        gram.Ref(EGL_PACKED),
         gram.MatchKeyword('pass'),
         gram.MatchToken('COMMENT'),
     )
@@ -97,7 +111,9 @@ class EGL_CLASS_DECL(gram.RuleItem):
     )
 
 __all__ = [
+    'EGL_DECORATOR',
     'EGL_METHOD_DECL',
+    'EGL_PACKED',
     'EGL_CLASS_STMT',
     'EGL_CLASS_BODY',
     'EGL_CLASS_DECL',

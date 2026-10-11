@@ -44,6 +44,8 @@ def _format_c_literal(value: int | float | str, type: str) -> str:
 def visit(function: Function, processor: Callable):
     if function.compiled:
         return
+    if getattr(function, 'is_constructor', False):
+        return
     if function.is_inline:
         function.compiled = ""
         return
@@ -90,11 +92,16 @@ def visit(function: Function, processor: Callable):
         return_expression = str(ret.value)
     elif ret:
         ret_val = ret.value
-        if hasattr(ret_val, '__class__') and ret_val.__class__.__name__ == 'MethodCall':
+        cls_name = getattr(getattr(ret_val, '__class__', None), '__name__', '')
+        if cls_name in ('BinaryExpr', 'UnaryExpr', 'LiteralExpr', 'VariableExpr', 'IndexAccess', 'MemberAccess'):
+            from core.backend.c.visitors.expression import format_expression
+            return_expression = format_expression(ret_val, function)
+            returned = getattr(ret_val, 'returntype', None) or getattr(ret_val, 'type', None) or function.return_type
+        elif cls_name == 'MethodCall':
             from core.backend.c.visitors import method_call
             return_expression = method_call.visit(ret_val, is_statement=False, block=function)
             returned = getattr(ret_val, 'returntype', None) or function.return_type
-        elif hasattr(ret_val, '__class__') and ret_val.__class__.__name__ == 'Call':
+        elif cls_name == 'Call':
             from core.backend.c.deffunc import deffunc
             compiled_call = deffunc(ret_val.name, ret_val.args, getattr(ret_val, 'kwargs', {}), is_statement=False, block=function)
             return_expression = compiled_call.compiled
@@ -127,7 +134,10 @@ def visit(function: Function, processor: Callable):
     
     returned_c = convert_type(returned)
     type_c = convert_type(function.return_type)
-    
+
+    if returned == 'number' and type_c in ('int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'long', 'short', 'float', 'double', '_Float16'):
+        returned_c = type_c
+
     if returned_c != type_c:
         raise RuntimeError(f'Tipo de vuelta incompatible. Se retorna {returned_c} pero se esperaba {type_c} en {function.name}')
     

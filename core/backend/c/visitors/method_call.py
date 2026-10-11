@@ -37,8 +37,11 @@ def visit(item: MethodCall, is_statement: bool = False, block: Function | None =
         class_name = None
         self_arg = None
         if target_str in ('self', 'this'):
-            if block and hasattr(block, 'name') and '_' in block.name:
-                class_name = block.name.split('_', 1)[0]
+            if block and getattr(block, 'parent_class', None):
+                class_name = block.parent_class
+                self_arg = 'self'
+            elif block and hasattr(block, 'name') and '_' in block.name:
+                class_name = block.name.rsplit('_', 1)[0]
                 self_arg = 'self'
         else:
             resolved = resolve_variable(target_str, block)
@@ -56,6 +59,13 @@ def visit(item: MethodCall, is_statement: bool = False, block: Function | None =
                             break
 
         if class_name and self_arg:
+            from core.processor import objects
+            for it in objects.get_items().keys():
+                if getattr(it, '__class__', None) and it.__class__.__name__ == 'ClassDecl' and getattr(it, 'name', None) == class_name:
+                    m_fn = getattr(it, 'methods', {}).get(method_str)
+                    if m_fn and getattr(m_fn, 'return_type', None):
+                        item.returntype = m_fn.return_type
+                    break
             c_args = [self_arg] + [_format_arg(a, block) for a in item.args]
             call_code = f'{class_name}_{method_str}({", ".join(c_args)})'
             compiled = f'{call_code};' if is_statement else call_code

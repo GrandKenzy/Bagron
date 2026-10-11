@@ -2,6 +2,8 @@ from core.processor.objects import *
 from core.backend.c.visitors import *
 from core.backend.c.detectors import detect_includes
 from core.backend.c.deffunc import deffunc
+from core.backend.c.compile import compile, SUPPORTED_COMPILERS, DEFAULT_COMPILER, CLI_COMPILER_PARAMS
+from core.backend.c.download import download_compiler, download_gcc, download_msvc
 
 includes: list[str] = []
 typedefs: list[str] = []
@@ -23,10 +25,19 @@ def add_typedef(definition: str):
         typedefs.append(definition)
 
 def process(content: dict[Object, str], block: Function | None = None):
-    for item, _ in list(content.items()):
+    items = list(content.items())
+    type_items = [it for it in items if isinstance(it[0], (ClassDecl, EnumDecl, TypeDecl))]
+    other_items = [it for it in items if not isinstance(it[0], (ClassDecl, EnumDecl, TypeDecl))]
+    ordered_items = type_items + other_items
+
+    for item, _ in ordered_items:
         for inc in detect_includes(item):
             add_include(inc)
-        if isinstance(item, Variable):
+        if isinstance(item, ClassDecl):
+            class_decl.visit(item, process)
+        elif isinstance(item, EnumDecl):
+            enum_decl.visit(item)
+        elif isinstance(item, Variable):
             variable.visit(item, block)
         elif isinstance(item, Function):
             function.visit(item, process)
@@ -43,7 +54,3 @@ def process(content: dict[Object, str], block: Function | None = None):
             item.compiled = compiled_call.compiled
         elif isinstance(item, MethodCall):
             method_call.visit(item, is_statement=True, block=block)
-        elif isinstance(item, ClassDecl):
-            class_decl.visit(item, process)
-        elif isinstance(item, EnumDecl):
-            enum_decl.visit(item)

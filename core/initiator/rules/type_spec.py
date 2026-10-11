@@ -9,6 +9,15 @@ class EGL_TYPE_SPEC(gram.RuleItem):
                 gram.MatchKeyword('__void_p_t__'),
                 gram.MatchGroup('types')
             ),
+            gram.Seq(
+                gram.MatchToken('IDENT'),
+                gram.Some(
+                    gram.Seq(
+                        gram.MatchToken(gram.Token.DOT),
+                        gram.MatchToken('IDENT'),
+                    )
+                )
+            ),
             gram.MatchGroup('types'),
             gram.MatchToken('IDENT'),
         ),

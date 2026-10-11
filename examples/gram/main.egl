@@ -1,0 +1,6 @@
+clause Target 'egl-c'
+
+import tokens
+
+tokens.Tokens q_t = tokens.Tokens.IDENT
+Tokens u_t = Tokens.IDENT

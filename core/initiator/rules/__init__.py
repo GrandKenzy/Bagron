@@ -34,7 +34,7 @@ from core.initiator.rules.statement import (
 )
 from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_WHILE_STATEMENT, EGL_LOOP_MODE
 from core.initiator.rules.imports import EGL_IMPORT, EGL_INCLUDE, EGL_OBJECT, EGL_DECLARE
-from core.initiator.rules.class_decl import EGL_CLASS_DECL, EGL_METHOD_DECL, EGL_CLASS_BODY, EGL_CLASS_STMT
+from core.initiator.rules.class_decl import EGL_CLASS_DECL, EGL_METHOD_DECL, EGL_CLASS_BODY, EGL_CLASS_STMT, EGL_DECORATOR, EGL_PACKED
 EGL_CLASS = EGL_CLASS_DECL
 from core.initiator.rules.clauses import EGL_CLAUSE
 from core.initiator.rules.enum_decl import EGL_ENUM_DECL
@@ -79,6 +79,7 @@ __all__ = [
     'EGL_MEMBER_ACCESS',
     'EGL_CLASS',
     'EGL_CLASS_DECL',
+    'EGL_DECORATOR',
     'EGL_METHOD_DECL',
     'EGL_CLASS_BODY',
     'EGL_CLASS_STMT',

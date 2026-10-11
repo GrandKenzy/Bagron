@@ -51,11 +51,18 @@ class ExternsManager:
     def set_target(self, target: str):
         self.active_target = str(target).strip('"\'')
 
+    @property
+    def target(self) -> str:
+        return self.active_target
+
     def get_backend_name(self) -> str:
         target = self.active_target.lower()
         if target.startswith('egl-'):
             return target[4:]
         return target
+
+    def get_backend(self) -> str:
+        return self.get_backend_name()
 
     def normalize_header(self, header: str) -> str:
         clean = str(header).strip('"\'< >')
@@ -125,6 +132,13 @@ class ExternsManager:
             self.namespace_headers[alias] = c_header
 
         return symbols
+
+    def register_symbol(self, ns_name: str, symbol_name: str, sym_info: dict, header: str = ''):
+        if ns_name not in self.namespaces:
+            self.namespaces[ns_name] = {}
+        self.namespaces[ns_name][symbol_name] = sym_info
+        if header:
+            self.namespace_headers[ns_name] = header
 
     def has_namespace(self, ns_name: str) -> bool:
         return ns_name in self.namespaces

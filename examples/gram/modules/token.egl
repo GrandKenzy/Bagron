@@ -1,0 +1,5 @@
+enum Tokens:
+    IDENT
+
+Tokens t = Tokens.IDENT
+print(t)

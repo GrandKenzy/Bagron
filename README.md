@@ -42,7 +42,7 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 ## 📥 Requisitos
 
-* **Python:** 3.10 o superior.
+* **Python:** 3.13 o superior (requerido para soporte avanzado de f-strings PEP 701).
 * **Compilador C:** GCC, Clang o TCC accesible en el PATH del sistema (para el flag `--build` / `--run`).
 
 ---

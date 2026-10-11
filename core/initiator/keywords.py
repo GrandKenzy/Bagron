@@ -2,13 +2,13 @@ import gram
 
 gram.config.LEXER_COMMENT_TOKEN = ';'
 gram.config.LEXER_SAVE_COMMENTS = False
+gram.words.clear_all()
 
 GROUPS = [
     'imports',
     'types',
     'privacity',
     'clauses',
-    'properties',
     'keywords',
     'conditional_statement',
     'loops',
@@ -21,7 +21,6 @@ GROUP_COLORS = {
     'loops': '#D16969',
     'imports': '#E5C07B',
     'clauses': '#D4AF37',
-    'properties': '#E5C07B',
     'keywords': '#E5C07B',
 }
 
@@ -58,6 +57,7 @@ KEYWORD_SPECIFIC_COLORS = {
     'ran': '#D16969',
     '__fronted__': '#E2B93D',
     '__inline__': '#E2B93D',
+    '__packed__': '#E2B93D',
     '__slot__': '#E2B93D',
     'sizeof': '#E2B93D',
     'class': '#17A2B8',
@@ -103,11 +103,10 @@ ADVANCE_TYPES = [
 KEYWORDS_BY_GROUP = {
     'imports': ['include', 'import', 'load', 'declare'],
     'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLimit'],
-    'properties': ['mode'],
     'privacity': ['public', 'private'],
-    'conditional_statement': ['if', 'elif', 'else', 'not'],
+    'conditional_statement': ['if', 'elif', 'else', 'not', 'and', 'or'],
     'loops': ['for', 'while', 'ran', 'in'],
-    'keywords': ['as', 'clause', 'property', 'return', 'pass', '__fronted__', '__inline__', '__slot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
+    'keywords': ['as', 'clause', 'return', 'pass', '__fronted__', '__inline__', '__packed__', '__slot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
 }
 
 for group in GROUPS:
@@ -130,7 +129,3 @@ for kw, color in KEYWORD_SPECIFIC_COLORS.items():
         k_obj = gram.words.get_keyword(kw)
         if k_obj:
             k_obj.hex_color = color
-
-for kw in ['name', 'sep', 'only', 'exclude', 'symbols', 'values', 'mode', 'any']:
-    if gram.words.keyword_exists(kw):
-        gram.words.remove_keyword(kw)

@@ -205,7 +205,7 @@ def visit(variable: Variable, block: Function | None = None):
             value = '{0}'
         else:
             value = 'NULL'
-    elif isinstance(value, str) and convert_type(variable.type) != 'char*':
+    elif convert_type(variable.type) != 'char*' or not isinstance(value, str):
         value = format_expression(value, block)
 
     if variable.type in ('pstring', 'chain') or convert_type(variable.type) == 'char*':

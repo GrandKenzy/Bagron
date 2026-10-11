@@ -25,12 +25,8 @@ def _parse_param(param: gram.ASTNode) -> FunctionParam:
         param_name = str(vals[1].value if hasattr(vals[1], 'value') else vals[1])
     elif len(vals) == 1:
         v_str = str(vals[0].value if hasattr(vals[0], 'value') else vals[0])
-        if v_str in ('self', 'this'):
-            param_type = 'class'
-            param_name = v_str
-        else:
-            param_type = 'any' if is_variadic else 'void'
-            param_name = v_str
+        param_type = 'any' if is_variadic else 'void'
+        param_name = v_str
     else:
         param_type = 'void'
         param_name = ''
@@ -53,29 +49,29 @@ def parse_body_statements(statements: list[gram.ASTNode], is_inline: bool = Fals
             v = var_decl.visit(statement).ignore()
             body[v] = 'Variable'
         elif statement.name in ('EGL_RETURN', 'return'):
-            mc_nodes = statement.find('EGL_METHOD_CALL')
-            c_nodes = statement.find('EGL_CALL')
-            if mc_nodes:
-                mc_node = mc_nodes[0]
-                target = mc_node.values[0]
-                method = mc_node.values[2] if len(mc_node.values) >= 3 else mc_node.values[1]
-                args, _ = extract_call_args(mc_node)
-                ret_val = MethodCall(target, method, args).ignore()
-            elif c_nodes:
-                c_node = c_nodes[0]
-                c_name = c_node.values[0]
-                args, kwargs = extract_call_args(c_node)
-                ret_val = Call(c_name, args, kwargs).ignore()
+            val_nodes = statement.find('EGL_VALUE')
+            if val_nodes:
+                from core.processor.visitors import expression as expr_visitor
+                ret_val = expr_visitor.visit(val_nodes[0])
             else:
-                all_toks = [t for t in getattr(statement, 'all_tokens', []) if str(getattr(t, 'value', t)) != 'return']
-                if len(all_toks) > 1:
-                    ret_val = ' '.join(str(getattr(t, 'value', t)) for t in all_toks)
-                elif len(all_toks) == 1:
-                    tok = all_toks[0]
-                    if getattr(tok, 'token', None) == gram.Token.IDENT or isinstance(tok, gram.Identifier):
-                        ret_val = tok if isinstance(tok, gram.Identifier) else gram.Identifier(tok.value)
-                    else:
-                        ret_val = tok.value if hasattr(tok, 'value') else tok
+                mc_nodes = statement.find('EGL_METHOD_CALL')
+                c_nodes = statement.find('EGL_CALL')
+                if mc_nodes:
+                    mc_node = mc_nodes[0]
+                    target = mc_node.values[0]
+                    method = mc_node.values[2] if len(mc_node.values) >= 3 else mc_node.values[1]
+                    args, _ = extract_call_args(mc_node)
+                    from core.processor.visitors import expression as expr_visitor
+                    proc_args = [expr_visitor.visit(a) for a in args]
+                    ret_val = MethodCall(target, method, proc_args).ignore()
+                elif c_nodes:
+                    c_node = c_nodes[0]
+                    c_name = c_node.values[0]
+                    args, kwargs = extract_call_args(c_node)
+                    from core.processor.visitors import expression as expr_visitor
+                    proc_args = [expr_visitor.visit(a) for a in args]
+                    proc_kwargs = {k: expr_visitor.visit(v) for k, v in kwargs.items()}
+                    ret_val = Call(c_name, proc_args, proc_kwargs).ignore()
                 else:
                     ret_val = statement.values[1] if len(statement.values) > 1 else (statement.children[0].value if statement.children and hasattr(statement.children[0], 'value') else (statement.children[0].values[0] if statement.children and statement.children[0].values else None))
             returned = Returned(ret_val).ignore()
@@ -99,29 +95,10 @@ def parse_body_statements(statements: list[gram.ASTNode], is_inline: bool = Fals
 
             val = None
             if val_nodes:
-                mc_nodes = val_nodes[0].find('EGL_METHOD_CALL')
-                c_nodes = val_nodes[0].find('EGL_CALL')
-                if mc_nodes:
-                    mc_node = mc_nodes[0]
-                    target_m = mc_node.values[0]
-                    method_m = mc_node.values[2] if len(mc_node.values) >= 3 else mc_node.values[1]
-                    args_m, _ = extract_call_args(mc_node)
-                    val = MethodCall(target_m, method_m, args_m).ignore()
-                elif c_nodes:
-                    c_node = c_nodes[0]
-                    c_name = c_node.values[0]
-                    args_c, kwargs_c = extract_call_args(c_node)
-                    val = Call(c_name, args_c, kwargs_c).ignore()
-                elif val_nodes[0].find('EGL_INDEX_ACCESS'):
-                    idx_rhs = val_nodes[0].find('EGL_INDEX_ACCESS')[0]
-                    target_v = str(idx_rhs.values[0])
-                    idx_c = idx_rhs.children[0] if idx_rhs.children else None
-                    idx_e = ''.join(str(getattr(t, 'value', t)) for t in getattr(idx_c, 'all_tokens', idx_c.values)) if idx_c else ''
-                    val = f'{target_v}[{idx_e}]'
-                elif eq_idx != -1 and len(toks) > eq_idx + 2:
-                    val = ''.join(toks[eq_idx + 1:])
-                elif val_nodes[0].values:
-                    val = val_nodes[0].values[0] if len(val_nodes[0].values) == 1 else (''.join(toks[eq_idx + 1:]) if eq_idx != -1 else val_nodes[0].values[0])
+                from core.processor.visitors import expression as expr_visitor
+                val = expr_visitor.visit(val_nodes[0])
+            elif eq_idx != -1 and len(toks) > eq_idx + 1:
+                val = ' '.join(toks[eq_idx + 1:])
 
             lhs_idx_nodes = [n for n in statement.find('EGL_INDEX_ACCESS') if not val_nodes or n not in val_nodes[0].walk()]
             lhs_mems = [n for n in statement.find('EGL_MEMBER_ACCESS') if not val_nodes or n not in val_nodes[0].walk()]
@@ -140,19 +117,27 @@ def parse_body_statements(statements: list[gram.ASTNode], is_inline: bool = Fals
             target = statement.values[0]
             method = statement.values[2] if len(statement.values) >= 3 else statement.values[1]
             args, _ = extract_call_args(statement)
-            v = MethodCall(target, method, args).ignore()
+            from core.processor.visitors import expression as expr_visitor
+            proc_args = [expr_visitor.visit(a) for a in args]
+            v = MethodCall(target, method, proc_args).ignore()
             body[v] = 'MethodCall'
             if is_inline and not inline_target:
                 inline_target = v
         elif statement.name in ('EGL_CALL', 'call'):
             call_name = statement.values[0]
             args, kwargs = extract_call_args(statement)
-            v = Call(call_name, args, kwargs).ignore()
+            from core.processor.visitors import expression as expr_visitor
+            proc_args = [expr_visitor.visit(a) for a in args]
+            proc_kwargs = {k: expr_visitor.visit(v_arg) for k, v_arg in kwargs.items()}
+            v = Call(call_name, proc_args, proc_kwargs).ignore()
             body[v] = 'Call'
             if is_inline and not inline_target:
                 inline_target = v
-        elif statement.name in ('EGL_PASS', 'pass'):
+        elif statement.name in ('EGL_PASS', 'pass', 'COMMENT', 'EGL_COMMENT'):
             pass
+        else:
+            from core.processor.errors import UnknownASTNodeError
+            raise UnknownASTNodeError(statement)
     return body, returned, inline_target
 
 def visit(node: gram.ASTNode):
@@ -190,21 +175,26 @@ def visit(node: gram.ASTNode):
         return_nodes = node.find('EGL_RETURN') or node.find('return')
         if return_nodes:
             stmt_node = return_nodes[0]
-            mc_nodes = stmt_node.find('EGL_METHOD_CALL')
-            c_nodes = stmt_node.find('EGL_CALL')
-            if mc_nodes:
-                mc_node = mc_nodes[0]
-                target = mc_node.values[0]
-                method = mc_node.values[2] if len(mc_node.values) >= 3 else mc_node.values[1]
-                args, _ = extract_call_args(mc_node)
-                ret_val = MethodCall(target, method, args).ignore()
-            elif c_nodes:
-                c_node = c_nodes[0]
-                c_name = c_node.values[0]
-                args, kwargs = extract_call_args(c_node)
-                ret_val = Call(c_name, args, kwargs).ignore()
+            val_nodes = stmt_node.find('EGL_VALUE')
+            if val_nodes:
+                from core.processor.visitors import expression as expr_visitor
+                ret_val = expr_visitor.visit(val_nodes[0])
             else:
-                ret_val = stmt_node.values[1] if len(stmt_node.values) > 1 else (stmt_node.children[0].value if stmt_node.children and hasattr(stmt_node.children[0], 'value') else (stmt_node.children[0].values[0] if stmt_node.children and stmt_node.children[0].values else None))
+                mc_nodes = stmt_node.find('EGL_METHOD_CALL')
+                c_nodes = stmt_node.find('EGL_CALL')
+                if mc_nodes:
+                    mc_node = mc_nodes[0]
+                    target = mc_node.values[0]
+                    method = mc_node.values[2] if len(mc_node.values) >= 3 else mc_node.values[1]
+                    args, _ = extract_call_args(mc_node)
+                    ret_val = MethodCall(target, method, args).ignore()
+                elif c_nodes:
+                    c_node = c_nodes[0]
+                    c_name = c_node.values[0]
+                    args, kwargs = extract_call_args(c_node)
+                    ret_val = Call(c_name, args, kwargs).ignore()
+                else:
+                    ret_val = stmt_node.values[1] if len(stmt_node.values) > 1 else (stmt_node.children[0].value if stmt_node.children and hasattr(stmt_node.children[0], 'value') else (stmt_node.children[0].values[0] if stmt_node.children and stmt_node.children[0].values else None))
             returned = Returned(ret_val).ignore()
             if is_inline and not inline_target:
                 inline_target = ret_val

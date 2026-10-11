@@ -124,6 +124,146 @@ def _replace_enum_member(match: re.Match, block: Function | None = None) -> str:
 def format_expression(raw: Any, block: Function | None = None) -> str:
     if raw is None:
         return 'NULL'
+
+    raw_cls = getattr(raw, '__class__', None)
+    cls_name = getattr(raw_cls, '__name__', '')
+
+    if cls_name == 'BinaryExpr':
+        left_c = format_expression(raw.left, block)
+        right_c = format_expression(raw.right, block)
+        op = raw.op
+        if op == 'and':
+            op = '&&'
+        elif op == 'or':
+            op = '||'
+        elif op == '//':
+            op = '/'
+        elif op == '**':
+            import core.backend.c as c_backend
+            c_backend.add_include('<math.h>')
+            return f'pow({left_c}, {right_c})'
+        return f'({left_c} {op} {right_c})'
+
+    if cls_name == 'UnaryExpr':
+        operand_c = format_expression(raw.operand, block)
+        op = raw.op
+        if op in ('not', 'NOT', '!'):
+            return f'!({operand_c})'
+        if op in ('&', '*'):
+            return f'{op}{operand_c}'
+        return f'{op}({operand_c})'
+
+    if cls_name == 'LiteralExpr':
+        if raw.value is None or raw.type == 'null':
+            return 'NULL'
+        if raw.type == 'bool' or isinstance(raw.value, bool):
+            return 'true' if raw.value else 'false'
+        if raw.type == 'string':
+            from core.backend.c.visitors.function import _format_c_literal
+            return _format_c_literal(raw.value, 'pstring')
+        if raw.type == 'char':
+            from core.backend.c.visitors.function import _format_c_literal
+            return _format_c_literal(raw.value, 'char')
+        return str(raw.value)
+
+    if cls_name == 'VariableExpr':
+        v_name = str(raw.name)
+        if v_name in ('Null', 'None', 'null', 'NULL'):
+            return 'NULL'
+        if v_name.lower() in ('true', 'false'):
+            return v_name.lower()
+        if v_name == '__fronted__':
+            return '""'
+        if v_name in ('self', 'this'):
+            return v_name
+        if v_name.startswith(('self.', 'this.')):
+            return v_name.replace('self.', 'self->').replace('this.', 'this->')
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', v_name):
+            return format_expression(v_name, block)
+        resolved = resolve_variable(v_name, block)
+        if resolved:
+            resolved.uses += 1
+            return resolved.name
+        return v_name
+
+    if cls_name == 'IndexAccess':
+        target_c = format_expression(raw.target, block)
+        index_c = format_expression(raw.index, block)
+        return f'{target_c}[{index_c}]'
+
+    if cls_name == 'MemberAccess':
+        target_str = format_expression(raw.target, block) if hasattr(raw.target, '__class__') and hasattr(raw.target, 'compiled') else str(getattr(raw.target, 'value', raw.target))
+        member_str = str(getattr(raw.member, 'value', raw.member))
+        if target_str in ('self', 'this'):
+            return f'{target_str}->{member_str}'
+        if member_str == 'type':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.type'
+            return _replace_type(FakeMatch(), block)
+        if member_str == 'ptr':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.ptr'
+            return _replace_ptr(FakeMatch(), block)
+        if member_str == 'size':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.size'
+            return _replace_size(FakeMatch(), block)
+        if member_str == 'len':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.len'
+            return _replace_len(FakeMatch(), block)
+        if member_str == 'const':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.const'
+            return _replace_const(FakeMatch(), block)
+        if member_str == 'visibility':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.visibility'
+            return _replace_visibility(FakeMatch(), block)
+        if member_str == 'value':
+            class FakeMatch:
+                def group(self, idx):
+                    return target_str if idx == 1 else f'{target_str}.value'
+            return _check_value_access(FakeMatch(), block)
+        from core.processor.type_system import CUSTOM_TYPES
+        for key in (target_str, target_str.split('.')[-1]):
+            type_info = CUSTOM_TYPES.get(key)
+            if type_info and type_info.get('is_enum'):
+                members = type_info.get('enum_members', {})
+                if member_str in members:
+                    return str(members[member_str])
+                c_base = type_info.get('c_type', key)
+                return f'{c_base}_{member_str}'
+        if not member_str:
+            return target_str
+        resolved = resolve_variable(target_str, block)
+        if resolved:
+            resolved.uses += 1
+            if resolved.is_pointer or (resolved.type and resolved.type.endswith('*')):
+                return f'{target_str}->{member_str}'
+            return f'{target_str}.{member_str}'
+        return f'{target_str}.{member_str}'
+
+    if cls_name == 'MethodCall':
+        from core.backend.c.visitors import method_call
+        return method_call.visit(raw, is_statement=False, block=block)
+
+    if cls_name == 'Call':
+        from core.backend.c.deffunc import deffunc
+        compiled_call = deffunc(raw.name, raw.args, getattr(raw, 'kwargs', {}), is_statement=False, block=block)
+        return compiled_call.compiled
+
+    if hasattr(raw, 'name') and hasattr(raw, 'values') and hasattr(raw, 'children'):
+        from core.processor.visitors.expression import visit as visit_expr
+        expr_obj = visit_expr(raw, block)
+        return format_expression(expr_obj, block)
+
     raw_val = raw.value if hasattr(raw, 'value') else raw
     if hasattr(raw_val, '__class__') and raw_val.__class__.__name__ == 'MethodCall':
         from core.backend.c.visitors import method_call
@@ -132,8 +272,10 @@ def format_expression(raw: Any, block: Function | None = None) -> str:
         from core.backend.c.deffunc import deffunc
         compiled_call = deffunc(raw_val.name, raw_val.args, getattr(raw_val, 'kwargs', {}), is_statement=False, block=block)
         return compiled_call.compiled
+
     if raw_val is None:
         return 'NULL'
+
     str_raw = str(raw_val).strip()
     if str_raw in ('Null', 'None', 'null', 'NULL'):
         return 'NULL'

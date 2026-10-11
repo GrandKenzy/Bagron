@@ -4,42 +4,42 @@
 - **Prioridad:** Alta
 - **Categoría:** Arquitectura / Frontend del Compilador
 - **Impacto:** Expresiones complejas, anidamiento de operadores y robustez semántica
+- **Estado Actual:** Resuelta (Completada)
 
 ---
 
-## 1. Contexto y Problema Actual
+## 1. Contexto y Problema Original
 
-Actualmente, las expresiones en condiciones (`if`, `while`) y ciertas llamadas son procesadas mediante heurísticas locales (como `parse_condition_node` o inspección de secuencias planas de tokens).
+Anteriormente, las expresiones en condiciones (`if`, `while`), asignaciones y llamadas eran procesadas mediante heurísticas locales (inspección de secuencias planas de tokens, concatenación de cadenas y expresiones regulares ad-hoc).
 
-Esto ocurrió porque en la gramática actual de `gram`, algunas expresiones relacionales y compuestas simplifican o aplanan la lista de tokens, perdiendo delimitadores como paréntesis de llamadas `(...)` o agrupaciones complejas cuando no están encapsuladas explícitamente en una regla especializada.
-
-### Síntomas observados
-- Se requiere inspeccionar manualmente llamadas internas (`cond_node.find('EGL_CALL') + cond_node.find('EGL_METHOD_CALL')`).
-- Expresiones muy anidadas o combinadas (por ejemplo: `((x + y) * 2) > get_val(z)` o `a and not (b or c)`) requieren tratamientos particulares en cada visitante en vez de resolverse de forma uniforme.
+Esto causaba inconsistencias en expresiones anidadas, pérdida de tipos en llamadas compuestas y falta de recursividad formal.
 
 ---
 
-## 2. Solución Requerida
+## 2. Solución Implementada
 
-Diseñar e implementar un generador y evaluador de expresiones unificado en el pipeline del compilador:
+Se implementó el pipeline canónico y unificado de expresiones:
 
-1. **Jerarquía Formal de Nodos de Expresión (AST):**
-   - `BinaryExpr(left, op, right)`
-   - `UnaryExpr(op, operand)`
-   - `CallExpr(callee, args)`
-   - `MemberAccessExpr(target, member)`
-   - `LiteralExpr(value, type)`
-   - `VariableExpr(name)`
+1. **Jerarquía Formal de Nodos de Expresión (AST) en `core/processor/objects/expression.py`:**
+   - `BinaryExpr(left, op, right)`: Operaciones binarias con asociatividad formal.
+   - `UnaryExpr(op, operand)`: Operadores unarios (`-`, `+`, `!`, `not`, `&`, `*`, `~`).
+   - `LiteralExpr(value, type)`: Literales numéricos, booleanos, cadenas, caracteres y null.
+   - `VariableExpr(name)`: Identificadores y referencias a variables o símbolos.
+   - `IndexAccess(target, index)`: Indexación recursiva de arreglos y punteros.
+   - Integración nativa con `Call`, `MethodCall` y `MemberAccess`.
 
-2. **Visita Canónica Única:**
-   - Un único visitante de expresiones (`visit_expression`) que tome cualquier nodo de expresión (sea en un `if`, `while`, asignación, retorno o argumento de función) y lo transforme a:
-     - Un árbol semántico tipado en el procesador.
-     - Su representación equivalente en C en el backend de forma recursiva.
+2. **Visitante Canónico en `core/processor/visitors/expression.py`:**
+   - Transforma nodos de gramática de expresiones (`EGL_EXPRESSION`, `EGL_LOGICAL_AND`, `EGL_ADDITIVE`, etc.) preservando la precedencia de operadores.
+   - Aplica plegado asociativo a la izquierda para operadores estándar y asociativo a la derecha para potencias (`**`).
+
+3. **Generación Recursiva en Backend C (`core/backend/c/visitors/expression.py`):**
+   - Función única `format_expression(raw, block)` que evalúa recursivamente cualquier nodo del árbol de expresiones AST y produce código C canónico.
+   - Todas las sentencias (`if`, `while`, `var_decl`, `assign`, `return`, `call`, `method_call`) delegan a este pipeline único.
 
 ---
 
 ## 3. Criterios de Aceptación
 
-- [ ] Cualquier expresión matemática, lógica o relacional se evalúa recursivamente con precedencia estándar.
-- [ ] No existen funciones auxiliares ad-hoc de "extracción de tokens" por sentencia (`_compile_condition` o similares que parseen cadenas planas).
-- [ ] Las llamadas a funciones dentro de expresiones anidadas preservan sus tipos y argumentos sin requerir chequeos manuales.
+- [x] Cualquier expresión matemática, lógica o relacional se evalúa recursivamente con precedencia estándar.
+- [x] No existen funciones auxiliares ad-hoc de extracción plana de tokens por sentencia.
+- [x] Las llamadas a funciones dentro de expresiones anidadas preservan sus tipos y argumentos sin requerir chequeos manuales.

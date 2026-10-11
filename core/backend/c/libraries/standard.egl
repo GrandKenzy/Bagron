@@ -89,7 +89,7 @@ public class str:
     ptr _ptr
     uint64 _len
 
-    void __new__(self):
+    void __new__():
         __void_p_t__ __char_t__ value 
         value = __fronted__ 
         __size_t__ size = STRING_C.strlen(value)
@@ -97,11 +97,11 @@ public class str:
         self._len = size
         STRING_C.strcpy(self._ptr, value)
 
-    void __init__(self):
+    void __init__():
         pass
 
     @method
-    int len(self):
+    int len():
         return self._len
         
 

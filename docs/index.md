@@ -49,7 +49,7 @@ El flujo de transformacion de Easy-C opera en cinco etapas secuenciales:
 ## Inicio Rapido
 
 ### Requisitos del Sistema
-* Python 3.10 o superior instalado en el entorno.
+* Python 3.13 o superior instalado en el entorno (requerido para soporte avanzado de f-strings PEP 701).
 * Compilador de C (GCC o Clang) accesible en el PATH del sistema para ejecucion directa.
 
 ### Estructura Minima de Proyecto EGL

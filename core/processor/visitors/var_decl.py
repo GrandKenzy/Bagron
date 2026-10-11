@@ -24,7 +24,11 @@ def visit(node: gram.ASTNode):
 
     if spec_nodes and spec_nodes[0].values:
         spec_vals = [str(v.value if hasattr(v, 'value') else v) for v in spec_nodes[0].values]
-        t = spec_vals[0]
+        spec_toks = [str(tok.value) for tok in getattr(spec_nodes[0], 'tokens', []) if str(tok.value) != '*']
+        if '.' in spec_toks:
+            t = ''.join(spec_toks)
+        else:
+            t = spec_vals[0]
         if '*' in spec_vals:
             is_pointer_type = True
         if len(spec_vals) > 1:
@@ -48,12 +52,17 @@ def visit(node: gram.ASTNode):
         if vals and isinstance(vals[0], (int, float)):
             fixed_size = int(vals.pop(0))
 
-    mem_nodes = node.find('EGL_MEMBER_ACCESS')
-    if mem_nodes and mem_nodes[0].values:
-        m_vals = [str(v.value if hasattr(v, 'value') else v) for v in mem_nodes[0].values]
+    val_nodes = node.find('EGL_VALUE')
+    lhs_mem_nodes = [n for n in node.find('EGL_MEMBER_ACCESS') if not val_nodes or n not in val_nodes[0].walk()]
+    if lhs_mem_nodes and lhs_mem_nodes[0].values:
+        m_vals = [str(getattr(v, 'value', v)) for v in lhs_mem_nodes[0].values]
         name = '.'.join(m_vals)
     else:
-        name = str(vals[0].value if hasattr(vals[0], 'value') else vals[0]) if vals else ''
+        ident_tokens = [tok for tok in getattr(node, 'tokens', []) if getattr(getattr(tok, 'token', None), 'name', '') == 'IDENT' or str(getattr(tok, 'token', '')) == 'Token.IDENT']
+        if ident_tokens:
+            name = str(getattr(ident_tokens[0], 'value', ident_tokens[0]))
+        else:
+            name = str(getattr(vals[0], 'value', vals[0])) if vals else ''
     
     call_node = _find_call(node)
     pointer_base_type = None
@@ -61,8 +70,15 @@ def visit(node: gram.ASTNode):
 
     if call_node and call_node.name in ('EGL_METHOD_CALL', 'method call'):
         from core.externs.manager import manager
-        target = str(call_node.values[0].value if hasattr(call_node.values[0], 'value') else call_node.values[0])
-        method = str(call_node.values[2].value if len(call_node.values) >= 3 else (call_node.values[1].value if hasattr(call_node.values[1], 'value') else call_node.values[1]))
+        raw_target = call_node.values[0]
+        target = str(getattr(raw_target, 'value', raw_target))
+        if len(call_node.values) >= 3 and str(getattr(call_node.values[1], 'value', call_node.values[1])) == '.':
+            raw_m = call_node.values[2]
+        elif len(call_node.values) >= 2:
+            raw_m = call_node.values[1]
+        else:
+            raw_m = ''
+        method = str(getattr(raw_m, 'value', raw_m))
         args, _ = extract_call_args(call_node)
         if manager.has_namespace(target):
             sym = manager.validate_call(target, method, args)
@@ -71,7 +87,8 @@ def visit(node: gram.ASTNode):
                 is_call_ptr = True
         value = MethodCall(target, method, args).ignore()
     elif call_node:
-        call_name = str(call_node.values[0].value if hasattr(call_node.values[0], 'value') else call_node.values[0])
+        raw_c = call_node.values[0]
+        call_name = str(getattr(raw_c, 'value', raw_c))
         args, kwargs = extract_call_args(call_node)
         value = Call(call_name, args, kwargs).ignore()
         reserved = reserve_funnames.get_items().get(call_name)
@@ -85,29 +102,17 @@ def visit(node: gram.ASTNode):
         if call_name == 'malloc':
             raw_base = kwargs.get('Type') if 'Type' in kwargs else (args[0] if len(args) >= 2 else None)
             if raw_base:
-                pointer_base_type = str(raw_base.value if hasattr(raw_base, 'value') else raw_base)
-    elif len(vals) >= 2:
-        value = vals[1]
+                pointer_base_type = str(getattr(raw_base, 'value', raw_base))
     else:
         val_nodes = node.find('EGL_VALUE')
-        if val_nodes and val_nodes[0].values:
-            idx_nodes = val_nodes[0].find('EGL_INDEX_ACCESS')
-            if idx_nodes:
-                idx = idx_nodes[0]
-                target_idx = str(idx.values[0])
-                idx_child = idx.children[0] if idx.children else None
-                idx_expr = ''.join(str(getattr(t, 'value', t)) for t in getattr(idx_child, 'all_tokens', idx_child.values)) if idx_child else ''
-                value = f'{target_idx}[{idx_expr}]'
-            else:
-                all_t = getattr(val_nodes[0], 'all_tokens', [])
-                if len(all_t) > 1 or val_nodes[0].find('EGL_MEMBER_ACCESS'):
-                    value = ''.join(str(getattr(t, 'value', t)) for t in all_t)
-                elif len(val_nodes[0].values) == 1:
-                    value = val_nodes[0].values[0]
-                else:
-                    value = ''.join(str(getattr(t, 'value', t)) for t in all_t)
+        if val_nodes:
+            from core.processor.visitors import expression as expr_visitor
+            value = expr_visitor.visit(val_nodes[0])
         elif node.children and len(node.children) > 1:
-            value = node.children[-1].values if node.children[-1].values else None
+            from core.processor.visitors import expression as expr_visitor
+            value = expr_visitor.visit(node.children[-1])
+        elif len(vals) >= 2:
+            value = vals[1]
         else:
             value = None
 

@@ -28,12 +28,14 @@ class ClassDecl(Object):
         name: str,
         methods: dict[str, ClassMethod] | None = None,
         fields: list[Any] | None = None,
-        privacity: Literal['public', 'private'] = 'public'
+        privacity: Literal['public', 'private'] = 'public',
+        is_packed: bool = False
     ):
         self.name = name
         self.methods = methods or {}
         self.fields = fields or []
         self.privacity = privacity
+        self.is_packed = is_packed
         self.constructor_func: Any = None
         self.generated_functions: list[Any] = []
         super().__init__()

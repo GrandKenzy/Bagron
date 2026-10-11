@@ -16,16 +16,17 @@ Para asegurar la mantenibilidad, consistencia y robustez del compilador de Easy-
   ```python
   def resolve_source_and_main(source_path: str | Path) -> tuple[Path, Path]:
   ```
-* Utilizar tipos nativos de Python 3.10+ (`list[T]`, `dict[K, V]`, `tuple[A, B]`, `str | None`).
+* Utilizar tipos nativos de Python 3.13+ (`list[T]`, `dict[K, V]`, `tuple[A, B]`, `str | None`) y sintaxis avanzada de f-strings (PEP 701).
 * Evitar `Any` salvo en interfaces genericas de recorrido sintactico.
 
 ### 3. Gestion Limpia del Estado Global
-* El compilador utiliza registros en memoria para almacenar objetos procesados (`base.ITEMS`), cabeceras del backend (`c.includes`, `c.typedefs`) y namespaces (`manager.namespaces`).
-* Cada punto de entrada de compilacion (`compile_project`) **debe resetear el estado** al inicio para evitar contaminacion cruzada entre ejecuciones consecutivas:
+* El compilador utiliza registros en memoria para almacenar objetos procesados (`base.ITEMS`), cabeceras del backend (`c.includes`, `c.typedefs`), tipos personalizados (`CUSTOM_TYPES`) y namespaces (`manager.namespaces`).
+* Cada punto de entrada de compilacion (`compile_project`) **debe resetear el estado** al inicio y al finalizar para evitar contaminacion cruzada entre ejecuciones consecutivas:
   ```python
   manager.clear()
   objects.clear()
   c.clear()
+  type_system.clear()
   ```
 
 ### 4. Mutabilidad de Nodos AST en `gram`

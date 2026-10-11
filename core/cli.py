@@ -28,28 +28,36 @@ def clear_cache(root_dir: Path | None = None) -> int:
 def print_help():
     print("Easy-C (EGL) Compiler CLI")
     print("Uso:")
-    print("  egl compile [ruta] [-o <salida.c>] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
+    print("  egl compile [ruta] [-o <salida.c>] [--library] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
     print("  egl run [ruta] [-o <salida.c>] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
+    print("  egl update [--force]")
+    print("  egl download <gcc|msvc>")
+    print("  egl install gram")
     print("  egl cache clear")
     print("  egl extension [--install] [-o <ruta.vsix>]")
     print("  egl --version")
     print("  egl --help")
     print("")
     print("Comandos:")
-    print("  compile [ruta]   Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
-    print("  run [ruta]       Compila, construye el ejecutable y lo ejecuta directamente.")
-    print("  cache clear      Elimina archivos y directorios de caché (.cache, __pycache__, .pyc).")
-    print("  extension        Genera la extensión oficial de VS Code (.vsix) con sintaxis y tema Noble Dark.")
-    print("                   Usa '--install' para instalarla directamente en Visual Studio Code.")
+    print("  compile [ruta]     Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
+    print("  run [ruta]         Compila, construye el ejecutable y lo ejecuta directamente.")
+    print("  update             Comprueba y actualiza Easy-C a la versión más reciente en GitHub.")
+    print("  download <target>  Descarga/detecta un compilador C nativo (gcc o msvc) para Backend C.")
+    print("  install gram       Instala la librería 'gram' en un entorno privado y aislado (.egl/vendor).")
+    print("  cache clear        Elimina archivos y directorios de caché (.cache, __pycache__, .pyc).")
+    print("  extension          Genera la extensión oficial de VS Code (.vsix) con sintaxis y tema Noble Dark.")
+    print("                     Usa '--install' para instalarla directamente en Visual Studio Code.")
     print("")
     print("Opciones:")
-    print("  -b, --build      Compila el archivo C generado con GCC para producir el ejecutable.")
-    print("  -r, --run        Compila con GCC y ejecuta el programa inmediatamente.")
+    print("  -b, --build      Construye el ejecutable binario delegando al backend del target.")
+    print("  -r, --run        Construye el ejecutable y lo ejecuta inmediatamente.")
     print("  -o, --output     Nombre del archivo C monolítico generado (default: program.c).")
-    print("  --cc             Compilador de C a utilizar (default: gcc).")
-    print("  -l, --link       Enlaza una librería externa con el compilador C (ej: -l SDL3).")
-    print("  -I, --include    Agrega una carpeta de cabeceras C al compilador.")
+    print("  --library        Compila el proyecto como una librería empaquetada (.lib.egl).")
+    print("  --cc             Compilador nativo a utilizar (gcc, clang, cl, msvc, tcc).")
+    print("  -l, --link       Enlaza una librería externa (ej: -l SDL3).")
+    print("  -I, --include    Agrega una carpeta de cabeceras al compilador.")
     print("  -L, --lib-dir    Agrega una carpeta de librerías al linker.")
+    print("  --force          Fuerza la reinstalación/actualización en 'egl update'.")
     print("  --install        Instala automáticamente el paquete .vsix en VS Code.")
     print("  -v, --version    Muestra la versión de EGL.")
     print("  -h, --help       Muestra este mensaje de ayuda.")
@@ -70,6 +78,42 @@ def main(args: list[str] | None = None) -> int:
     do_run = False
     do_build = False
     start_idx = 1
+
+    if command == 'update':
+        force = '--force' in args[1:] or '-f' in args[1:]
+        from core.update import update_easy_c
+        ok = update_easy_c(force=force)
+        return 0 if ok else 1
+
+    if command == 'install':
+        sub = args[1].lower() if len(args) > 1 else ''
+        if sub == 'gram':
+            from core.install import install_gram
+            ok = install_gram()
+            return 0 if ok else 1
+        else:
+            print(f"Error: Paquete desconocido '{sub}'. Uso: egl install gram")
+            return 1
+
+    if command in ('download', 'toolchain'):
+        target = args[1].lower() if len(args) > 1 else ''
+        if not target:
+            print("Error: Debes especificar el compilador a descargar (gcc o msvc). Uso: egl download <gcc|msvc>")
+            return 1
+        backend_name = manager.get_backend()
+        try:
+            import importlib
+            backend_mod = importlib.import_module(f'core.backend.{backend_name}.download')
+            download_fn = getattr(backend_mod, 'download_compiler', None)
+        except Exception:
+            download_fn = None
+
+        if not download_fn:
+            from core.backend.c.download import download_compiler
+            download_fn = download_compiler
+
+        ok = download_fn(target)
+        return 0 if ok else 1
 
     if command in ('cache', 'clean'):
         sub = args[1].lower() if len(args) > 1 else ''
@@ -126,6 +170,7 @@ def main(args: list[str] | None = None) -> int:
 
     source_path = None
     output_file = 'program.c'
+    is_library = False
     cc = 'gcc'
     cli_links: list[str] = []
     cli_includes: list[Path] = []
@@ -190,6 +235,9 @@ def main(args: list[str] | None = None) -> int:
             else:
                 print("Error: Se requiere la ruta del directorio para -L/--lib-dir.")
                 return 1
+        elif arg in ('--library', '-lib'):
+            is_library = True
+            i += 1
         elif not arg.startswith('-') and source_path is None:
             source_path = arg
             i += 1
@@ -205,9 +253,23 @@ def main(args: list[str] | None = None) -> int:
             print("Error: Falta la ruta del proyecto. Uso: egl compile [ruta] [--run]")
             return 1
 
+    if is_library:
+        if output_file == 'program.c':
+            p_src = Path(source_path).resolve()
+            lib_base = p_src.name if p_src.name not in ('source', '.', '') else p_src.parent.name
+            output_file = f'{lib_base}.lib.egl'
+        elif not output_file.endswith('.lib.egl'):
+            if output_file.endswith('.c'):
+                output_file = output_file[:-2] + '.lib.egl'
+            else:
+                output_file = output_file + '.lib.egl'
+
     try:
         print(f"[EGL] Compilando proyecto en: '{source_path}'", flush=True)
-        out_path = compile_project(source_path, output_file=output_file)
+        out_path = compile_project(source_path, output_file=output_file, is_library=is_library)
+        if is_library:
+            print(f"[EGL] Librería empaquetada exitosamente: '{out_path.name}'", flush=True)
+            return 0
         print(f"[EGL] Archivo monolítico generado exitosamente: '{out_path.name}'", flush=True)
 
         conventions = manager.collect_target_conventions()
@@ -228,46 +290,27 @@ def main(args: list[str] | None = None) -> int:
                 all_links.append(lk)
 
         if do_build or do_run:
-            exe_name = out_path.with_suffix('.exe' if sys.platform == 'win32' else '')
-            print(f"[EGL] Compilando con {cc}: '{exe_name.name}'...", flush=True)
-            compile_cmd = [cc, str(out_path), '-o', str(exe_name)]
-            for inc in all_includes:
-                compile_cmd.extend(['-I', str(inc)])
-            for ld in all_lib_dirs:
-                compile_cmd.extend(['-L', str(ld)])
-            for lk in all_links:
-                flag = lk if lk.startswith('-l') else f'-l{lk}'
-                compile_cmd.append(flag)
+            backend_name = manager.get_backend()
+            try:
+                import importlib
+                backend_mod = importlib.import_module(f'core.backend.{backend_name}')
+            except ImportError as err:
+                raise RuntimeError(f"No se pudo cargar el backend '{backend_name}' para la compilación binaria: {err}")
 
-            res = subprocess.run(compile_cmd)
-            if res.returncode != 0:
-                print(f"[EGL] Error en la compilación con {cc}.", flush=True)
-                return res.returncode
+            if not hasattr(backend_mod, 'compile'):
+                raise NotImplementedError(f"El backend '{backend_name}' no implementa la función 'compile' para generar ejecutables binarios.")
 
-            dest_dir = exe_name.parent
-            copied_bins = set()
-            for bin_item in conventions.get('bin_files', []):
-                bin_path = Path(bin_item)
-                if not bin_path.is_file():
-                    found_cand = None
-                    for search_folder in all_lib_dirs + all_includes:
-                        c1 = search_folder / bin_path.name
-                        if c1.is_file():
-                            found_cand = c1
-                            break
-                        c2 = search_folder.parent / 'bin' / bin_path.name
-                        if c2.is_file():
-                            found_cand = c2
-                            break
-                    if found_cand:
-                        bin_path = found_cand
-                if bin_path.is_file():
-                    dest_file = dest_dir / bin_path.name
-                    if dest_file.name not in copied_bins:
-                        copied_bins.add(dest_file.name)
-                        if bin_path.resolve() != dest_file.resolve():
-                            shutil.copy2(bin_path, dest_file)
-                            print(f"[EGL] Binario desplegado: '{bin_path.name}' -> '{dest_dir.name}'", flush=True)
+            res_code, exe_name = backend_mod.compile(
+                source_file=out_path,
+                output_file=out_path.with_suffix('.exe' if sys.platform == 'win32' else ''),
+                compiler=cc,
+                include_dirs=all_includes,
+                lib_dirs=all_lib_dirs,
+                link_libraries=all_links,
+                bin_files=conventions.get('bin_files', [])
+            )
+            if res_code != 0:
+                return res_code
 
             if do_run:
                 print(f"[EGL] Ejecutando: '{exe_name.name}'\n--- Salida del programa ---", flush=True)

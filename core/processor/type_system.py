@@ -148,3 +148,12 @@ DEFAULT_BUILTINS: list[tuple[str, str]] = []
 
 for _b_name, _b_intr in DEFAULT_BUILTINS:
     register_type(_b_name, _b_intr)
+
+def clear():
+    import gram
+    for name in list(CUSTOM_TYPES.keys()):
+        try:
+            gram.words.remove_keyword(name)
+        except Exception:
+            pass
+    CUSTOM_TYPES.clear()

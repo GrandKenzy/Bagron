@@ -75,3 +75,29 @@ La funcion `compile_project()` une todos los componentes en un unico archivo de 
    }
    ```
    * Esto permite que scripts directos de Easy-C con declaraciones e invocaciones a nivel de raiz operen como programas validos en C.
+
+---
+
+## Delegacion de Compilacion Binaria (`core/backend/c/compile.py`)
+
+Para desacoplar por completo el frontend de EGL del compilador de C nativo, el backend C expone un punto de entrada estándar `compile()`:
+
+```python
+def compile(
+    source_file: Path | str,
+    output_file: Path | str | None = None,
+    compiler: str | None = None,
+    include_dirs: list[Path | str] | None = None,
+    lib_dirs: list[Path | str] | None = None,
+    link_libraries: list[str] | None = None,
+    bin_files: list[Path | str] | None = None,
+    extra_flags: list[str] | None = None,
+    verbose: bool = False
+) -> tuple[int, Path]:
+```
+
+### Compiladores Soportados y Deteccion de Sintaxis
+1. **GCC y Clang:** Utiliza sintaxis estándar POSIX/GNU (`-o <exe>`, `-I <dir>`, `-L <dir>`, `-l<lib>`).
+2. **MSVC (`cl`, `cl.exe`, `msvc`):** Adapta la invocación a la sintaxis de Microsoft Visual C++ (`/nologo`, `/Fe:<exe>`, `/I<dir>`, `/link`, `/LIBPATH:<dir>`, `<lib>.lib`).
+3. **TCC (Tiny C Compiler):** Compatible con invocación ligera de compilación rápida.
+4. **Despliegue de Binarios de Enlace Dinámico:** Si el proyecto requiere DLLs o binarios compartidos (ej. `SDL3.dll`), el backend se encarga automáticamente de copiarlos al directorio de destino del ejecutable generado.

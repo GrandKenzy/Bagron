@@ -28,6 +28,17 @@ def visit(node: gram.ASTNode) -> EnumDecl:
     entry = register_type(name, name)
     entry['is_enum'] = True
     entry['enum_members'] = enum_members
+    if name.startswith('inmodule_'):
+        parts = name.split('_', 2)
+        if len(parts) >= 3:
+            mod_part = parts[1]
+            short_name = parts[-1]
+            short_entry = register_type(short_name, name)
+            short_entry['is_enum'] = True
+            short_entry['enum_members'] = enum_members
+            qual_entry = register_type(f'{mod_part}.{short_name}', name)
+            qual_entry['is_enum'] = True
+            qual_entry['enum_members'] = enum_members
 
     enum_obj = EnumDecl(name=name, items=items, privacity=privacy)
     return enum_obj
