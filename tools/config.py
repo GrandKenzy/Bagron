@@ -67,7 +67,7 @@ VENDOR_DIRNAME = "vendor"
 DEV_VENDOR_PARTS = (".egl", "vendor")
 
 # Carpetas completas que se copian desde el código fuente.
-COMPONENT_FOLDERS = ("core", "source")
+COMPONENT_FOLDERS = ("core",)
 # Carpetas que se fusionan (sin borrar lo existente), p. ej. librerías instaladas por el usuario.
 EGLLIBS_DIRNAME = "EGLLibs"  # debe coincidir con core.packages.layout.EGLLIBS_DIRNAME
 COMPONENT_MERGE_FOLDERS = (EGLLIBS_DIRNAME,)

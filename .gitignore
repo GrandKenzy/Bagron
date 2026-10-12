@@ -35,7 +35,9 @@ program.c
 
 # Bibliotecas pesadas y de terceros (SDL3, dependencias C instaladas)
 **/SDL3/
-**/*SDL3*
+*SDL3*.dll
+*SDL3*.a
+*SDL3*.lib
 **/cmake/
 **/pkgconfig/
 

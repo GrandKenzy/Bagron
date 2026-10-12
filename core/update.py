@@ -156,7 +156,7 @@ def update_egl(force: bool = False) -> bool:
             content_root = extract_dir
 
         # Copiar archivos esenciales (core, tools, source, egl.py)
-        for item in ['core', 'tools', 'source', 'egl.py', 'README.md']:
+        for item in ['core', 'tools', 'egl.py', 'README.md']:
             src = content_root / item
             dst = root_dir / item
             if src.is_file():

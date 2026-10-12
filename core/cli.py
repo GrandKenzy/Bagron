@@ -377,10 +377,10 @@ def main(args: list[str] | None = None) -> int:
             i += 1
 
     if source_path is None:
-        if Path('source/main.egl').is_file():
-            source_path = 'source'
-        elif Path('main.egl').is_file():
+        if Path('main.egl').is_file():
             source_path = '.'
+        elif Path('source/main.egl').is_file():
+            source_path = 'source'
         else:
             print("Error: Falta la ruta del proyecto. Uso: egl compile [ruta] [--run]")
             return 1
