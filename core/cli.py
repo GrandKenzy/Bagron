@@ -25,28 +25,142 @@ def clear_cache(root_dir: Path | None = None) -> int:
                 pass
     return deleted
 
+COMMAND_HELP = {
+    'compile': """Uso:
+  egl compile [ruta] [-o <salida.c>] [--library] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]
+
+Descripción:
+  Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.'). Genera el código C monolítico o construye el binario final si se especifica --build o --run.
+
+Opciones:
+  -o, --output     Nombre del archivo C generado (default: program.c).
+  -b, --build      Construye el ejecutable binario delegando al backend del target.
+  -r, --run        Construye el ejecutable y lo ejecuta inmediatamente tras compilar.
+  --library        Compila el proyecto como una librería empaquetada (.lib.egl).
+  --cc             Compilador nativo a utilizar (gcc, clang, cl, msvc, tcc).
+  -l, --link       Enlaza una librería externa (ej: -l SDL3).
+  -I, --include    Agrega una carpeta de cabeceras al compilador nativo.
+  -L, --lib-dir    Agrega una carpeta de librerías al linker.""",
+
+    'run': """Uso:
+  egl run [ruta] [-o <salida.c>] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]
+
+Descripción:
+  Compila el proyecto, invoca el compilador del backend correspondiente para construir el binario y lo ejecuta directamente en la terminal.
+
+Opciones:
+  -o, --output     Ruta temporal para el archivo C generado.
+  --cc             Compilador nativo a utilizar (gcc, clang, cl, msvc).
+  -l, --link       Enlaza una librería externa.
+  -I, --include    Carpeta de cabeceras (.h).
+  -L, --lib-dir    Carpeta de bibliotecas de enlace.""",
+
+    'pack': """Uso:
+  egl pack install [ruta] [--tar <target>] [-y|--force]
+  egl pack uninstall [--tar <target>] <Nombre>
+  egl pack list [--tar <target>]
+
+Descripción:
+  Administra paquetes de librerías (.lib.egl) en el ecosistema EGLLibs.
+  - 'pack install': Convierte el proyecto fuente en un .lib.egl con todos sus componentes (código, externs, cabeceras, libs y binarios dll) y lo instala en EGLLibs.
+  - 'pack uninstall': Elimina la librería instalada y limpia su caché extraída.
+  - 'pack list': Muestra las librerías actualmente instaladas en EGLLibs.
+
+Opciones:
+  --tar, -t        Target específico (ej: 'egl-c'). Si no se indica, se usa EGLLibs/libraries.
+  -y, --force      Sobrescribe sin confirmación interactiva en caso de colisión de nombre.""",
+
+    'update': """Uso:
+  egl update [--force]
+
+Descripción:
+  Comprueba si existe una versión más reciente de EGL en GitHub y actualiza la instalación preservando las librerías del usuario en EGLLibs.
+
+Opciones:
+  -f, --force      Fuerza la reinstalación y sobreescritura incluso si la versión ya coincide.""",
+
+    'download': """Uso:
+  egl download <gcc|msvc>
+
+Descripción:
+  Descarga o configura un compilador C nativo compatible (GCC o MSVC) para el backend C en el entorno privado de toolchains de EGL.""",
+
+    'install': """Uso:
+  egl install gram
+
+Descripción:
+  Descarga e instala en el entorno privado (.egl/vendor/Gram) la librería framework 'gram', requerida por el frontend sintáctico de EGL.""",
+
+    'cache': """Uso:
+  egl cache clear
+
+Descripción:
+  Limpia recursivamente las cachés de símbolos, bytecode de Python (__pycache__, .pyc) y carpetas temporales de compilación.""",
+
+    'extension': """Uso:
+  egl extension [--install] [-o <ruta.vsix>]
+
+Descripción:
+  Genera la extensión oficial de Visual Studio Code para EGL con resaltado de sintaxis TextMate y tema Noble Dark.
+
+Opciones:
+  --install, -i    Instala automáticamente la extensión compilada en VS Code mediante la CLI 'code'.
+  -o, --output     Ruta o nombre personalizado para el archivo .vsix empaquetado.""",
+
+    'help': """Uso:
+  egl help [comando]
+
+Descripción:
+  Muestra ayuda general de EGL o ayuda detallada y trazable para un comando específico (ej: egl help pack, egl help compile)."""
+}
+
+def print_command_help(command_name: str) -> bool:
+    cmd = command_name.lower().strip()
+    if cmd in ('build',):
+        cmd = 'compile'
+    elif cmd in ('toolchain',):
+        cmd = 'download'
+    elif cmd in ('clean',):
+        cmd = 'cache'
+    elif cmd in ('vsix', 'syntax'):
+        cmd = 'extension'
+
+    if cmd in COMMAND_HELP:
+        print(f"--- Ayuda para el comando: egl {cmd} ---")
+        print(COMMAND_HELP[cmd])
+        return True
+    return False
+
 def print_help():
-    print("Easy-C (EGL) Compiler CLI")
+    print("EGL Compiler CLI")
     print("Uso:")
     print("  egl compile [ruta] [-o <salida.c>] [--library] [--build] [--run] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
     print("  egl run [ruta] [-o <salida.c>] [--cc <compilador>] [-l <lib>] [-I <dir>] [-L <dir>]")
     print("  egl update [--force]")
     print("  egl download <gcc|msvc>")
     print("  egl install gram")
+    print("  egl pack install [ruta] [--tar <target>] [-y]")
+    print("  egl pack uninstall [--tar <target>] <Nombre>")
+    print("  egl pack list [--tar <target>]")
     print("  egl cache clear")
     print("  egl extension [--install] [-o <ruta.vsix>]")
     print("  egl --version")
+    print("  egl help [comando]")
     print("  egl --help")
     print("")
     print("Comandos:")
     print("  compile [ruta]     Compila un proyecto EGL con 'main.egl' (por defecto 'source' o '.').")
     print("  run [ruta]         Compila, construye el ejecutable y lo ejecuta directamente.")
-    print("  update             Comprueba y actualiza Easy-C a la versión más reciente en GitHub.")
+    print("  update             Comprueba y actualiza EGL a la versión más reciente en GitHub.")
     print("  download <target>  Descarga/detecta un compilador C nativo (gcc o msvc) para Backend C.")
     print("  install gram       Instala la librería 'gram' en un entorno privado y aislado (.egl/vendor).")
+    print("  pack install       Empaqueta un proyecto como .lib.egl y lo instala en EGLLibs (usa el nombre de la carpeta).")
+    print("                     Con --tar 'egl-c' va a EGLLibs/backends/c/libraries; sin --tar, a EGLLibs/libraries.")
+    print("  pack uninstall     Quita una librería instalada de EGLLibs.")
     print("  cache clear        Elimina archivos y directorios de caché (.cache, __pycache__, .pyc).")
     print("  extension          Genera la extensión oficial de VS Code (.vsix) con sintaxis y tema Noble Dark.")
     print("                     Usa '--install' para instalarla directamente en Visual Studio Code.")
+    print("  help [comando]     Muestra ayuda detallada y trazable de un comando específico.")
     print("")
     print("Opciones:")
     print("  -b, --build      Construye el ejecutable binario delegando al backend del target.")
@@ -79,16 +193,30 @@ def main(args: list[str] | None = None) -> int:
     do_build = False
     start_idx = 1
 
+    if command == 'help':
+        if len(args) > 1 and not args[1].startswith('-'):
+            target_cmd = args[1]
+            if not print_command_help(target_cmd):
+                print(f"Error: Comando '{target_cmd}' no reconocido. Usa 'egl help' para listar comandos disponibles.")
+                return 1
+            return 0
+        print_help()
+        return 0
+
     if command == 'update':
         force = '--force' in args[1:] or '-f' in args[1:]
-        from core.update import update_easy_c
-        ok = update_easy_c(force=force)
+        from core.update import update_egl
+        ok = update_egl(force=force)
         return 0 if ok else 1
+
+    if command == 'pack':
+        from core.packages.commands import pack_main
+        return pack_main(args[1:])
 
     if command == 'install':
         sub = args[1].lower() if len(args) > 1 else ''
         if sub == 'gram':
-            from core.install import install_gram
+            from tools.install import install_gram
             ok = install_gram()
             return 0 if ok else 1
         else:
@@ -136,8 +264,12 @@ def main(args: list[str] | None = None) -> int:
                 i += 2
             else:
                 i += 1
-        from core.extension import compile_extension, install_extension
-        print("[EGL] Empaquetando extensión de VS Code para Easy-C...", flush=True)
+        try:
+            from core.extension import compile_extension, install_extension
+        except ImportError as exc:
+            print(f"[EGL Error] {exc}", flush=True)
+            return 1
+        print("[EGL] Empaquetando extensión de VS Code para EGL...", flush=True)
         vsix_file = compile_extension(out_vsix)
         print(f"[EGL] Extensión VSIX generada exitosamente en: '{vsix_file}'", flush=True)
         if do_install:

@@ -7,7 +7,7 @@ import urllib.request
 import subprocess
 from pathlib import Path
 
-GITHUB_REPO = "GrandKenzy/Easy-C"
+GITHUB_REPO = "GrandKenzy/EGL"
 RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 LATEST_RELEASE_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -15,7 +15,7 @@ def get_install_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 def get_github_auth_header() -> dict[str, str]:
-    headers = {"User-Agent": "EasyC-Updater", "Accept": "application/vnd.github.v3+json"}
+    headers = {"User-Agent": "EGL-Updater", "Accept": "application/vnd.github.v3+json"}
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:
         try:
@@ -74,9 +74,9 @@ def check_for_updates() -> tuple[bool, str, dict | None]:
     has_newer = tag_v > curr_v
     return has_newer, tag, latest_info
 
-def update_easy_c(force: bool = False) -> bool:
+def update_egl(force: bool = False) -> bool:
     from core.cli import VERSION
-    print(f"[EGL Update] Comprobando actualizaciones para Easy-C en GitHub ({GITHUB_REPO})...", flush=True)
+    print(f"[EGL Update] Comprobando actualizaciones para EGL en GitHub ({GITHUB_REPO})...", flush=True)
 
     root_dir = get_install_root()
     is_git_repo = (root_dir / '.git').is_dir() and shutil.which('git') is not None
@@ -85,7 +85,7 @@ def update_easy_c(force: bool = False) -> bool:
 
     if not force and not has_newer:
         if release_info:
-            print(f"[EGL Update] Easy-C ya se encuentra actualizado en la version mas reciente (v{VERSION}).", flush=True)
+            print(f"[EGL Update] EGL ya se encuentra actualizado en la version mas reciente (v{VERSION}).", flush=True)
         else:
             print(f"[EGL Update] No se encontraron versiones publicadas mas recientes que v{VERSION}.", flush=True)
             if is_git_repo:
@@ -107,7 +107,7 @@ def update_easy_c(force: bool = False) -> bool:
         try:
             subprocess.run(['git', 'fetch', '--tags'], cwd=str(root_dir), check=True)
             subprocess.run(['git', 'pull', 'origin', 'main'], cwd=str(root_dir), check=True)
-            print(f"[EGL Update] ¡Easy-C actualizado con exito via Git a la version v{latest_tag}!", flush=True)
+            print(f"[EGL Update] ¡EGL actualizado con exito via Git a la version v{latest_tag}!", flush=True)
             return True
         except Exception as e:
             print(f"[EGL Update] Git pull no pudo completarse ({e}). Intentando descarga directa...", flush=True)
@@ -155,8 +155,8 @@ def update_easy_c(force: bool = False) -> bool:
         if not content_root:
             content_root = extract_dir
 
-        # Copiar archivos esenciales (core, libraries, source, egl.py)
-        for item in ['core', 'libraries', 'source', 'egl.py', 'README.md']:
+        # Copiar archivos esenciales (core, tools, source, egl.py)
+        for item in ['core', 'tools', 'source', 'egl.py', 'README.md']:
             src = content_root / item
             dst = root_dir / item
             if src.is_file():
@@ -166,6 +166,11 @@ def update_easy_c(force: bool = False) -> bool:
                     shutil.rmtree(dst, ignore_errors=True)
                 shutil.copytree(src, dst)
 
+        # EGLLibs se fusiona (no se borra) para conservar las librerías instaladas por el usuario
+        egllibs_src = content_root / 'EGLLibs'
+        if egllibs_src.is_dir():
+            shutil.copytree(egllibs_src, root_dir / 'EGLLibs', dirs_exist_ok=True)
+
         # Limpiar temporales
         if temp_zip.exists():
             temp_zip.unlink()
@@ -174,12 +179,12 @@ def update_easy_c(force: bool = False) -> bool:
 
         # Actualizar Gram si es necesario
         try:
-            from core.install import install_gram
+            from tools.install import install_gram
             install_gram()
         except Exception:
             pass
 
-        print(f"[EGL Update] ¡Easy-C se ha actualizado exitosamente a la version v{latest_tag}!", flush=True)
+        print(f"[EGL Update] ¡EGL se ha actualizado exitosamente a la version v{latest_tag}!", flush=True)
         return True
     except Exception as e:
         print(f"[EGL Update Error] No se pudo completar la actualizacion: {e}", flush=True)

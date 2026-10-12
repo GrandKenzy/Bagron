@@ -4,27 +4,44 @@ gram.config.LEXER_COMMENT_TOKEN = ';'
 gram.config.LEXER_SAVE_COMMENTS = False
 gram.words.clear_all()
 
-GROUPS = [
-    'imports',
-    'types',
-    'privacity',
-    'clauses',
-    'keywords',
-    'conditional_statement',
-    'loops',
-]
 
-GROUP_COLORS = {
-    'types': '#4FA6ED',
-    'privacity': '#2874A6',
-    'conditional_statement': '#C0392B',
-    'loops': '#D16969',
+GROUPS = {
     'imports': '#E5C07B',
-    'clauses': '#D4AF37',
-    'keywords': '#E5C07B',
+    'types': "#004177",
+    'privacity': '#2874A6',
+    'clauses': "#33FF00",
+    'keywords': "#FFFFFF",
+    'conditional_statement': "#7D5DF0",
+    'loops': '#D16969',
 }
 
-KEYWORD_SPECIFIC_COLORS = {
+KEYWORDS = {
+    'return': "#FD2008",
+    'pass': "#220502",
+    'if': None,
+    'elif': None,
+    'else': None,
+    'not': '#C0392B',
+    'for': None,
+    'while': None,
+    'in': '#C0392B',
+    'ran': '#D16969',
+    'clause': "#F5D15D",
+    '__fronted__': '#E2B93D',
+    '__inline__': '#E2B93D',
+    '__packed__': '#E2B93D',
+    '__slot__': '#E2B93D',
+    'sizeof': '#E2B93D',
+    'class': "#6630E4",
+    'struct': '#17A2B8',
+    'enum': '#17A2B8',
+    'Type': "#007535",
+    'Null': "#F50000",
+    'true': "#4E0097",
+    'false': "#4E0097",
+}
+
+INTRINSIC_TYPES = {
     '__int_t__': '#3B82F6',
     '__int8_t__': '#3B82F6',
     '__int16_t__': '#3B82F6',
@@ -45,55 +62,9 @@ KEYWORD_SPECIFIC_COLORS = {
     '__void_p_t__': '#3B82F6',
     '__void_t__': '#3B82F6',
     '__size_t__': '#3B82F6',
-    'return': '#C0392B',
-    'pass': '#C0392B',
-    'if': '#C0392B',
-    'elif': '#C0392B',
-    'else': '#C0392B',
-    'not': '#C0392B',
-    'for': '#D16969',
-    'while': '#D16969',
-    'in': '#D16969',
-    'ran': '#D16969',
-    '__fronted__': '#E2B93D',
-    '__inline__': '#E2B93D',
-    '__packed__': '#E2B93D',
-    '__slot__': '#E2B93D',
-    'sizeof': '#E2B93D',
-    'class': '#17A2B8',
-    'struct': '#17A2B8',
-    'enum': '#17A2B8',
-    'Type': '#17A2B8',
-    'type': '#17A2B8',
-    'Null': '#48C78E',
-    'true': '#48C78E',
-    'false': '#48C78E',
 }
 
-INTRINSIC_TYPES = [
-    '__int_t__',
-    '__int8_t__',
-    '__int16_t__',
-    '__int32_t__',
-    '__int64_t__',
-    '__uint_t__',
-    '__uint8_t__',
-    '__uint16_t__',
-    '__uint32_t__',
-    '__uint64_t__',
-    '__float_t__',
-    '__middle_t__',
-    '__double_t__',
-    '__char_t__',
-    '__bool_t__',
-    '__type_t__',
-    '__arrof__',
-    '__void_p_t__',
-    '__void_t__',
-    '__size_t__',
-]
-
-TYPES = list(INTRINSIC_TYPES)
+TYPES = list(INTRINSIC_TYPES.keys())
 
 ADVANCE_TYPES = [
     'struct',
@@ -109,20 +80,25 @@ KEYWORDS_BY_GROUP = {
     'keywords': ['as', 'clause', 'return', 'pass', '__fronted__', '__inline__', '__packed__', '__slot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
 }
 
-for group in GROUPS:
-    g_color = GROUP_COLORS.get(group, '#E5C07B')
-    gram.words.add_group(group, color_group=g_color)
+for group, color in GROUPS.items():
+    if not color:
+        gram.words.add_group(group)
+    else:
+        gram.words.add_group(group, color_group=color)
 
-for kw in TYPES:
-    color = KEYWORD_SPECIFIC_COLORS.get(kw, GROUP_COLORS.get('types', '#4FA6ED'))
-    gram.words.add_keyword(kw, hex_color=color, group='types', allow_override=True)
+for keyword in TYPES:
+    if keyword.startswith("__"):
+        color = INTRINSIC_TYPES[keyword]
+    else:
+        color = GROUPS['types']
+    gram.words.add_keyword(keyword, hex_color=color, group='types', allow_override=True)
 
 for group, words in KEYWORDS_BY_GROUP.items():
     for word in words:
-        color = KEYWORD_SPECIFIC_COLORS.get(word, GROUP_COLORS.get(group, '#E5C07B'))
+        color = KEYWORDS.get(word, GROUPS.get(group, "#FFFFFF"))
         gram.words.add_keyword(word, hex_color=color, group=group, allow_override=True)
 
-for kw, color in KEYWORD_SPECIFIC_COLORS.items():
+for kw, color in KEYWORDS.items():
     if not gram.words.keyword_exists(kw):
         gram.words.add_keyword(kw, hex_color=color, group='keywords', allow_override=True)
     else:

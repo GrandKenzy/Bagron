@@ -2,38 +2,7 @@ import sys
 import os
 import multiprocessing
 
-# IMPORTANTE: freeze_support() DEBE ejecutarse inmediatamente al inicio
-# para prevenir bucles de procesos huérfanos en ejecutables congelados de PyInstaller en Windows.
 multiprocessing.freeze_support()
-
-# Protección contra OSError [Errno 22] Invalid argument en ejecutables GUI de Windows sin consola
-class SafeWriter:
-    def __init__(self, original):
-        self.original = original
-    def write(self, s):
-        try:
-            if self.original:
-                return self.original.write(s)
-        except Exception:
-            pass
-    def flush(self):
-        try:
-            if self.original:
-                return self.original.flush()
-        except Exception:
-            pass
-
-try:
-    if sys.stdout is None or not hasattr(sys.stdout, 'write'):
-        sys.stdout = SafeWriter(None)
-    else:
-        sys.stdout = SafeWriter(sys.stdout)
-    if sys.stderr is None or not hasattr(sys.stderr, 'write'):
-        sys.stderr = SafeWriter(None)
-    else:
-        sys.stderr = SafeWriter(sys.stderr)
-except Exception:
-    pass
 
 from pathlib import Path
 
@@ -41,7 +10,10 @@ ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from tools.installer_core import install_easy_c, uninstall_easy_c, get_source_root
+from tools import config
+from tools.install import install_egl, uninstall_egl, get_source_root, install_safe_streams
+
+install_safe_streams()
 
 def main():
     args = sys.argv[1:]
@@ -62,19 +34,19 @@ def main():
             force_cli = True
             i += 1
         elif arg in ('--uninstall', '-u'):
-            uninstall_easy_c(target_dir)
+            uninstall_egl(target_dir)
             return 0
         elif arg in ('-h', '--help'):
-            print("Instalador de Easy-C (EGL)")
+            print("Instalador de EGL")
             print("Uso:")
-            print("  easy-c-installer.exe [opciones]")
+            print("  egl-installer.exe [opciones]")
             print("  python installer.py [opciones]")
             print("")
             print("Opciones:")
             print("  --cli, --console   Ejecuta la instalacion directamente en consola (sin interfaz gráfica).")
-            print("  --target, -t       Ruta de instalacion personalizada (por defecto: %LOCALAPPDATA%\\Programs\\Easy-C).")
+            print(f"  --target, -t       Ruta de instalacion personalizada (por defecto: %LOCALAPPDATA%\\Programs\\{config.APP_NAME}).")
             print("  --embed-python     Descarga e instala Python 3.13 embebido aun si ya existe en el sistema.")
-            print("  --uninstall, -u    Desinstala Easy-C y lo remueve del PATH.")
+            print("  --uninstall, -u    Desinstala EGL y lo remueve del PATH.")
             print("  --help, -h         Muestra este mensaje.")
             return 0
         else:
@@ -89,7 +61,7 @@ def main():
         except Exception as e:
             print(f"[Installer Warning] No se pudo iniciar la interfaz grafica ({e}). Usando modo consola...")
 
-    ok = install_easy_c(target_dir=target_dir, force_embed_python=force_embed_python, source_root=get_source_root())
+    ok = install_egl(target_dir=target_dir, force_embed_python=force_embed_python, source_root=get_source_root())
     return 0 if ok else 1
 
 if __name__ == '__main__':

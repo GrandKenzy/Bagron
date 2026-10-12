@@ -97,7 +97,7 @@ int wmain(int argc, wchar_t** argv) {
 
     if (pythonExe[0] == L'\0') {
         fwprintf(stderr, L"[EGL Error] No se encontro un interprete de Python 3.13+ instalado.\n");
-        fwprintf(stderr, L"Ejecuta el instalador de Easy-C para configurar el entorno automaticamente.\n");
+        fwprintf(stderr, L"Ejecuta el instalador de EGL para configurar el entorno automaticamente.\n");
         return 1;
     }
 
@@ -147,7 +147,7 @@ int wmain(int argc, wchar_t** argv) {
 
     if (!success) {
         DWORD err = GetLastError();
-        fwprintf(stderr, L"[EGL Error] Fallo al iniciar Easy-C (Error %lu)\n", err);
+        fwprintf(stderr, L"[EGL Error] Fallo al iniciar EGL (Error %lu)\n", err);
         return 1;
     }
 

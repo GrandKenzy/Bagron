@@ -1,6 +1,6 @@
 # Guia del Colaborador
 
-Esta seccion contiene directrices, estandares de ingenieria y manuales paso a paso dirigidos a los desarrolladores y colaboradores que mantienen o extienden el codigo base de Easy-C (EGL). Se establecen las normas de calidad del codigo, la metodologia para incorporar nuevas construcciones sintacticas y el funcionamiento de las herramientas de consola.
+Esta seccion contiene directrices, estandares de ingenieria y manuales paso a paso dirigidos a los desarrolladores y colaboradores que mantienen o extienden el codigo base de EGL. Se establecen las normas de calidad del codigo, la metodologia para incorporar nuevas construcciones sintacticas y el funcionamiento de las herramientas de consola.
 
 ---
 
@@ -15,7 +15,7 @@ Esta seccion contiene directrices, estandares de ingenieria y manuales paso a pa
 ## Organizacion del Arbol del Proyecto
 
 ```
-Easy-C/
+EGL/
 ├── core/
 │   ├── backend/            <-- Generadores de codigo destino (c/)
 │   ├── externs/            <-- Gestor, parser y cache de firmas foraneas

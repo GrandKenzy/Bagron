@@ -1,6 +1,6 @@
-# Documentacion Tecnica de Easy-C (EGL)
+# Documentacion Tecnica de EGL
 
-Easy-C (EGL) es un lenguaje de programacion de tipado estatico y sintaxis limpia diseñado para compilar de forma agnostica y generar codigo C monolítico de alto rendimiento (C99/C11). Su arquitectura desacopla el analisis sintactico, el procesamiento semantico intermedio y la emision de codigo destino, permitiendo interoperabilidad nativa con librerias en C mediante un subsistema de definiciones externas (`externs`) y extensiones del usuario (`extends`).
+EGL es un lenguaje de programacion de tipado estatico y sintaxis limpia diseñado para compilar de forma agnostica y generar codigo C monolítico de alto rendimiento (C99/C11). Su arquitectura desacopla el analisis sintactico, el procesamiento semantico intermedio y la emision de codigo destino, permitiendo interoperabilidad nativa con librerias en C mediante un subsistema de definiciones externas (`externs`) y extensiones del usuario (`extends`).
 
 El compilador incluye un resolvedor de dependencias modulares con soporte de name mangling, un sistema de deteccion automatica de cabeceras C estandar (`stdint.h`, `stdbool.h`, `stdio.h`, `stdlib.h`), verificacion estricta de clausulas de entorno y un punto de entrada CLI multiplataforma (`egl.py` / `egl.bat`).
 
@@ -8,7 +8,7 @@ El compilador incluye un resolvedor de dependencias modulares con soporte de nam
 
 ## Arquitectura del Sistema
 
-El flujo de transformacion de Easy-C opera en cinco etapas secuenciales:
+El flujo de transformacion de EGL opera en cinco etapas secuenciales:
 
 1. **Frontend Gramatical (Lexing y Parsing):** El motor `gram` procesa el codigo fuente aplicando reglas sintacticas combinatorias para generar un arbol de sintaxis abstracta (`ASTProgram`).
 2. **Analisis Modular y Mangling:** El compilador rastrea dependencias importadas (`import`), valida la coherencia de la clausula `Target` y renombra los simbolos de modulo bajo el patron `inmodule_<modulo>_<simbolo>`, reescribiendo los nodos de llamada correspondientes.
@@ -30,6 +30,7 @@ El flujo de transformacion de Easy-C opera en cinco etapas secuenciales:
 * **[Vision General de Modulos y Externs](02-Modulos-y-Externs/index.md):** Ecosistema de integracion, archivos de definicion y aislamiento.
 * **[Sistema de Modulos y Mangling](02-Modulos-y-Externs/modulos_y_mangling.md):** Resolucion de `import`, verificacion de Target y reescritura de simbolos.
 * **[Includes y Externs](02-Modulos-y-Externs/externs_e_includes.md):** Semantica de `include` con y sin alias, parser de `.externs.egl` y cache binario.
+* **[EGLLibs y pack](02-Modulos-y-Externs/egllibs_y_pack.md):** Directorio `EGLLibs/` de librerías y comandos `egl pack install/uninstall`.
 * **[Sistema Extends](02-Modulos-y-Externs/sistema_extends.md):** Fusión transparente de librerias del usuario en `source/targets/<backend>/extends/`.
 * **[Librerias Compiladas Nativas (SDL3)](02-Modulos-y-Externs/librerias_compiladas.md):** Guia paso a paso para anadir e integrar bibliotecas compiladas C/C++ (`.dll`, `.a`, `.so`) con directivas `@header`, `@link` y `@bin`.
 
@@ -62,7 +63,7 @@ mi_proyecto/
 ```
 
 Contenido de `modules/matematicas.egl`:
-```easy-c
+```egl
 clause Target 'egl-c'
 
 int duplicar(int n):
@@ -70,7 +71,7 @@ int duplicar(int n):
 ```
 
 Contenido de `main.egl`:
-```easy-c
+```egl
 clause Target 'egl-c'
 
 include "stdio"

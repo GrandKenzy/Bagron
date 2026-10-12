@@ -1,8 +1,10 @@
 # Integracion de Librerias Compiladas Nativas (Caso de Estudio: SDL3)
 
-Easy-C (EGL) cuenta con un sistema de enlace foraneo y metaprogramacion disenado para consumir cualquier libreria compilada en C/C++ (archivos `.dll`, `.so`, `.dylib`, `.lib` o `.a`) sin necesidad de escribir wrappers manuales en C ni alterar el compilador.
+> **Nota:** el sistema `source/targets/<backend>/` descrito aquí fue reemplazado por `EGLLibs/` (ver [EGLLibs y pack](egllibs_y_pack.md)). Los externs se colocan ahora en `EGLLibs/backends/<backend>/externs/`.
 
-Este documento explica paso a paso la arquitectura completa para anadir e integrar una libreria externa compilada, utilizando la implementacion real de **SDL3** en Easy-C como ejemplo guiado.
+EGL cuenta con un sistema de enlace foraneo y metaprogramacion disenado para consumir cualquier libreria compilada en C/C++ (archivos `.dll`, `.so`, `.dylib`, `.lib` o `.a`) sin necesidad de escribir wrappers manuales en C ni alterar el compilador.
+
+Este documento explica paso a paso la arquitectura completa para anadir e integrar una libreria externa compilada, utilizando la implementacion real de **SDL3** en EGL como ejemplo guiado.
 
 ---
 
@@ -57,9 +59,9 @@ Al inicio del archivo se configuran las dependencias nativas:
 
 ### Ejemplo: `source/targets/c/extends/sdl3.externs.egl`
 
-```easy-c
+```egl
 ; ==============================================================================
-; Firmas de Simple DirectMedia Layer 3 (SDL3) para Easy-C
+; Firmas de Simple DirectMedia Layer 3 (SDL3) para EGL
 ; ==============================================================================
 @header SDL3/SDL.h
 @link SDL3
@@ -101,7 +103,7 @@ En lugar de forzar a los desarrolladores a llamar a las funciones crudas de C (`
 
 Esta capa utiliza `include` con alias para acceder al contrato C y construye una interfaz moderna con clases, estructuras y enums:
 
-```easy-c
+```egl
 include "sdl3" as C_SDL3
 import standard
 
@@ -172,7 +174,7 @@ __inline__ void delay(uint32 ms): C_SDL3.SDL_Delay(ms)
 
 En el punto de entrada de la aplicacion (`source/main.egl`), se importa el modulo y se declaran los simbolos necesarios:
 
-```easy-c
+```egl
 clause Target 'egl-c'
 
 import sdl3
@@ -187,7 +189,7 @@ declare sdl3.EventType as EventType
 sdl3.init(0)
 
 ; Creacion de recursos mediante constructores de EGL
-Window ventana = Window("Easy-C SDL3 - Rectangulo y Eventos", 640, 480)
+Window ventana = Window("EGL SDL3 - Rectangulo y Eventos", 640, 480)
 FRect rect = FRect(220.0, 165.0, 200.0, 150.0)
 
 bool running = true
@@ -216,7 +218,7 @@ sdl3.quit()
 
 ## 5. Paso 4: Compilacion y Enlace con el CLI
 
-Al compilar el proyecto con `--build` o `--run`, Easy-C lee automaticamente las directivas declaradas en el contrato:
+Al compilar el proyecto con `--build` o `--run`, EGL lee automaticamente las directivas declaradas en el contrato:
 
 ```bash
 # Compilar y construir el binario ejecutable:

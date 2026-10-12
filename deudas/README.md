@@ -1,6 +1,6 @@
 # Registro de Deudas Técnicas y Refactorizaciones Pendientes
 
-Este directorio registra los puntos de deuda técnica identificados en el desarrollo de **Easy-C (EGL)** para mantener la arquitectura limpia, escalable y sin soluciones ad-hoc repetitivas.
+Este directorio registra los puntos de deuda técnica identificados en el desarrollo de **EGL** para mantener la arquitectura limpia, escalable y sin soluciones ad-hoc repetitivas.
 
 ---
 

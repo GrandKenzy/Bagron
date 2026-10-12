@@ -10,6 +10,11 @@ import core.grammar
 from core.processor import objects
 from core.externs.manager import manager
 from core.backend import c
+from core.packages import layout as egl_layout, bundle as egl_bundle
+
+class TargetMismatchError(ValueError):
+    """Un módulo o librería importada declara un Target distinto al de main.egl."""
+
 
 def get_default_arch() -> str:
     m = platform.machine().lower()
@@ -46,48 +51,39 @@ def resolve_source_and_main(source_path: str | Path) -> tuple[Path, Path]:
     raise FileNotFoundError(f"No se encontró 'main.egl' en la ruta especificada: {source_path}")
 
 def find_module_file(mod_name: str, source_dir: Path, target: str) -> Path | None:
+    """Resuelve un import: módulos (.egl) del proyecto/compilador y librerías (.lib.egl) instaladas.
+
+    Orden: proyecto (modules/, libraries/) -> EGLLibs del backend -> EGLLibs/libraries -> módulos del backend.
+    """
     clean_mod = mod_name.strip('"\'')
     if clean_mod.endswith('.lib.egl'):
         clean_mod = clean_mod[:-8]
     elif clean_mod.endswith('.egl'):
         clean_mod = clean_mod[:-4]
-    backend = target[4:].lower() if target.lower().startswith('egl-') else target.lower()
+    backend = egl_layout.normalize_backend(target)
     base_core_dir = Path(__file__).resolve().parent
 
-    candidates = [
-        # 1. Paquetes de librerías (.lib.egl)
-        source_dir / 'libraries' / f'{clean_mod}.lib.egl',
-        source_dir.parent / 'libraries' / f'{clean_mod}.lib.egl',
-        source_dir / f'{clean_mod}.lib.egl',
-        Path.cwd() / 'libraries' / f'{clean_mod}.lib.egl',
-        Path.cwd() / f'{clean_mod}.lib.egl',
-        source_dir / 'targets' / backend / 'libraries' / f'{clean_mod}.lib.egl',
-        source_dir.parent / 'targets' / backend / 'libraries' / f'{clean_mod}.lib.egl',
-        base_core_dir / 'backend' / backend / 'libraries' / f'{clean_mod}.lib.egl',
-        Path.cwd() / 'core' / 'backend' / backend / 'libraries' / f'{clean_mod}.lib.egl',
-        Path.cwd() / 'source' / 'targets' / backend / 'libraries' / f'{clean_mod}.lib.egl',
+    names = [clean_mod]
+    names.append(clean_mod[:-1] if clean_mod.endswith('s') else f'{clean_mod}s')
 
-        # 2. Módulos y librerías en código fuente (.egl)
-        source_dir / 'modules' / f'{clean_mod}.egl',
-        source_dir / f'{clean_mod}.egl',
-        source_dir / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
-        source_dir.parent / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
-        base_core_dir / 'backend' / backend / 'libraries' / f'{clean_mod}.egl',
-        Path.cwd() / 'core' / 'backend' / backend / 'libraries' / f'{clean_mod}.egl',
-        Path.cwd() / 'source' / 'targets' / backend / 'libraries' / f'{clean_mod}.egl',
-    ]
+    def project_dirs(n: str) -> list[Path]:
+        return [
+            source_dir / 'modules' / f'{n}.egl',
+            source_dir / f'{n}.egl',
+            source_dir / 'libraries' / f'{n}{egl_layout.LIB_EXT}',
+            source_dir.parent / 'libraries' / f'{n}{egl_layout.LIB_EXT}',
+            source_dir / f'{n}{egl_layout.LIB_EXT}',
+            Path.cwd() / 'libraries' / f'{n}{egl_layout.LIB_EXT}',
+            Path.cwd() / f'{n}{egl_layout.LIB_EXT}',
+        ]
 
-    variants = [clean_mod[:-1]] if clean_mod.endswith('s') else [f'{clean_mod}s']
-    for v in variants:
-        candidates.extend([
-            source_dir / 'libraries' / f'{v}.lib.egl',
-            source_dir.parent / 'libraries' / f'{v}.lib.egl',
-            Path.cwd() / 'libraries' / f'{v}.lib.egl',
-            source_dir / f'{v}.lib.egl',
-            Path.cwd() / f'{v}.lib.egl',
-            source_dir / 'modules' / f'{v}.egl',
-            source_dir / f'{v}.egl',
-        ])
+    candidates: list[Path] = []
+    for n in names:
+        candidates.extend(project_dirs(n))
+        candidates.append(egl_layout.installed_library_path(n, backend))
+        candidates.append(egl_layout.installed_library_path(n))
+        if n == clean_mod:
+            candidates.append(base_core_dir / 'backend' / backend / 'modules' / f'{n}.egl')
 
     for candidate in candidates:
         if candidate.is_file():
@@ -292,7 +288,8 @@ def compile_project(
     source_path: str | Path,
     output_file: str | Path = 'program.c',
     entrypoint_func: str | None = None,
-    is_library: bool = False
+    is_library: bool = False,
+    target_override: str | None = None
 ) -> Path:
     source_dir, main_file = resolve_source_and_main(source_path)
     from core.processor.type_system import clear as clear_types
@@ -307,6 +304,8 @@ def compile_project(
 
     clauses = extract_clauses(main_ast)
     clauses = apply_default_clauses(clauses)
+    if target_override:
+        clauses['Target'] = target_override
     target = clauses['Target']
     manager.set_target(target)
 
@@ -333,8 +332,8 @@ def compile_project(
 
         mod_file = find_module_file(mod_name, source_dir, target)
         if not mod_file:
-            backend = target[4:].lower() if target.lower().startswith('egl-') else target.lower()
-            raise FileNotFoundError(f"No se encontró el módulo o librería '{mod_name}' en 'source/modules/{mod_name}.egl' ni en las librerías del target '{backend}'.")
+            backend = egl_layout.normalize_backend(target)
+            raise FileNotFoundError(f"No se encontró el módulo o librería '{mod_name}' en 'source/modules/{mod_name}.egl', en 'libraries/' ni en EGLLibs (libraries/ y backends/{backend}/libraries/).")
 
         if mod_file.name.endswith('.lib.egl'):
             import zipfile
@@ -345,8 +344,14 @@ def compile_project(
                 lib_c_code = zf.read('library.c').decode('utf-8') if 'library.c' in zf.namelist() else ''
                 lib_h_code = zf.read('library.h').decode('utf-8') if 'library.h' in zf.namelist() else ''
 
-            if 'target' in manifest_data and manifest_data['target'] != target:
-                raise ValueError(f"La librería '{mod_name}' tiene un Target ('{manifest_data['target']}') diferente al Target principal ('{target}').")
+            lib_target = manifest_data.get('target')
+            if not lib_target:
+                raise TargetMismatchError(f"La librería '{mod_name}' no declara su Target en los metadatos (manifest.json). Vuelve a empaquetarla con 'egl pack install'.")
+            if not egl_layout.same_target(lib_target, target):
+                raise TargetMismatchError(f"La librería '{mod_name}' tiene un Target ('{lib_target}') diferente al Target principal ('{target}').")
+
+            lib_components = egl_bundle.extract_components(mod_file, egl_layout.normalize_backend(target))
+            egl_bundle.register_components(manager, lib_components)
 
             conventions_links = manifest_data.get('links', [])
             for lk in conventions_links:
@@ -441,8 +446,9 @@ def compile_project(
         mod_ast = gram.process(core.grammar.grammar, source_or_file=mod_code)
 
         mod_clauses = extract_clauses(mod_ast)
-        if 'Target' in mod_clauses and mod_clauses['Target'] != target:
-            raise ValueError(f"El módulo '{mod_name}' tiene un Target ('{mod_clauses['Target']}') diferente al Target principal ('{target}').")
+        # Sin 'clause Target' el módulo hereda el Target de main.egl.
+        if 'Target' in mod_clauses and not egl_layout.same_target(mod_clauses['Target'], target):
+            raise TargetMismatchError(f"El módulo '{mod_name}' tiene un Target ('{mod_clauses['Target']}') diferente al Target principal ('{target}').")
 
         mod_symbols = mangle_module_symbols(mod_ast, mod_name)
         module_symbol_maps[mod_name] = mod_symbols
@@ -627,16 +633,16 @@ def compile_project(
                     })
 
         conventions = manager.collect_target_conventions()
+        project_root = source_dir.parent if source_dir.name == 'source' else source_dir
+        bundled = egl_bundle.collect_components(project_root, source_dir)
         manifest_data = {
             'format': 'egl-library',
-            'version': '1.0.0',
+            'version': '1.1.0',
             'name': lib_name,
             'target': target,
             'backend': manager.get_backend_name(),
             'links': conventions.get('link_flags', []),
-            'include_dirs': [str(d) for d in conventions.get('include_dirs', [])],
-            'lib_dirs': [str(d) for d in conventions.get('lib_dirs', [])],
-            'bin_files': [str(b) for b in conventions.get('bin_files', [])],
+            'components': sorted(bundled.keys()),
         }
 
         symbols_data = {
@@ -686,7 +692,11 @@ def compile_project(
             zf.writestr('symbols.json', json.dumps(symbols_data, indent=2))
             zf.writestr('library.h', lib_h_code)
             zf.writestr('library.c', lib_c_code)
+            egl_bundle.write_components(zf, bundled, manager.get_backend_name())
+            skip_dirs = set(bundled.values())
             for f in source_dir.rglob('*'):
+                if any(d == f or d in f.parents for d in skip_dirs):
+                    continue
                 if f.is_file() and not f.name.endswith('.lib.egl') and not f.name.endswith('.exe') and '__pycache__' not in f.parts:
                     rel_p = f.relative_to(source_dir)
                     zf.write(f, arcname=str(Path('source') / rel_p))

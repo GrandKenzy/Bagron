@@ -42,23 +42,14 @@ try:
 except ImportError:
     HAS_WEBVIEW = False
 
-from tools.installer_core import (
-    get_default_install_dir,
-    get_source_root,
-    find_system_python,
-    is_python_313_or_higher,
-    ensure_source_files,
-    download_embedded_python,
-    compile_launcher_binary,
-    add_to_user_path,
-)
+from tools.install import get_system_status, install_egl
 
 HTML_CONTENT = """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instalador de Easy-C</title>
+    <title>Instalador de EGL</title>
     <style>
         :root {
             --bg-body: #f8fafc;
@@ -494,7 +485,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         <div class="brand-container">
             <div class="brand-icon">E</div>
             <div class="brand-info">
-                <h1>Easy-C (EGL)</h1>
+                <h1>EGL</h1>
                 <p>Instalador Oficial de Sistema</p>
             </div>
         </div>
@@ -525,7 +516,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             <label class="checkbox-container">
                 <input type="checkbox" id="check-path" checked />
                 <div class="checkbox-text">
-                    <h4>Agregar Easy-C al PATH de Windows (Recomendado)</h4>
+                    <h4>Agregar EGL al PATH de Windows (Recomendado)</h4>
                     <p>Permite ejecutar el comando <code>egl</code> desde cualquier consola (PowerShell, CMD, Git Bash).</p>
                 </div>
             </label>
@@ -534,7 +525,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                 <input type="checkbox" id="check-embed" />
                 <div class="checkbox-text">
                     <h4>Descargar entorno Python 3.13 portable de respaldo</h4>
-                    <p>Mantiene una copia aislada de Python dentro de la carpeta de Easy-C para total independencia.</p>
+                    <p>Mantiene una copia aislada de Python dentro de la carpeta de EGL para total independencia.</p>
                 </div>
             </label>
         </div>
@@ -588,7 +579,7 @@ HTML_CONTENT = """<!DOCTYPE html>
         <!-- ETAPA 3: INSTALACIÓN Y CARGA -->
         <div class="step-view" id="view-step-3">
             <div class="title-block" id="install-header">
-                <h2>Instalando Easy-C...</h2>
+                <h2>Instalando EGL...</h2>
                 <p>Configurando archivos, módulos del backend y variables de entorno.</p>
             </div>
 
@@ -607,7 +598,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             <!-- Éxito Final -->
             <div class="success-wrapper" id="success-wrapper" style="display: none;">
                 <div class="success-badge-large">✓</div>
-                <h2>¡Easy-C se ha instalado con éxito!</h2>
+                <h2>¡EGL se ha instalado con éxito!</h2>
                 <p style="font-size: 13px; color: var(--text-secondary); max-width: 440px;">
                     El compilador ya está listo. Abre una nueva consola para comenzar a compilar proyectos:
                 </p>
@@ -805,65 +796,7 @@ class FastInstallerApi:
         self.window = None
 
     def get_system_status(self) -> dict:
-        # 1. Comprobación rápida instantánea de Python (< 1ms)
-        sys_py = find_system_python()
-        py_ok = sys_py is not None
-        py_msg = f"Python detectado en: {sys_py}" if py_ok else "No detectado (se instalará versión portable)"
-
-        # 2. Comprobación rápida instantánea de Gram (< 1ms)
-        gram_ok = False
-        gram_msg = ""
-        try:
-            if importlib.util.find_spec('gram') is not None:
-                gram_ok = True
-                gram_msg = "Framework Gram disponible"
-        except Exception:
-            pass
-
-        source_root = get_source_root()
-        if not gram_ok:
-            for cand in [source_root / '.egl' / 'vendor' / 'Gram' / 'gram', source_root / 'vendor' / 'Gram' / 'gram']:
-                if cand.is_dir():
-                    gram_ok = True
-                    gram_msg = "Gram disponible en vendor"
-                    break
-            if not gram_ok:
-                gram_msg = "Se descargará de forma privada en vendor/Gram"
-
-        # 3. Comprobación rápida instantánea de compilador C (< 1ms)
-        comp_name = ""
-        comp_msg = ""
-        common_gccs = [
-            Path(r"C:\msys64\ucrt64\bin\gcc.exe"),
-            Path(r"C:\msys64\mingw64\bin\gcc.exe"),
-            Path(r"C:\MinGW\bin\gcc.exe"),
-        ]
-        for g in common_gccs:
-            if g.is_file():
-                comp_name = "GCC"
-                comp_msg = f"Detectado en {g.parent}"
-                break
-
-        if not comp_name:
-            gcc = shutil.which('gcc')
-            if gcc:
-                comp_name = "GCC"
-                comp_msg = "Detectado en PATH"
-            elif shutil.which('cl'):
-                comp_name = "MSVC"
-                comp_msg = "Microsoft C/C++ (cl.exe)"
-            else:
-                comp_msg = "No detectado (disponible con egl download gcc)"
-
-        return {
-            "default_dir": str(get_default_install_dir()),
-            "python_ok": py_ok,
-            "python_msg": py_msg,
-            "gram_ok": gram_ok,
-            "gram_msg": gram_msg,
-            "compiler_name": comp_name,
-            "compiler_msg": comp_msg,
-        }
+        return get_system_status()
 
     def browse_folder(self) -> str | None:
         if not self.window:
@@ -880,90 +813,12 @@ class FastInstallerApi:
                     if self.window:
                         self.window.evaluate_js(f"window.onProgress({pct}, {json.dumps(stage)}, {json.dumps(log)});")
 
-                notify(10, "Creando carpetas estructuradas...", f"Directorio destino: {target_dir}")
-                source_root = get_source_root()
-                source_root = ensure_source_files(source_root, lambda msg: notify(15, "Descargando componentes...", msg))
-
-                bin_dir = target_dir / 'bin'
-                core_dir = target_dir / 'core'
-                lib_dir = target_dir / 'libraries'
-                src_dir = target_dir / 'source'
-                vendor_dir = target_dir / 'vendor'
-                python_dir = target_dir / 'python'
-
-                for d in [bin_dir, core_dir, lib_dir, src_dir, vendor_dir]:
-                    d.mkdir(parents=True, exist_ok=True)
-
-                notify(25, "Copiando componentes del compilador...", "Instalando core, libraries y plantillas...")
-                for folder_name in ['core', 'libraries', 'source']:
-                    src = source_root / folder_name
-                    dst = target_dir / folder_name
-                    if src.is_dir():
-                        if dst.exists():
-                            shutil.rmtree(dst, ignore_errors=True)
-                        shutil.copytree(src, dst)
-
-                for single_file in ['egl.py', 'README.md', 'LICENSE']:
-                    src = source_root / single_file
-                    if src.is_file():
-                        shutil.copy2(src, target_dir / single_file)
-
-                # Python embebido
-                need_embed = force_embed_python or not is_python_313_or_higher()
-                if need_embed:
-                    notify(45, "Descargando entorno Python 3.13 portable...", "Descargando python-3.13.2-embed...")
-                    download_embedded_python(
-                        python_dir,
-                        progress_cb=lambda pct, msg: notify(45 + int(pct * 0.2), "Descargando Python 3.13...", msg)
-                    )
-                    notify(65, "Python 3.13 configurado.", f"Entorno portable en: {python_dir}")
-                else:
-                    notify(55, "Python del sistema verificado.", f"Python 3.13+ detectado.")
-
-                # Gram
-                notify(75, "Configurando librería Gram aislada...", "Instalando en vendor/Gram...")
-                target_gram = vendor_dir / 'Gram'
-                local_gram = source_root / '.egl' / 'vendor' / 'Gram'
-                if not local_gram.is_dir():
-                    local_gram = source_root / 'vendor' / 'Gram'
-
-                if local_gram.is_dir() and not target_gram.is_dir():
-                    shutil.copytree(local_gram, target_gram)
-                elif not (target_gram / 'gram').is_dir():
-                    try:
-                        from core.install import install_gram
-                        install_gram(target_gram)
-                    except Exception:
-                        pass
-
-                # Compilador lanzador nativo bin/egl.exe
-                notify(85, "Generando lanzador nativo bin/egl.exe...", "Compilando ejecutable C nativo...")
-                launcher_c = source_root / 'tools' / 'launcher.c'
-                target_exe = bin_dir / 'egl.exe'
-                built_exe = False
-                if launcher_c.is_file():
-                    built_exe = compile_launcher_binary(launcher_c, target_exe)
-                if not built_exe:
-                    tools_exe = source_root / 'tools' / 'egl.exe'
-                    if tools_exe.is_file():
-                        shutil.copy2(tools_exe, target_exe)
-
-                # egl.cmd
-                target_cmd = bin_dir / 'egl.cmd'
-                target_cmd.write_text(
-                    "@echo off\r\nsetlocal\r\nset \"ROOT=%~dp0..\"\r\n"
-                    "if exist \"%ROOT%\\python\\python.exe\" (\r\n"
-                    "    \"%ROOT%\\python\\python.exe\" \"%ROOT%\\egl.py\" %*\r\n"
-                    ") else (\r\n    python \"%ROOT%\\egl.py\" %*\r\n)\r\n",
-                    encoding='utf-8'
+                install_egl(
+                    target_dir=target_dir,
+                    force_embed_python=force_embed_python,
+                    add_to_path=add_to_path,
+                    progress=notify,
                 )
-
-                # PATH
-                if add_to_path:
-                    notify(95, "Registrando en PATH del usuario...", f"Guardando {bin_dir} en HKCU\\Environment...")
-                    add_to_user_path(bin_dir)
-
-                notify(100, "¡Instalación completada con éxito!", f"Easy-C instalado en: {target_dir}")
                 if self.window:
                     self.window.evaluate_js(f"window.onSuccess({json.dumps(str(target_dir))});")
             except Exception as e:
@@ -974,7 +829,7 @@ class FastInstallerApi:
 
     def launch_terminal(self, target_dir_str: str):
         target_dir = Path(target_dir_str)
-        cmd = f'Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd \\"{target_dir}\\"; Write-Host \\"¡Easy-C listo! Prueba: egl --version\\""'
+        cmd = f'Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd \\"{target_dir}\\"; Write-Host \\"¡EGL listo! Prueba: egl --version\\""'
         subprocess.Popen(['powershell', '-Command', cmd])
         if self.window:
             self.window.destroy()
@@ -986,12 +841,12 @@ class FastInstallerApi:
 def run_gui():
     if not HAS_WEBVIEW:
         print("[Installer Warning] pywebview no está disponible. Ejecutando en modo consola...")
-        from tools.installer_core import install_easy_c
-        return install_easy_c()
+        from tools.install import install_egl
+        return install_egl()
 
     api = FastInstallerApi()
     window = webview.create_window(
-        title="Instalador Oficial de Easy-C (EGL)",
+        title="Instalador Oficial de EGL",
         html=HTML_CONTENT,
         js_api=api,
         width=740,

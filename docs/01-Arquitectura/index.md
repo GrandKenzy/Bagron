@@ -1,6 +1,6 @@
 # Arquitectura del Compilador
 
-Esta seccion detalla el diseño interno y el ciclo de vida del compilador de Easy-C (EGL). La arquitectura esta diseñada bajo el principio de separacion estricta de responsabilidades, dividiendo el pipeline en analisis lexico y sintactico, reescritura de dependencias modulares, transformacion semantica intermedia y generacion de codigo C optimizado.
+Esta seccion detalla el diseño interno y el ciclo de vida del compilador de EGL. La arquitectura esta diseñada bajo el principio de separacion estricta de responsabilidades, dividiendo el pipeline en analisis lexico y sintactico, reescritura de dependencias modulares, transformacion semantica intermedia y generacion de codigo C optimizado.
 
 ---
 

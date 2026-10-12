@@ -1,0 +1,6 @@
+clause Target 'egl-c'
+
+int triplicar(int x):
+    return x * 3
+
+print('hola desde testlib')

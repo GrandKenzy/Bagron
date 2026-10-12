@@ -1,4 +1,4 @@
-# Easy-C (EGL)
+# EGL
 
 <p align="center">
   <b>Un lenguaje de programación moderno, limpio y estáticamente tipado que compila a código C monolítico de alto rendimiento (C99/C11).</b>
@@ -13,11 +13,11 @@
 
 ---
 
-## 🚀 ¿Qué es Easy-C?
+## 🚀 ¿Qué es EGL?
 
-**Easy-C (EGL)** combina la elegancia sintáctica y la legibilidad de lenguajes como Python con la velocidad, el control de bajo nivel y la interoperabilidad nativa de **C**.
+**EGL** combina la elegancia sintáctica y la legibilidad de lenguajes como Python con la velocidad, el control de bajo nivel y la interoperabilidad nativa de **C**.
 
-En lugar de depender de una máquina virtual pesada o de un runtime complejo con recolección de basura, Easy-C procesa el código fuente, valida tipos y ámbitos estáticamente, y emite un único archivo de código C monolítico optimizado (`program.c`) listo para ser compilado con GCC, Clang o MSVC.
+En lugar de depender de una máquina virtual pesada o de un runtime complejo con recolección de basura, EGL procesa el código fuente, valida tipos y ámbitos estáticamente, y emite un único archivo de código C monolítico optimizado (`program.c`) listo para ser compilado con GCC, Clang o MSVC.
 
 ---
 
@@ -52,8 +52,8 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 Clona el repositorio:
 
 ```bash
-git clone https://github.com/GrandKenzy/Easy-C.git
-cd Easy-C
+git clone https://github.com/GrandKenzy/EGL.git
+cd EGL
 ```
 
 ### Comandos de la CLI (`egl.py` / `egl.bat`)
@@ -88,7 +88,7 @@ python egl.py extension --install
 
 ### 1. Hola Mundo y Funciones
 
-```easy-c
+```egl
 clause Target 'egl-c'
 import standard
 
@@ -101,7 +101,7 @@ print("El resultado es:", resultado)
 
 ### 2. Iteración y Bucles
 
-```easy-c
+```egl
 clause Target 'egl-c'
 import standard
 
@@ -118,9 +118,9 @@ while contador < 3:
 
 ### 3. Ventana Gráfica y Eventos con SDL3
 
-Easy-C permite integrar librerías como **SDL3** de forma idiomática y elegante:
+EGL permite integrar librerías como **SDL3** de forma idiomática y elegante:
 
-```easy-c
+```egl
 clause Target 'egl-c'
 
 import sdl3
@@ -135,7 +135,7 @@ declare sdl3.EventType as EventType
 sdl3.init(0)
 
 ; Creación de ventana y rectángulo
-Window ventana = Window("Easy-C SDL3 - Rectangulo y Eventos", 640, 480)
+Window ventana = Window("EGL SDL3 - Rectangulo y Eventos", 640, 480)
 FRect rect = FRect(220.0, 165.0, 200.0, 150.0)
 
 bool running = true
@@ -164,7 +164,7 @@ sdl3.quit()
 ## 📂 Estructura del Proyecto
 
 ```text
-Easy-C/
+EGL/
 ├── core/
 │   ├── backend/c/          # Generador de C, emitidores y librerías base (standard.egl)
 │   ├── initiator/rules/    # Reglas gramaticales BNF combinatorias (gram)
@@ -176,7 +176,7 @@ Easy-C/
 ├── docs/                   # Documentación técnica completa y exhaustiva
 ├── source/
 │   ├── main.egl            # Punto de entrada de la aplicación
-│   └── targets/c/          # Extensiones de librerías nativas (SDL3, WinAPI)
+│   └── EGLLibs/         # Librerías instaladas (libraries/, backends/c/externs, includes, lib, bin)
 ├── deudas/                 # Registro y seguimiento de refactorizaciones técnicas
 ├── egl.py                  # Script principal ejecutable
 └── egl.bat                 # Lanzador rápido para Windows

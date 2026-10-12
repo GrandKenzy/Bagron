@@ -1,6 +1,8 @@
 # Sistema Extends: Extension Modular de Librerias
 
-En proyectos de software reales, es habitual requerir funciones adicionales de librerias estandar de C que no vienen precargadas en el compilador base, o adaptar contratos para plataformas especificas. Easy-C (EGL) provee el mecanismo **Extends**, que permite a cualquier proyecto ampliar o personalizar las firmas de librerias nativas de forma local y no destructiva, sin necesidad de modificar el nucleo del compilador.
+> **Nota:** el sistema `source/targets/<backend>/` descrito aquí fue reemplazado por `EGLLibs/` (ver [EGLLibs y pack](egllibs_y_pack.md)). Los externs se colocan ahora en `EGLLibs/backends/<backend>/externs/`.
+
+En proyectos de software reales, es habitual requerir funciones adicionales de librerias estandar de C que no vienen precargadas en el compilador base, o adaptar contratos para plataformas especificas. EGL provee el mecanismo **Extends**, que permite a cualquier proyecto ampliar o personalizar las firmas de librerias nativas de forma local y no destructiva, sin necesidad de modificar el nucleo del compilador.
 
 ---
 
@@ -69,7 +71,7 @@ core/backend/c/externs/stdio...        source/targets/c/extends/stdio...
 
 ### 1. Definicion Base en el Backend
 En `core/backend/c/externs/stdio.externs.egl`:
-```easy-c
+```egl
 ptr fopen(str filepath, str mode = "rb")
 int fclose(ptr stream)
 int fseek(ptr stream, int64 offset, int origin)
@@ -79,12 +81,12 @@ int fread(str buffer, int size, int count, ptr stream)
 
 ### 2. Archivo de Extension en el Proyecto
 En `source/targets/c/extends/stdio.externs.egl`:
-```easy-c
+```egl
 int puts(str s)
 ```
 
 ### 3. Consumo en `main.egl`
-```easy-c
+```egl
 clause Target 'egl-c'
 include "stdio" as IO
 

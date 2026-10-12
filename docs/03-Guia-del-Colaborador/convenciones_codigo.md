@@ -1,6 +1,6 @@
 # Convenciones de Codigo y Estandares de Ingenieria
 
-Para asegurar la mantenibilidad, consistencia y robustez del compilador de Easy-C (EGL), todos los colaboradores deben adherirse estrictamente a las siguientes normas de desarrollo al contribuir al repositorio.
+Para asegurar la mantenibilidad, consistencia y robustez del compilador de EGL, todos los colaboradores deben adherirse estrictamente a las siguientes normas de desarrollo al contribuir al repositorio.
 
 ---
 

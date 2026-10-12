@@ -1,6 +1,6 @@
 # Catalogo de Referencia del Sistema
 
-Esta seccion contiene las especificaciones normativas de Easy-C (EGL), incluyendo la matriz completa de tipos de datos, palabras reservadas del lenguaje, clausulas de entorno del compilador y el catalogo exhaustivo de errores y diagnosticos tecnicos.
+Esta seccion contiene las especificaciones normativas de EGL, incluyendo la matriz completa de tipos de datos, palabras reservadas del lenguaje, clausulas de entorno del compilador y el catalogo exhaustivo de errores y diagnosticos tecnicos.
 
 ---
 
@@ -13,7 +13,7 @@ Esta seccion contiene las especificaciones normativas de Easy-C (EGL), incluyend
 
 ## Directivas y Clausulas de Entorno (`clause`)
 
-Easy-C utiliza la palabra clave `clause` para parametrizar la arquitectura y las restricciones del ejecutable:
+EGL utiliza la palabra clave `clause` para parametrizar la arquitectura y las restricciones del ejecutable:
 
 | Clausula | Obligatoria | Valor por Defecto del Sistema | Descripcion |
 | :--- | :--- | :--- | :--- |

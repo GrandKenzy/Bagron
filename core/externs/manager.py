@@ -1,7 +1,8 @@
-from pathlib import Path
+﻿from pathlib import Path
 from typing import Any
 from core.externs.cache import load_cached_symbols, save_cached_symbols
 from core.externs.parser import parse_externs
+from core.packages import layout as egl_layout
 
 class ExternsManager:
     def __init__(self):
@@ -14,6 +15,7 @@ class ExternsManager:
         self.bin_files: list[str] = []
         self.lib_dirs: list[Path] = []
         self.include_dirs: list[Path] = []
+        self.extra_extern_dirs: list[Path] = []
 
     def set_source_dir(self, path: Path | str):
         self.source_dir = Path(path).resolve()
@@ -25,6 +27,7 @@ class ExternsManager:
         self.bin_files.clear()
         self.lib_dirs.clear()
         self.include_dirs.clear()
+        self.extra_extern_dirs.clear()
 
     def _merge_meta(self, target_meta: dict, new_meta: dict, base_dir: Path):
         if new_meta.get('header'):
@@ -71,27 +74,13 @@ class ExternsManager:
         return clean
 
     def find_extern_file(self, header: str) -> Path | None:
+        """Busca `<header>.externs.egl` en EGLLibs/backends/<backend>/externs y en las librerías cargadas."""
         backend = self.get_backend_name()
         clean = self.normalize_header(header)
-        candidate = self.base_dir / 'backend' / backend / 'externs' / f'{clean}.externs.egl'
-        if candidate.is_file():
-            return candidate
-        alt_candidate = Path.cwd() / 'core' / 'backend' / backend / 'externs' / f'{clean}.externs.egl'
-        if alt_candidate.is_file():
-            return alt_candidate
-        return None
-
-    def find_extends_file(self, header: str) -> Path | None:
-        backend = self.get_backend_name()
-        clean = self.normalize_header(header)
-        candidates = []
-        if self.source_dir:
-            candidates.append(self.source_dir / 'targets' / backend / 'extends' / f'{clean}.externs.egl')
-            candidates.append(self.source_dir.parent / 'targets' / backend / 'extends' / f'{clean}.externs.egl')
-        candidates.append(Path.cwd() / 'source' / 'targets' / backend / 'extends' / f'{clean}.externs.egl')
-        for c in candidates:
-            if c.is_file():
-                return c
+        for folder in [egl_layout.externs_dir(backend), *self.extra_extern_dirs]:
+            candidate = folder / f'{clean}.externs.egl'
+            if candidate.is_file():
+                return candidate
         return None
 
     def load_include(self, header: str, alias: str | None = None) -> dict[str, dict]:
@@ -99,10 +88,9 @@ class ExternsManager:
         c_header = f'{clean_header}.h'
         backend = self.get_backend_name()
         extern_file = self.find_extern_file(clean_header)
-        extends_file = self.find_extends_file(clean_header)
 
-        if not extern_file and not extends_file:
-            raise RuntimeError(f"Librería externa '{clean_header}' no encontrada en backend/{backend}/externs ni extends.")
+        if not extern_file:
+            raise RuntimeError(f"Librería externa '{clean_header}' no encontrada en EGLLibs/backends/{backend}/externs.")
 
         symbols: dict[str, dict] = {}
         meta: dict[str, Any] = {'header': None, 'links': [], 'bins': [], 'lib_dirs': [], 'include_dirs': []}
@@ -115,11 +103,6 @@ class ExternsManager:
                 bs, b_meta = cached
             symbols.update(bs)
             self._merge_meta(meta, b_meta, extern_file.parent)
-
-        if extends_file:
-            es, e_meta = parse_externs(extends_file)
-            symbols.update(es)
-            self._merge_meta(meta, e_meta, extends_file.parent)
 
         if meta.get('header'):
             c_header = meta['header']
@@ -167,10 +150,10 @@ class ExternsManager:
                 return syms[symbol_name], self.namespace_headers.get(ns_name, '')
 
         backend = self.get_backend_name()
-        externs_dir = self.base_dir / 'backend' / backend / 'externs'
-        if not externs_dir.is_dir():
-            externs_dir = Path.cwd() / 'core' / 'backend' / backend / 'externs'
-        if externs_dir.is_dir():
+        search_dirs = [egl_layout.externs_dir(backend), *self.extra_extern_dirs]
+        for externs_dir in search_dirs:
+            if not externs_dir.is_dir():
+                continue
             for egl_file in externs_dir.glob('*.externs.egl'):
                 cached = load_cached_symbols(egl_file)
                 if cached is None:
@@ -197,28 +180,25 @@ class ExternsManager:
             'link_flags': list(self.link_flags),
             'bin_files': list(self.bin_files),
         }
-        search_dirs = []
+        scan_targets: list[tuple[Path, str]] = []
         if self.source_dir:
-            search_dirs.append(self.source_dir)
-            search_dirs.append(self.source_dir / 'targets' / backend)
-            search_dirs.append(self.source_dir.parent / 'targets' / backend)
-        search_dirs.append(Path.cwd() / 'source' / 'targets' / backend)
-        search_dirs.append(Path.cwd() / 'targets' / backend)
-        search_dirs.append(Path.cwd() / 'libs')
+            scan_targets.append((self.source_dir, 'include'))
+        scan_targets.append((Path.cwd() / 'libs', 'include'))
+        scan_targets.append((egl_layout.backend_dir(backend), egl_layout.INCLUDES))
 
-        for base in search_dirs:
+        for base, inc_name in scan_targets:
             if not base.exists():
                 continue
-            inc = base / 'include' if (base / 'include').is_dir() else (base if base.name == 'include' else None)
-            if inc and inc.is_dir() and inc.resolve() not in res['include_dirs']:
+            inc = base / inc_name if (base / inc_name).is_dir() else (base if base.name == inc_name else None)
+            if inc and inc.resolve() not in res['include_dirs']:
                 res['include_dirs'].append(inc.resolve())
 
             lib = base / 'lib' if (base / 'lib').is_dir() else (base if base.name == 'lib' else None)
-            if lib and lib.is_dir() and lib.resolve() not in res['lib_dirs']:
+            if lib and lib.resolve() not in res['lib_dirs']:
                 res['lib_dirs'].append(lib.resolve())
 
             bin_dir = base / 'bin' if (base / 'bin').is_dir() else (base if base.name == 'bin' else None)
-            if bin_dir and bin_dir.is_dir():
+            if bin_dir:
                 for f in bin_dir.glob('*'):
                     if f.suffix.lower() in ('.dll', '.so', '.dylib') and str(f.resolve()) not in res['bin_files']:
                         res['bin_files'].append(str(f.resolve()))

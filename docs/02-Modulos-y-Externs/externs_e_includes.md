@@ -1,6 +1,6 @@
 # Includes y Definiciones Externas (Externs)
 
-Easy-C (EGL) permite interoperabilidad directa con librerias nativas de C mediante la directiva `include` y un subsistema de contratos de funciones foraneas denominado **Externs**. Los archivos de externs describen la firma de las funciones de C para que el procesador semantico de Easy-C pueda validar llamadas, tipos de retorno y parametros antes de compilar.
+EGL permite interoperabilidad directa con librerias nativas de C mediante la directiva `include` y un subsistema de contratos de funciones foraneas denominado **Externs**. Los archivos de externs describen la firma de las funciones de C para que el procesador semantico de EGL pueda validar llamadas, tipos de retorno y parametros antes de compilar.
 
 ---
 
@@ -11,7 +11,7 @@ Easy-C (EGL) permite interoperabilidad directa con librerias nativas de C median
 La directiva `include` admite dos modalidades con semanticas intencionalmente diferenciadas:
 
 #### 1. Inclusion sin Alias (Inclusion Simple)
-```easy-c
+```egl
 include "stdio"
 include "stdlib"
 ```
@@ -20,7 +20,7 @@ include "stdlib"
 * **Normalizacion:** La extension `.h` es redundante y se normaliza automaticamente (`"stdio.h"` -> `"stdio"`).
 
 #### 2. Inclusion con Alias (Espacio de Nombres Cualificado)
-```easy-c
+```egl
 include "stdlib" as C_STDLIB
 include "stdio" as IO
 ```
@@ -34,7 +34,7 @@ include "stdio" as IO
 Las firmas foraneas se definen en archivos con extension `.externs.egl` ubicados en `core/backend/<target>/externs/<nombre>.externs.egl`.
 
 Sintaxis de firmas admitida:
-```easy-c
+```egl
 ptr fopen(str filepath, str mode = "rb")
 int fclose(ptr stream)
 int fseek(ptr stream, int64 offset, int origin)

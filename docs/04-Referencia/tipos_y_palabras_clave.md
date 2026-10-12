@@ -1,6 +1,6 @@
 # Matriz de Tipos, Palabras Clave y Metapropiedades
 
-Este documento contiene la especificacion normativa de los tipos nativos, palabras reservadas, modificadores y propiedades magicas reconocidas por el compilador de Easy-C (EGL).
+Este documento contiene la especificacion normativa de los tipos nativos, palabras reservadas, modificadores y propiedades magicas reconocidas por el compilador de EGL.
 
 ---
 
@@ -49,7 +49,7 @@ Este documento contiene la especificacion normativa de los tipos nativos, palabr
 
 ## Tipos Genericos y Contenedores
 
-Easy-C soporta la instanciacion de contenedores de tamaño fijo y tipos genericos:
+EGL soporta la instanciacion de contenedores de tamaño fijo y tipos genericos:
 
 * `array[T, N]`: Define un arreglo unidimensional contiguo de `N` elementos de tipo `T`.
   * Ejemplo: `array[int, 10] numeros` produce `int64_t numeros[10];`.
@@ -69,14 +69,14 @@ El identificador magico `__fronted__` es un meta-simbolo interno del compilador 
 
 ### Operador `sizeof(...)`
 
-Easy-C provee la funcion intrinseca `sizeof(T)` o `sizeof(variable)` que se traduce directamente al operador nativo `sizeof(...)` en C, complementando el acceso mediante la propiedad `variable.size`.
+EGL provee la funcion intrinseca `sizeof(T)` o `sizeof(variable)` que se traduce directamente al operador nativo `sizeof(...)` en C, complementando el acceso mediante la propiedad `variable.size`.
 
 ---
 
-## Constantes en Easy-C (Norma de Identificadores)
+## Constantes en EGL (Norma de Identificadores)
 
 > [!IMPORTANT]
-> **Easy-C NO utiliza la palabra reservada `const`.**
+> **EGL NO utiliza la palabra reservada `const`.**
 > La inmutabilidad se define de forma estricta mediante la nomenclatura del identificador:
 > **Todo identificador escrito en MAYUSCULAS es una constante inmutable.**
 >
@@ -88,7 +88,7 @@ Easy-C provee la funcion intrinseca `sizeof(T)` o `sizeof(variable)` que se trad
 
 ## Enumeraciones (`enum`)
 
-Easy-C soporta la definicion ergonomica de enumeraciones que se compilan a `typedef enum` nativos en C:
+EGL soporta la definicion ergonomica de enumeraciones que se compilan a `typedef enum` nativos en C:
 
 ### 1. Sintaxis Soportadas
 

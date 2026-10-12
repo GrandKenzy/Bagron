@@ -1,6 +1,6 @@
 # Sistema de Modulos y Mangling
 
-Easy-C (EGL) cuenta con un sistema de modulos estricto que permite descomponer aplicaciones en unidades de compilacion desacopladas. Para evitar conflictos de nombres al consolidar todos los modulos en un unico archivo monolitico de C (`program.c`), el compilador implementa una tecnica determinista de *Name Mangling* y reescritura de llamadas en el AST.
+EGL cuenta con un sistema de modulos estricto que permite descomponer aplicaciones en unidades de compilacion desacopladas. Para evitar conflictos de nombres al consolidar todos los modulos en un unico archivo monolitico de C (`program.c`), el compilador implementa una tecnica determinista de *Name Mangling* y reescritura de llamadas en el AST.
 
 ---
 
@@ -24,7 +24,7 @@ source/
 
 Para importar un modulo o libreria desde `main.egl` u otro modulo, se utiliza la sentencia `import`:
 
-```easy-c
+```egl
 import matematicas
 import standard
 import red as Net
@@ -39,7 +39,7 @@ El resolvedor `find_module_file()` en `core/compiler.py` busca el archivo bajo e
 
 ### Verificacion Estricta de la Clausula `Target`
 
-Easy-C exige que el target del backend sea coherente en todo el proyecto. Si un modulo declara una clausula `Target` que difiere del target del archivo `main.egl`, el compilador aborta el proceso:
+EGL exige que el target del backend sea coherente en todo el proyecto. Si un modulo declara una clausula `Target` que difiere del target del archivo `main.egl`, el compilador aborta el proceso:
 
 ```python
 # Verificacion en core/compiler.py
@@ -81,7 +81,7 @@ Tras recopilar el mapa completo de simbolos con mangling de todos los modulos de
 ## Ejemplo Completo de Transformacion
 
 Modulo `source/modules/operaciones.egl`:
-```easy-c
+```egl
 clause Target 'egl-c'
 
 int calcular(int a, int b):
@@ -89,7 +89,7 @@ int calcular(int a, int b):
 ```
 
 Archivo principal `source/main.egl`:
-```easy-c
+```egl
 clause Target 'egl-c'
 include "stdio"
 import operaciones as Ops

@@ -1,6 +1,6 @@
 # Frontend y Gramatica
 
-El frontend de Easy-C (EGL) es responsable de la transformacion del codigo fuente en texto plano a una representacion intermedia estructurada en memoria: el arbol de sintaxis abstracta (`ASTProgram`). Este proceso es ejecutado por el framework `gram`, el cual implementa un analizador lexico parametrizable y un motor de reglas sintacticas combinatorias sin dependencia de generadores externos.
+El frontend de EGL es responsable de la transformacion del codigo fuente en texto plano a una representacion intermedia estructurada en memoria: el arbol de sintaxis abstracta (`ASTProgram`). Este proceso es ejecutado por el framework `gram`, el cual implementa un analizador lexico parametrizable y un motor de reglas sintacticas combinatorias sin dependencia de generadores externos.
 
 ---
 
@@ -65,7 +65,7 @@ token.value = "inmodule_miModulo_miFuncion"
 
 Para la siguiente declaracion en codigo EGL:
 
-```easy-c
+```egl
 int duplicar(int valor):
     return valor * 2
 ```

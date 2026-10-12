@@ -1,14 +1,47 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.spec
+
+# Entornos virtuales y dependencias privadas
 .vscode/
-.cache/
-*.cache.json
-*.exe
-*.vsix
-/*.dll
 .egl/
-*.lib.egl
+.venv/
+venv/
+
+# Reglas internas de trabajo
+rules.md
+
+# Archivos compilados y paquetes binarios
 build/
 dist/
-*.spec
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.vsix
+*.lib.egl
+
+# Cachés y temporales
+.cache/
+*.cache.json
+.temp/
+*.log
+log/
+program.c
+
+# Bibliotecas pesadas y de terceros (SDL3, dependencias C instaladas)
+**/SDL3/
+**/*SDL3*
+**/cmake/
+**/pkgconfig/
+
+# Carpetas de trabajo temporal y librerías generadas en EGLLibs
+EGLLibs/.cache/
+EGLLibs/.temp/
+EGLLibs/**/bin/
+EGLLibs/**/lib/
+EGLLibs/**/includes/

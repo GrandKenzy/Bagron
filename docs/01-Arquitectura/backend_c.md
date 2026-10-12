@@ -1,6 +1,6 @@
 # Backend C y Ensamblador Monolitico
 
-El backend C (`core/backend/c`) es el motor de generacion de codigo de Easy-C. Su mision es traducir la coleccion de objetos semanticos intermedios generados por el procesador a un archivo fuente monolítico en lenguaje C conforme a los estandares C99/C11, garantizando que el archivo resultante sea autonomo, estricto en tipos y compilar directamente con GCC o Clang sin advertencias.
+El backend C (`core/backend/c`) es el motor de generacion de codigo de EGL. Su mision es traducir la coleccion de objetos semanticos intermedios generados por el procesador a un archivo fuente monolítico en lenguaje C conforme a los estandares C99/C11, garantizando que el archivo resultante sea autonomo, estricto en tipos y compilar directamente con GCC o Clang sin advertencias.
 
 ---
 
@@ -10,7 +10,7 @@ El proceso de emision se compone de tres etapas: analisis de dependencias y dete
 
 ### 1. Deteccion Automatica de Cabeceras (`detectors.py`)
 
-A diferencia de los compiladores tradicionales que exigen declaraciones manuales de `#include` para tipos estandar, Easy-C analiza estaticamente las variables, parametros y llamadas para inferir las librerias minimas necesarias del sistema:
+A diferencia de los compiladores tradicionales que exigen declaraciones manuales de `#include` para tipos estandar, EGL analiza estaticamente las variables, parametros y llamadas para inferir las librerias minimas necesarias del sistema:
 
 * `<stdint.h>`: Se incluye si se utiliza cualquier tipo entero de tamaño fijo (`int8_t`, `int16_t`, `int32_t`, `int64_t`, `uint8_t`, etc.).
 * `<stdbool.h>`: Se incluye si se utilizan tipos o literales booleanos (`bool`, `true`, `false`).
@@ -74,7 +74,7 @@ La funcion `compile_project()` une todos los componentes en un unico archivo de 
        return 0;
    }
    ```
-   * Esto permite que scripts directos de Easy-C con declaraciones e invocaciones a nivel de raiz operen como programas validos en C.
+   * Esto permite que scripts directos de EGL con declaraciones e invocaciones a nivel de raiz operen como programas validos en C.
 
 ---
 

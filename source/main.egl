@@ -1,4 +1,5 @@
 clause Target 'egl-c'
+clause Arch 'x86_64'
 
 import sdl3
 import standard
@@ -6,13 +7,10 @@ import standard
 declare sdl3.Event as Event
 declare sdl3.FRect as FRect
 declare sdl3.EventType as EventType
-
 sdl3.init(0)
-
 ptr ventana = sdl3.create_window("Mi ventana", 200, 200, 0)
 ptr renderer =sdl3.create_renderer(ventana, Null)
 FRect rect = FRect(220.0, 165.0, 200.0, 150.0)
-
 bool running = true
 Event event
 

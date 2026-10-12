@@ -1,0 +1,52 @@
+; ==============================================================================
+; Firmas de Windows API (windows.h) para EGL
+; ==============================================================================
+@header windows.h
+@link user32
+
+
+; --- Dialogos y Ventanas Emergentes ---
+int MessageBoxA(ptr hWnd, str lpText, str lpCaption, uint uType) as MessageBox
+
+; --- Creacion, Visualizacion y Control de Ventanas ---
+ptr CreateWindowExA(uint dwExStyle, str lpClassName, str lpWindowName, uint dwStyle, int X, int Y, int nWidth, int nHeight, ptr hWndParent, ptr hMenu, ptr hInstance, ptr lpParam) as CreateWindow
+bool ShowWindow(ptr hWnd, int nCmdShow)
+bool UpdateWindow(ptr hWnd)
+bool DestroyWindow(ptr hWnd)
+ptr FindWindowA(str lpClassName, str lpWindowName) as FindWindow
+bool MoveWindow(ptr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint)
+bool SetWindowTextA(ptr hWnd, str lpString) as SetWindowText
+int GetWindowTextA(ptr hWnd, str lpString, int nMaxCount) as GetWindowText
+bool IsWindow(ptr hWnd)
+bool IsWindowVisible(ptr hWnd)
+ptr SetFocus(ptr hWnd)
+ptr GetForegroundWindow()
+bool SetForegroundWindow(ptr hWnd)
+
+; --- Bucle de Mensajes y Eventos ---
+int GetMessageA(ptr lpMsg, ptr hWnd, uint wMsgFilterMin, uint wMsgFilterMax) as GetMessage
+bool PeekMessageA(ptr lpMsg, ptr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg) as PeekMessage
+bool TranslateMessage(ptr lpMsg)
+int64 DispatchMessageA(ptr lpMsg) as DispatchMessage
+void PostQuitMessage(int nExitCode)
+ptr DefWindowProcA(ptr hWnd, uint Msg, uint64 wParam, int64 lParam) as DefWindowProc
+
+; --- Sistema, Tiempo, Procesos y Diagnostico ---
+void Sleep(uint dwMilliseconds)
+uint GetTickCount()
+ptr GetModuleHandleA(str lpModuleName) as GetModuleHandle
+uint GetLastError()
+bool Beep(uint dwFreq, uint dwDuration)
+int GetSystemMetrics(int nIndex)
+bool CloseHandle(ptr hObject)
+
+; --- Consola de Windows ---
+bool SetConsoleTitleA(str lpConsoleTitle) as SetConsoleTitle
+uint GetConsoleTitleA(str lpConsoleTitle, uint nSize) as GetConsoleTitle
+ptr GetConsoleWindow()
+
+; --- Teclado, Mouse y Cursor ---
+int16 GetAsyncKeyState(int vKey)
+int16 GetKeyState(int nVirtKey)
+bool SetCursorPos(int X, int Y)
+bool GetCursorPos(ptr lpPoint)

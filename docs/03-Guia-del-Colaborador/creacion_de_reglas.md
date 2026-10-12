@@ -1,6 +1,6 @@
 # Guia de Creacion de Nuevas Reglas y Caracteristicas
 
-Esta guia proporciona el procedimiento estructurado paso a paso para extender Easy-C (EGL) con nuevas construcciones de lenguaje (por ejemplo, nuevas sentencias de control, operadores o tipos de datos), abarcando desde la gramatica formal hasta la generacion de codigo en el backend C.
+Esta guia proporciona el procedimiento estructurado paso a paso para extender EGL con nuevas construcciones de lenguaje (por ejemplo, nuevas sentencias de control, operadores o tipos de datos), abarcando desde la gramatica formal hasta la generacion de codigo en el backend C.
 
 ---
 

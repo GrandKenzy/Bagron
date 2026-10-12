@@ -1,6 +1,6 @@
 # Interfaz de Linea de Comandos (CLI) y Herramientas
 
-Easy-C (EGL) incluye una interfaz de linea de comandos moderna y minimalista diseñada tanto para flujos de trabajo en consola como para integracion en pipelines de integracion continua (CI/CD). La implementacion se encuentra desacoplada entre el despachador de argumentos (`core/cli.py`), el punto de entrada ejecutable (`egl.py`) y el lanzador rapido para Windows (`egl.bat`).
+EGL incluye una interfaz de linea de comandos moderna y minimalista diseñada tanto para flujos de trabajo en consola como para integracion en pipelines de integracion continua (CI/CD). La implementacion se encuentra desacoplada entre el despachador de argumentos (`core/cli.py`), el punto de entrada ejecutable (`egl.py`) y el lanzador rapido para Windows (`egl.bat`).
 
 ---
 
@@ -33,7 +33,7 @@ egl --help
 | `-I`, `--include` | Opcion | N/A | Agrega una carpeta de cabeceras C (`.h`) a la compilación (`-I <dir>` o `/I<dir>`). |
 | `-L`, `--lib-dir` | Opcion | N/A | Agrega una carpeta de librerías binarias al linker (`-L <dir>` o `/LIBPATH:<dir>`). |
 | `--install` | Flag | `False` | Utilizado con `extension`: instala de forma automatica el `.vsix` en Visual Studio Code mediante el comando `code --install-extension`. |
-| `-v`, `--version` | Flag | N/A | Muestra la version actual del compilador Easy-C. |
+| `-v`, `--version` | Flag | N/A | Muestra la version actual del compilador EGL. |
 | `-h`, `--help` | Flag | N/A | Muestra la guia de uso y catalogo de opciones en consola. |
 
 ---
@@ -59,7 +59,7 @@ python egl.py extension --install
 ```
 
 ### 3. Generacion e Instalacion de la Extension para VS Code (`vsix`)
-Easy-C incluye un generador dinámico de sintaxis TextMate sincronizado con las palabras clave reales del compilador. Para empaquetar la extension oficial de Visual Studio Code:
+EGL incluye un generador dinámico de sintaxis TextMate sincronizado con las palabras clave reales del compilador. Para empaquetar la extension oficial de Visual Studio Code:
 
 ```bash
 # Generar el archivo .vsix en la raiz del proyecto:
@@ -69,7 +69,7 @@ python egl.py extension
 python egl.py extension --install
 
 # Especificar un archivo de salida personalizado:
-python egl.py extension -o dist/easy-c-syntax.vsix
+python egl.py extension -o dist/egl-syntax.vsix
 ```
 
 ### 4. Salida Estandar del Comando `--run`

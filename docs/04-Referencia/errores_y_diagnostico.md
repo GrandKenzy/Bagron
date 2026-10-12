@@ -1,6 +1,6 @@
 # Catalogo de Diagnosticos y Errores
 
-Este documento recopila la totalidad de condiciones de error, diagnosticos y excepciones emitidas por el compilador de Easy-C (EGL), detallando su nivel de severidad, el subsistema emisor, su causa fundamental en el codigo fuente y la solucion tecnica correspondiente.
+Este documento recopila la totalidad de condiciones de error, diagnosticos y excepciones emitidas por el compilador de EGL, detallando su nivel de severidad, el subsistema emisor, su causa fundamental en el codigo fuente y la solucion tecnica correspondiente.
 
 ---
 
