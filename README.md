@@ -49,38 +49,58 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 ## 🛠️ Instalación y Uso Rápido
 
-Clona el repositorio:
+### Opción 1: Instalador Oficial para Windows (`egl-installer.exe`)
+Descarga el instalador desde la sección de [Releases de GitHub](https://github.com/GrandKenzy/EGL/releases).
+* **Modo Gráfico:** Haz doble clic en `egl-installer.exe` para instalar con interfaz visual.
+* **Modo Consola:** Ejecuta `egl-installer.exe --cli` desde tu terminal favorita.
+* *El instalador configura automáticamente EGL en `%LOCALAPPDATA%\Programs\EGL` y lo añade a tu variable `PATH`.*
 
+### Opción 2: Desde el Código Fuente
 ```bash
 git clone https://github.com/GrandKenzy/EGL.git
 cd EGL
+python egl.py install gram
+```
+Opcionalmente, instala en el sistema usando: `python installer.py --cli`.
+
+---
+
+### 🔄 Actualización
+Para actualizar tu instalación a la versión más reciente:
+```bash
+egl update
+# O forzar actualización:
+egl update --force
 ```
 
-### Comandos de la CLI (`egl.py` / `egl.bat`)
+### 🗑️ Desinstalación
+Puedes desinstalar EGL de forma limpia en cualquier momento:
+1. Desde **Configuración de Windows** -> **Aplicaciones** -> **EGL Compiler** -> **Desinstalar**.
+2. O ejecutando directamente en cualquier consola: `egl-uninstall`.
+
+---
+
+### 💻 Comandos Básicos de la CLI
 
 ```bash
 # Compilar el proyecto en 'source' y generar 'program.c':
-python egl.py compile source
+egl compile source
 
 # Compilar a C y construir el ejecutable binario con GCC:
-python egl.py compile source --build
+egl compile source --build
 
 # Compilar, construir y ejecutar directamente el programa:
-python egl.py run source
+egl run source
 
 # Limpiar toda la caché del proyecto (.cache, __pycache__, .pyc):
-python egl.py cache clear
+egl cache clear
 
 # Generar e instalar la extensión oficial para Visual Studio Code:
-python egl.py extension --install
+egl extension --install
 ```
 
-> **En Windows**, puedes usar directamente el lanzador `egl.bat`:
-> ```cmd
-> egl.bat compile source --build
-> egl.bat run source
-> egl.bat cache clear
-> ```
+> [!TIP]
+> Para más detalles, consulta la [Guía de Instalación y Desinstalación](docs/04-Referencia/instalacion_y_desinstalacion.md).
 
 ---
 

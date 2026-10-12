@@ -103,10 +103,30 @@ class EGL_TYPE_FIELD(gram.RuleItem):
             gram.Alt(
                 gram.Seq(
                     gram.MatchToken('IDENT'),
-                    gram.MatchToken('ASSIGN'),
-                    gram.Ref(EGL_VALUE)
+                    gram.Opt(
+                        gram.Seq(
+                            gram.MatchToken('ASSIGN'),
+                            gram.Ref(EGL_VALUE)
+                        )
+                    )
                 ),
                 gram.Ref(EGL_VALUE),
+            )
+        ),
+        gram.Opt(gram.MatchToken('COMMENT'))
+    )
+
+class EGL_TYPE_REQSLOT(gram.RuleItem):
+    name = "EGL_TYPE_REQSLOT"
+    code = gram.AutoCode()
+    grammar = gram.Seq(
+        gram.MatchKeyword('__reqslot__'),
+        gram.Ref(EGL_TYPE_SPEC),
+        gram.Opt(gram.MatchToken('IDENT')),
+        gram.Opt(
+            gram.Seq(
+                gram.MatchToken('ASSIGN'),
+                gram.Ref(EGL_VALUE)
             )
         ),
         gram.Opt(gram.MatchToken('COMMENT'))
@@ -193,6 +213,7 @@ class EGL_TYPE_STMT(gram.RuleItem):
     code = gram.AutoCode()
     ignore = True
     grammar = gram.Alt(
+        gram.Ref(EGL_TYPE_REQSLOT),
         gram.Ref(EGL_TYPE_SLOT),
         gram.Ref(EGL_TYPE_KIND),
         gram.Ref(EGL_TYPE_ITEMS),
@@ -239,12 +260,12 @@ class EGL_TYPE_DECL(gram.RuleItem):
             gram.MatchGroup('privacity'),
         ),
         gram.Alt(
+            gram.MatchKeyword('Type'),
+            gram.MatchKeyword('type'),
             gram.Seq(
                 gram.MatchKeyword('struct'),
                 gram.MatchKeyword('Type'),
             ),
-            gram.MatchKeyword('Type'),
-            gram.MatchKeyword('type'),
         ),
         gram.Alt(
             gram.MatchToken('IDENT'),
@@ -255,6 +276,7 @@ class EGL_TYPE_DECL(gram.RuleItem):
 
 __all__ = [
     'EGL_TYPE_SPEC',
+    'EGL_TYPE_REQSLOT',
     'EGL_TYPE_SLOT',
     'EGL_TYPE_KIND',
     'EGL_TYPE_ITEMS',

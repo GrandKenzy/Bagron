@@ -206,4 +206,7 @@ def visit(node: gram.ASTNode) -> ClassDecl:
     )
     class_obj.constructor_func = ctor_fn
     class_obj.generated_functions = generated_functions
+    if name in CUSTOM_TYPES:
+        CUSTOM_TYPES[name]['methods'] = set(methods.keys())
+        CUSTOM_TYPES[name]['class_decl'] = class_obj
     return class_obj

@@ -31,6 +31,7 @@ KEYWORDS = {
     '__inline__': '#E2B93D',
     '__packed__': '#E2B93D',
     '__slot__': '#E2B93D',
+    '__reqslot__': '#E2B93D',
     'sizeof': '#E2B93D',
     'class': "#6630E4",
     'struct': '#17A2B8',
@@ -77,7 +78,7 @@ KEYWORDS_BY_GROUP = {
     'privacity': ['public', 'private'],
     'conditional_statement': ['if', 'elif', 'else', 'not', 'and', 'or'],
     'loops': ['for', 'while', 'ran', 'in'],
-    'keywords': ['as', 'clause', 'return', 'pass', '__fronted__', '__inline__', '__packed__', '__slot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
+    'keywords': ['as', 'clause', 'return', 'pass', '__fronted__', '__inline__', '__packed__', '__slot__', '__reqslot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
 }
 
 for group, color in GROUPS.items():
@@ -91,13 +92,18 @@ for keyword in TYPES:
         color = INTRINSIC_TYPES[keyword]
     else:
         color = GROUPS['types']
-    gram.words.add_keyword(keyword, hex_color=color, group='types', allow_override=True)
+    kw_obj = gram.words.add_keyword(keyword, hex_color=color, group='types', allow_override=True)
+    grp_t = gram.words.get_group('types')
+    if grp_t and keyword not in grp_t.values:
+        grp_t._keywords[keyword] = kw_obj
 
 for group, words in KEYWORDS_BY_GROUP.items():
+    grp = gram.words.get_group(group)
     for word in words:
         color = KEYWORDS.get(word, GROUPS.get(group, "#FFFFFF"))
+        # Confía en el parámetro 'group=' y elimina el if/else de abajo
         gram.words.add_keyword(word, hex_color=color, group=group, allow_override=True)
-
+        
 for kw, color in KEYWORDS.items():
     if not gram.words.keyword_exists(kw):
         gram.words.add_keyword(kw, hex_color=color, group='keywords', allow_override=True)

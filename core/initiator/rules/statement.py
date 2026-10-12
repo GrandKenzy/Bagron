@@ -15,7 +15,7 @@ class EGL_RETURN(gram.RuleItem):
     code = gram.AutoCode()
     grammar = gram.Seq(
         gram.MatchKeyword('return'),
-        gram.Ref(EGL_VALUE)
+        gram.Opt(gram.Ref(EGL_VALUE))
     )
 
 class EGL_ASSIGN(gram.RuleItem):

@@ -9,7 +9,7 @@ def _format_expr(tokens: list[Any]) -> str:
         return f"{tok_strs[0]}[{tok_strs[1]}]"
     return ''.join(tok_strs)
 
-def _extract_slot(stmt: gram.ASTNode) -> dict:
+def _extract_slot(stmt: gram.ASTNode, required: bool = False) -> dict:
     spec_nodes = stmt.find('EGL_TYPE_SPEC')
     slot_type = 'any'
     if spec_nodes and spec_nodes[0].values:
@@ -24,7 +24,7 @@ def _extract_slot(stmt: gram.ASTNode) -> dict:
     toks = [str(t.value if hasattr(t, 'value') else t) for t in getattr(stmt, 'all_tokens', [])]
     if len(toks) >= 3 and toks[2] != '=':
         slot_name = toks[2]
-    return {'type': slot_type, 'name': slot_name, 'default': default_val}
+    return {'type': slot_type, 'name': slot_name, 'default': default_val, 'required': required}
 
 def _extract_items(stmt: gram.ASTNode) -> list[str]:
     res = []
@@ -60,8 +60,10 @@ def visit(node: gram.ASTNode) -> TypeDecl:
     if body_nodes:
         body = body_nodes[0]
         for stmt in body.children:
-            if stmt.name in ('EGL_TYPE_SLOT', 'type slot'):
-                slots.append(_extract_slot(stmt))
+            if stmt.name in ('EGL_TYPE_REQSLOT', 'type reqslot'):
+                slots.append(_extract_slot(stmt, required=True))
+            elif stmt.name in ('EGL_TYPE_SLOT', 'type slot'):
+                slots.append(_extract_slot(stmt, required=False))
             elif stmt.name in ('EGL_TYPE_KIND', 'type kind'):
                 if len(stmt.values) >= 2:
                     raw_kind = str(stmt.values[1].value if hasattr(stmt.values[1], 'value') else stmt.values[1])
@@ -84,14 +86,17 @@ def visit(node: gram.ASTNode) -> TypeDecl:
     field_spec = None
     field_args = []
     field_name = 'value'
-    for f in (node.find('EGL_TYPE_FIELD') or []):
-        spec_nodes = f.find('EGL_TYPE_SPEC')
+    field_nodes = node.find('EGL_TYPE_FIELD') or []
+    if field_nodes:
+        # El tipo de vuelta / conversión siempre va al final
+        last_field = field_nodes[-1]
+        spec_nodes = last_field.find('EGL_TYPE_SPEC')
         if spec_nodes and spec_nodes[0].values:
             spec_vals = [str(v.value if hasattr(v, 'value') else v) for v in spec_nodes[0].values]
             field_spec = spec_vals[0]
             if len(spec_vals) > 1:
                 field_args = spec_vals[1:]
-        for val in f.values:
+        for val in last_field.values:
             v_str = str(val.value if hasattr(val, 'value') else val)
             if v_str != field_spec and v_str not in field_args:
                 field_name = v_str

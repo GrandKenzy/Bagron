@@ -40,6 +40,7 @@ from core.initiator.rules.clauses import EGL_CLAUSE
 from core.initiator.rules.enum_decl import EGL_ENUM_DECL
 from core.initiator.rules.type_decl import (
     EGL_TYPE_SPEC,
+    EGL_TYPE_REQSLOT,
     EGL_TYPE_SLOT,
     EGL_TYPE_KIND,
     EGL_TYPE_ITEMS,
@@ -91,6 +92,7 @@ __all__ = [
     'EGL_ENUM_DECL',
     'EGL_TYPE_DECL',
     'EGL_TYPE_SPEC',
+    'EGL_TYPE_REQSLOT',
     'EGL_TYPE_SETV',
     'EGL_PASS',
     'EGL_EXPRESSION',

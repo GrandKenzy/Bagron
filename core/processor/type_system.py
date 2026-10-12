@@ -39,6 +39,9 @@ def register_type(
     if intrinsic_str == '__void_p_t__' and inner_args:
         base_c = resolve_c_type(inner_args[0])
         c_type = f'{base_c}*'
+    elif intrinsic_str == '__arrof__' and inner_args:
+        base_c = resolve_c_type(inner_args[0])
+        c_type = f'{base_c}*'
     else:
         c_type = INTRINSIC_TYPES.get(intrinsic_str, intrinsic_str)
     entry = {
@@ -52,7 +55,10 @@ def register_type(
     CUSTOM_TYPES[name_str] = entry
     if not gram.words.group_exists('types'):
         gram.words.add_group('types')
-    gram.words.add_keyword(name_str, group='types', allow_override=True)
+    kw_t = gram.words.add_keyword(name_str, group='types', allow_override=True)
+    grp_types = gram.words.get_group('types')
+    if grp_types and name_str not in grp_types.values:
+        grp_types._keywords[name_str] = kw_t
     return entry
 
 def resolve_generic_type(type_name: str, type_args: list[Any]) -> tuple[str | None, int | None]:
@@ -65,8 +71,17 @@ def resolve_generic_type(type_name: str, type_args: list[Any]) -> tuple[str | No
     slot_map: dict[str, Any] = {}
     for i, slot in enumerate(slots):
         s_name = slot.get('name')
-        if s_name and i < len(type_args):
+        if not s_name:
+            continue
+        if i < len(type_args):
             slot_map[s_name] = type_args[i]
+        elif slot.get('default') is not None:
+            slot_map[s_name] = slot.get('default')
+        elif slot.get('required'):
+            raise ValueError(f"El tipo '{t_str}' requiere el parámetro slot '{s_name}' (__reqslot__).")
+        else:
+            slot_map[s_name] = 'Null'
+
     resolved_args = []
     for arg in inner_args:
         arg_str = str(arg.value if hasattr(arg, 'value') else arg).strip()
@@ -78,15 +93,22 @@ def resolve_generic_type(type_name: str, type_args: list[Any]) -> tuple[str | No
     fixed_size = None
     if len(resolved_args) >= 2:
         elem_type = str(resolved_args[0])
-        try:
-            fixed_size = int(resolved_args[1])
-        except (ValueError, TypeError):
+        val_str = str(resolved_args[1]).strip()
+        if val_str in ('Null', 'null', 'NONE', 'None', '', '0'):
             fixed_size = None
-    elif len(resolved_args) == 1:
-        if str(resolved_args[0]).isdigit():
-            fixed_size = int(resolved_args[0])
         else:
-            elem_type = str(resolved_args[0])
+            try:
+                fixed_size = int(val_str)
+            except (ValueError, TypeError):
+                fixed_size = None
+    elif len(resolved_args) == 1:
+        val_str = str(resolved_args[0]).strip()
+        if val_str in ('Null', 'null', 'NONE', 'None', ''):
+            fixed_size = None
+        elif val_str.isdigit():
+            fixed_size = int(val_str)
+        else:
+            elem_type = val_str
     return elem_type, fixed_size
 
 def resolve_c_type(type_name: str) -> str:

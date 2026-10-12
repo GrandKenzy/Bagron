@@ -42,6 +42,7 @@ El flujo de transformacion de EGL opera en cinco etapas secuenciales:
 
 ### 4. Referencia del Lenguaje y Diagnosticos
 * **[Vision General de Referencia](04-Referencia/index.md):** Indice de especificaciones normativas y tablas tecnicas.
+* **[Guia de Instalacion y Desinstalacion](04-Referencia/instalacion_y_desinstalacion.md):** Manual completo de instalacion (GUI, CLI, fuentes), actualizacion (`egl update`) y desinstalacion en Windows/POSIX.
 * **[Tipos, Palabras Clave y Clausulas](04-Referencia/tipos_y_palabras_clave.md):** Matriz de tipos nativos, propiedades magicas y clausulas de entorno.
 * **[Catalogo de Diagnosticos y Errores](04-Referencia/errores_y_diagnostico.md):** Matriz de excepciones, causas raices y procedimientos de resolucion.
 

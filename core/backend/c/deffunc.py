@@ -165,11 +165,24 @@ def deffunc(name: str, args: list, kwargs: dict | None = None, is_statement: boo
 
     if clean_name == 'free':
         c_backend.add_include('<stdlib.h>')
-        target_raw = str(bound.get('ptr') if bound.get('ptr') is not None else (args[0].value if hasattr(args[0], 'value') else args[0]) if args else '')
+        raw_arg = bound.get('ptr') if bound.get('ptr') is not None else (args[0] if args else None)
+        target_raw = str(getattr(raw_arg, 'value', raw_arg) or '')
         resolved = resolve_variable(target_raw, block)
         if resolved:
             resolved.uses += 1
+            t_name = str(resolved.type)
+            from core.processor.type_system import CUSTOM_TYPES
+            t_info = CUSTOM_TYPES.get(t_name, {})
+            class_methods = t_info.get('methods', set())
+            if t_info.get('is_class') and ('__delete__' in class_methods or 'delete' in class_methods):
+                del_method = '__delete__' if '__delete__' in class_methods else 'delete'
+                arg_pass = resolved.name if getattr(resolved, 'is_pointer', False) else f'&{resolved.name}'
+                call_str = f'{t_name}_{del_method}({arg_pass})'
+                compiled = f'{call_str};' if is_statement else call_str
+                return CompiledCall(clean_name, args, 'void', False, None, compiled)
             target = resolved.name
+        elif raw_arg is not None:
+            target = _format_call_arg(raw_arg, block)
         else:
             target = target_raw
         compiled = f'free({target});' if is_statement else f'free({target})'

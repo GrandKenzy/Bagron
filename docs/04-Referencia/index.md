@@ -6,6 +6,7 @@ Esta seccion contiene las especificaciones normativas de EGL, incluyendo la matr
 
 ## Modulos y Especificaciones
 
+* **[Guia de Instalacion y Desinstalacion](instalacion_y_desinstalacion.md):** Manual completo de instalacion mediante instalador oficial GUI/CLI, codigo fuente, actualizacion (`egl update`) y desinstalacion limpia.
 * **[Tipos, Palabras Clave y Clausulas](tipos_y_palabras_clave.md):** Tablas formales de tipos primitivos, genericos, punteros, palabras reservadas y directivas de entorno (`clause`).
 * **[Catalogo de Diagnosticos y Errores](errores_y_diagnostico.md):** Matriz detallada de excepciones, causas raices y procedimientos de resolucion para fallos en tiempo de compilacion.
 
