@@ -562,17 +562,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     <span class="badge" id="diag-badge-gram">...</span>
                 </div>
 
-                <!-- C Compiler Card -->
-                <div class="diag-card">
-                    <div class="diag-left">
-                        <div class="diag-icon">CC</div>
-                        <div class="diag-text">
-                            <h4>Compilador C</h4>
-                            <p id="diag-desc-compiler">Comprobando...</p>
-                        </div>
-                    </div>
-                    <span class="badge" id="diag-badge-compiler">...</span>
-                </div>
+
             </div>
         </div>
 
@@ -655,18 +645,7 @@ HTML_CONTENT = """<!DOCTYPE html>
                     dGr.innerText = 'Se configurará de forma aislada en vendor/Gram.';
                 }
 
-                // 3. Compiler
-                const bCc = document.getElementById('diag-badge-compiler');
-                const dCc = document.getElementById('diag-desc-compiler');
-                if (data.compiler_name) {
-                    bCc.className = 'badge badge-success';
-                    bCc.innerText = data.compiler_name;
-                    dCc.innerText = data.compiler_msg;
-                } else {
-                    bCc.className = 'badge badge-warning';
-                    bCc.innerText = 'Opcional';
-                    dCc.innerText = 'Puedes instalarlo luego con egl download gcc.';
-                }
+
             });
         });
 

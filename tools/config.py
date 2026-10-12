@@ -96,8 +96,6 @@ LAYOUT_DIRS = (BIN_DIRNAME, *COMPONENT_FOLDERS, VENDOR_DIRNAME, *(f"{EGLLIBS_DIR
 # ---------------------------------------------------------------------------
 LAUNCHER_SOURCE = "launcher.c"
 LAUNCHER_PREBUILT = "egl.exe"
-GCC_FLAGS = ("-O2", "-municode")
-MSVC_FLAGS = ("/O2",)
 CMD_SHIM = (
     "@echo off\r\n"
     "setlocal\r\n"
@@ -109,11 +107,6 @@ CMD_SHIM = (
     ")\r\n"
 )
 # Compiladores C conocidos (detección rápida para el instalador gráfico).
-COMMON_GCC_PATHS = (
-    r"C:\msys64\ucrt64\bin\gcc.exe",
-    r"C:\msys64\mingw64\bin\gcc.exe",
-    r"C:\MinGW\bin\gcc.exe",
-)
 
 # ---------------------------------------------------------------------------
 # PATH de Windows

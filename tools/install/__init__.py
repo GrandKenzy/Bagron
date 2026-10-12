@@ -2,7 +2,7 @@
 from tools.install.console import install_safe_streams
 from tools.install.deploy import copy_components
 from tools.install.gram import deploy_gram, install_gram
-from tools.install.launcher import build_launcher, compile_launcher_binary
+from tools.install.launcher import build_launcher
 from tools.install.paths import (
     InstallLayout,
     get_default_install_dir,
@@ -20,7 +20,6 @@ __all__ = [
     "InstallLayout",
     "add_to_user_path",
     "build_launcher",
-    "compile_launcher_binary",
     "copy_components",
     "deploy_gram",
     "download_embedded_python",
