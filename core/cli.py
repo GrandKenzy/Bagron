@@ -216,7 +216,7 @@ def main(args: list[str] | None = None) -> int:
     if command == 'install':
         sub = args[1].lower() if len(args) > 1 else ''
         if sub == 'gram':
-            from tools.install import install_gram
+            from core.vendor import install_gram
             ok = install_gram()
             return 0 if ok else 1
         else:

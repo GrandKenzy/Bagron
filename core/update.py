@@ -179,7 +179,7 @@ def update_egl(force: bool = False) -> bool:
 
         # Actualizar Gram si es necesario
         try:
-            from tools.install import install_gram
+            from core.vendor import install_gram
             install_gram()
         except Exception:
             pass

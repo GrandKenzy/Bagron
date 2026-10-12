@@ -36,8 +36,3 @@ def copy_components(source_root: Path, target_dir: Path) -> None:
         src = source_root / file_name
         if src.is_file():
             shutil.copy2(src, target_dir / file_name)
-
-    tools_src, tools_dst = source_root / config.TOOLS_DIRNAME, target_dir / config.TOOLS_DIRNAME
-    if tools_src.is_dir():
-        shutil.rmtree(tools_dst, ignore_errors=True)
-        shutil.copytree(tools_src, tools_dst, ignore=shutil.ignore_patterns(*config.TOOLS_IGNORE_PATTERNS))

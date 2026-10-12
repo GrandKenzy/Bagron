@@ -13,7 +13,12 @@ from tools.install.launcher import build_launcher
 from tools.install.paths import InstallLayout, get_default_install_dir, get_source_root
 from tools.install.pythonenv import download_embedded_python, is_python_313_or_higher
 from tools.install.sources import ensure_source_files
-from tools.install.winpath import add_to_user_path, remove_from_user_path
+from tools.install.winpath import (
+    add_to_user_path,
+    register_windows_uninstaller,
+    remove_from_user_path,
+    unregister_windows_uninstaller,
+)
 
 _BANNER = "=" * 58
 
@@ -83,6 +88,8 @@ def run_install(options: InstallOptions, progress: ProgressCallback | None = Non
         report(progress, 95, "Registrando en PATH del usuario...", f"Registrando {config.APP_NAME} en el PATH del sistema...")
         add_to_user_path(layout.bin)
 
+    register_windows_uninstaller(layout.root, layout.uninstaller_cmd)
+
     report(progress, 100, "¡Instalación completada con éxito!", f"{config.APP_NAME} instalado en: {layout.root}")
     _print_footer(layout, built_exe)
     return True
@@ -107,11 +114,7 @@ def install_egl(
 
 
 def uninstall_egl(target_dir: Path | None = None) -> bool:
+    from tools.uninstaller import run_uninstallation
     install_safe_streams()
     layout = InstallLayout(target_dir or get_default_install_dir())
-    log(f"Desinstalando {config.APP_NAME} de: '{layout.root}'...")
-    remove_from_user_path(layout.bin)
-    if layout.root.exists():
-        shutil.rmtree(layout.root, ignore_errors=True)
-    log(f"{config.APP_NAME} desinstalado correctamente.")
-    return True
+    return run_uninstallation(layout.root)

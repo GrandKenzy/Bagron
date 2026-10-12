@@ -100,7 +100,7 @@ def _install_with_zip(target_dir: Path) -> bool:
     return success
 
 
-def install_gram(target_dir: Path | None = None) -> bool:
+def _legacy_install_gram(target_dir: Path | None = None) -> bool:
     if target_dir is None:
         target_dir = get_private_vendor_dir() / config.GRAM_DIRNAME
     target_dir = Path(target_dir).resolve()
@@ -134,9 +134,15 @@ def deploy_gram(source_root: Path, target_gram: Path) -> None:
     """Copia Gram desde el código fuente al vendor de la instalación, o lo descarga."""
     local_gram = find_local_gram(source_root)
     if local_gram and not target_gram.is_dir():
-        shutil.copytree(local_gram, target_gram)
+        shutil.copytree(
+            local_gram,
+            target_gram,
+            ignore=shutil.ignore_patterns(".git", ".github", "__pycache__", "*.pyc"),
+        )
     elif not _has_package(target_gram):
         try:
             install_gram(target_gram)
         except Exception:
             pass
+
+from core.vendor import install_gram

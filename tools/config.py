@@ -85,9 +85,8 @@ EGLLIBS_LAYOUT = (
 )
 # Archivos sueltos que se copian si existen.
 COMPONENT_FILES = ("egl.py", "README.md", "LICENSE")
-# Carpeta `tools` (lógica de instalación) que viaja con la instalación.
+# Carpeta `tools` en la raíz de desarrollo (utilizada por el instalador para empaquetado y build).
 TOOLS_DIRNAME = "tools"
-TOOLS_IGNORE_PATTERNS = ("__pycache__", "*.pyc", "installer_gui.py")
 # Carpetas que se crean siempre en el destino.
 LAYOUT_DIRS = (BIN_DIRNAME, *COMPONENT_FOLDERS, VENDOR_DIRNAME, *(f"{EGLLIBS_DIRNAME}/{d}" for d in EGLLIBS_LAYOUT))
 

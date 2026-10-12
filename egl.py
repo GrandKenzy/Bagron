@@ -29,7 +29,7 @@ except ImportError:
 if not HAS_GRAM:
     args = sys.argv[1:]
     if args and args[0].lower() == 'install' and len(args) > 1 and args[1].lower() == 'gram':
-        from tools.install import install_gram
+        from core.vendor import install_gram
         sys.exit(0 if install_gram() else 1)
     elif args and args[0].lower() in ('download', 'toolchain'):
         from core.backend.c.download import download_compiler

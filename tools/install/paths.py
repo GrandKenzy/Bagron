@@ -66,6 +66,8 @@ class InstallLayout:
         self.gram = self.vendor / config.GRAM_DIRNAME
         self.exe = self.bin / config.EXE_NAME
         self.cmd = self.bin / config.CMD_NAME
+        self.uninstaller_cmd = self.bin / "egl-uninstall.cmd"
+        self.uninstaller_py = self.bin / "uninstaller.py"
 
     def create(self) -> None:
         for name in config.LAYOUT_DIRS:

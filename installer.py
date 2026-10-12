@@ -20,6 +20,7 @@ def main():
     target_dir = None
     force_embed_python = False
     force_cli = False
+    add_to_path = True
 
     i = 0
     while i < len(args):
@@ -32,6 +33,9 @@ def main():
             i += 1
         elif arg in ('--cli', '--console'):
             force_cli = True
+            i += 1
+        elif arg == '--no-path':
+            add_to_path = False
             i += 1
         elif arg in ('--uninstall', '-u'):
             uninstall_egl(target_dir)
@@ -46,6 +50,7 @@ def main():
             print("  --cli, --console   Ejecuta la instalacion directamente en consola (sin interfaz gráfica).")
             print(f"  --target, -t       Ruta de instalacion personalizada (por defecto: %LOCALAPPDATA%\\Programs\\{config.APP_NAME}).")
             print("  --embed-python     Descarga e instala Python 3.13 embebido aun si ya existe en el sistema.")
+            print("  --no-path          No agrega la ruta al PATH del usuario.")
             print("  --uninstall, -u    Desinstala EGL y lo remueve del PATH.")
             print("  --help, -h         Muestra este mensaje.")
             return 0
@@ -61,7 +66,12 @@ def main():
         except Exception as e:
             print(f"[Installer Warning] No se pudo iniciar la interfaz grafica ({e}). Usando modo consola...")
 
-    ok = install_egl(target_dir=target_dir, force_embed_python=force_embed_python, source_root=get_source_root())
+    ok = install_egl(
+        target_dir=target_dir,
+        force_embed_python=force_embed_python,
+        source_root=get_source_root(),
+        add_to_path=add_to_path,
+    )
     return 0 if ok else 1
 
 if __name__ == '__main__':
