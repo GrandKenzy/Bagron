@@ -5,7 +5,7 @@ from pathlib import Path
 from core.compiler import compile_project
 from core.externs.manager import manager
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 def clear_cache(root_dir: Path | None = None) -> int:
     if root_dir is None:

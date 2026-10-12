@@ -39,7 +39,7 @@ PYTHON_PTH_EXTRA_LINES = "\n.\n..\n../vendor\n../vendor/Gram\nimport site\n"
 # ---------------------------------------------------------------------------
 GITHUB_REPO = "GrandKenzy/EGL"
 SOURCE_ARCHIVE_URLS = (
-    f"https://github.com/{GITHUB_REPO}/archive/refs/tags/v0.2.0.zip",
+    f"https://github.com/{GITHUB_REPO}/archive/refs/tags/v0.2.1.zip",
     f"https://github.com/{GITHUB_REPO}/archive/refs/heads/main.zip",
 )
 SOURCE_CACHE_DIRNAME = "_egl_src_cache"

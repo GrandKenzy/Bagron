@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-0.2.1-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/target-C99%20%2F%20C11-green.svg" alt="Target C">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">

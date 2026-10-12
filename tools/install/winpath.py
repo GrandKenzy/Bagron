@@ -90,7 +90,7 @@ def remove_from_user_path(bin_dir: Path) -> bool:
         return False
 
 
-def register_windows_uninstaller(install_dir: Path, uninstaller_cmd: Path, version: str = "0.2.0") -> bool:
+def register_windows_uninstaller(install_dir: Path, uninstaller_cmd: Path, version: str = "0.2.1") -> bool:
     """Registra la entrada en 'Agregar o quitar programas' de Windows (HKCU)."""
     if sys.platform != "win32":
         return False
