@@ -1,76 +1,83 @@
-import gram
+from gram import combinators as cmb
+from gram import lexer
 
-class EGL_IMPORT(gram.RuleItem):
-    name = "EGL_IMPORT"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('import'),
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchToken('STRING'),
+from core.initiator.rules.call import MEMBER_CHAIN
+from core.initiator.rules.value import ALIAS
+
+
+class IMPORT_SPEC(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(ALIAS)),
+    )
+    nodeable = True
+
+
+class IMPORT_GROUP(cmb.RuleItem):
+    entrypoint = cmb.Enclosed(
+        open=lexer.Token.LBRACE,
+        close=lexer.Token.RBRACE,
+        content=cmb.Separator(
+            values=cmb.Ref(IMPORT_SPEC),
+            sep=lexer.Token.COMMA,
+            min=1,
+            allow_trailing=True,
         ),
-        gram.Opt(
-            gram.Seq(
-                gram.MatchKeyword('as'),
-                gram.MatchToken('IDENT')
-            )
-        )
     )
-    
-    
+    nodeable = True
 
-class EGL_INCLUDE(gram.RuleItem):
-    name = "EGL_INCLUDE"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('include'),
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchToken('STRING'),
+
+class IMPORT(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        # import { a, b as B } from modulo
+        cmb.Seq(
+            cmb.MatchKeyword('import'),
+            cmb.Ref(IMPORT_GROUP),
+            cmb.MatchKeyword('from'),
+            cmb.MatchToken('IDENT'),
         ),
-        gram.Opt(
-            gram.Seq(
-                gram.MatchKeyword('as'),
-                gram.MatchToken('IDENT')
-            )
-        )
-    )
-
-class EGL_OBJECT(gram.RuleItem):
-    name = "EGL_OBJECT"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('object'),
-        gram.MatchToken('IDENT'),
-        gram.Opt(
-            gram.Seq(
-                gram.MatchKeyword('as'),
-                gram.MatchToken('IDENT')
-            )
-        )
-    )
-
-class EGL_DECLARE(gram.RuleItem):
-    name = "EGL_DECLARE"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('declare'),
-        gram.Alt(
-            gram.Seq(
-                gram.MatchToken('IDENT'),
-                gram.MatchToken(gram.Token.DOT),
-                gram.MatchToken('IDENT'),
-            ),
-            gram.MatchToken('IDENT'),
+        # import modulo [as alias]
+        cmb.Seq(
+            cmb.MatchKeyword('import'),
+            cmb.MatchToken('IDENT'),
+            cmb.Opt(cmb.Ref(ALIAS)),
         ),
-        gram.MatchKeyword('as'),
-        gram.MatchToken('IDENT'),
-        gram.Opt(gram.MatchToken('COMMENT'))
     )
+    nodeable = True
+
+
+class INCLUDE(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        # include { a, b as B } from "header.h"
+        cmb.Seq(
+            cmb.MatchKeyword('include'),
+            cmb.Ref(IMPORT_GROUP),
+            cmb.MatchKeyword('from'),
+            cmb.MatchToken('STRING'),
+        ),
+        # include "header.h" [as alias]
+        cmb.Seq(
+            cmb.MatchKeyword('include'),
+            cmb.MatchToken('STRING'),
+            cmb.Opt(cmb.Ref(ALIAS)),
+        ),
+    )
+    nodeable = True
+
+
+class OBJECT(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('object'),
+        cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(ALIAS)),
+    )
+    nodeable = True
+
 
 __all__ = [
-    'EGL_IMPORT',
-    'EGL_INCLUDE',
-    'EGL_OBJECT',
-    'EGL_DECLARE',
+    'IMPORT',
+    'IMPORT_SPEC',
+    'IMPORT_GROUP',
+    'INCLUDE',
+    'OBJECT',
 ]

@@ -1,0 +1,14 @@
+clause Target "egl-c"
+
+import standard
+
+pstring nombre = "Holanda"
+
+
+
+str name = "MyName"
+
+
+print(nombre)
+
+print(name)

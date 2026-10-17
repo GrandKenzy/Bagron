@@ -1,18 +1,42 @@
 from typing import Any
 from core.processor.objects.base import Object
 
+
 class ForStatement(Object):
-    def __init__(self, var_name: str, mode: str, target: Any, body: list[Object], in_scope: Object | None = None):
+    __slots__ = ('targets', 'mode', 'iterable', 'body', 'in_scope', 'scoped')
+
+    def __init__(
+        self,
+        targets: list[str] | str,
+        mode: str,
+        iterable: Any,
+        body: list[Any],
+        in_scope: Any = None,
+        scoped: Any = None,
+    ):
         super().__init__()
-        self.var_name = var_name
+        self.targets = targets if isinstance(targets, list) else [targets]
         self.mode = mode
-        self.target = target
+        self.iterable = iterable
         self.body = body
         self.in_scope = in_scope
-        self.compiled: str = ''
+        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+
+    @property
+    def var_name(self) -> str:
+        return self.targets[0] if self.targets else ''
+
+    @property
+    def target(self) -> Any:
+        return self.iterable
 
     def is_valid(self) -> bool:
-        return not bool(self.in_scope)
+        return True
 
     def __repr__(self) -> str:
-        return f'ForStatement(var={self.var_name}, mode={self.mode}, target={self.target})'
+        return f'ForStatement(targets={self.targets}, mode={self.mode}, statements={len(self.body)})'
+
+
+__all__ = [
+    'ForStatement',
+]

@@ -1,0 +1,12 @@
+[project]
+name = "easyc"
+version = "1.0.0"
+
+[dependencies]
+gram-framework = { path = "~/Desktop/Gram", editable = true }
+
+[dev-dependencies]
+
+[tool.vnma]
+vendor_dir = "vendor"
+ide_integration = ["vscode", "pycharm"]

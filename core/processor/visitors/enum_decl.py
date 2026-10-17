@@ -1,44 +1,66 @@
 from typing import Any
-import gram
+from gram import ast
 from core.processor.objects.enum_decl import EnumDecl
-from core.processor.type_system import register_type
+from core.processor.storage import Storage
 
-def visit(node: gram.ASTNode) -> EnumDecl:
-    vals = [str(v.value if hasattr(v, 'value') else v) for v in node.values]
-    privacy = 'private' if 'private' in vals else 'public'
-    name = vals[-1]
+
+def _extract_item_value(val_ref: ast.ASTRef) -> Any:
+    target = val_ref.nodes[-1]
+    if isinstance(target, ast.LiteralNumber):
+        val = target.token.value
+        if len(val_ref.nodes) == 2 and isinstance(val_ref.nodes[0], ast.ASTTokenNode) and 'MINUS' in str(val_ref.nodes[0].token.token):
+            return -val
+        return val
+
+    if isinstance(target, ast.LiteralString):
+        return target.token.value.strip('"\'')
+
+    if isinstance(target, ast.ASTTokenNode):
+        return target.token.value
+
+    return str(target)
+
+
+def visit_enum(storage: Storage, node: ast.ASTRef) -> EnumDecl:
+    # Privacidad opcional
+
+    privacy: str = node.nodes[0].token.value if len(node.nodes) == 5 else storage.privacy  # type: ignore
+
+    # Nombre del enum
+    enum_name: str = node.nodes[-3].token.value  # type: ignore
+
+    # Verificación de colisiones
+    storage.collition_name(enum_name)
+
+    # ENUM_BODY
+    body: ast.ASTRef = node.nodes[-1]  # type: ignore
+    items_list = body.nodes[1] if len(body.nodes) > 1 and isinstance(body.nodes[1], list) else []
 
     items: list[tuple[str, Any]] = []
-    enum_members: dict[str, str] = {}
-    for item_node in node.find('EGL_ENUM_ITEM'):
-        item_name = str(item_node.values[0])
-        val_nodes = item_node.find('EGL_ENUM_VALUE')
-        item_val = None
-        if val_nodes:
-            all_toks = getattr(val_nodes[0], 'all_tokens', val_nodes[0].values)
-            item_val = ''.join(str(getattr(t, 'value', t)) for t in all_toks)
-        items.append((item_name, item_val))
-        enum_members[item_name] = item_name
-        if item_name.startswith('inmodule_'):
-            parts = item_name.split('_', 2)
-            if len(parts) >= 3:
-                short_name = parts[-1]
-                enum_members[short_name] = item_name
+    current_auto_value = 0
 
-    entry = register_type(name, name)
-    entry['is_enum'] = True
-    entry['enum_members'] = enum_members
-    if name.startswith('inmodule_'):
-        parts = name.split('_', 2)
-        if len(parts) >= 3:
-            mod_part = parts[1]
-            short_name = parts[-1]
-            short_entry = register_type(short_name, name)
-            short_entry['is_enum'] = True
-            short_entry['enum_members'] = enum_members
-            qual_entry = register_type(f'{mod_part}.{short_name}', name)
-            qual_entry['is_enum'] = True
-            qual_entry['enum_members'] = enum_members
+    for item in items_list:
+        if isinstance(item, ast.ASTRef) and item.name == 'ENUM_ITEM':
+            member_name: str = item.nodes[0].token.value  # type: ignore
 
-    enum_obj = EnumDecl(name=name, items=items, privacity=privacy)
-    return enum_obj
+            if len(item.nodes) > 1 and item.nodes[1] and isinstance(item.nodes[1], list):
+                val_seq = item.nodes[1]
+                if len(val_seq) > 1 and isinstance(val_seq[1], ast.ASTRef):
+                    member_value = _extract_item_value(val_seq[1])
+                    if isinstance(member_value, int):
+                        current_auto_value = member_value + 1
+                else:
+                    member_value = current_auto_value
+                    current_auto_value += 1
+            else:
+                member_value = current_auto_value
+                current_auto_value += 1
+
+            items.append((member_name, member_value))
+
+    return storage.add_enum(enum_name, items, privacy)
+
+
+__all__ = [
+    'visit_enum',
+]

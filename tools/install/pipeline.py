@@ -8,7 +8,6 @@ from tools import config
 from tools.config import InstallOptions
 from tools.install.console import ProgressCallback, install_safe_streams, log, report
 from tools.install.deploy import copy_components
-from tools.install.gram import deploy_gram
 from tools.install.launcher import build_launcher
 from tools.install.paths import InstallLayout, get_default_install_dir, get_source_root
 from tools.install.pythonenv import download_embedded_python, is_python_313_or_higher
@@ -39,7 +38,6 @@ def _print_footer(layout: InstallLayout, built_exe: bool) -> None:
     print("\nYa puedes abrir una nueva terminal y ejecutar:")
     print("    egl --version")
     print("    egl run main.egl")
-    print("    egl update")
     print(_BANNER)
 
 
@@ -73,15 +71,12 @@ def run_install(options: InstallOptions, progress: ProgressCallback | None = Non
     )
     layout.create()
 
-    report(progress, 25, "Copiando componentes del compilador...", "Instalando componentes y modulos del compilador...")
+    report(progress, 35, "Copiando componentes del compilador...", "Instalando componentes y modulos del compilador...")
     copy_components(source_root, layout.root)
 
     _step_python(layout, options.force_embed_python, progress)
 
-    report(progress, 75, "Configurando librería Gram aislada...", "Configurando libreria 'gram' en vendor/Gram...")
-    deploy_gram(source_root, layout.gram)
-
-    report(progress, 85, "Generando lanzador nativo bin/egl.exe...", "Generando ejecutables del compilador en bin/...")
+    report(progress, 80, "Generando lanzador nativo bin/egl.exe...", "Generando ejecutables del compilador en bin/...")
     built_exe = build_launcher(source_root, layout)
 
     if options.add_to_path:

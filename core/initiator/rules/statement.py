@@ -1,125 +1,75 @@
-import gram
-from core.initiator.rules.expression import EGL_EXPRESSION
-from core.initiator.rules.var_decl import EGL_VAR_DECL
-from core.initiator.rules.value import EGL_VALUE
-from core.initiator.rules.call import EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS, EGL_INDEX_ACCESS
+from gram import combinators as cmb
 
-class EGL_CONDITION(gram.RuleItem):
-    name = 'EGL_CONDITION'
-    code = gram.AutoCode()
-    no_simplify = True
-    grammar = gram.Ref(EGL_EXPRESSION)
+from core.initiator.rules.call import CALL, MEMBER_CHAIN
+from core.initiator.rules.loops import FOR, SKIPER, WHILE
+from core.initiator.rules.value import RETURN, VALUE
+from core.initiator.rules.var_decl import VAR_ASSIGNATION, VAR_DECL
 
-class EGL_RETURN(gram.RuleItem):
-    name = 'EGL_RETURN'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('return'),
-        gram.Opt(gram.Ref(EGL_VALUE))
-    )
 
-class EGL_ASSIGN(gram.RuleItem):
-    name = 'EGL_ASSIGN'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Alt(
-            gram.Ref(EGL_INDEX_ACCESS),
-            gram.Ref(EGL_MEMBER_ACCESS),
-            gram.MatchToken('IDENT'),
-            gram.MatchKeyword('__items__'),
-            gram.MatchKeyword('__slot__'),
+class IF(cmb.RuleItem):
+    nodeable = True
+
+
+class CONDITION(cmb.RuleItem):
+    entrypoint = cmb.Ref(VALUE)
+    nodeable = True
+
+
+class IF_BODY(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('INDENT'),
+        cmb.Some(
+            cmb.Alt(
+                cmb.Ref(VAR_DECL),
+                cmb.Ref(VAR_ASSIGNATION),
+                cmb.Ref(MEMBER_CHAIN),
+                cmb.Ref(CALL),
+                cmb.Ref(WHILE),
+                cmb.Ref(FOR),
+                cmb.Ref(IF),
+                cmb.Ref(RETURN),
+                cmb.Ref(SKIPER),
+                cmb.MatchKeyword('pass'),
+            )
         ),
-        gram.MatchToken('ASSIGN'),
-        gram.Ref(EGL_VALUE),
-        gram.Opt(gram.MatchToken('COMMENT'))
+        cmb.MatchToken('DEDENT'),
     )
+    nodeable = True
 
-class EGL_STATEMENT(gram.RuleItem):
-    name = 'EGL_STATEMENT'
-    code = gram.AutoCode()
-    ignore = True
-    grammar = None
 
-class EGL_STMT_BODY(gram.RuleItem):
-    name = 'EGL_STMT_BODY'
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.Seq(
-            gram.MatchToken('COLON'),
-            gram.MatchToken('INDENT'),
-            gram.Some(
-                gram.Ref(EGL_STATEMENT)
-            ),
-            gram.MatchToken('DEDENT')
-        ),
-        gram.Seq(
-            gram.MatchToken('LBRACE'),
-            gram.Opt(gram.MatchToken('INDENT')),
-            gram.Some(
-                gram.Ref(EGL_STATEMENT)
-            ),
-            gram.Opt(gram.MatchToken('DEDENT')),
-            gram.MatchToken('RBRACE')
-        )
+class ELIF(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('elif'),
+        cmb.Ref(CONDITION),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(IF_BODY),
     )
+    nodeable = True
 
-class EGL_ELIF_STATEMENT(gram.RuleItem):
-    name = 'EGL_ELIF_STATEMENT'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('elif'),
-        gram.Ref(EGL_CONDITION),
-        gram.Ref(EGL_STMT_BODY)
+
+class ELSE(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('else'),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(IF_BODY),
     )
+    nodeable = True
 
-class EGL_ELSE_STATEMENT(gram.RuleItem):
-    name = 'EGL_ELSE_STATEMENT'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('else'),
-        gram.Ref(EGL_STMT_BODY)
-    )
 
-class EGL_IF_STATEMENT(gram.RuleItem):
-    name = 'EGL_IF_STATEMENT'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('if'),
-        gram.Ref(EGL_CONDITION),
-        gram.Ref(EGL_STMT_BODY),
-        gram.Many(
-            gram.Ref(EGL_ELIF_STATEMENT)
-        ),
-        gram.Opt(
-            gram.Ref(EGL_ELSE_STATEMENT)
-        )
-    )
-
-from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_WHILE_STATEMENT
-
-EGL_STATEMENT.grammar = gram.Alt(
-    gram.Ref(EGL_IF_STATEMENT),
-    gram.Ref(EGL_FOR_STATEMENT),
-    gram.Ref(EGL_WHILE_STATEMENT),
-    gram.Ref(EGL_VAR_DECL),
-    gram.Ref(EGL_RETURN),
-    gram.Ref(EGL_ASSIGN),
-    gram.Ref(EGL_METHOD_CALL),
-    gram.Ref(EGL_MEMBER_ACCESS),
-    gram.Ref(EGL_CALL),
-    gram.MatchToken('COMMENT'),
-    gram.MatchKeyword('pass'),
+IF.entrypoint = cmb.Seq(
+    cmb.MatchKeyword('if'),
+    cmb.Ref(CONDITION),
+    cmb.MatchToken('COLON'),
+    cmb.Ref(IF_BODY),
+    cmb.Many(cmb.Ref(ELIF)),
+    cmb.Opt(cmb.Ref(ELSE)),
 )
 
+
 __all__ = [
-    'EGL_CONDITION',
-    'EGL_RETURN',
-    'EGL_ASSIGN',
-    'EGL_STATEMENT',
-    'EGL_STMT_BODY',
-    'EGL_ELIF_STATEMENT',
-    'EGL_ELSE_STATEMENT',
-    'EGL_IF_STATEMENT',
-    'EGL_FOR_STATEMENT',
-    'EGL_WHILE_STATEMENT',
+    'CONDITION',
+    'ELIF',
+    'ELSE',
+    'IF',
+    'IF_BODY',
 ]

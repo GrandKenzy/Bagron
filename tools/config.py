@@ -32,7 +32,7 @@ PYTHON_SYSTEM_DIRS = ("Python316", "Python315", "Python314", "Python313")
 PYTHON_PATH_COMMANDS = ("py", "python")
 PYTHON_CHECK_TIMEOUT = 2
 # Líneas añadidas al archivo ._pth del Python embebido (rutas relativas al install).
-PYTHON_PTH_EXTRA_LINES = "\n.\n..\n../vendor\n../vendor/Gram\nimport site\n"
+PYTHON_PTH_EXTRA_LINES = "\n.\n..\nimport site\n"
 
 # ---------------------------------------------------------------------------
 # Repositorio y descargas
@@ -47,24 +47,12 @@ SOURCE_DOWNLOAD_TIMEOUT = 15
 PYTHON_DOWNLOAD_TIMEOUT = 30
 PYTHON_DOWNLOAD_CHUNK = 65536
 
-# Librería privada 'gram'
-GRAM_REPO_URL = "https://github.com/GrandKenzy/Gram.git"
-GRAM_ZIP_URL = "https://github.com/GrandKenzy/Gram/archive/refs/heads/main.zip"
-GRAM_PACKAGE = "gram"
-GRAM_DIRNAME = "Gram"
-GRAM_ZIP_TEMP = "_gram_temp.zip"
-GRAM_EXTRACT_TEMP = "_temp_gram_extract"
-GRAM_DOWNLOAD_CHUNK = 16384
-
 # ---------------------------------------------------------------------------
 # Estructura del directorio de instalación
 # ---------------------------------------------------------------------------
 INSTALL_PARENT_DIRS = ("Programs",)          # bajo %LOCALAPPDATA%
 BIN_DIRNAME = "bin"
 PYTHON_DIRNAME = "python"
-VENDOR_DIRNAME = "vendor"
-# Ruta de vendor dentro del árbol de desarrollo (relativa a la raíz del proyecto).
-DEV_VENDOR_PARTS = (".egl", "vendor")
 
 # Carpetas completas que se copian desde el código fuente.
 COMPONENT_FOLDERS = ("core",)
@@ -88,7 +76,7 @@ COMPONENT_FILES = ("egl.py", "README.md", "LICENSE")
 # Carpeta `tools` en la raíz de desarrollo (utilizada por el instalador para empaquetado y build).
 TOOLS_DIRNAME = "tools"
 # Carpetas que se crean siempre en el destino.
-LAYOUT_DIRS = (BIN_DIRNAME, *COMPONENT_FOLDERS, VENDOR_DIRNAME, *(f"{EGLLIBS_DIRNAME}/{d}" for d in EGLLIBS_LAYOUT))
+LAYOUT_DIRS = (BIN_DIRNAME, *COMPONENT_FOLDERS, *(f"{EGLLIBS_DIRNAME}/{d}" for d in EGLLIBS_LAYOUT))
 
 # ---------------------------------------------------------------------------
 # Lanzador nativo

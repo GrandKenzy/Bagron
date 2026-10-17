@@ -1,18 +1,57 @@
 from typing import Any
 from core.processor.objects.base import Object
 
-class IfStatement(Object):
-    def __init__(self, condition: Any, body: list[Object], else_body: list[Object] | None = None, in_scope: Object | None = None):
+
+class ElifClause(Object):
+    __slots__ = ('condition', 'body')
+
+    def __init__(self, condition: Any, body: list[Any]):
         super().__init__()
         self.condition = condition
         self.body = body
-        self.else_body = else_body or []
-        self.in_scope = in_scope
-        self.compiled: str = ''
-        
 
     def is_valid(self) -> bool:
-        return not bool(self.in_scope)
+        return True
 
     def __repr__(self) -> str:
-        return f'IfStatement(condition={self.condition}, body={self.body}, else_body={self.else_body})'
+        return f'ElifClause(condition={self.condition}, statements={len(self.body)})'
+
+
+class IfStatement(Object):
+    __slots__ = ('condition', 'body', 'elifs', 'else_body', 'in_scope', 'scoped')
+
+    def __init__(
+        self,
+        condition: Any,
+        body: list[Any],
+        elifs: list[ElifClause] | None = None,
+        else_body: list[Any] | None = None,
+        in_scope: Any = None,
+        scoped: Any = None,
+    ):
+        super().__init__()
+        self.condition = condition
+        self.body = body
+        self.elifs: list[ElifClause] = elifs if elifs is not None else []
+        self.else_body: list[Any] = else_body if else_body is not None else []
+        self.in_scope = in_scope
+        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+
+    @property
+    def elif_clauses(self) -> list[ElifClause]:
+        return self.elifs
+
+    def is_valid(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return (
+            f'IfStatement(condition={self.condition}, '
+            f'body={len(self.body)}, elifs={len(self.elifs)}, else={len(self.else_body)})'
+        )
+
+
+__all__ = [
+    'ElifClause',
+    'IfStatement',
+]

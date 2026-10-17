@@ -1,137 +1,582 @@
-import gram
-from core.initiator import reserve_funnames
-from core.processor.objects import *
-from core.processor.visitors.call import extract_call_args
+"""Visitante y procesador semántico de declaraciones de variables (Easy-C).
 
-def _find_call(node: gram.ASTNode) -> gram.ASTNode | None:
-    for sub in node.walk():
-        if sub.name in ('EGL_CALL', 'call', 'EGL_METHOD_CALL', 'method call'):
-            return sub
+Maneja la inferencia de tipos, validación semántica de compatibilidad y registro
+en el almacenamiento (Storage / LocalStorage) para variables escalares, punteros,
+arreglos de tamaño fijo y asignaciones múltiples.
+"""
+
+from typing import Any
+
+from gram import ast
+from gram.core.combinators.expressions import ASTBinaryOp
+from gram.core.lexer.tokens import TokenType
+
+from core.processor.objects.array import Array
+from core.processor.objects.function import FunctionParam, LocalStorage
+from core.processor.objects.variable import Variable
+from core.processor.storage import Storage
+
+from core.processor.visitors.utils import (
+    extract_chain_items,
+    extract_constant_int,
+    get_node_value,
+)
+
+# Categorías de tipos para validación semántica
+INTEGER_TYPES = {
+    'int', 'int8', 'int16', 'int32', 'int64',
+    'uint', 'uint8', 'uint16', 'uint32', 'uint64',
+    'byte',
+    'wsize',
+}
+FLOAT_TYPES = {'middle', 'float', 'double'}
+BOOL_TYPES = {'bool'}
+STRING_TYPES = {'chain'}
+CHAR_TYPES = {'char'}
+
+COMPARISON_LOGICAL_OPS = {'==', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not'}
+NULL_LITERALS = {'Null'}
+BOOLEAN_LITERALS = {'true', 'false'}
+RESERVED_IDENTIFIERS = {'self', 'cls'}
+
+
+# ==============================================================================
+# EXTRACCIÓN DE TIPOS DESDE EL AST
+# ==============================================================================
+
+def extract_type(segment_type: ast.ASTRef) -> str:
+    """Extrae el tipo representativo de un nodo SEGMENT_TYPE."""
+    type_node = segment_type.nodes[0]
+    if isinstance(type_node, ast.ASTRef):
+        if type_node.name == 'POINTER_TYPE':
+            pointer_token = type_node.nodes[0]
+            if isinstance(pointer_token, ast.ASTTokenNode):
+                return pointer_token.token.value
+            return str(pointer_token)
+
+        if type_node.name == 'ARRAY':
+            element_node = type_node.nodes[2]
+            if isinstance(element_node, ast.ASTRef):
+                element_type = extract_type(element_node)
+            elif isinstance(element_node, ast.ASTTokenNode):
+                element_type = element_node.token.value
+            else:
+                element_type = str(element_node)
+            return f"array[{element_type}]"
+
+    if isinstance(type_node, ast.ASTTokenNode):
+        return type_node.token.value
+    return str(type_node)
+
+
+def extract_pointer_base_type(segment_type: ast.ASTRef) -> str | None:
+    """Extrae el tipo base al que apunta el puntero (ej: 'int' en 'cptr int' -> 'int').
+
+    Si el puntero se declaró sin tipo base (ej: 'cptr p' o 'ptr p'), retorna None
+    indicando que es un puntero genérico (void* / void* const).
+    """
+    if not segment_type or not segment_type.nodes:
+
+        return None
+
+    type_node = segment_type.nodes[0]
+    if isinstance(type_node, ast.ASTRef) and type_node.name == 'POINTER_TYPE':
+        if len(type_node.nodes) > 1:
+            base_node = type_node.nodes[1]
+            if isinstance(base_node, ast.ASTRef):
+                if base_node.name == 'ARRAY':
+                    element_node = base_node.nodes[2]
+                    if isinstance(element_node, ast.ASTRef):
+                        element_type = extract_type(element_node)
+                    elif isinstance(element_node, ast.ASTTokenNode):
+                        element_type = element_node.token.value
+                    else:
+                        element_type = str(element_node)
+                    return f"array[{element_type}]"
+                return extract_type(base_node)
+
+            if isinstance(base_node, ast.ASTTokenNode):
+                return base_node.token.value
+            return str(base_node)
     return None
 
-def visit(node: gram.ASTNode):
-    vals = list(node.values)
-    privacity = 'public'
-    if vals and vals[0] in ('public', 'private'):
-        privacity = vals.pop(0)
 
-    spec_nodes = node.find('EGL_TYPE_SPEC')
-    t = 'any'
-    element_type = None
-    fixed_size = None
-    type_args = []
-    is_pointer_type = False
+def extract_array_size(segment_type: ast.ASTRef) -> int | None:
+    """Extrae el tamaño fijo de un nodo ARRAY dentro de SEGMENT_TYPE si está definido."""
+    if not segment_type or not segment_type.nodes:
+        return None
 
-    if spec_nodes and spec_nodes[0].values:
-        spec_vals = [str(v.value if hasattr(v, 'value') else v) for v in spec_nodes[0].values]
-        spec_toks = [str(tok.value) for tok in getattr(spec_nodes[0], 'tokens', []) if str(tok.value) != '*']
-        if '.' in spec_toks:
-            t = ''.join(spec_toks)
+    type_node = segment_type.nodes[0]
+    if isinstance(type_node, ast.ASTRef) and type_node.name == 'ARRAY':
+        if len(type_node.nodes) > 4 and type_node.nodes[4] is not None:
+            return extract_constant_int(type_node.nodes[4])
+    return None
+
+
+def extract_array_info(segment_type: ast.ASTRef) -> Array | None:
+    """Extrae un objeto Array a partir de un nodo SEGMENT_TYPE si define un arreglo."""
+    if not segment_type or not segment_type.nodes:
+        return None
+
+    type_node = segment_type.nodes[0]
+    if isinstance(type_node, ast.ASTRef) and type_node.name == 'ARRAY':
+        element_node = type_node.nodes[2]
+        if isinstance(element_node, ast.ASTRef):
+            element_type = extract_type(element_node)
+            pointer_base = extract_pointer_base_type(element_node)
+        elif isinstance(element_node, ast.ASTTokenNode):
+            element_type = element_node.token.value
+            pointer_base = None
         else:
-            t = spec_vals[0]
-        if '*' in spec_vals:
-            is_pointer_type = True
-        if len(spec_vals) > 1:
-            for extra in spec_vals[1:]:
-                if extra == '*':
-                    continue
-                if extra.isdigit():
-                    fixed_size = int(extra)
-                    type_args.append(int(extra))
-                else:
-                    element_type = extra
-                    type_args.append(extra)
-        from core.processor.type_system import resolve_generic_type
-        gen_elem, gen_size = resolve_generic_type(t, type_args)
-        if gen_elem is not None:
-            element_type = gen_elem
-        if gen_size is not None:
-            fixed_size = gen_size
-    elif vals:
-        t = str(vals.pop(0))
-        if vals and isinstance(vals[0], (int, float)):
-            fixed_size = int(vals.pop(0))
+            element_type = str(element_node)
+            pointer_base = None
 
-    val_nodes = node.find('EGL_VALUE')
-    lhs_mem_nodes = [n for n in node.find('EGL_MEMBER_ACCESS') if not val_nodes or n not in val_nodes[0].walk()]
-    if lhs_mem_nodes and lhs_mem_nodes[0].values:
-        m_vals = [str(getattr(v, 'value', v)) for v in lhs_mem_nodes[0].values]
-        name = '.'.join(m_vals)
+        size = None
+        if len(type_node.nodes) > 4 and type_node.nodes[4] is not None:
+            size = extract_constant_int(type_node.nodes[4])
+
+        return Array(
+            element_type=element_type,
+            size=size,
+            is_cptr=(element_type == 'cptr'),
+            is_ptr=(element_type == 'ptr'),
+            pointer_base_type=pointer_base,
+        )
+    return None
+
+
+
+# ==============================================================================
+# INFERENCIA DE TIPOS
+# ==============================================================================
+
+def _infer_binary_op(storage: Any, node: ASTBinaryOp) -> str | None:
+    left_type = _infer_node(storage, node.left)
+    right_type = _infer_node(storage, node.right)
+
+    operator_str = node.operator.value if isinstance(node.operator, TokenType) else str(node.operator)
+    if operator_str in COMPARISON_LOGICAL_OPS:
+        return 'bool'
+
+    if left_type == 'float' or right_type == 'float':
+        return 'float'
+    if left_type == 'int' and right_type == 'int':
+        return 'int'
+    return left_type or right_type
+
+
+
+def _infer_ast_ref(storage: Any, node: ast.ASTRef) -> str | None:
+    if node.name in ('VALUE', 'DUALEXPR'):
+        if len(node.nodes) == 1:
+            return _infer_node(storage, node.nodes[0])
+
+        token_values = [n.token.value for n in node.nodes if isinstance(n, ast.ASTTokenNode)]
+        if any(op in COMPARISON_LOGICAL_OPS for op in token_values):
+            return 'bool'
+
+        has_float = any(
+            ('.' in n.token.value)
+            for n in node.nodes
+            if isinstance(n, ast.LiteralNumber) or (isinstance(n, ast.ASTTokenNode) and 'NUMBER' in str(n.token.token))
+        )
+        if has_float:
+            return 'float'
+
+        has_number = any(
+            isinstance(n, ast.LiteralNumber) or (isinstance(n, ast.ASTTokenNode) and 'NUMBER' in str(n.token.token))
+            for n in node.nodes
+        )
+        if has_number:
+            return 'int'
+        return None
+
+    if node.name == 'CALL':
+        from core.processor.visitors.call import visit_call
+        call_obj = visit_call(storage, node)
+        return call_obj.returntype
+
+    if node.name == 'MEMBER_CHAIN':
+        from core.processor.objects.member_access import MemberAccess
+        from core.processor.objects.method_call import MethodCall
+        from core.processor.visitors.call import visit_member_chain
+        result = visit_member_chain(storage, node)
+        if isinstance(result, MethodCall) and result.returntype:
+            return result.returntype
+        if isinstance(result, MemberAccess) and result.inferred_type:
+            return result.inferred_type
+        return None
+
+    if node.name == 'INDEX_ACCESS':
+        from core.processor.visitors.call import visit_index_access
+        index_obj = visit_index_access(storage, node)
+        return index_obj.inferred_type
+
+    return None
+
+
+def _infer_token_node(storage: Any, node: ast.ASTTokenNode) -> str | None:
+    token_kind = str(node.token.token)
+    token_value = node.token.value
+
+    if 'NUMBER' in token_kind:
+        return 'float' if token_value and '.' in str(token_value) else 'int'
+
+    if 'STRING' in token_kind or 'DOCSTRING' in token_kind:
+        content = str(token_value).strip('"\'') if token_value else ''
+        return 'char' if len(content) == 1 else 'chain'
+
+    if 'NULL' in token_kind or token_value in NULL_LITERALS:
+        return 'ptr'
+
+    if 'BOOL' in token_kind or (isinstance(token_value, str) and token_value.lower() in BOOLEAN_LITERALS):
+        return 'bool'
+
+    if 'IDENT' in token_kind:
+        identifier_name = str(token_value)
+        resolved_symbol = storage.resolve(identifier_name)
+        if isinstance(resolved_symbol, (Variable, FunctionParam)):
+            return storage.resolve_type(resolved_symbol.type)
+        raise RuntimeError(f"Variable '{identifier_name}' no está definida.")
+
+    return None
+
+
+def _infer_node(storage: Any, node: Any) -> str | None:
+    if node is None:
+        return None
+
+    if isinstance(node, ASTBinaryOp):
+        return _infer_binary_op(storage, node)
+
+    if isinstance(node, ast.ASTRef):
+        return _infer_ast_ref(storage, node)
+
+    if isinstance(node, ast.LiteralNumber):
+        return 'float' if isinstance(node.token.value, float) else 'int'
+
+    if isinstance(node, ast.LiteralString):
+        content = node.token.value.strip('"\'')
+        return 'char' if len(content) == 1 else 'chain'
+
+    if isinstance(node, ast.ASTTokenNode):
+        return _infer_token_node(storage, node)
+
+    return None
+
+
+def infer_value_type(storage: Any, value_node: Any) -> str | None:
+    """Infiere el tipo semántico de un nodo de expresión en el contexto de storage."""
+    return _infer_node(storage, value_node)
+
+
+# ==============================================================================
+# VALIDACIÓN DE TIPOS
+# ==============================================================================
+
+def validate_type(var_name: str, var_type: str, inferred_type: str, storage: Any = None):
+    """Valida la compatibilidad semántica entre el tipo declarado y el tipo inferido."""
+    if storage is not None:
+        var_type = storage.resolve_type(var_type)
+        inferred_type = storage.resolve_type(inferred_type)
+
+    if inferred_type == 'int':
+        if (
+            var_type not in INTEGER_TYPES
+            and var_type not in FLOAT_TYPES
+            and var_type not in ('ptr', 'cptr', 'any')
+            and not var_type.endswith('*')
+        ):
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó un entero."
+            )
+    elif inferred_type == 'float':
+        if var_type not in FLOAT_TYPES:
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó un flotante."
+            )
+    elif inferred_type == 'bool':
+        if var_type not in BOOL_TYPES:
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó un booleano."
+            )
+    elif inferred_type == 'chain':
+        if var_type not in STRING_TYPES:
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó una cadena."
+            )
+    elif inferred_type == 'char':
+        if var_type not in CHAR_TYPES and var_type not in STRING_TYPES:
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó un caracter."
+            )
     else:
-        ident_tokens = [tok for tok in getattr(node, 'tokens', []) if getattr(getattr(tok, 'token', None), 'name', '') == 'IDENT' or str(getattr(tok, 'token', '')) == 'Token.IDENT']
-        if ident_tokens:
-            name = str(getattr(ident_tokens[0], 'value', ident_tokens[0]))
-        else:
-            name = str(getattr(vals[0], 'value', vals[0])) if vals else ''
-    
-    call_node = _find_call(node)
-    pointer_base_type = None
-    is_call_ptr = False
+        if (
+            var_type != inferred_type
+            and not (var_type in INTEGER_TYPES and inferred_type in INTEGER_TYPES)
+            and not (var_type in ('ptr', 'cptr', 'any') or inferred_type in ('ptr', 'cptr', 'any'))
+            and not (var_type.rstrip('*') == inferred_type.rstrip('*'))
+        ):
+            raise TypeError(
+                f"Incompatibilidad de tipos en '{var_name}': declarada como '{var_type}', pero se asignó '{inferred_type}'."
+            )
 
-    if call_node and call_node.name in ('EGL_METHOD_CALL', 'method call'):
-        from core.externs.manager import manager
-        raw_target = call_node.values[0]
-        target = str(getattr(raw_target, 'value', raw_target))
-        if len(call_node.values) >= 3 and str(getattr(call_node.values[1], 'value', call_node.values[1])) == '.':
-            raw_m = call_node.values[2]
-        elif len(call_node.values) >= 2:
-            raw_m = call_node.values[1]
-        else:
-            raw_m = ''
-        method = str(getattr(raw_m, 'value', raw_m))
-        args, _ = extract_call_args(call_node)
-        if manager.has_namespace(target):
-            sym = manager.validate_call(target, method, args)
-            ret_type = sym.get('return_type', 'void')
-            if ret_type == 'ptr' or sym.get('is_pointer'):
-                is_call_ptr = True
-        value = MethodCall(target, method, args).ignore()
-    elif call_node:
-        raw_c = call_node.values[0]
-        call_name = str(getattr(raw_c, 'value', raw_c))
-        args, kwargs = extract_call_args(call_node)
-        value = Call(call_name, args, kwargs).ignore()
-        reserved = reserve_funnames.get_items().get(call_name)
-        if reserved and reserved.returntype == 'ptr':
-            is_call_ptr = True
-        elif not reserved:
-            from core.externs.manager import manager
-            ext_sym = manager.find_backend_symbol(call_name)
-            if ext_sym and (ext_sym[0].get('return_type') == 'ptr' or ext_sym[0].get('is_pointer')):
-                is_call_ptr = True
-        if call_name == 'malloc':
-            raw_base = kwargs.get('Type') if 'Type' in kwargs else (args[0] if len(args) >= 2 else None)
-            if raw_base:
-                pointer_base_type = str(getattr(raw_base, 'value', raw_base))
+
+# ==============================================================================
+# MANEJADORES DE CASOS DE DECLARACIÓN
+# ==============================================================================
+
+def _extract_ptr_modifier(node: ast.ASTRef) -> tuple[str | None, int]:
+    """Retorna el modificador ('ptr', 'cptr' o None) y el índice inicial del target."""
+    if node.nodes and isinstance(node.nodes[0], ast.ASTRef) and node.nodes[0].name == 'PTR_MODIFIER':
+        ptr_tok = node.nodes[0].nodes[0]
+        if isinstance(ptr_tok, ast.ASTTokenNode):
+            return ptr_tok.token.value, 1
+        return str(ptr_tok), 1
+    return None, 0
+
+
+def _assert_not_reserved_identifier(name: str) -> None:
+    if name in RESERVED_IDENTIFIERS:
+        raise RuntimeError(f"No se puede usar el identificador reservado '{name}' como nombre de variable.")
+
+
+def _handle_multi_decl(storage: Storage, decl_node: ast.ASTRef, privacy: str) -> list[Variable]:
+    """Maneja declaraciones múltiples (ej: a, b: int = x, y o ptr a, b: int = x, y)."""
+    ptr_mod, start_idx = _extract_ptr_modifier(decl_node)
+    targets_node = decl_node.nodes[start_idx]
+    # colon is at decl_node.nodes[start_idx + 1]
+    type_node = decl_node.nodes[start_idx + 2]
+    # assign is at decl_node.nodes[start_idx + 3]
+    values_node = decl_node.nodes[start_idx + 4]
+
+    target_tokens = list(targets_node.items) if isinstance(targets_node, ast.ArrayNode) else [targets_node]
+    value_nodes = list(values_node.items) if isinstance(values_node, ast.ArrayNode) else [values_node]
+
+    if len(target_tokens) != len(value_nodes):
+        raise RuntimeError(
+            f"Desempaquetado inválido: se esperaban {len(target_tokens)} valores pero se recibieron {len(value_nodes)}."
+        )
+
+    base_type = extract_type(type_node)
+    array_obj = extract_array_info(type_node)
+    fixed_size = array_obj.size if array_obj else extract_array_size(type_node)
+
+    if ptr_mod == 'cptr':
+        declared_type = base_type
+        pointer_base_type = base_type
+        is_cptr = True
+        is_ptr = False
+        if array_obj:
+            array_obj.is_cptr = True
+            array_obj.is_ptr = False
+            array_obj.element_type = base_type
+    elif ptr_mod == 'ptr':
+        declared_type = base_type
+        pointer_base_type = base_type
+        is_cptr = False
+        is_ptr = True
+        if array_obj:
+            array_obj.is_cptr = False
+            array_obj.is_ptr = True
+            array_obj.element_type = base_type
     else:
-        val_nodes = node.find('EGL_VALUE')
-        if val_nodes:
-            from core.processor.visitors import expression as expr_visitor
-            value = expr_visitor.visit(val_nodes[0])
-        elif node.children and len(node.children) > 1:
-            from core.processor.visitors import expression as expr_visitor
-            value = expr_visitor.visit(node.children[-1])
-        elif len(vals) >= 2:
-            value = vals[1]
-        else:
-            value = None
+        declared_type = base_type
+        is_cptr = False
+        is_ptr = False
+        pointer_base_type = None
 
-    is_constant = name.strip('_').isupper()
+    created_variables: list[Variable] = []
+    for target_token, val_node in zip(target_tokens, value_nodes):
+        variable_name = get_node_value(target_token)
+        _assert_not_reserved_identifier(variable_name)
 
-    v = Variable(name, value, t, privacity, is_constant)
-    if fixed_size is not None:
-        v.fixed_size = fixed_size
-    if element_type is not None:
-        v.element_type = element_type
-    if type_args:
-        v.type_args = type_args
-    if t in ('ptr', '__void_p_t__', 'pointer') or is_call_ptr or is_pointer_type:
-        v.is_pointer = True
-        if pointer_base_type:
-            v.pointer_base_type = pointer_base_type
-        elif element_type:
-            v.pointer_base_type = element_type
+        storage.collition_name(variable_name)
+        inferred_type = infer_value_type(storage, val_node)
+        if inferred_type is not None:
+            validate_type(variable_name, pointer_base_type or declared_type, inferred_type, storage=storage)
 
-    if isinstance(value, gram.Identifier):
-        v.ref = True
-    return v
+        created_variables.append(
+            storage.add_variable(
+                name=variable_name,
+                var_type=declared_type,
+                value=val_node,
+                privacy=privacy,
+                fixed_size=fixed_size,
+                pointer_base_type=pointer_base_type,
+                is_cptr=is_cptr,
+                is_ptr=is_ptr,
+                array=array_obj,
+            )
+        )
+    return created_variables
+
+
+def _handle_member_chain_decl(
+    storage: Storage,
+    decl_node: ast.ASTRef,
+    target_node: ast.ASTRef,
+) -> Any:
+    """Maneja declaraciones de atributos de miembros (ej: self.x: int = 10, ptr self.x = Null)."""
+    items = extract_chain_items(target_node)
+    base_name = get_node_value(items[0]) if items else ''
+    field_name = get_node_value(items[1]) if len(items) > 1 else ''
+
+    ptr_mod, start_idx = _extract_ptr_modifier(decl_node)
+
+    if decl_node.name == 'VAR_FULL_DECL':
+        type_node = decl_node.nodes[start_idx + 2]
+        value_node = decl_node.nodes[start_idx + 4]
+    elif decl_node.name == 'VAR_PARTIAL_DECL':
+        type_node = decl_node.nodes[start_idx + 2]
+        value_node = None
+    elif decl_node.name == 'VAR_PTR_GENERIC_DECL':
+        type_node = None
+        value_node = decl_node.nodes[start_idx + 2]
+    else:  # VAR_PTR_GENERIC_PARTIAL
+        type_node = None
+        value_node = None
+
+    if base_name in RESERVED_IDENTIFIERS:
+        current_func = storage.function if isinstance(storage, LocalStorage) else None
+        from core.processor.objects.class_decl import ClassMethod
+        if isinstance(current_func, ClassMethod) and current_func.kind == 'staticmethod':
+            raise RuntimeError(f"No se puede usar '{base_name}' dentro del método estático '{current_func.name}'.")
+
+    if type_node is not None:
+        base_type = extract_type(type_node)
+        declared_type = base_type
+    else:
+        declared_type = 'void' if ptr_mod else 'any'
+
+    if value_node is not None:
+        inferred_type = infer_value_type(storage, value_node)
+        if inferred_type is not None:
+            if ptr_mod:
+                if declared_type != 'void':
+                    validate_type(field_name, declared_type, inferred_type, storage=storage)
+            else:
+                validate_type(field_name, declared_type, inferred_type, storage=storage)
+
+    from core.processor.objects.assign import Assign
+    from core.processor.objects.member_access import MemberAccess
+
+    member_access = MemberAccess(target=base_name, member=field_name, in_scope=storage, inferred_type=declared_type)
+    return Assign(target=member_access, value=value_node, in_scope=storage)
+
+
+def _handle_single_decl(
+    storage: Storage,
+    decl_node: ast.ASTRef,
+    target_node: ast.ASTTokenNode,
+    privacy: str,
+) -> Variable:
+    """Maneja declaraciones simples escalares, arreglos o punteros."""
+    variable_name: str = target_node.token.value
+    _assert_not_reserved_identifier(variable_name)
+
+    ptr_mod, start_idx = _extract_ptr_modifier(decl_node)
+
+    if decl_node.name == 'VAR_FULL_DECL':
+        type_node = decl_node.nodes[start_idx + 2]
+        value_node = decl_node.nodes[start_idx + 4]
+    elif decl_node.name == 'VAR_PARTIAL_DECL':
+        type_node = decl_node.nodes[start_idx + 2]
+        value_node = None
+    elif decl_node.name == 'VAR_PTR_GENERIC_DECL':
+        type_node = None
+        value_node = decl_node.nodes[start_idx + 2]
+    else:  # VAR_PTR_GENERIC_PARTIAL
+        type_node = None
+        value_node = None
+
+    storage.collition_name(variable_name)
+
+    if ptr_mod == 'cptr':
+        declared_type = extract_type(type_node) if type_node is not None else 'void'
+        is_cptr = True
+        is_ptr = False
+        pointer_base_type = declared_type
+        array_obj = extract_array_info(type_node) if type_node is not None else None
+        fixed_size = array_obj.size if array_obj else (extract_array_size(type_node) if type_node is not None else None)
+        if array_obj:
+            array_obj.is_cptr = True
+            array_obj.is_ptr = False
+            array_obj.element_type = declared_type
+    elif ptr_mod == 'ptr':
+        declared_type = extract_type(type_node) if type_node is not None else 'void'
+        is_cptr = False
+        is_ptr = True
+        pointer_base_type = declared_type
+        array_obj = extract_array_info(type_node) if type_node is not None else None
+        fixed_size = array_obj.size if array_obj else (extract_array_size(type_node) if type_node is not None else None)
+        if array_obj:
+            array_obj.is_cptr = False
+            array_obj.is_ptr = True
+            array_obj.element_type = declared_type
+    else:
+        declared_type = extract_type(type_node) if type_node is not None else 'any'
+        is_cptr = False
+        is_ptr = False
+        pointer_base_type = None
+        array_obj = extract_array_info(type_node) if type_node is not None else None
+        fixed_size = array_obj.size if array_obj else (extract_array_size(type_node) if type_node is not None else None)
+
+    if value_node is not None:
+        inferred_type = infer_value_type(storage, value_node)
+        if inferred_type is not None:
+            if is_cptr or is_ptr:
+                if declared_type != 'void':
+                    validate_type(variable_name, declared_type, inferred_type, storage=storage)
+            else:
+                validate_type(variable_name, declared_type, inferred_type, storage=storage)
+
+    return storage.add_variable(
+        name=variable_name,
+        var_type=declared_type,
+        value=value_node,
+        privacy=privacy,
+        fixed_size=fixed_size,
+        pointer_base_type=pointer_base_type,
+        is_cptr=is_cptr,
+        is_ptr=is_ptr,
+        array=array_obj,
+    )
+
+
+# ==============================================================================
+# DESPACHADOR PRINCIPAL
+# ==============================================================================
+
+def visit_var(storage: Storage, node: ast.ASTRef) -> Any:
+    """Procesa un nodo VAR_DECL y despacha según el tipo de declaración."""
+    decl_node: ast.ASTRef = node.nodes[-1]  # type: ignore
+    privacy: str = node.nodes[0].token.value if len(node.nodes) == 2 else storage.privacy  # type: ignore
+
+    if decl_node.name == 'VAR_MULTI_DECL':
+        return _handle_multi_decl(storage, decl_node, privacy)
+
+    ptr_mod, start_idx = _extract_ptr_modifier(decl_node)
+    target_node = decl_node.nodes[start_idx]
+
+    if isinstance(target_node, ast.ASTRef) and target_node.name == 'MEMBER_CHAIN':
+        return _handle_member_chain_decl(storage, decl_node, target_node)
+
+    return _handle_single_decl(storage, decl_node, target_node, privacy)  # type: ignore
+
+
+__all__ = [
+    'BOOL_TYPES',
+    'CHAR_TYPES',
+    'FLOAT_TYPES',
+    'INTEGER_TYPES',
+    'STRING_TYPES',
+    '_extract_ptr_modifier',
+    'extract_array_info',
+    'extract_array_size',
+    'extract_pointer_base_type',
+    'extract_type',
+    'infer_value_type',
+    'validate_type',
+    'visit_var',
+]

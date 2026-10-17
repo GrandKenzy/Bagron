@@ -5,6 +5,6 @@ import standard
 char character = "a"
 print(character)
 
-int create_window(__void_p_t__ HWND, pstring message, pstring title, uint flags):
+int create_window(ptr HWND, chain message, chain title, uint flags):
     int res = C_Windows.MessageBox(HWND, message, title, flags)
-    return res
+    return res

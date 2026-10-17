@@ -1,28 +1,147 @@
-import gram
-from core.initiator.rules.value import EGL_VALUE
-from core.initiator.rules.type_spec import EGL_TYPE_SPEC
-from core.initiator.rules.call import EGL_MEMBER_ACCESS
+from gram import combinators as cmb
 
-class EGL_VAR_DECL(gram.RuleItem):
-    name = 'EGL_VAR_DECL'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Opt(
-            gram.MatchGroup('privacity'),
-        ),
-        gram.Ref(EGL_TYPE_SPEC),
-        gram.Alt(
-            gram.Ref(EGL_MEMBER_ACCESS),
-            gram.MatchToken('IDENT'),
-            gram.MatchKeyword('type'),
-        ),
-        gram.Opt(
-            gram.Seq(
-                gram.MatchToken('ASSIGN'),
-                gram.Ref(EGL_VALUE),
-            )
-        ),
-        gram.Opt(
-            gram.MatchToken('COMMENT')
-        )
+from core.initiator.rules.call import INDEX_ACCESS, MEMBER_CHAIN
+from core.initiator.rules.value import SEGMENT_TYPE, VALUE
+
+
+class ASSIGN_OPERATOR(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.MatchToken('ASSIGN'),
+        cmb.MatchToken('PLUS_ASSIGN'),
+        cmb.MatchToken('MINUS_ASSIGN'),
+        cmb.MatchToken('STAR_ASSIGN'),
+        cmb.MatchToken('SLASH_ASSIGN'),
+        cmb.MatchToken('PERCENT_ASSIGN'),
+        cmb.MatchToken('AND_ASSIGN'),
+        cmb.MatchToken('OR_ASSIGN'),
+        cmb.MatchToken('XOR_ASSIGN'),
+        cmb.MatchToken('SHL_ASSIGN'),
+        cmb.MatchToken('SHR_ASSIGN'),
     )
+    nodeable = False
+
+
+class ASSIGN_TARGET(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.Ref(INDEX_ACCESS),
+        cmb.Ref(MEMBER_CHAIN),
+        cmb.MatchToken('IDENT'),
+    )
+    nodeable = False
+
+
+class PTR_MODIFIER(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.MatchKeyword('cptr'),
+        cmb.MatchKeyword('ptr'),
+    )
+    nodeable = True
+
+
+class VAR_FULL_DECL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Opt(cmb.Ref(PTR_MODIFIER)),
+        cmb.Alt(
+            cmb.Ref(MEMBER_CHAIN),
+            cmb.MatchToken('IDENT'),
+        ),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(SEGMENT_TYPE),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+class VAR_PARTIAL_DECL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Opt(cmb.Ref(PTR_MODIFIER)),
+        cmb.Alt(
+            cmb.Ref(MEMBER_CHAIN),
+            cmb.MatchToken('IDENT'),
+        ),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(SEGMENT_TYPE),
+    )
+    nodeable = True
+
+
+class VAR_PTR_GENERIC_DECL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Ref(PTR_MODIFIER),
+        cmb.Alt(
+            cmb.Ref(MEMBER_CHAIN),
+            cmb.MatchToken('IDENT'),
+        ),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+class VAR_PTR_GENERIC_PARTIAL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Ref(PTR_MODIFIER),
+        cmb.Alt(
+            cmb.Ref(MEMBER_CHAIN),
+            cmb.MatchToken('IDENT'),
+        ),
+    )
+    nodeable = True
+
+
+class VAR_MULTI_DECL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Opt(cmb.Ref(PTR_MODIFIER)),
+        cmb.Separator(
+            values=cmb.MatchToken('IDENT'),
+            min=2,
+            allow_trailing=False,
+        ),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(SEGMENT_TYPE),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Separator(
+            values=cmb.Ref(VALUE),
+            min=1,
+            allow_trailing=False,
+        ),
+    )
+    nodeable = True
+
+
+class VAR_DECL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Opt(cmb.MatchGroup('privacy')),
+        cmb.Alt(
+            cmb.Ref(VAR_MULTI_DECL),
+            cmb.Ref(VAR_FULL_DECL),
+            cmb.Ref(VAR_PARTIAL_DECL),
+            cmb.Ref(VAR_PTR_GENERIC_DECL),
+            cmb.Ref(VAR_PTR_GENERIC_PARTIAL),
+        ),
+    )
+    nodeable = True
+
+
+class VAR_ASSIGNATION(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Ref(ASSIGN_TARGET),
+        cmb.Ref(ASSIGN_OPERATOR),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+__all__ = [
+    'ASSIGN_OPERATOR',
+    'ASSIGN_TARGET',
+    'PTR_MODIFIER',
+    'VAR_MULTI_DECL',
+    'VAR_FULL_DECL',
+    'VAR_PARTIAL_DECL',
+    'VAR_PTR_GENERIC_DECL',
+    'VAR_PTR_GENERIC_PARTIAL',
+    'VAR_DECL',
+    'VAR_ASSIGNATION',
+]

@@ -39,15 +39,16 @@ uint32 EVENT_QUIT = 256
 
 __inline__ bool init(uint flags): return C_SDL3.SDL_Init(flags)
 __inline__ void quit(): C_SDL3.SDL_Quit()
-__inline__ pstring get_error(): return C_SDL3.SDL_GetError()
+__inline__ chain get_error(): return C_SDL3.SDL_GetError()
 __inline__ void clear_error(): C_SDL3.SDL_ClearError()
 
-__inline__ ptr create_window(pstring title, int width, int height, uint64 flags): return C_SDL3.SDL_CreateWindow(title, width, height, flags)
+__inline__ ptr create_window(chain title, int width, int height, uint64 flags): return C_SDL3.SDL_CreateWindow(title, width, height, flags)
 __inline__ void destroy_window(ptr window): C_SDL3.SDL_DestroyWindow(window)
 __inline__ bool show_window(ptr window): return C_SDL3.SDL_ShowWindow(window)
 __inline__ bool hide_window(ptr window): return C_SDL3.SDL_HideWindow(window)
 
-__inline__ ptr create_renderer(ptr window, pstring name): return C_SDL3.SDL_CreateRenderer(window, name)
+__inline__ ptr create_renderer(ptr window, chain name): return C_SDL3.SDL_CreateRenderer(window, name)
+
 __inline__ void destroy_renderer(ptr renderer): C_SDL3.SDL_DestroyRenderer(renderer)
 __inline__ bool set_draw_color(ptr renderer, uint8 r, uint8 g, uint8 b, uint8 a): return C_SDL3.SDL_SetRenderDrawColor(renderer, r, g, b, a)
 __inline__ bool clear(ptr renderer): return C_SDL3.SDL_RenderClear(renderer)

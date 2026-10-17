@@ -1,0 +1,1 @@
+CLAUSES: list[str] = ['arch', 'system', 'visibility', 'stacklimit']

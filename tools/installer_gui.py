@@ -640,9 +640,9 @@ HTML_CONTENT = """<!DOCTYPE html>
                     bGr.innerText = 'Disponible';
                     dGr.innerText = data.gram_msg;
                 } else {
-                    bGr.className = 'badge badge-info';
-                    bGr.innerText = 'Descarga Privada';
-                    dGr.innerText = 'Se configurará de forma aislada en vendor/Gram.';
+                    bGr.className = 'badge badge-warning';
+                    bGr.innerText = 'No instalado';
+                    dGr.innerText = 'Instálalo en tu entorno Python con pip o vnma.';
                 }
 
 

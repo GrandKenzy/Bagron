@@ -1,49 +1,125 @@
-import gram
-from core.initiator.rules.expression import EGL_EXPRESSION
-from core.initiator.rules.statement import EGL_STMT_BODY
+from gram import combinators as cmb
+from gram import lexer
 
-class EGL_LOOP_MODE(gram.RuleItem):
-    name = 'EGL_LOOP_MODE'
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.MatchKeyword('ran'),
-        gram.MatchKeyword('in'),
+from core.initiator.rules.call import CALL
+from core.initiator.rules.value import RETURN, VALUE
+from core.initiator.rules.var_decl import VAR_ASSIGNATION, VAR_DECL
+
+
+class WHILE(cmb.RuleItem):
+    nodeable = True
+
+
+class FOR(cmb.RuleItem):
+    nodeable = True
+
+
+class WHILE_CONDITION(cmb.RuleItem):
+    entrypoint = cmb.Ref(VALUE)
+    nodeable = True
+
+
+class SKIPER(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchGroup('skipers'),  # continue, break
     )
+    nodeable = True
 
-class EGL_FOR_STATEMENT(gram.RuleItem):
-    name = 'EGL_FOR_STATEMENT'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('for'),
-        gram.MatchToken('IDENT'),
-        gram.Ref(EGL_LOOP_MODE),
-        gram.Separator(
-            sep=gram.Token.COMMA,
-            values=[gram.Ref(EGL_EXPRESSION)],
-            min=1,
-            allow_trailing=False,
+
+class WHILE_BODY(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('INDENT'),
+        cmb.Some(
+            cmb.Alt(
+                cmb.Ref(CALL),
+                cmb.Ref(VAR_DECL),
+                cmb.Ref(VAR_ASSIGNATION),
+                cmb.Ref(WHILE),
+                cmb.Ref(FOR),
+                cmb.Ref(RETURN),
+                cmb.Ref(SKIPER),
+                cmb.MatchKeyword('pass'),
+            )
         ),
-        gram.Ref(EGL_STMT_BODY),
+        cmb.MatchToken('DEDENT'),
     )
+    nodeable = True
 
-class EGL_WHILE_COND(gram.RuleItem):
-    name = 'EGL_WHILE_COND'
-    code = gram.AutoCode()
-    no_simplify = True
-    grammar = gram.Ref(EGL_EXPRESSION)
 
-class EGL_WHILE_STATEMENT(gram.RuleItem):
-    name = 'EGL_WHILE_STATEMENT'
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchKeyword('while'),
-        gram.Ref(EGL_WHILE_COND),
-        gram.Ref(EGL_STMT_BODY),
+WHILE.entrypoint = cmb.Seq(
+    cmb.MatchKeyword('while'),
+    cmb.Ref(WHILE_CONDITION),
+    cmb.MatchToken('COLON'),
+    cmb.Ref(WHILE_BODY),
+)
+
+
+class FOR_TARGETS(cmb.RuleItem):
+    entrypoint = cmb.Separator(
+        sep=lexer.Token.COMMA,
+        values=[cmb.MatchToken('IDENT')],
     )
+    nodeable = True
+
+
+class ITERABLE_GROUP(cmb.RuleItem):
+    entrypoint = cmb.Enclosed(
+        open=lexer.Token.LPAREN,
+        close=lexer.Token.RPAREN,
+        content=cmb.Separator(
+            sep=lexer.Token.COMMA,
+            values=[cmb.Ref(VALUE)],
+        ),
+    )
+    nodeable = True
+
+
+class ITERABLE(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.Ref(ITERABLE_GROUP),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+class FOR_BODY(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('INDENT'),
+        cmb.Some(
+            cmb.Alt(
+                cmb.Ref(CALL),
+                cmb.Ref(VAR_DECL),
+                cmb.Ref(VAR_ASSIGNATION),
+                cmb.Ref(WHILE),
+                cmb.Ref(FOR),
+                cmb.Ref(RETURN),
+                cmb.Ref(SKIPER),
+                cmb.MatchKeyword('pass'),
+            )
+        ),
+        cmb.MatchToken('DEDENT'),
+    )
+    nodeable = True
+
+
+FOR.entrypoint = cmb.Seq(
+    cmb.MatchKeyword('for'),
+    cmb.Ref(FOR_TARGETS),
+    cmb.MatchGroup('iters'),
+    cmb.Ref(ITERABLE),
+    cmb.MatchToken('COLON'),
+    cmb.Ref(FOR_BODY),
+)
+
 
 __all__ = [
-    'EGL_LOOP_MODE',
-    'EGL_FOR_STATEMENT',
-    'EGL_WHILE_COND',
-    'EGL_WHILE_STATEMENT',
+    'FOR',
+    'FOR_BODY',
+    'FOR_TARGETS',
+    'ITERABLE',
+    'ITERABLE_GROUP',
+    'SKIPER',
+    'WHILE',
+    'WHILE_BODY',
+    'WHILE_CONDITION',
 ]

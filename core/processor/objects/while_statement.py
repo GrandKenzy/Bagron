@@ -1,16 +1,24 @@
 from typing import Any
 from core.processor.objects.base import Object
 
+
 class WhileStatement(Object):
-    def __init__(self, condition: Any, body: list[Object], in_scope: Object | None = None):
+    __slots__ = ('condition', 'body', 'in_scope', 'scoped')
+
+    def __init__(self, condition: Any, body: list[Any], in_scope: Any = None, scoped: Any = None):
         super().__init__()
         self.condition = condition
         self.body = body
         self.in_scope = in_scope
-        self.compiled: str = ''
+        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
 
     def is_valid(self) -> bool:
-        return not bool(self.in_scope)
+        return True
 
     def __repr__(self) -> str:
-        return f'WhileStatement(condition={self.condition})'
+        return f'WhileStatement(condition={self.condition}, statements={len(self.body)})'
+
+
+__all__ = [
+    'WhileStatement',
+]

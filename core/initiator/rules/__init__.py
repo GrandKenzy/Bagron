@@ -1,111 +1,55 @@
-import gram
+from core.initiator.rules.call import *
+from core.initiator.rules.class_decl import *
+from core.initiator.rules.clauses import *
+from core.initiator.rules.enum_decl import *
+from core.initiator.rules.expression import *
+from core.initiator.rules.flags_decl import *
+from core.initiator.rules.func_decl import *
+from core.initiator.rules.imports import *
+from core.initiator.rules.loops import *
+from core.initiator.rules.mold_decl import *
+from core.initiator.rules.statement import *
+from core.initiator.rules.struct_decl import *
+from core.initiator.rules.type_decl import *
+from core.initiator.rules.value import *
+from core.initiator.rules.var_decl import *
 
-gram.SetCode(100_000)
+from core.initiator.rules import (
+    call,
+    class_decl,
+    clauses,
+    enum_decl,
+    expression,
+    flags_decl,
+    func_decl,
+    imports,
+    loops,
+    mold_decl,
+    statement,
+    struct_decl,
+    type_decl,
+    value,
+    var_decl,
+)
 
-from core.initiator.rules.value import EGL_VALUE
-from core.initiator.rules.expression import (
-    EGL_ADDITIVE,
-    EGL_BITWISE_AND,
-    EGL_BITWISE_OR,
-    EGL_BITWISE_XOR,
-    EGL_COMPARISON,
-    EGL_EQUALITY,
-    EGL_EXPRESSION,
-    EGL_LOGICAL_AND,
-    EGL_MULTIPLICATIVE,
-    EGL_POWER,
-    EGL_PRIMARY,
-    EGL_SHIFT,
-    EGL_UNARY,
-)
-from core.initiator.rules.call import EGL_ARGUMENTS, EGL_CALL, EGL_METHOD_CALL, EGL_MEMBER_ACCESS, EGL_INDEX_ACCESS
-from core.initiator.rules.var_decl import EGL_VAR_DECL
-from core.initiator.rules.params import EGL_PARAM, EGL_PARAMS
-from core.initiator.rules.func_decl import EGL_FUNC_DECL, EGL_FUNC_BODY
-from core.initiator.rules.statement import (
-    EGL_CONDITION,
-    EGL_RETURN,
-    EGL_ASSIGN,
-    EGL_STATEMENT,
-    EGL_STMT_BODY,
-    EGL_ELIF_STATEMENT,
-    EGL_ELSE_STATEMENT,
-    EGL_IF_STATEMENT,
-)
-from core.initiator.rules.loops import EGL_FOR_STATEMENT, EGL_WHILE_STATEMENT, EGL_LOOP_MODE
-from core.initiator.rules.imports import EGL_IMPORT, EGL_INCLUDE, EGL_OBJECT, EGL_DECLARE
-from core.initiator.rules.class_decl import EGL_CLASS_DECL, EGL_METHOD_DECL, EGL_CLASS_BODY, EGL_CLASS_STMT, EGL_DECORATOR, EGL_PACKED
-EGL_CLASS = EGL_CLASS_DECL
-from core.initiator.rules.clauses import EGL_CLAUSE
-from core.initiator.rules.enum_decl import EGL_ENUM_DECL
-from core.initiator.rules.type_decl import (
-    EGL_TYPE_SPEC,
-    EGL_TYPE_REQSLOT,
-    EGL_TYPE_SLOT,
-    EGL_TYPE_KIND,
-    EGL_TYPE_ITEMS,
-    EGL_TYPE_ACCESSOR,
-    EGL_TYPE_INIT,
-    EGL_TYPE_SETV,
-    EGL_TYPE_MEMBER,
-    EGL_TYPE_METHOD,
-    EGL_TYPE_FIELD,
-    EGL_PASS,
-    EGL_TYPE_STMT,
-    EGL_TYPE_BODY,
-    EGL_TYPE_DECL,
-)
+# Retrocompatibility aliases
+EGL_CLAUSE = CLAUSE
 
 __all__ = [
-    'EGL_VALUE',
-    'EGL_VAR_DECL',
-    'EGL_PARAM',
-    'EGL_PARAMS',
-    'EGL_FUNC_DECL',
-    'EGL_FUNC_BODY',
-    'EGL_CONDITION',
-    'EGL_RETURN',
-    'EGL_ASSIGN',
-    'EGL_STATEMENT',
-    'EGL_STMT_BODY',
-    'EGL_ELIF_STATEMENT',
-    'EGL_ELSE_STATEMENT',
-    'EGL_IF_STATEMENT',
-    'EGL_FOR_STATEMENT',
-    'EGL_WHILE_STATEMENT',
-    'EGL_LOOP_MODE',
-    'EGL_ARGUMENTS',
-    'EGL_CALL',
-    'EGL_METHOD_CALL',
-    'EGL_MEMBER_ACCESS',
-    'EGL_CLASS',
-    'EGL_CLASS_DECL',
-    'EGL_DECORATOR',
-    'EGL_METHOD_DECL',
-    'EGL_CLASS_BODY',
-    'EGL_CLASS_STMT',
-    'EGL_IMPORT',
-    'EGL_INCLUDE',
-    'EGL_OBJECT',
-    'EGL_DECLARE',
+    *call.__all__,
+    *class_decl.__all__,
+    *clauses.__all__,
+    *enum_decl.__all__,
+    *expression.__all__,
+    *flags_decl.__all__,
+    *func_decl.__all__,
+    *imports.__all__,
+    *loops.__all__,
+    *mold_decl.__all__,
+    *statement.__all__,
+    *struct_decl.__all__,
+    *type_decl.__all__,
+    *value.__all__,
+    *var_decl.__all__,
     'EGL_CLAUSE',
-    'EGL_ENUM_DECL',
-    'EGL_TYPE_DECL',
-    'EGL_TYPE_SPEC',
-    'EGL_TYPE_REQSLOT',
-    'EGL_TYPE_SETV',
-    'EGL_PASS',
-    'EGL_EXPRESSION',
-    'EGL_LOGICAL_AND',
-    'EGL_BITWISE_OR',
-    'EGL_BITWISE_XOR',
-    'EGL_BITWISE_AND',
-    'EGL_EQUALITY',
-    'EGL_COMPARISON',
-    'EGL_SHIFT',
-    'EGL_ADDITIVE',
-    'EGL_MULTIPLICATIVE',
-    'EGL_POWER',
-    'EGL_UNARY',
-    'EGL_PRIMARY',
 ]

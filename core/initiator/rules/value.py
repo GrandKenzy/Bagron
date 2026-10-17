@@ -1,10 +1,127 @@
-import gram
+from gram import combinators as cmb
+from gram import lexer
 
-class EGL_VALUE(gram.RuleItem):
-    name = 'EGL_VALUE'
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.MatchToken('NUMBER'),
-        gram.MatchToken('IDENT'),
-        gram.MatchToken('STRING'),
+
+class VALUE(cmb.RuleItem):
+    nodeable = True
+
+
+class ARRAY(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('array'),
+        cmb.MatchToken('LBRACKET'),
+        cmb.Alt(
+            cmb.MatchGroup('types'),
+            cmb.MatchToken('IDENT'),
+        ),
+        cmb.MatchToken('COMMA'),
+        cmb.Ref(VALUE),
+        cmb.MatchToken('RBRACKET'),
     )
+    nodeable = True
+
+
+class POINTER_TYPE(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Alt(
+            cmb.MatchKeyword('cptr'),
+            cmb.MatchKeyword('ptr'),
+        ),
+        cmb.Alt(
+            cmb.MatchGroup('types'),
+            cmb.Ref(ARRAY),
+        ),
+    )
+    nodeable = True
+
+
+class SEGMENT_TYPE(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.Ref(ARRAY),
+        cmb.MatchGroup('types'),
+        cmb.MatchToken('IDENT'),
+    )
+    nodeable = True
+
+
+class ALIAS(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('as'),
+        cmb.MatchToken('IDENT'),
+    )
+    nodeable = True
+
+
+class PAIR_PARAM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(SEGMENT_TYPE),
+    )
+    nodeable = True
+
+
+class PAIR_DECLARE_PARAM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Ref(PAIR_PARAM),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+class VARIADIC_PARAM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('STAR'),
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(SEGMENT_TYPE),
+    )
+    nodeable = True
+
+
+class PARAMETERS(cmb.RuleItem):
+    entrypoint = cmb.Enclosed(
+        open=lexer.Token.LPAREN,
+        close=lexer.Token.RPAREN,
+        content=cmb.Separator(
+            sep=lexer.Token.COMMA,
+            values=[cmb.Ref(PAIR_DECLARE_PARAM), cmb.Ref(VARIADIC_PARAM), cmb.Ref(PAIR_PARAM)],
+        ),
+    )
+    nodeable = True
+
+
+class ARGUMENTS(cmb.RuleItem):
+    entrypoint = cmb.Enclosed(
+        open=lexer.Token.LPAREN,
+        close=lexer.Token.RPAREN,
+        content=cmb.Separator(
+            sep=lexer.Token.COMMA,
+            values=[cmb.Ref(VALUE), cmb.MatchGroup('types')],
+        ),
+    )
+    nodeable = True
+
+
+class RETURN(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('return'),
+        cmb.Opt(cmb.Ref(VALUE)),
+    )
+    nodeable = True
+
+
+__all__ = [
+    'VALUE',
+    'ARRAY',
+    'POINTER_TYPE',
+    'SEGMENT_TYPE',
+    'ALIAS',
+    'PAIR_PARAM',
+    'PAIR_DECLARE_PARAM',
+    'VARIADIC_PARAM',
+    'PARAMETERS',
+    'ARGUMENTS',
+    'RETURN',
+]

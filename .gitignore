@@ -12,6 +12,7 @@ venv/
 
 # Reglas internas de trabajo
 rules.md
+IMPORTANT.md
 
 # Archivos compilados y paquetes binarios
 build/
@@ -47,3 +48,9 @@ EGLLibs/.temp/
 EGLLibs/**/bin/
 EGLLibs/**/lib/
 EGLLibs/**/includes/
+
+# --- VNMA (Vendor Manager) ---
+/vendor/
+/vendor_vnma/
+.vnma_meta/
+vnma_cache/

@@ -1,79 +1,60 @@
-import gram
+from gram import combinators as cmb
 
-class EGL_ENUM_VALUE(gram.RuleItem):
-    name = "EGL_ENUM_VALUE"
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.Seq(
-            gram.Opt(gram.MatchToken('MINUS')),
-            gram.MatchToken('NUMBER')
+
+class ENUM_VALUE(cmb.RuleItem):
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.Opt(cmb.MatchToken('MINUS')),
+            cmb.MatchToken('NUMBER'),
         ),
-        gram.MatchToken('IDENT'),
-        gram.MatchToken('STRING')
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('STRING'),
     )
+    nodeable = True
 
-class EGL_ENUM_ITEM(gram.RuleItem):
-    name = "EGL_ENUM_ITEM"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchToken('IDENT'),
-        gram.Opt(
-            gram.Seq(
-                gram.MatchToken('ASSIGN'),
-                gram.Ref(EGL_ENUM_VALUE)
+
+class ENUM_ITEM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.Opt(
+            cmb.Seq(
+                cmb.MatchToken('ASSIGN'),
+                cmb.Ref(ENUM_VALUE),
             )
         ),
-        gram.Opt(gram.MatchToken('COMMA')),
-        gram.Opt(gram.MatchToken('COMMENT'))
+        cmb.Opt(cmb.MatchToken('COMMA')),
     )
+    nodeable = True
 
-class EGL_ENUM_STMT(gram.RuleItem):
-    name = "EGL_ENUM_STMT"
-    code = gram.AutoCode()
-    ignore = True
-    grammar = gram.Alt(
-        gram.Ref(EGL_ENUM_ITEM),
-        gram.MatchKeyword('pass'),
-        gram.MatchToken('COMMENT'),
-    )
 
-class EGL_ENUM_BODY(gram.RuleItem):
-    name = "EGL_ENUM_BODY"
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.Seq(
-            gram.MatchToken('COLON'),
-            gram.MatchToken('INDENT'),
-            gram.Some(gram.Ref(EGL_ENUM_STMT)),
-            gram.MatchToken('DEDENT')
+class ENUM_BODY(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('INDENT'),
+        cmb.Some(
+            cmb.Alt(
+                cmb.Ref(ENUM_ITEM),
+                cmb.MatchKeyword('pass'),
+            )
         ),
-        gram.Seq(
-            gram.MatchToken('COLON'),
-            gram.Some(gram.Ref(EGL_ENUM_STMT))
-        ),
-        gram.Seq(
-            gram.MatchToken('LBRACE'),
-            gram.Opt(gram.MatchToken('INDENT')),
-            gram.Some(gram.Ref(EGL_ENUM_STMT)),
-            gram.Opt(gram.MatchToken('DEDENT')),
-            gram.MatchToken('RBRACE')
-        )
+        cmb.MatchToken('DEDENT'),
     )
+    nodeable = True
 
-class EGL_ENUM_DECL(gram.RuleItem):
-    name = "EGL_ENUM_DECL"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Opt(gram.MatchGroup('privacity')),
-        gram.MatchKeyword('enum'),
-        gram.MatchToken('IDENT'),
-        gram.Ref(EGL_ENUM_BODY)
+
+class ENUM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Opt(cmb.MatchGroup('privacy')),
+        cmb.MatchKeyword('enum'),
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(ENUM_BODY),
     )
+    nodeable = True
+
 
 __all__ = [
-    'EGL_ENUM_VALUE',
-    'EGL_ENUM_ITEM',
-    'EGL_ENUM_STMT',
-    'EGL_ENUM_BODY',
-    'EGL_ENUM_DECL',
+    'ENUM',
+    'ENUM_ITEM',
+    'ENUM_VALUE',
+    'ENUM_BODY',
 ]

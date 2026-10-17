@@ -1,129 +1,174 @@
+from collections.abc import Callable
 from typing import Any
 
-DEFAULTS = [
-    'print',
-    'input',
-    'EGL_Version',
-    'free',
-    'sizeof',
-]
 
-class ReservedParam:
-    def __init__(self, name: str, param_type: str, is_variadic: bool = False, default: Any = None, has_default: bool = False):
+class ReservedFunc:
+    def __init__(
+        self,
+        name: str,
+        processor: Callable[[Any], Any] | None = None,
+        returned: str = 'void',
+        c_header: str | None = None,
+        c_equivalent: str | None = None,
+        is_variadic: bool = False,
+        description: str = '',
+        **params: Any,
+    ):
         self.name = name
-        self.type = param_type
+        self.processor = processor
+        self.returned = returned
+        self.c_header = c_header
+        self.c_equivalent = c_equivalent
         self.is_variadic = is_variadic
-        self.default = default
-        self.has_default = has_default
+        self.description = description
+        self.params = params
+        MagicFuncsManager.add(self)
 
     def __repr__(self) -> str:
-        star = '*' if self.is_variadic else ''
-        def_str = f'={self.default!r}' if self.has_default else ''
-        return f'{self.type} {star}{self.name}{def_str}'
-
-class ReservedFuncName:
-    _ITEMS_: dict[str, 'ReservedFuncName'] = {}
-
-    def __init__(self, name: str, argtypes: list | dict | str, returntype: str):
-        self.is_available(name)
-        self.name = name
-        self.returntype = returntype
-        self.params: list[ReservedParam] = []
-        self._parse_args(argtypes)
-        self.param_map = {p.name: p for p in self.params}
-        self.argnames = [p.name for p in self.params]
-        self.argtypes = [p.type for p in self.params]
-        self.variadic_param = next((p for p in self.params if p.is_variadic), None)
-        ReservedFuncName._ITEMS_[name] = self
-
-    def _parse_args(self, argtypes: list | dict | str):
-        if isinstance(argtypes, dict):
-            for k, v in argtypes.items():
-                is_var = k.startswith('*')
-                clean_name = k.lstrip('*')
-                if isinstance(v, (tuple, list)) and len(v) == 2:
-                    self.params.append(ReservedParam(clean_name, v[0], is_var, v[1], True))
-                elif isinstance(v, ReservedParam):
-                    self.params.append(v)
-                else:
-                    self.params.append(ReservedParam(clean_name, str(v), is_var))
-        elif isinstance(argtypes, (list, tuple)):
-            for idx, item in enumerate(argtypes):
-                if item == 'void':
-                    continue
-                if item == 'all':
-                    self.params.append(ReservedParam('values', 'all', True))
-                elif isinstance(item, ReservedParam):
-                    self.params.append(item)
-                else:
-                    self.params.append(ReservedParam(f'arg{idx}', str(item)))
-        elif isinstance(argtypes, str):
-            if argtypes != 'void':
-                if argtypes == 'all':
-                    self.params.append(ReservedParam('values', 'all', True))
-                else:
-                    self.params.append(ReservedParam('arg0', argtypes))
-
-    def is_available(self, name: str):
-        if name in ReservedFuncName._ITEMS_:
-            print(f'Warning: func name {name} already exists')
-
-    def bind_args(self, call_args: list, call_kwargs: dict | None = None) -> dict[str, Any]:
-        call_kwargs = dict(call_kwargs or {})
-        result: dict[str, Any] = {}
-        pos_params: list[ReservedParam] = []
-        var_param: ReservedParam | None = None
-        post_var_params: list[ReservedParam] = []
-
-        for p in self.params:
-            if p.is_variadic:
-                var_param = p
-            elif var_param is None:
-                pos_params.append(p)
-            else:
-                post_var_params.append(p)
-
-        idx = 0
-        for p in pos_params:
-            if idx < len(call_args):
-                result[p.name] = call_args[idx]
-                idx += 1
-            elif p.name in call_kwargs:
-                result[p.name] = call_kwargs.pop(p.name)
-            elif p.has_default:
-                result[p.name] = p.default
-            else:
-                result[p.name] = None
-
-        if var_param:
-            remaining = list(call_args[idx:])
-            result[var_param.name] = remaining
-            idx = len(call_args)
-        elif idx < len(call_args):
-            result['_extra_args'] = list(call_args[idx:])
-
-        for p in post_var_params:
-            if p.name in call_kwargs:
-                result[p.name] = call_kwargs.pop(p.name)
-            elif p.has_default:
-                result[p.name] = p.default
-            else:
-                result[p.name] = None
-
-        for k, v in call_kwargs.items():
-            result[k] = v
-
-        return result
-
-def get_items():
-    return ReservedFuncName._ITEMS_
-
-def exists(resname: str):
-    return resname in ReservedFuncName._ITEMS_
+        return f"<ReservedFunc {self.name} -> {self.returned}>"
 
 
-r_print = ReservedFuncName('print', {'*values': 'type', 'sep': ('pstring', ' ')}, 'void')
-r_input = ReservedFuncName('input', {'content': ('pstring', '')}, 'pstring')
-r_version = ReservedFuncName('EGL_Version', {}, 'pstring')
-r_free = ReservedFuncName('free', {'ptr': '__void_p_t__'}, 'void')
-r_sizeof = ReservedFuncName('sizeof', {'type': 'type'}, 'int')
+class MagicFuncsManager:
+    _reserves: dict[str, ReservedFunc] = {}
+
+    @classmethod
+    def add(cls, func: ReservedFunc) -> None:
+        if func.name in cls._reserves:
+            raise RuntimeError(f"No se puede reemplazar la función intrínseca reservada '{func.name}'.")
+        cls._reserves[func.name] = func
+
+    @classmethod
+    def exists(cls, name: str) -> bool:
+        return name in cls._reserves
+
+    @classmethod
+    def get(cls, name: str) -> ReservedFunc | None:
+        return cls._reserves.get(name)
+
+    @classmethod
+    def run(cls, name: str, node: Any) -> Any:
+        func = cls.get(name)
+        if func and func.processor:
+            return func.processor(node)
+        return None
+
+    @classmethod
+    def all(cls) -> dict[str, ReservedFunc]:
+        return cls._reserves
+
+    @classmethod
+    def get_items(cls) -> dict[str, ReservedFunc]:
+        """Backward-compatible alias for legacy callers."""
+        return cls._reserves
+
+
+# Backward-compatible module-level helper
+def exists(name: str) -> bool:
+    return MagicFuncsManager.exists(name)
+
+
+def get_items() -> dict[str, ReservedFunc]:
+    return MagicFuncsManager.get_items()
+
+
+# ==============================================================================
+# PROCESSORS (Stubs listos para implementar en la fase de procesamiento de tokens)
+# ==============================================================================
+
+def visit_print(node: Any) -> Any:
+    # Transforma argumentos dinámicos a printf() con sus formatos según el tipo en C
+    pass
+
+
+def visit_input(node: Any) -> Any:
+    # Emite fgets() o lectura segura de buffer en C
+    pass
+
+
+def visit_sizeof(node: Any) -> Any:
+    # Emite sizeof(T) nativo de C
+    pass
+
+
+def visit_free(node: Any) -> Any:
+    # Emite free(ptr) de <stdlib.h> en C
+    pass
+
+
+def visit_version(node: Any) -> Any:
+    # Emite constante literal "1.0.0" en tiempo de compilación
+    pass
+
+
+# ==============================================================================
+# DECLARACIÓN DE INTRÍNSECOS
+# ==============================================================================
+
+r_print = ReservedFunc(
+    'print',
+    visit_print,
+    returned='void',
+    c_header='stdio.h',
+    c_equivalent='printf',
+    is_variadic=True,
+    description='Imprime valores formateados por consola con salto de línea',
+    VALUES={'type': ['ptr', 'char', 'chain', 'any'], 'expand': True},
+    sep={'type': ['ptr', 'char', 'chain', 'any'], 'default': ' '},
+)
+
+r_input = ReservedFunc(
+    'input',
+    visit_input,
+    returned='chain',
+    c_header='stdio.h',
+    c_equivalent='_ec_input',
+    is_variadic=False,
+    description='Lee una línea de texto de la entrada estándar',
+    prompt={'type': ['chain', 'char', 'ptr', 'any'], 'default': ''},
+)
+
+r_sizeof = ReservedFunc(
+    'sizeof',
+    visit_sizeof,
+    returned='wsize',
+    c_header='stddef.h',
+    c_equivalent='sizeof',
+    is_variadic=False,
+    description='Obtiene el tamaño en bytes de un tipo o variable',
+    target={'type': 'any'},
+)
+
+r_free = ReservedFunc(
+    'free',
+    visit_free,
+    returned='void',
+    c_header='stdlib.h',
+    c_equivalent='free',
+    is_variadic=False,
+    description='Libera un bloque de memoria asignado dinámicamente',
+    ptr={'type': 'ptr'},
+)
+
+r_version = ReservedFunc(
+    'EGL_Version',
+    visit_version,
+    returned='chain',
+    c_header=None,
+    c_equivalent='"1.0.0"',
+    is_variadic=False,
+    description='Obtiene la versión del compilador Easy-C',
+)
+
+
+
+__all__ = [
+    'MagicFuncsManager',
+    'ReservedFunc',
+    'exists',
+    'get_items',
+    'r_free',
+    'r_input',
+    'r_print',
+    'r_sizeof',
+    'r_version',
+]

@@ -5,7 +5,7 @@ import importlib.util
 from pathlib import Path
 
 from tools import config
-from tools.install.paths import find_local_gram, get_default_install_dir, get_source_root
+from tools.install.paths import get_default_install_dir
 from tools.install.pythonenv import find_system_python
 
 
@@ -18,14 +18,11 @@ def _python_status() -> tuple[bool, str]:
 
 def _gram_status() -> tuple[bool, str]:
     try:
-        if importlib.util.find_spec(config.GRAM_PACKAGE) is not None:
+        if importlib.util.find_spec("gram") is not None:
             return True, "Framework Gram disponible"
     except Exception:
         pass
-    local = find_local_gram(get_source_root())
-    if local and (local / config.GRAM_PACKAGE).is_dir():
-        return True, "Gram disponible en vendor"
-    return False, "Se descargará de forma privada en vendor/Gram"
+    return False, "No detectado en el entorno Python (gestionar con vnma o pip)"
 
 
 def get_system_status() -> dict:

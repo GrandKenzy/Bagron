@@ -88,22 +88,46 @@ class VariableExpr(Object):
         return f'VariableExpr({self.name!r})'
 
 class IndexAccess(Object):
-    def __init__(self, target: Any, index: Any, in_scope: Object | None = None):
+    __slots__ = (
+        'target',
+        'index',
+        'indices',
+        'scoped',
+        'inferred_type',
+    )
+
+    def __init__(
+        self,
+        target: Any,
+        index: Any = None,
+        indices: list[Any] | None = None,
+        in_scope: Object | None = None,
+        scoped: Any = None,
+        inferred_type: str | None = None,
+    ):
         super().__init__()
         self.target = target
-        self.index = index
+        if indices is not None:
+            self.indices = list(indices)
+        elif index is not None:
+            self.indices = [index]
+        else:
+            self.indices = []
+        self.index = index if index is not None else (self.indices[0] if self.indices else None)
         self.in_scope = in_scope
-        self.compiled = ''
+        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.inferred_type = inferred_type
 
     @property
     def value(self) -> str:
-        return f'{self.target}[{self.index}]'
+        idx_str = ''.join(f'[{i}]' for i in self.indices)
+        return f'{self.target}{idx_str}'
 
     def is_valid(self) -> bool:
         return not bool(self.in_scope)
 
     def __str__(self) -> str:
-        return f'{self.target}[{self.index}]'
+        return self.value
 
     def __repr__(self) -> str:
-        return f'IndexAccess({self.target!r}, [{self.index!r}])'
+        return f'IndexAccess(target={self.target!r}, indices={self.indices!r})'

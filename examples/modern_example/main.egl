@@ -1,0 +1,7 @@
+clause Arch 'x86_64'
+
+
+edad: int = 10
+a, b: int = 10, 20
+c: int = a + b
+

@@ -59,19 +59,12 @@ Descarga el instalador desde la sección de [Releases de GitHub](https://github.
 ```bash
 git clone https://github.com/GrandKenzy/EGL.git
 cd EGL
-python egl.py install gram
+pip install vnma
+# Gestiona o instala las dependencias del proyecto (como gram) con vnma o pip
 ```
 Opcionalmente, instala en el sistema usando: `python installer.py --cli`.
 
 ---
-
-### 🔄 Actualización
-Para actualizar tu instalación a la versión más reciente:
-```bash
-egl update
-# O forzar actualización:
-egl update --force
-```
 
 ### 🗑️ Desinstalación
 Puedes desinstalar EGL de forma limpia en cualquier momento:

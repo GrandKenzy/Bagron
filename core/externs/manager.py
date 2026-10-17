@@ -107,7 +107,7 @@ class ExternsManager:
         if meta.get('header'):
             c_header = meta['header']
 
-        import core.backend.c as c_backend
+        import core.backend as c_backend
         c_backend.add_include(c_header)
 
         if alias:

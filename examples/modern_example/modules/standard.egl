@@ -1,0 +1,4 @@
+void saludar():
+    print("Hola desde standard")
+
+pelotudo: int = 10

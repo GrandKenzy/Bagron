@@ -1,125 +1,59 @@
-import gram
-from core.initiator.rules.expression import EGL_EXPRESSION, EGL_PRIMARY
-from core.initiator.rules.value import EGL_VALUE
+from gram import combinators as cmb
+from gram import lexer
 
-class EGL_NAMED_ARG(gram.RuleItem):
-    name = "EGL_NAMED_ARG"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.MatchToken('IDENT'),
-        gram.MatchToken('ASSIGN'),
-        gram.Ref(EGL_EXPRESSION)
-    )
+from core.initiator.rules.value import ARGUMENTS, VALUE
 
-class EGL_ARG_ITEM(gram.RuleItem):
-    name = "EGL_ARG_ITEM"
-    code = gram.AutoCode()
-    grammar = gram.Alt(
-        gram.Ref(EGL_NAMED_ARG),
-        gram.Ref(EGL_EXPRESSION),
-    )
 
-class EGL_ARGUMENTS(gram.RuleItem):
-    name = "EGL_ARGUMENTS"
-    code = gram.AutoCode()
-    grammar = gram.Separator(
-        sep=gram.Token.COMMA,
-        values=[gram.Ref(EGL_ARG_ITEM)],
-        min=1,
-        allow_trailing=False,
-    )
+class TYPE_MEMBER(cmb.RuleItem):
+    entrypoint = cmb.MatchGroup('types')
+    nodeable = True
 
-class EGL_CALL(gram.RuleItem):
-    name = "EGL_CALL"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchGroup('types'),
-            gram.MatchKeyword('sizeof'),
+
+class CALL(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Alt(
+            cmb.MatchToken('IDENT'),
+            cmb.MatchKeyword('sizeof'),
         ),
-        gram.Enclosed(
-            open=gram.Token.LPAREN,
-            content=gram.Opt(gram.Ref(EGL_ARGUMENTS)),
-            close=gram.Token.RPAREN
-        ),
-        gram.Opt(gram.MatchToken('COMMENT'))
+        cmb.Ref(ARGUMENTS),
     )
+    nodeable = True
 
-class EGL_METHOD_CALL(gram.RuleItem):
-    name = "EGL_METHOD_CALL"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchGroup('types'),
-            gram.MatchKeyword('self'),
-        ),
-        gram.MatchToken(gram.Token.DOT),
-        gram.MatchToken('IDENT'),
-        gram.Enclosed(
-            open=gram.Token.LPAREN,
-            content=gram.Opt(gram.Ref(EGL_ARGUMENTS)),
-            close=gram.Token.RPAREN
-        ),
-        gram.Opt(gram.MatchToken('COMMENT'))
+
+class MEMBER_CHAIN(cmb.RuleItem):
+    entrypoint = cmb.Separator(
+        sep=lexer.Token.DOT,
+        values=[
+            cmb.Ref(CALL),
+            cmb.MatchToken('IDENT'),
+            cmb.Ref(TYPE_MEMBER),
+        ],
+        min=2,
     )
+    nodeable = True
 
-class EGL_MEMBER_ACCESS(gram.RuleItem):
-    name = "EGL_MEMBER_ACCESS"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Alt(
-            gram.MatchToken('IDENT'),
-            gram.MatchGroup('types'),
-            gram.MatchKeyword('self'),
+
+class INDEX_ACCESS(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.Alt(
+            cmb.Ref(MEMBER_CHAIN),
+            cmb.Ref(CALL),
+            cmb.MatchToken('IDENT'),
         ),
-        gram.Some(
-            gram.Seq(
-                gram.MatchToken(gram.Token.DOT),
-                gram.Alt(
-                    gram.MatchToken('IDENT'),
-                    gram.MatchKeyword('type'),
-                    gram.MatchKeyword('Type'),
-                    gram.MatchKeyword('value'),
-                    gram.MatchKeyword('ptr'),
-                    gram.MatchKeyword('size'),
-                    gram.MatchKeyword('const'),
-                    gram.MatchKeyword('visibility'),
-                    gram.MatchGroup('types'),
-                )
+        cmb.Some(
+            cmb.Enclosed(
+                open=lexer.Token.LBRACKET,
+                close=lexer.Token.RBRACKET,
+                content=cmb.Ref(VALUE),
             )
-        )
-    )
-
-class EGL_INDEX_ACCESS(gram.RuleItem):
-    name = "EGL_INDEX_ACCESS"
-    code = gram.AutoCode()
-    grammar = gram.Seq(
-        gram.Alt(
-            gram.Ref(EGL_MEMBER_ACCESS),
-            gram.MatchToken('IDENT'),
-            gram.MatchGroup('types'),
-            gram.MatchGroup('keywords'),
         ),
-        gram.Enclosed(
-            open=gram.Token.LBRACKET,
-            content=gram.Ref(EGL_EXPRESSION),
-            close=gram.Token.RBRACKET
-        )
     )
+    nodeable = True
 
-_primary_grammar = EGL_PRIMARY.grammar
-assert _primary_grammar is not None
 
-EGL_PRIMARY.grammar = gram.Alt(
-    gram.Ref(EGL_INDEX_ACCESS),
-    gram.Ref(EGL_METHOD_CALL),
-    gram.Ref(EGL_MEMBER_ACCESS),
-    gram.Ref(EGL_CALL),
-    _primary_grammar,
-)
-
-EGL_VALUE.grammar = gram.Ref(EGL_EXPRESSION)
-
-__all__ = ['EGL_ARGUMENTS', 'EGL_ARG_ITEM', 'EGL_NAMED_ARG', 'EGL_CALL', 'EGL_METHOD_CALL', 'EGL_MEMBER_ACCESS', 'EGL_INDEX_ACCESS']
+__all__ = [
+    'TYPE_MEMBER',
+    'CALL',
+    'MEMBER_CHAIN',
+    'INDEX_ACCESS',
+]

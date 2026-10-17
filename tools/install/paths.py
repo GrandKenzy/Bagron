@@ -20,11 +20,6 @@ def get_cache_dir() -> Path:
     return get_default_install_dir().parent / config.SOURCE_CACHE_DIRNAME
 
 
-def get_private_vendor_dir() -> Path:
-    """Vendor privado del árbol de desarrollo (`<raíz>/.egl/vendor`)."""
-    return get_project_root().joinpath(*config.DEV_VENDOR_PARTS)
-
-
 def get_source_root() -> Path:
     """Raíz de los archivos de EGL, soportando PyInstaller y modo desarrollo."""
     # 1. Congelado en PyInstaller (_MEIPASS)
@@ -46,15 +41,6 @@ def get_source_root() -> Path:
     return dev_root
 
 
-def find_local_gram(source_root: Path) -> Path | None:
-    """Busca una copia local de Gram dentro del código fuente."""
-    for parts in (config.DEV_VENDOR_PARTS, (config.VENDOR_DIRNAME,)):
-        cand = source_root.joinpath(*parts, config.GRAM_DIRNAME)
-        if cand.is_dir():
-            return cand
-    return None
-
-
 class InstallLayout:
     """Rutas derivadas de un directorio de instalación."""
 
@@ -62,8 +48,6 @@ class InstallLayout:
         self.root = Path(target_dir).resolve()
         self.bin = self.root / config.BIN_DIRNAME
         self.python = self.root / config.PYTHON_DIRNAME
-        self.vendor = self.root / config.VENDOR_DIRNAME
-        self.gram = self.vendor / config.GRAM_DIRNAME
         self.exe = self.bin / config.EXE_NAME
         self.cmd = self.bin / config.CMD_NAME
         self.uninstaller_cmd = self.bin / "egl-uninstall.cmd"

@@ -1,113 +1,252 @@
-import gram
+from gram import config, lexer
 
-gram.config.LEXER_COMMENT_TOKEN = ';'
-gram.config.LEXER_SAVE_COMMENTS = False
-gram.words.clear_all()
+from core.globvars import CLAUSES
+
+# ==============================================================================
+# 1. CONFIGURACIÓN DEL FRAMEWORK GRAM
+# ==============================================================================
+config.LEXER_COMMENT_TOKEN = ';'
+config.LEXER_SAVE_COMMENTS = False
+config.INFO_GENERATE_LOGFILE = True
+config.PARSER_ADD_INFO = True
+config.INFO_GENERATE_LOGFILE_ON_ERROR = True
+
+lexer.words.clear_all()
 
 
+# ==============================================================================
+# 2. CATÁLOGO DE GRUPOS Y COLORES TEMÁTICOS (VSIX / THEMES)
+# ==============================================================================
 GROUPS = {
     'imports': '#E5C07B',
-    'types': "#004177",
-    'privacity': '#2874A6',
-    'clauses': "#33FF00",
-    'keywords': "#FFFFFF",
-    'conditional_statement': "#7D5DF0",
+    'types': '#004177',
+    'privacy': '#2874A6',
+    'clauses': '#33FF00',
+    'keywords': '#FFFFFF',
+    'conditional_statement': '#7D5DF0',
     'loops': '#D16969',
+    'skipers': '#F50000',
+    'iters': '#E2B93D',
 }
 
+
+# ==============================================================================
+# 3. COLORES ESPECÍFICOS PARA PALABRAS CLAVE INDIVIDUALES
+# ==============================================================================
 KEYWORDS = {
-    'return': "#FD2008",
-    'pass': "#220502",
-    'if': None,
-    'elif': None,
-    'else': None,
+    # Control de flujo y sentencias
+    'return': '#FD2008',
+    'pass': '#220502',
+    'break': '#F50000',
+    'continue': '#F50000',
+
+    # Condicionales
+    'if': '#7D5DF0',
+    'elif': '#7D5DF0',
+    'else': '#7D5DF0',
     'not': '#C0392B',
-    'for': None,
-    'while': None,
+    'and': '#7D5DF0',
+    'or': '#7D5DF0',
+
+    # Bucles e iteradores
+    'for': '#D16969',
+    'while': '#D16969',
     'in': '#C0392B',
     'ran': '#D16969',
-    'clause': "#F5D15D",
-    '__fronted__': '#E2B93D',
-    '__inline__': '#E2B93D',
-    '__packed__': '#E2B93D',
-    '__slot__': '#E2B93D',
-    '__reqslot__': '#E2B93D',
-    'sizeof': '#E2B93D',
-    'class': "#6630E4",
+    'iter': '#E2B93D',
+    'index': '#E2B93D',
+
+    # Módulos, imports y cláusulas
+    'import': '#E5C07B',
+    'include': '#E5C07B',
+    'object': '#E5C07B',
+    'from': '#E5C07B',
+    'clause': '#F5D15D',
+
+    # Visibilidad
+    'public': '#2874A6',
+    'private': '#2874A6',
+
+    # Declaraciones de tipos y estructuras
+    'class': '#6630E4',
     'struct': '#17A2B8',
     'enum': '#17A2B8',
-    'Type': "#007535",
-    'Null': "#F50000",
-    'true': "#4E0097",
-    'false': "#4E0097",
+    'mold': '#17A2B8',
+    'flags': '#17A2B8',
+    'TypeAlias': '#007535',
+    'array': '#09FFEA',
+
+    # Modificadores de bajo nivel
+    '__inline__': '#E2B93D',
+    '__packed__': '#E2B93D',
+    '__align__': '#E2B93D',
+    '__volatile__': '#E2B93D',
+    '__slot__': '#E2B93D',
+    '__reqslot__': '#E2B93D',
+
+    # Literales y utilidades del sistema
+    'Null': '#F50000',
+    'true': '#4E0097',
+    'false': '#4E0097',
+    'as': '#FFFFFF',
+    'sizeof': '#FFFFFF',
+    'const': '#FFFFFF',
 }
 
+
+# ==============================================================================
+# 4. TIPOS INTRÍNSECOS Y ESPECIALES DE EASY-C
+# ==============================================================================
 INTRINSIC_TYPES = {
-    '__int_t__': '#3B82F6',
-    '__int8_t__': '#3B82F6',
-    '__int16_t__': '#3B82F6',
-    '__int32_t__': '#3B82F6',
-    '__int64_t__': '#3B82F6',
-    '__uint_t__': '#3B82F6',
-    '__uint8_t__': '#3B82F6',
-    '__uint16_t__': '#3B82F6',
-    '__uint32_t__': '#3B82F6',
-    '__uint64_t__': '#3B82F6',
-    '__float_t__': '#3B82F6',
-    '__middle_t__': '#3B82F6',
-    '__double_t__': '#3B82F6',
-    '__char_t__': '#3B82F6',
-    '__bool_t__': '#3B82F6',
-    '__type_t__': '#3B82F6',
-    '__arrof__': '#3B82F6',
-    '__void_p_t__': '#3B82F6',
-    '__void_t__': '#3B82F6',
-    '__size_t__': '#3B82F6',
+    # Enteros con y sin signo
+    'int': '#3B82F6',
+    'int8': '#3B82F6',
+    'int16': '#3B82F6',
+    'int32': '#3B82F6',
+    'int64': '#3B82F6',
+    'uint': '#3B82F6',
+    'uint8': '#3B82F6',
+    'byte': '#3B82F6',
+    'uint16': '#3B82F6',
+    'uint32': '#3B82F6',
+    'uint64': '#3B82F6',
+
+    # Punto flotante (16, 32, 64 bits)
+    'middle': '#3B82F6',
+    'float': '#3B82F6',
+    'double': '#3B82F6',
+
+    # Caracteres, cadenas, booleanos y tipos especiales
+    'char': '#3B82F6',
+    'chain': '#3B82F6',
+    'bool': '#3B82F6',
+    'void': '#3B82F6',
+    'wsize': '#3B82F6',
+    'ptr': '#3B82F6',
+    'cptr': '#3B82F6',
+}
+
+
+SPECIAL_TYPE = {
+    'array': '#09FFEA',
+    # obsolete_special_type:
+    # '__arrof__': '#09FFEA',
 }
 
 TYPES = list(INTRINSIC_TYPES.keys())
 
-ADVANCE_TYPES = [
-    'struct',
-    'enum',
-]
 
+# ==============================================================================
+# 5. PALABRAS CLAVE AGRUPADAS POR RESPONSABILIDAD LÉXICA
+# ==============================================================================
 KEYWORDS_BY_GROUP = {
-    'imports': ['include', 'import', 'load', 'declare'],
-    'clauses': ['Visibility', 'Arch', 'Target', 'System', 'StackLimit'],
-    'privacity': ['public', 'private'],
-    'conditional_statement': ['if', 'elif', 'else', 'not', 'and', 'or'],
-    'loops': ['for', 'while', 'ran', 'in'],
-    'keywords': ['as', 'clause', 'return', 'pass', '__fronted__', '__inline__', '__packed__', '__slot__', '__reqslot__', 'Type', 'type', 'struct', 'enum', 'method', 'class', 'sizeof', 'self', 'const', 'visibility'],
+    'imports': [
+        'include',
+        'import',
+        'object',
+        'from',
+    ],
+    'clauses': sorted(list({c.lower() for c in CLAUSES} | {c.capitalize() for c in CLAUSES} | {'StackLimit'})),
+    'privacy': [
+        'public',
+        'private',
+    ],
+    'conditional_statement': [
+        'if',
+        'elif',
+        'else',
+        'not',
+        'and',
+        'or',
+    ],
+    'loops': [
+        'for',
+        'while',
+    ],
+    'skipers': [
+        'continue',
+        'break',
+    ],
+    'iters': [
+        'in',
+        'ran',
+        'iter',
+        'index',
+    ],
+    'keywords': [
+        'as',
+        'clause',
+        'return',
+        'pass',
+        '__inline__',
+        '__packed__',
+        '__align__',
+        '__volatile__',
+        '__slot__',
+        'TypeAlias',
+        'struct',
+        'enum',
+        'mold',
+        'flags',
+        'class',
+        'sizeof',
+        'const',
+        'Null',
+        'true',
+        'false',
+    ],
+    'special_type': [
+        'array',
+        # '__arrof__',  # obsolete_arrof
+    ],
 }
 
+
+# ==============================================================================
+# 6. INICIALIZACIÓN Y REGISTRO EN EL LEXER DE GRAM
+# ==============================================================================
+
+# 1. Registrar grupos
 for group, color in GROUPS.items():
     if not color:
-        gram.words.add_group(group)
+        lexer.words.add_group(group)
     else:
-        gram.words.add_group(group, color_group=color)
+        lexer.words.add_group(group, color_group=color)
 
+# 2. Registrar tipos intrínsecos en el grupo 'types'
 for keyword in TYPES:
-    if keyword.startswith("__"):
-        color = INTRINSIC_TYPES[keyword]
-    else:
-        color = GROUPS['types']
-    kw_obj = gram.words.add_keyword(keyword, hex_color=color, group='types', allow_override=True)
-    grp_t = gram.words.get_group('types')
+    color = INTRINSIC_TYPES.get(keyword, GROUPS['types'])
+    kw_obj = lexer.words.add_keyword(
+        keyword,
+        hex_color=color,
+        group='types',
+        allow_override=True,
+    )
+    grp_t = lexer.words.get_group('types')
     if grp_t and keyword not in grp_t.values:
         grp_t._keywords[keyword] = kw_obj
 
+# 3. Registrar palabras clave por grupo
 for group, words in KEYWORDS_BY_GROUP.items():
-    grp = gram.words.get_group(group)
     for word in words:
-        color = KEYWORDS.get(word, GROUPS.get(group, "#FFFFFF"))
-        # Confía en el parámetro 'group=' y elimina el if/else de abajo
-        gram.words.add_keyword(word, hex_color=color, group=group, allow_override=True)
-        
+        color = KEYWORDS.get(word, GROUPS.get(group, '#FFFFFF'))
+        lexer.words.add_keyword(
+            word,
+            hex_color=color,
+            group=group,
+            allow_override=True,
+        )
+
+# 4. Registrar palabras clave individuales restantes
 for kw, color in KEYWORDS.items():
-    if not gram.words.keyword_exists(kw):
-        gram.words.add_keyword(kw, hex_color=color, group='keywords', allow_override=True)
+    if not lexer.words.keyword_exists(kw):
+        lexer.words.add_keyword(
+            kw,
+            hex_color=color or '#FFFFFF',
+            group='keywords',
+            allow_override=True,
+        )
     else:
-        k_obj = gram.words.get_keyword(kw)
-        if k_obj:
+        k_obj = lexer.words.get_keyword(kw)
+        if k_obj and color:
             k_obj.hex_color = color
