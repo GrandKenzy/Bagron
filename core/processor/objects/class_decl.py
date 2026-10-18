@@ -1,5 +1,5 @@
 from typing import Any, Literal
-from core.processor.objects.base import Object
+from core.processor.objects.base import Object, get_scope_function
 
 
 class ClassField:
@@ -69,7 +69,7 @@ class ClassMethod(Object):
         self.privacy = privacy
         self.is_magic = name.startswith('__') and name.endswith('__')
         self.in_scope = in_scope
-        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.scoped = scoped if scoped is not None else get_scope_function(in_scope)
         self.has_super_init: bool = False
 
     @property
@@ -129,7 +129,7 @@ class ClassDecl(Object):
         self.init_method = init_method
         self.new_method = new_method
         self.in_scope = in_scope
-        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.scoped = scoped if scoped is not None else get_scope_function(in_scope)
 
     @property
     def fields(self) -> dict[str, ClassField]:

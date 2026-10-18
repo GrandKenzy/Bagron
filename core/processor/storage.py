@@ -9,18 +9,17 @@ from core.processor.objects.type_decl import TypeAlias
 from core.processor.objects.variable import Variable
 
 
-
 class Storage:
-    def __init__(self, root: Path, main_storage: 'Storage | None' = None):
-        self.main_storage: 'Storage | None' = main_storage
+    def __init__(self, root: Path, main_storage: 'Storage | None' = None, is_main: bool = False):
+        self.main_storage: Storage | None = main_storage
         self.is_main: bool = main_storage is None
-        self.ordered_modules: list['Storage'] = []
-        self.loaded_modules: dict[Path, 'Storage'] = {}
+        self.ordered_modules: list[Storage] = []
+        self.loaded_modules: dict[Path, Storage] = {}
         self.in_progress: set[Path] = set()
         self.imports: dict[str, str | None] = {}
         self.includes: dict[str, str | None] = {}
         self.declarations: dict[str, str | None] = {}
-        self.modules: dict[str, 'Storage'] = {}
+        self.modules: dict[str, Storage] = {}
         self.externs: dict[str, dict] = {}
         self.variables: dict[str, Variable] = {}
         self.enums: dict[str, EnumDecl] = {}
@@ -32,61 +31,75 @@ class Storage:
         self.warnings: list[str] = []
         self.root = root
 
+
         # Hashes para mangling reproducible
-        # 1. folder_hash: hash del nombre de la carpeta base (o 'main' si se ejecutó archivo directo)
+        self.is_main = is_main
+
         from core.compiler import Environment
-        import hashlib
 
         if Environment.basedir is not None:
-            folder_name = Environment.basedir.name
-            self.folder_hash = hashlib.sha256(folder_name.encode('utf-8')).hexdigest()[:8]
+            self.base_name = Environment.basedir.name
+
         else:
-            self.folder_hash = 'main'
-
-        # 2. module_hash: hash del nombre del módulo (stem del archivo)
-        mod_stem = root.stem
-        self.module_hash = hashlib.sha256(mod_stem.encode('utf-8')).hexdigest()[:8]
-
-        # Prefijo base precalculado: folder_hash + '_' + module_hash + '_module'
-        self.mangling_prefix = f"{self.folder_hash}_{self.module_hash}_module"
+            self.base_name = ''
+        
+        self.mangling_prefix = self.base_name
+        if not self.is_main:
+            self.mangling_prefix += '_module'
+        else:
+            self.mangling_prefix += '_main'
 
         # clausulas
         self.arch = 'auto'
         self.system = 'auto'
         self.privacy: str = 'public'
         self.stacklimit = -1  # automático
+        self.compiler_target: str = 'auto'
+        self.optimizations: str = 'debug'
         self.bpoint = []
 
     @property
     def type_aliases(self) -> dict[str, TypeAlias]:
         return self.types
 
-    def collition_name(self, name: str, raise_error: bool = True) -> bool:
-        from core.initiator.reserve_funnames import MagicFuncsManager
+    def collition_name(self, name: str, raise_error: bool = True) -> str | None:
+            """Verifica si un nombre colisiona con funciones reservadas o símbolos existentes.
+            
+            Si raise_error es True, lanza un RuntimeError. 
+            Si es False, retorna el nombre de la categoría/estructura donde colisionó, o None si no hay colisión.
+            """
+            from core.initiator.reserve_funnames import MagicFuncsManager
 
-        if MagicFuncsManager.exists(name):
-            if raise_error:
-                raise RuntimeError(
-                    f"Colisión: '{name}' es una función intrínseca reservada y no puede ser reemplazada."
-                )
-            return True
+            if MagicFuncsManager.exists(name):
+                if raise_error:
+                    raise RuntimeError(
+                        f"Colisión: '{name}' es una función intrínseca reservada y no puede ser reemplazada."
+                    )
+                return "magic_function"
 
-        collided = (
-            name in self.variables
-            or name in self.enums
-            or name in self.structs
-            or name in self.classes
-            or name in self.functions
-            or name in self.types
-            or name in self.imports
-            or name in self.includes
-            or name in self.declarations
-            or name in self.modules
-        )
-        if collided and raise_error:
-            raise RuntimeError(f"Colisión: el símbolo '{name}' ya existe en el ámbito actual.")
-        return collided
+            # Mapeo de contenedores para identificar la fuente exacta de la colisión
+            collections = {
+                "variables": self.variables,
+                "enums": self.enums,
+                "structs": self.structs,
+                "classes": self.classes,
+                "functions": self.functions,
+                "types": self.types,
+                "imports": self.imports,
+                "includes": self.includes,
+                "declarations": self.declarations,
+                "modules": self.modules,
+            }
 
+            for category, container in collections.items():
+                if name in container:
+                    if raise_error:
+                        raise RuntimeError(
+                            f"Colisión: el símbolo '{name}' ya existe en el ámbito actual (en '{category}')."
+                        )
+                    return container
+
+            return None
     def resolve(self, name: str) -> Any | None:
         """Busca un símbolo en el almacenamiento global."""
         if name in self.variables:
@@ -250,57 +263,10 @@ class Storage:
     def add_warning(self, msg: str):
         self.warnings.append(msg)
 
-    def add_variable(
-        self,
-        name: str,
-        var_type: str,
-        value: Any = None,
-        privacy: str = 'public',
-        fixed_size: int | None = None,
-        pointer_base_type: str | None = None,
-        is_cptr: bool = False,
-        is_ptr: bool = False,
-        array: Array | None = None,
-    ) -> Variable:
-        computed_is_cptr = is_cptr or var_type == 'cptr'
-        computed_is_ptr = is_ptr or var_type == 'ptr'
-        actual_type = 'void' if var_type in ('cptr', 'ptr') else var_type
-
-        if array is None and (fixed_size is not None or var_type.startswith('array[')):
-            elem_type = var_type[6:-1].split(',')[0].strip() if var_type.startswith('array[') else var_type
-            if elem_type in ('cptr', 'ptr'):
-                elem_type = 'void'
-            array = Array(
-                element_type=elem_type,
-                size=fixed_size,
-                is_cptr=computed_is_cptr,
-                is_ptr=computed_is_ptr,
-                pointer_base_type=pointer_base_type or (elem_type if (computed_is_cptr or computed_is_ptr) else None),
-            )
-
-        # Contrato de mangling: _ec_{folder_hash}_{module_hash}_module_{name}
-        c_mangled_name = f"_ec_{self.mangling_prefix}_{name}"
-
-        var_obj = Variable(
-            name=name,
-            value=value,
-            type=actual_type,
-            privacy=privacy,  # type: ignore
-            is_constant=name.isupper() or computed_is_cptr,
-            is_cptr=computed_is_cptr,
-            is_ptr=computed_is_ptr,
-            array=array,
-            c_name=c_mangled_name,
-        )
-        if fixed_size is not None:
-            var_obj.fixed_size = fixed_size
-        var_obj.pointer_base_type = pointer_base_type or (actual_type if (computed_is_cptr or computed_is_ptr) else None)
-        self.variables[name] = var_obj
-
-        self.bpoint.append(var_obj)
-        return var_obj
-
-
+    def add_variable(self, v: Variable):
+        self.bpoint = v
+        self.variables[v.name] = v
+        return v
 
     def add_enum(self, name: str, items: list[tuple[str, Any]], privacy: str = 'public') -> EnumDecl:
         c_mangled_name = f"_ec_{self.mangling_prefix}_{name}"

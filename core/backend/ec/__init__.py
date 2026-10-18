@@ -1,20 +1,20 @@
 from pathlib import Path
 
 from core.backend.ec.visitors import (
-    visit_var,
-    visit_function,
+    visit_class,
     visit_enum,
+    visit_function,
     visit_struct,
     visit_type_alias,
-    visit_class,
+    visit_var,
 )
 from core.processor.objects import (
-    Variable,
-    Function,
+    ClassDecl,
     EnumDecl,
+    Function,
     StructDecl,
     TypeAlias,
-    ClassDecl,
+    Variable,
 )
 from core.processor.storage import Storage
 
@@ -75,6 +75,10 @@ def _emit_storage(f: Files, storage: Storage):
             f.add(*visit_type_alias(pointer))
         elif isinstance(pointer, ClassDecl):
             f.add(*visit_class(pointer))
+        
+        
+        else:
+            print('Falta por procesar', pointer.name)
 
 
 def compile(storage: Storage, generate_heading: bool = False) -> Files:

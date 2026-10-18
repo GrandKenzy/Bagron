@@ -1,5 +1,5 @@
 from typing import Any
-from core.processor.objects.base import Object
+from core.processor.objects.base import Object, get_scope_function
 
 
 class ElifClause(Object):
@@ -35,7 +35,7 @@ class IfStatement(Object):
         self.elifs: list[ElifClause] = elifs if elifs is not None else []
         self.else_body: list[Any] = else_body if else_body is not None else []
         self.in_scope = in_scope
-        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.scoped = scoped if scoped is not None else get_scope_function(in_scope)
 
     @property
     def elif_clauses(self) -> list[ElifClause]:

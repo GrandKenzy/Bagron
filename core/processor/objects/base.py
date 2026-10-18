@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 
 class Object:
@@ -19,3 +19,12 @@ class Object:
 
 
 ITEMS: dict[Object, str] = {}
+
+
+def get_scope_function(in_scope: Any) -> Any:
+    """Retorna la función asociada al scope si es un LocalStorage, o None."""
+    from core.processor.objects.function import LocalStorage
+    return in_scope.function if isinstance(in_scope, LocalStorage) else None
+
+
+__all__ = ['Object', 'ITEMS', 'get_scope_function']

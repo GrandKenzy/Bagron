@@ -3,7 +3,7 @@ from core.processor.objects.base import Object
 
 
 class EnumDecl(Object):
-    __slots__ = ('name', 'c_name', 'items', 'members', 'privacy')
+    __slots__ = ('c_name', 'items', 'members', 'name', 'privacy')
 
     def __init__(
         self,

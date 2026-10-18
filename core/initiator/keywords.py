@@ -118,10 +118,10 @@ INTRINSIC_TYPES = {
 
     # Caracteres, cadenas, booleanos y tipos especiales
     'char': '#3B82F6',
-    'chain': '#3B82F6',
+    'chain': '#3B82F6', # array de carácteres
     'bool': '#3B82F6',
     'void': '#3B82F6',
-    'wsize': '#3B82F6',
+    'wsize': '#3B82F6', # size_t
     'ptr': '#3B82F6',
     'cptr': '#3B82F6',
 }
@@ -146,7 +146,7 @@ KEYWORDS_BY_GROUP = {
         'object',
         'from',
     ],
-    'clauses': sorted(list({c.lower() for c in CLAUSES} | {c.capitalize() for c in CLAUSES} | {'StackLimit'})),
+    'clauses': CLAUSES,
     'privacy': [
         'public',
         'private',

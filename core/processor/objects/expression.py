@@ -1,5 +1,5 @@
 from typing import Any
-from core.processor.objects.base import Object
+from core.processor.objects.base import Object, get_scope_function
 
 class BinaryExpr(Object):
     def __init__(self, left: Any, op: str, right: Any, in_scope: Object | None = None):
@@ -115,7 +115,7 @@ class IndexAccess(Object):
             self.indices = []
         self.index = index if index is not None else (self.indices[0] if self.indices else None)
         self.in_scope = in_scope
-        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.scoped = scoped if scoped is not None else get_scope_function(in_scope)
         self.inferred_type = inferred_type
 
     @property

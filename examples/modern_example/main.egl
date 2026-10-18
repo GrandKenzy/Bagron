@@ -1,7 +1,74 @@
-clause Arch 'x86_64'
+clause Arch 'x86'
+clause System 'windows'
+clause Visibility 'public'
+clause StackLimit 103923
+clause Optimizations "production"
+clause CompilerTarget 'gcc'
+
+; constant integer var
+CONSTANT_INTEGER_A: int = 10
+
+; constant pointer, mutable integer
+cptr mutable_integer_a: int = CONSTANT_INTEGER_A
+
+; mutable pointer, constant integer
+ptr CONSTANT_INT_B: int = 10
+
+; mutable pointer, mutable integer
+ptr mutable_integer_b: int = 10
+
+; pending: constant pointer, constant integer
+private cptr CONSTANT_INTEGER_C: int = 10
 
 
-edad: int = 10
-a, b: int = 10, 20
-c: int = a + b
+; cases
 
+
+# sintaxis uno
+nombre: tipo = valor ; El nombre define si es constante. (mayus para constante)
+CONSTANTE: tipo = valor
+
+const *puntero: tipo = Null ; el const inicial define constante solo para el puntero, el nombre sigue definiendo su mutabilidad.
+const *CONSTANTE: tipo = Null
+
+const *puntero: tipo := puntero ; en lugar de un ampersand, se usará un walrus. No colisiona con el operador AND.
+
+# sintaxis dos
+nombre: tipo = valor ; misma sintaxis
+NOMBRE: tipo = valor ; misma operabilidad constante
+
+ptr puntero: tipo = Null ; se reemplaza * por ptr
+cptr puntero_constante: tipo = Null; cptr para puntero constante
+; misma lógica de valores constantes.
+
+ptr puntero: tipo = puntero_constante ; se infiere automáticamente que es un puntero. Sin ampersands ni simbolos extra.
+
+# sintaxis tres
+
+int nombre = valor ; sintaxis similar a C
+int NOMBRE = valor ; misma operabilidad constante
+
+; usar el modo de punteros de la sintaxis uno o dos.
+
+
+
+
+
+; edad: int = 10
+; a, b: int = 10, 20
+
+; c: int = a + b * 10 + (a * b)
+
+; print(c)
+
+
+
+
+; struct Example:
+;     kind: int
+;     kond: int32
+
+; enum COLORES:
+;     ROJO
+;     VERDE
+;     AZUL = 10

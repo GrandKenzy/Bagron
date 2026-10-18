@@ -1,5 +1,5 @@
 from typing import Any
-from core.processor.objects.base import Object
+from core.processor.objects.base import Object, get_scope_function
 
 
 class ForStatement(Object):
@@ -20,7 +20,7 @@ class ForStatement(Object):
         self.iterable = iterable
         self.body = body
         self.in_scope = in_scope
-        self.scoped = scoped if scoped is not None else getattr(in_scope, 'function', None)
+        self.scoped = scoped if scoped is not None else get_scope_function(in_scope)
 
     @property
     def var_name(self) -> str:

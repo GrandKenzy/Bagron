@@ -198,6 +198,11 @@ def resolve_value(node: Any, expected_type: str | None = None, storage: Any = No
                 return visit_intrinsic(callee_name, raw_args, kwargs=None, storage=storage)
 
             if storage is not None:
+                st = storage.find_struct(callee_name) or storage.structs.get(callee_name)
+                if st is not None:
+                    args = [resolve_value(a, storage=storage) for a in raw_args]
+                    body_args = ', '.join(args)
+                    return f"({st.c_name}){{{body_args}}}" if body_args else f"({st.c_name}){{0}}"
                 fn = storage.find_function(callee_name)
                 if fn is not None:
                     callee_name = fn.c_name
@@ -208,8 +213,13 @@ def resolve_value(node: Any, expected_type: str | None = None, storage: Any = No
             items = extract_chain_items(node)
             item_strs = [get_node_value(it) for it in items]
 
-            # Caso acceso a módulo importado: modulo.variable o modulo.funcion
             if storage is not None and len(item_strs) == 2:
+                # Caso acceso a enum: Enum.MIEMBRO -> _ec_{prefix}_Enum_MIEMBRO
+                enum_obj = storage.find_enum(item_strs[0]) or storage.enums.get(item_strs[0])
+                if enum_obj is not None and item_strs[1] in enum_obj.members:
+                    return f"{enum_obj.c_name}_{item_strs[1]}"
+
+                # Caso acceso a módulo importado: modulo.variable o modulo.funcion
                 mod_name, sym_name = item_strs[0], item_strs[1]
                 if mod_name in storage.modules:
                     mod_storage = storage.modules[mod_name]
@@ -234,6 +244,10 @@ def resolve_value(node: Any, expected_type: str | None = None, storage: Any = No
 
         callee_name = node.name
         if storage is not None:
+            st = storage.find_struct(callee_name) or storage.structs.get(callee_name)
+            if st is not None:
+                body_args = ', '.join(resolve_value(a, storage=storage) for a in node.args)
+                return f"({st.c_name}){{{body_args}}}" if body_args else f"({st.c_name}){{0}}"
             fn = storage.find_function(callee_name)
             if fn is not None:
                 callee_name = fn.c_name
@@ -248,13 +262,21 @@ def resolve_value(node: Any, expected_type: str | None = None, storage: Any = No
         return f"{node.method}({args_str})"
 
     if isinstance(node, MemberAccess):
-        # Comprobar si target es un módulo
         if storage is not None:
-            target_name = node.target if isinstance(node.target, str) else (node.target.name if isinstance(node.target, Object) else None)
-            if target_name and target_name in storage.modules:
-                mod_storage = storage.modules[target_name]
-                if node.member in mod_storage.variables:
-                    return mod_storage.variables[node.member].c_name
+            target_name = node.target if isinstance(node.target, str) else None
+            if target_name:
+                # Caso acceso a enum: Enum.MIEMBRO -> _ec_{prefix}_Enum_MIEMBRO
+                enum_obj = storage.find_enum(target_name) or storage.enums.get(target_name)
+                if enum_obj is not None and node.member in enum_obj.members:
+                    return f"{enum_obj.c_name}_{node.member}"
+
+                # Comprobar si target es un módulo
+                if target_name in storage.modules:
+                    mod_storage = storage.modules[target_name]
+                    if node.member in mod_storage.variables:
+                        return mod_storage.variables[node.member].c_name
+                    if node.member in mod_storage.functions:
+                        return mod_storage.functions[node.member].c_name
 
         target_str = resolve_value(node.target, storage=storage)
         return f"{target_str}.{node.member}"

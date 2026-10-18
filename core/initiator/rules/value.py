@@ -41,7 +41,7 @@ class SEGMENT_TYPE(cmb.RuleItem):
         cmb.MatchGroup('types'),
         cmb.MatchToken('IDENT'),
     )
-    nodeable = True
+    nodeable = False
 
 
 class ALIAS(cmb.RuleItem):
@@ -113,15 +113,15 @@ class RETURN(cmb.RuleItem):
 
 
 __all__ = [
-    'VALUE',
-    'ARRAY',
-    'POINTER_TYPE',
-    'SEGMENT_TYPE',
     'ALIAS',
-    'PAIR_PARAM',
-    'PAIR_DECLARE_PARAM',
-    'VARIADIC_PARAM',
-    'PARAMETERS',
     'ARGUMENTS',
+    'ARRAY',
+    'PAIR_DECLARE_PARAM',
+    'PAIR_PARAM',
+    'PARAMETERS',
+    'POINTER_TYPE',
     'RETURN',
+    'SEGMENT_TYPE',
+    'VALUE',
+    'VARIADIC_PARAM',
 ]

@@ -35,7 +35,7 @@ class PTR_MODIFIER(cmb.RuleItem):
         cmb.MatchKeyword('cptr'),
         cmb.MatchKeyword('ptr'),
     )
-    nodeable = True
+    nodeable = False
 
 
 class VAR_FULL_DECL(cmb.RuleItem):

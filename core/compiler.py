@@ -4,10 +4,9 @@ from gram import lexer, parser
 
 # from tools import console, diagnostics ; pendiente
 from core import processor
+from core.backend import ec
 from core.grammar import ENTRYPOINT
 from core.processor.storage import Storage
-
-from core.backend import ec
 
 
 def _open_file(source: str | Path):
@@ -75,9 +74,9 @@ def compile_source(fd: Path, main_storage: Storage | None = None) -> Storage:
     P = parser.Parser(R, log_file=fd.name)
     ast = P.parse(ENTRYPOINT, 'Many')
 
-    storage = Storage(fd.absolute(), main_storage=main_storage)
+    storage = Storage(fd.absolute(), main_storage=main_storage, is_main=True)
     processor.process(storage, ast)
 
-    if storage.is_main:
-        ec.compile(storage)
-    return storage
+    # if storage.is_main:
+    #     ec.compile(storage)
+    # return storage

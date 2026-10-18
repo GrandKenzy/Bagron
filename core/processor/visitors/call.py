@@ -1,5 +1,7 @@
 from typing import Any
+
 from gram import ast
+
 from core.initiator.reserve_funnames import MagicFuncsManager
 from core.processor.objects.call import Call
 from core.processor.objects.class_decl import ClassDecl, ClassField, ClassMethod
@@ -480,6 +482,39 @@ def visit_member_chain(storage: Any, node: ast.ASTRef) -> MethodCall | MemberAcc
                 else:
                     raise AttributeError(f"El tipo '{curr_t}' no tiene un campo '{member_name}'.")
 
+        # 1b. Comprobar si target es directamente un struct, mold o flags (no se permite acceder a campos de instancia sin instanciar)
+        struct_resolved = (
+            storage.find_struct(target_parts[0])
+            or storage.structs.get(target_parts[0])
+            or (storage.resolve(target_parts[0]) if target_parts else None)
+        )
+        if isinstance(struct_resolved, StructDecl):
+            if len(target_parts) == 1:
+                if member_name in struct_resolved.field_map:
+                    raise AttributeError(
+                        f"El campo de instancia '{member_name}' del {struct_resolved.kind} '{struct_resolved.name}' "
+                        f"requiere una instancia para ser accedido."
+                    )
+                raise AttributeError(f"El {struct_resolved.kind} '{struct_resolved.name}' no tiene un campo '{member_name}'.")
+            raise AttributeError(
+                f"El {struct_resolved.kind} '{struct_resolved.name}' no permite acceso a miembros directamente desde el tipo."
+            )
+
+        # 1c. Comprobar si target es directamente un enum (Enum.MEMBER es válido)
+        enum_resolved = (
+            storage.find_enum(target_parts[0])
+            or storage.enums.get(target_parts[0])
+            or (storage.resolve(target_parts[0]) if target_parts else None)
+        )
+        if isinstance(enum_resolved, EnumDecl):
+            if len(target_parts) == 1:
+                if member_name in enum_resolved.members:
+                    return MemberAccess(target=target, member=member_name, in_scope=storage, inferred_type=enum_resolved.name)
+                raise AttributeError(f"El enum '{enum_resolved.name}' no tiene un miembro '{member_name}'.")
+            raise AttributeError(
+                f"No se permite encadenar accesos adicionales sobre el miembro '{member_name}' del enum '{enum_resolved.name}'."
+            )
+
         # 2. Comprobar si target es 'self'
         if target_parts and target_parts[0] == 'self':
             self_var = storage.resolve('self')
@@ -624,15 +659,15 @@ def visit_member_chain(storage: Any, node: ast.ASTRef) -> MethodCall | MemberAcc
                         raise AttributeError(f"El atributo de clase '{member_name}' de '{c_obj.name}' debe accederse desde la clase, no desde una instancia.")
                     raise AttributeError(f"La clase '{c_obj.name}' no tiene un atributo de instancia '{member_name}'.")
 
-                if curr_t in storage.structs:
-                    struct_obj = storage.structs[curr_t]
+                struct_obj = storage.find_struct(curr_t) or storage.structs.get(curr_t)
+                if struct_obj is not None:
                     base_obj.uses += 1
                     if member_name in struct_obj.field_map:
                         field = struct_obj.field_map[member_name]
                         f_type = storage.resolve_type(field.type)
                         return MemberAccess(target=target, member=member_name, in_scope=storage, inferred_type=f_type)
                     else:
-                        raise AttributeError(f"El struct '{curr_t}' no tiene un campo '{member_name}'.")
+                        raise AttributeError(f"El {struct_obj.kind} '{curr_t}' no tiene un campo '{member_name}'.")
 
         return MemberAccess(target=target, member=member_name, in_scope=storage)
 
@@ -749,6 +784,6 @@ def visit_index_access(storage: Any, node: ast.ASTRef) -> IndexAccess:
 __all__ = [
     'extract_call_args',
     'visit_call',
-    'visit_member_chain',
     'visit_index_access',
+    'visit_member_chain',
 ]

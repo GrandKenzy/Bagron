@@ -10,10 +10,9 @@ class Variable(Object):
         'c_name',
         'fixed_size',
         'is_constant',
-        'is_cptr',
-        'is_main',
-        'is_ptr',
         'name',
+        'pointer',
+        'pointer_base_type',
         'privacy',
         'ref',
         'type',
@@ -27,11 +26,10 @@ class Variable(Object):
         type: str,
         privacy: Literal['public', 'private'] = 'public',
         is_constant: bool = False,
-        is_cptr: bool = False,
-        is_ptr: bool = False,
+        pointer: str | None = None,
         array: Array | None = None,
         c_name: str | None = None,
-        is_main: bool = False 
+        pointer_base_type: str | None = None,
     ):
         super().__init__()
         self.name = name
@@ -39,13 +37,12 @@ class Variable(Object):
         self.value = value
         self.privacy = privacy
         self.ref: bool = False
-        self.is_cptr: bool = is_cptr or type == 'cptr'
-        self.is_ptr: bool = is_ptr or type == 'ptr'
+        self.pointer = pointer
         self.type = 'void' if type in ('cptr', 'ptr') else type
         self.is_constant = is_constant or self.is_cptr
-        self.is_main = is_main
         self.fixed_size: int | None = array.size if array is not None else None
         self.array: Array | None = array
+        self.pointer_base_type: str | None = pointer_base_type
 
     def is_valid(self) -> bool:
         if self.type == 'type': return False
@@ -57,3 +54,8 @@ class Variable(Object):
         cptr_str = ", is_cptr=True" if self.is_cptr else ""
         ptr_str = ", is_ptr=True" if self.is_ptr else ""
         return f"Variable(name={self.name!r}, type={self.type!r}, privacy={self.privacy!r}, const={self.is_constant}{cptr_str}{ptr_str}{arr_str})"
+
+    @property
+    def is_ptr(self): return self.pointer == 'ptr'
+    @property
+    def is_cptr(self): return self.pointer == 'cptr'

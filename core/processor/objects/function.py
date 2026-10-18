@@ -76,7 +76,7 @@ class LocalStorage:
         return None
 
     def resolve_type(self, type_name: str) -> str:
-        if self.parent is not None and hasattr(self.parent, 'resolve_type'):
+        if self.parent is not None:
             return self.parent.resolve_type(type_name)
         return type_name
 
@@ -97,35 +97,35 @@ class LocalStorage:
 
     @property
     def structs(self) -> dict:
-        return self.parent.structs if self.parent is not None and hasattr(self.parent, 'structs') else {}
+        return self.parent.structs if self.parent is not None else {}
 
     @property
     def enums(self) -> dict:
-        return self.parent.enums if self.parent is not None and hasattr(self.parent, 'enums') else {}
+        return self.parent.enums if self.parent is not None else {}
 
     @property
     def types(self) -> dict:
-        return self.parent.types if self.parent is not None and hasattr(self.parent, 'types') else {}
+        return self.parent.types if self.parent is not None else {}
 
     @property
     def declarations(self) -> dict:
-        return self.parent.declarations if self.parent is not None and hasattr(self.parent, 'declarations') else {}
+        return self.parent.declarations if self.parent is not None else {}
 
     @property
     def modules(self) -> dict:
-        return self.parent.modules if self.parent is not None and hasattr(self.parent, 'modules') else {}
+        return self.parent.modules if self.parent is not None else {}
 
     @property
     def molds(self) -> dict:
-        return self.parent.molds if self.parent is not None and hasattr(self.parent, 'molds') else {}
+        return self.parent.molds if self.parent is not None else {}
 
     @property
     def flags(self) -> dict:
-        return self.parent.flags if self.parent is not None and hasattr(self.parent, 'flags') else {}
+        return self.parent.flags if self.parent is not None else {}
 
     @property
     def classes(self) -> dict:
-        return self.parent.classes if self.parent is not None and hasattr(self.parent, 'classes') else {}
+        return self.parent.classes if self.parent is not None else {}
 
     def add_variable(
         self,
@@ -156,6 +156,7 @@ class LocalStorage:
                 pointer_base_type=pointer_base_type or (elem_type if (computed_is_cptr or computed_is_ptr) else None),
             )
 
+        pointer_base_t = pointer_base_type or (actual_type if (computed_is_cptr or computed_is_ptr) else None)
         var_obj = Variable(
             name=name,
             value=value,
@@ -165,10 +166,10 @@ class LocalStorage:
             is_cptr=computed_is_cptr,
             is_ptr=computed_is_ptr,
             array=array,
+            pointer_base_type=pointer_base_t,
         )
         if fixed_size is not None:
             var_obj.fixed_size = fixed_size
-        var_obj.pointer_base_type = pointer_base_type or (actual_type if (computed_is_cptr or computed_is_ptr) else None)
         self.variables[name] = var_obj
         return var_obj
 
@@ -240,11 +241,11 @@ class Function(Object):
     def rescope(self):
         if isinstance(self.body, dict):
             for b in self.body.keys():
-                if hasattr(b, 'in_scope'):
+                if isinstance(b, Object):
                     b.in_scope = self
         elif isinstance(self.body, list):
             for b in self.body:
-                if hasattr(b, 'in_scope'):
+                if isinstance(b, Object):
                     b.in_scope = self
         return self
 

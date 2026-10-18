@@ -1,15 +1,19 @@
 from gram import ast
-from core.processor import magic_methods
-from core.processor import visitors
+
+from core.processor import magic_methods, visitors
 from core.processor.storage import Storage
+
 
 def process(storage: Storage, nodes: list[ast.ASTRef]):
     for node in nodes:
         
         # extensiones
+        # @ Stable
         if node.name == 'CLAUSE':
             visitors.visit_clause(storage, node)
 
+
+        # unestable
         elif node.name == 'IMPORT':
             visitors.visit_import(storage, node)
 

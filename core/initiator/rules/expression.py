@@ -2,7 +2,7 @@ from gram import combinators as cmb
 
 
 class DUALEXPR(cmb.RuleItem):
-    nodeable = True
+    nodeable = False
 
 
 __all__ = [

@@ -1,1 +1,7 @@
-CLAUSES: list[str] = ['arch', 'system', 'visibility', 'stacklimit']
+CLAUSES: list[str] = ['Arch',
+                      'System',
+                      'Visibility',
+                      'StackLimit',
+                      'Optimizations',
+                      'CompilerTarget'
+]
