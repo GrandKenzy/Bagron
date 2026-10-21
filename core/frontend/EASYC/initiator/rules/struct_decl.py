@@ -38,7 +38,7 @@ class STRUCT_BODY(cmb.RuleItem):
         cmb.MatchToken('INDENT'),
         cmb.Some(
             cmb.Alt(
-                cmb.Ref(BITFIELD_ITEM),     # pointer tipo nombre : bits
+                cmb.Ref(BITFIELD_ITEM),     # *nombre: tipo | bits
                 cmb.Ref(VAR_PARTIAL_DECL),  # x: int
                 cmb.Ref(VAR_PTR_GENERIC_PARTIAL),  # ptr p
                 cmb.Ref(STRUCT_PACKED),     # __packed__

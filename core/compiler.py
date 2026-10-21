@@ -4,10 +4,6 @@ from gram import lexer, parser
 
 # from tools import console, diagnostics ; pendiente
 from core import processor
-from core.backend import ec
-from core.grammar import ENTRYPOINT
-from core.processor.storage import Storage
-
 
 def _open_file(source: str | Path):
     if isinstance(source, str):
@@ -70,12 +66,7 @@ def compile_source(fd: Path, main_storage: Storage | None = None) -> Storage:
     content = _open_file(fd)
     L = lexer.Lexer(content, logfile=fd.name)
     R = L.process()
-
-    P = parser.Parser(R, log_file=fd.name)
-    ast = P.parse(ENTRYPOINT, 'Many')
-
-    storage = Storage(fd.absolute(), main_storage=main_storage, is_main=True)
-    processor.process(storage, ast)
+    
 
     # if storage.is_main:
     #     ec.compile(storage)

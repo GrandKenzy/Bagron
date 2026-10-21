@@ -10,8 +10,6 @@ from contextlib import contextmanager
 from gram import utilities
 from gram.utilities.info import Node
 
-# import vendor  # noqa: F401 No es necesario ya que corremos con vnma run
-
 
 class Diagnostics(utilities.Diagnostics):
     """
@@ -63,6 +61,13 @@ class Diagnostics(utilities.Diagnostics):
     # Registro de notas y eventos de telemetría
     # ----------------------------------------------------------------------
 
+    def last_note(self):
+        current = self.current()
+        if isinstance(current, utilities.info.StackInfo):
+            current.main.notes[-1]
+        else:
+            current.notes[-1]
+
     def info(self, note: str) -> None:
         """Registra una nota informativa en el nodo activo."""
         self.sender(note, "normal")
@@ -71,6 +76,21 @@ class Diagnostics(utilities.Diagnostics):
         """Registra un fallo crítico en el nodo activo."""
         self.sender(note, "fatal")
 
+    def error(self, note: str):
+        """Registra un fallo en el nodo activo."""
+        self.sender(note, "error")
+        
+    def advice(self, note: str):
+        """Registra un consejo o sugerencia en el nodo activo."""
+        self.sender(note, "advice")
+        
+    def success(self, note: str):
+        """Registra éxito en el nodo activo."""
+        self.sender(note, "success")
+        
+    def debug(self, note: str):
+        """Registra un mensaje de debug en el nodo activo."""
+        self.sender(note, "normal")
     # ----------------------------------------------------------------------
     # Control de estado y persistencia de logs
     # ----------------------------------------------------------------------
