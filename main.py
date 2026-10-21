@@ -1,6 +1,6 @@
 import sys
 
-from core.compiler import compile
+from core.compiler import Compiler
 
 
 def main(*args):
@@ -8,8 +8,8 @@ def main(*args):
     if not argv:
         print("Uso: vnma run main.py <archivo.egl>")
         return
-    compile(argv[1])
-
+    compiler = Compiler()
+    compiler.compile(argv[1])
 
 if __name__ == '__main__':
     main(sys.argv[1:])

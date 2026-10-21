@@ -1,11 +1,11 @@
 import sys
 from pathlib import Path
 
+from core.frontend import EASYC
 from tools.diagnostic import Diagnostics
 
-from gram import lexer
 
-class CompilerDiagnostic(Diagnostics):
+class CompilerState(Diagnostics):
     def __init__(self):
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
     
@@ -13,10 +13,18 @@ class CompilerDiagnostic(Diagnostics):
         print(self.last_note())
         sys.exit(0)
         
-    def compile_source(self, path: Path, storage: Storage):
+    def process_source(self, path: Path):
+        ext = path.name.split('.')[1]
+
         content = _open_file(self, path)
-        lx = lexer.Lexer(content, logfile=path.name)
-        tokens = lx.process()
+        
+        
+        if ext == 'ec':
+            EASYC.EASY_C_SESSION.load()
+            TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
+            return EASYC.EASY_C_SESSION.parse(TKNS, path.name)
+
+        
         
 
 def _found_main(source: Path):
@@ -27,7 +35,7 @@ def _found_main(source: Path):
             return p
     return None
         
-def _open_file(cdiag: CompilerDiagnostic, source: str | Path):
+def _open_file(cdiag: CompilerState, source: str | Path):
     if isinstance(source, str): source = Path(source)
         
     if not source.exists():

@@ -1,3 +1,1 @@
-from core import initiator
-from core import processor
-import gram
+from core.frontend import EASYC

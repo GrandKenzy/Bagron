@@ -1,3 +1,5 @@
+from pathlib import Path
+
 CLAUSES: list[str] = ['Arch',
                       'System',
                       'Visibility',
@@ -5,3 +7,5 @@ CLAUSES: list[str] = ['Arch',
                       'Optimizations',
                       'CompilerTarget'
 ]
+
+BASEDIR: Path = Path('./')

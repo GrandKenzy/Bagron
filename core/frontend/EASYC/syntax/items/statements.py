@@ -132,7 +132,7 @@ class FOR_SIGNATURE(cmb.RuleItem):
 class STATEMENT_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
-        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('INDENT'),
         cmb.Some(
             cmb.Alt(
                 cmb.Ref(ENUM),
@@ -174,7 +174,7 @@ ELIF.entrypoint = cmb.Seq(
 )
     
 IF.entrypoint = cmb.Seq(
-    cmb.Ref(WHILE_SIGNATURE),
+    cmb.Ref(IF_SIGNATURE),
     cmb.Ref(STATEMENT_BODY),
     cmb.Many(cmb.Ref(ELIF)),
     cmb.Opt(cmb.Ref(ELSE))

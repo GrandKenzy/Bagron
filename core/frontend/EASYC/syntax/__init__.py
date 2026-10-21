@@ -25,5 +25,6 @@ from core.frontend.EASYC.syntax.reserved import *
 EASY_C_SESSION.migrate()
 
 __all__ = [
+    'EASY_C_SESSION',
     'items'
 ]

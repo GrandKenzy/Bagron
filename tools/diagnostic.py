@@ -64,9 +64,10 @@ class Diagnostics(utilities.Diagnostics):
     def last_note(self):
         current = self.current()
         if isinstance(current, utilities.info.StackInfo):
-            current.main.notes[-1]
+            return current.main.notes[-1]
         else:
-            current.notes[-1]
+            return current.notes[-1]
+        
 
     def info(self, note: str) -> None:
         """Registra una nota informativa en el nodo activo."""

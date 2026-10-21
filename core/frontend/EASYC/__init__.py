@@ -11,7 +11,7 @@ from core.frontend.EASYC.syntax.items.statements import FOR, IF, WHILE
 from core.frontend.EASYC.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.EASYC.syntax.items.typealias_decl import TYPEALIAS
 from core.frontend.EASYC.syntax.items.value import VALUE
-from core.frontend.EASYC.syntax.items.var_decl import VAR
+from core.frontend.EASYC.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
 
 class DUEXPR(cmb.RuleItem):
@@ -53,5 +53,13 @@ class ENTRYPOINT(cmb.RuleItem):
         cmb.Ref(FOR),
         cmb.Ref(IF),
         cmb.Ref(CALL),
-        cmb.Ref(VAR)
+        cmb.Ref(VAR),
+        cmb.Ref(VAR_ASSIGNATION)
     )
+    
+from core.frontend.EASYC.syntax import EASY_C_SESSION
+
+__all__ = [
+    'EASY_C_SESSION',
+    'ENTRYPOINT'
+]

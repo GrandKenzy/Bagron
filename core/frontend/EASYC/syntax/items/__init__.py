@@ -7,7 +7,7 @@ from core.frontend.EASYC.syntax.items import (
     imports,
     statements,
     struct_decl,
-    type_decl,
+    typealias_decl,
     value,
     var_decl,
 )
@@ -21,7 +21,7 @@ __all__ = [
     *imports.__all__,
     *statements.__all__,
     *struct_decl.__all__,
-    *type_decl.__all__,
+    *typealias_decl.__all__,
     *value.__all__,
     *var_decl.__all__,
 ]

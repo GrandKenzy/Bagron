@@ -57,7 +57,7 @@ class FUNCTION_BODY(cmb.RuleItem):
 class FUNCTION(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
-        cmb.Ref(DECORATORS),
+        cmb.Opt(cmb.Ref(DECORATORS)),
         cmb.Ref(FUNCTION_SIGNATURE),
         cmb.Ref(FUNCTION_BODY)
     )

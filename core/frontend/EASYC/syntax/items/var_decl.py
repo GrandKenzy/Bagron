@@ -91,7 +91,7 @@ class VAR(cmb.RuleItem):
 
 class VAR_ASSIGNATION(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.MatchKeyword('IDENT'),
+        cmb.MatchToken('IDENT'),
         cmb.Ref(ASSIGN_OPERATOR),
         cmb.Ref(VALUE),
     )
