@@ -1,4 +1,8 @@
-# EGL
+# Easy-C ( c- )
+
+<p align="center">
+  <img src="header.gif"/>
+</p>
 
 <p align="center">
   <b>Un lenguaje de programación moderno, limpio y estáticamente tipado que compila a código C monolítico de alto rendimiento (C99/C11).</b>
@@ -13,41 +17,48 @@
 
 ---
 
-## 🚀 ¿Qué es EGL?
+## ¿Qué es Easy-c / c- ?
 
-**EGL** combina la elegancia sintáctica y la legibilidad de lenguajes como Python con la velocidad, el control de bajo nivel y la interoperabilidad nativa de **C**.
+**C-** combina la elegancia sintáctica y la legibilidad de lenguajes como Python con la velocidad, el control de bajo nivel y la interoperabilidad nativa de **C**.
 
 En lugar de depender de una máquina virtual pesada o de un runtime complejo con recolección de basura, EGL procesa el código fuente, valida tipos y ámbitos estáticamente, y emite un único archivo de código C monolítico optimizado (`program.c`) listo para ser compilado con GCC, Clang o MSVC.
 
 ---
 
-## ✨ Características Principales
+##  Características Principales
 
-* 🎯 **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia, sin puntos y coma obligatorios ni sobrecarga de paréntesis.
-* ⚡ **Cero Costo de Abstracción:** El código generado en C no introduce capas intermedias innecesarias; las estructuras y llamadas mapean directamente a instrucciones nativas.
-* 🧩 **Tipos de Datos Autodefinidos (`Type`):** El compilador solo conoce primitivas de máquina (`__int_t__`, `__void_p_t__`, `__bool_t__`). Toda la semántica visible (`int`, `uint32`, `float`, `char`, `bool`, `ptr`, etc.) se define en la propia librería estándar en EGL (`standard.egl`) mediante `public struct Type`.
-* 🔒 **Constantes por Convención:** Todo identificador en **MAYÚSCULAS** es tratado como constante inmutable en tiempo de compilación.
-* 📦 **Estructuras, Enumeraciones y Clases:**
+*  **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia, sin puntos y coma obligatorios ni sobrecarga de paréntesis.
+
+*  **Cero Costo de Abstracción:** El código generado en C no introduce capas intermedias innecesarias; las estructuras y llamadas mapean directamente a instrucciones nativas.
+
+*  **Tipos de Datos Autodefinidos (`Type`):** El compilador solo conoce primitivas de máquina (`__int_t__`, `__void_p_t__`, `__bool_t__`). Toda la semántica visible (`int`, `uint32`, `float`, `char`, `bool`, `ptr`, etc.) se define en la propia librería estándar en EGL (`standard.egl`) mediante `public struct Type`.
+
+*  **Constantes por Convención:** Todo identificador en **MAYÚSCULAS** es tratado como constante inmutable en tiempo de compilación.
+
+*  **Estructuras, Enumeraciones y Clases:**
   * `struct`: Estructuras planas de C con layout de memoria compatible.
   * `enum`: Enumeraciones fuertemente tipadas y con nombres cualificados (`EventType.QUIT`).
   * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
-* 🔄 **Control de Flujo Expresivo:**
+
+*  **Control de Flujo Expresivo:**
   * Condicionales: `if`, `elif`, `else`, `not`.
   * Bucles condicionales: `while condicion:`.
   * Iteración numérica directa sin listas en memoria: `for i ran 100:`.
-* 🔗 **Interoperabilidad Nativa con C:** Consumo directo de cualquier biblioteca C mediante contratos de firmas foráneas (`.externs.egl`), con directivas de enlace automático (`@header`, `@link`, `@bin`).
-* 🛠️ **Toolchain Integrada:** Compilador, ejecutor instantáneo, limpiador de caché y generador automático de extensión para Visual Studio Code (`.vsix`) con tema Noble Dark y resaltado de sintaxis TextMate.
+
+*  **Interoperabilidad Nativa con C:** Consumo directo de cualquier biblioteca C mediante contratos de firmas foráneas (`.externs.egl`), con directivas de enlace automático (`@header`, `@link`, `@bin`).
+
+*  **Toolchain Integrada:** Compilador, ejecutor instantáneo, limpiador de caché y generador automático de extensión para Visual Studio Code (`.vsix`) con tema Noble Dark y resaltado de sintaxis TextMate.
 
 ---
 
-## 📥 Requisitos
+##  Requisitos / Requeriments
 
 * **Python:** 3.13 o superior (requerido para soporte avanzado de f-strings PEP 701).
 * **Compilador C:** GCC, Clang o TCC accesible en el PATH del sistema (para el flag `--build` / `--run`).
 
 ---
 
-## 🛠️ Instalación y Uso Rápido
+##  Instalación y Uso Rápido
 
 ### Opción 1: Instalador Oficial para Windows (`egl-installer.exe`)
 Descarga el instalador desde la sección de [Releases de GitHub](https://github.com/GrandKenzy/EGL/releases).
@@ -66,14 +77,14 @@ Opcionalmente, instala en el sistema usando: `python installer.py --cli`.
 
 ---
 
-### 🗑️ Desinstalación
+###  Desinstalación
 Puedes desinstalar EGL de forma limpia en cualquier momento:
 1. Desde **Configuración de Windows** -> **Aplicaciones** -> **EGL Compiler** -> **Desinstalar**.
 2. O ejecutando directamente en cualquier consola: `egl-uninstall`.
 
 ---
 
-### 💻 Comandos Básicos de la CLI
+###  Comandos Básicos de la CLI
 
 ```bash
 # Compilar el proyecto en 'source' y generar 'program.c':
@@ -97,7 +108,7 @@ egl extension --install
 
 ---
 
-## 💡 Ejemplos de Código
+##  Ejemplos de Código 💡
 
 ### 1. Hola Mundo y Funciones
 
@@ -174,7 +185,7 @@ sdl3.quit()
 
 ---
 
-## 📂 Estructura del Proyecto
+##  Estructura del Proyecto
 
 ```text
 EGL/
@@ -197,7 +208,7 @@ EGL/
 
 ---
 
-## 📖 Documentación
+##  Documentación
 
 El repositorio cuenta con una suite completa de documentación técnica en la carpeta [`docs/`](./docs/):
 
@@ -209,6 +220,6 @@ El repositorio cuenta con una suite completa de documentación técnica en la ca
 
 ---
 
-## 📄 Licencia
+##  Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo de licencia para más detalles.
