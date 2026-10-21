@@ -84,8 +84,10 @@ class ARGUMENTS(cmb.RuleItem):
         close=lexer.Token.RPAREN,
         content=cmb.Separator(
             sep=lexer.Token.COMMA,
-            values=[cmb.Ref(VALUE), cmb.MatchGroup('types')],
+            values=[cmb.Ref(VALUE)],
         ),
+        allow_empty=True,
+        skip_whitespace=True
     )
     nodeable = True
 

@@ -17,9 +17,13 @@ config.INFO_GENERATE_LOGFILE_ON_ERROR = True
 
 from core.frontend.EASYC.syntax.keywords import *  # noqa: I001
 
-from core.frontend.EASYC.syntax.items import *
+from core.frontend.EASYC.syntax import items
 
 from core.frontend.EASYC.syntax.reserved import *
 
 
 EASY_C_SESSION.migrate()
+
+__all__ = [
+    'items'
+]

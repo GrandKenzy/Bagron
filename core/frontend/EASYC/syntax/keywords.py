@@ -1,7 +1,6 @@
 from gram import lexer
 
 from core.globvars import CLAUSES
-from core.frontend.EASYC.initiator.keywords import GROUPS, INTRINSIC_TYPES
 
 GROUPS = {
     'imports': '#E5C07B',

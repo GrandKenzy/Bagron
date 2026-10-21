@@ -1,28 +1,18 @@
 from gram import combinators as cmb
 
 
-class ENUM_VALUE(cmb.RuleItem):
-    entrypoint = cmb.Alt(
-        cmb.Seq(
-            cmb.Opt(cmb.MatchToken('MINUS')),
-            cmb.MatchToken('NUMBER'),
-        ),
-        cmb.MatchToken('IDENT'),
-        cmb.MatchToken('STRING'),
-    )
-    nodeable = True
-
-
+# IDENT = NUMBER,
+# IDENT
 class ENUM_ITEM(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('IDENT'),
         cmb.Opt(
             cmb.Seq(
                 cmb.MatchToken('ASSIGN'),
-                cmb.Ref(ENUM_VALUE),
+                cmb.MatchToken('NUMBER'),
             )
         ),
-        cmb.Opt(cmb.MatchToken('COMMA')),
+        cmb.MatchToken('COMMA')
     )
     nodeable = True
 
@@ -54,7 +44,4 @@ class ENUM(cmb.RuleItem):
 
 __all__ = [
     'ENUM',
-    'ENUM_ITEM',
-    'ENUM_VALUE',
-    'ENUM_BODY',
 ]

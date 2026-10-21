@@ -22,7 +22,7 @@ class ATTRIBUTES(cmb.RuleItem):
     )
     nodeable = True
     
-class STRUCT_FIRM(cmb.RuleItem):
+class STRUCT_SIGNATURE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchGroup('privacy')),
         cmb.Opt(cmb.MatchKeyword('volatile')),
@@ -32,7 +32,7 @@ class STRUCT_FIRM(cmb.RuleItem):
     )
     nodeable = True
     
-class FLAGS_FIRM(cmb.RuleItem):
+class FLAGS_SIGNATURE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchGroup('privacy')),
         cmb.Opt(cmb.MatchKeyword('volatile')),
@@ -42,7 +42,7 @@ class FLAGS_FIRM(cmb.RuleItem):
     )
     nodeable = True
     
-class MOLD_FIRM(cmb.RuleItem):
+class MOLD_SIGNATURE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchGroup('privacy')),
         cmb.Opt(cmb.MatchKeyword('volatile')),
@@ -105,19 +105,19 @@ class MOLD_BODY(cmb.RuleItem):
 
 class STRUCT(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Ref(STRUCT_FIRM),
+        cmb.Ref(STRUCT_SIGNATURE),
         cmb.Ref(STRUCT_BODY),
     )
     nodeable = True
 class FLAGS(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Ref(FLAGS_FIRM),
+        cmb.Ref(FLAGS_SIGNATURE),
         cmb.Ref(FLAGS_BODY),
     )
     nodeable = True
 class MOLD(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Ref(MOLD_FIRM),
+        cmb.Ref(MOLD_SIGNATURE),
         cmb.Ref(MOLD_BODY),
     )
     nodeable = True

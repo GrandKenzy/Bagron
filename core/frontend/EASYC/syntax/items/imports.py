@@ -1,8 +1,7 @@
 from gram import combinators as cmb
 from gram import lexer
 
-from core.initiator.rules.call import MEMBER_CHAIN
-from core.initiator.rules.value import ALIAS
+from core.frontend.EASYC.syntax.items.value import ALIAS
 
 
 class IMPORT_SPEC(cmb.RuleItem):
@@ -65,19 +64,8 @@ class INCLUDE(cmb.RuleItem):
     nodeable = True
 
 
-class OBJECT(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchKeyword('object'),
-        cmb.MatchToken('IDENT'),
-        cmb.Opt(cmb.Ref(ALIAS)),
-    )
-    nodeable = True
-
 
 __all__ = [
     'IMPORT',
-    'IMPORT_SPEC',
-    'IMPORT_GROUP',
     'INCLUDE',
-    'OBJECT',
 ]
