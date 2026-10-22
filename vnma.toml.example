@@ -1,0 +1,16 @@
+[project]
+name = "easyc"
+version = "1.0.0"
+
+[dependencies]
+# para desarrollo local (Se debe clonar Gram en una ruta conocible)
+# gram-framework = { path = "~/Desktop/Gram", editable = true }
+
+# RECOMENDABLE: Es mejor pedirle a vnma que lo instale directamente. Ojo, Gram no se actualizará. Se debe recargar si hay cambios.
+# gram = { git = "https://github.com/GrandKenzy/Gram.git", branch="main" }
+
+[dev-dependencies]
+
+[tool.vnma]
+vendor_dir = "vendor"
+ide_integration = ["vscode", "pycharm"]

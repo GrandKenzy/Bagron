@@ -11,6 +11,8 @@ __pycache__/
 venv/
 
 # Reglas internas de trabajo
+vnma.toml
+vnma.lock
 rules.md
 IMPORTANT.md
 
