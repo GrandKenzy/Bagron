@@ -1,4 +1,3 @@
-
 from gram import config, sessions
 
 C_SESSION = sessions.Session("Session From C", 'Many')
