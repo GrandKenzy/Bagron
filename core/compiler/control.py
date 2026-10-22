@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from core.frontend import EASYC
+from core.frontend import EASYC, C
 from tools.diagnostic import Diagnostics
 
 
@@ -24,6 +24,11 @@ class CompilerState(Diagnostics):
             EASYC.EASY_C_SESSION.load()
             TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
             return EASYC.EASY_C_SESSION.parse(TKNS, path.name)
+
+        elif ext == 'c':
+            C.C_SESSION.load()
+            TKNS = C.C_SESSION.tokenize(content, path.name)
+            return C.C_SESSION.parse(TKNS, path.name)
 
         else:
             self.error(f'La extensión {ext} no está soportada.')

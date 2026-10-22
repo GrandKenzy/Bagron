@@ -20,7 +20,7 @@ class Compiler(CompilerState):
             globvars.BASEDIR = path
             r = _found_main(path)
             if not r:
-                self.error(f'No se encontró main.c ni main.c en {path}')
+                self.error(f'No se encontró main.ec ni main.c en {path}')
                 self.exit()
             else:
                 path = r

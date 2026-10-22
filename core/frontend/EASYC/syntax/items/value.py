@@ -96,7 +96,6 @@ __all__ = [
     'ALIAS',
     'ARGUMENTS',
     'ARRAY',
-    'PAIR_DECLARE_PARAM',
     'PAIR_PARAM',
     'PARAMETERS',
     'RETURN',
