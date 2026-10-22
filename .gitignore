@@ -15,6 +15,7 @@ vnma.toml
 vnma.lock
 rules.md
 IMPORTANT.md
+.env
 
 # Archivos compilados y paquetes binarios
 build/
