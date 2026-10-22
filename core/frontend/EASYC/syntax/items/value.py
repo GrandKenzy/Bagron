@@ -31,10 +31,7 @@ class TYPE(cmb.RuleItem):
 
 
 class POINTER(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.Some(cmb.MatchToken('STAR')),
-        cmb.MatchToken('IDENT')
-    )
+    entrypoint = cmb.Some(cmb.MatchToken('STAR'))
     nodeable = True
     
 class ALIAS(cmb.RuleItem):
@@ -47,21 +44,17 @@ class ALIAS(cmb.RuleItem):
 
 class PAIR_PARAM(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Opt(
-            cmb.MatchKeyword('const')
-        ),
-        cmb.Ref(POINTER),
+        cmb.Opt(cmb.MatchKeyword('const')),
+        cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(POINTER)),
         cmb.MatchToken('COLON'),
         cmb.Ref(TYPE),
-    )
-    nodeable = True
-
-
-class PAIR_DECLARE_PARAM(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.Ref(PAIR_PARAM),
-        cmb.MatchToken('ASSIGN'),
-        cmb.Ref(VALUE),
+        cmb.Opt(
+            cmb.Seq(
+                cmb.MatchToken('ASSIGN'),
+                cmb.Ref(VALUE)
+            )
+        )
     )
     nodeable = True
 
@@ -72,12 +65,11 @@ class PARAMETERS(cmb.RuleItem):
         close=lexer.Token.RPAREN,
         content=cmb.Separator(
             sep=lexer.Token.COMMA,
-            values=[cmb.Ref(PAIR_DECLARE_PARAM), cmb.Ref(PAIR_PARAM)],
+            values=[cmb.Ref(PAIR_PARAM)],
         ),
     )
     nodeable = True
-
-
+    
 class ARGUMENTS(cmb.RuleItem):
     entrypoint = cmb.Enclosed(
         open=lexer.Token.LPAREN,

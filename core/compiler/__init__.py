@@ -6,7 +6,7 @@ from core.compiler.control import CompilerState, _found_main
 
 class Compiler(CompilerState):
     def __init__(self):
-        pass
+        super().__init__()
     
     def compile(self, path: Path | str):
         if isinstance(path, str):
@@ -20,8 +20,10 @@ class Compiler(CompilerState):
             globvars.BASEDIR = path
             r = _found_main(path)
             if not r:
-                self.error(f'No se encontró main.egl ni main.c en {path}')
-            else: path = r
+                self.error(f'No se encontró main.c ni main.c en {path}')
+                self.exit()
+            else:
+                path = r
         
         self.process_source(path)
         

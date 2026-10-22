@@ -14,24 +14,27 @@ class CompilerState(Diagnostics):
         sys.exit(0)
         
     def process_source(self, path: Path):
-        ext = path.name.split('.')[1]
+        ext = path.suffix
 
         content = _open_file(self, path)
         
         
+        ext = ext.strip('.')
         if ext == 'ec':
             EASYC.EASY_C_SESSION.load()
             TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
             return EASYC.EASY_C_SESSION.parse(TKNS, path.name)
 
-        
+        else:
+            self.error(f'La extensión {ext} no está soportada.')
+            self.exit()
         
 
 def _found_main(source: Path):
     for p in source.iterdir():
         if p.is_dir():
             continue
-        if p.name in ('main.egl', 'app.egl'):
+        if p.name in ('main.ec', 'main.c'):
             return p
     return None
         
@@ -42,5 +45,10 @@ def _open_file(cdiag: CompilerState, source: str | Path):
         cdiag.error(f'El archivo especificado no existe: {source}')
         cdiag.exit()
     
-    content = source.read_text(encoding='utf-8')
+    try:
+        content = source.read_text(encoding='utf-8')
+    except PermissionError as e:
+        cdiag.fatal(f'No se pudo abrir {source}. Permiso denegado: {e}')
+        cdiag.exit()
+        
     return content.splitlines(keepends=True)    

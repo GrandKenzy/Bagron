@@ -32,10 +32,8 @@ class ASSIGN_OPERATOR(cmb.RuleItem):
 class VAR_DECLARATION(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchKeyword('const')),
-        cmb.Alt(
-            cmb.Ref(POINTER),
-            cmb.MatchToken('IDENT')
-        ),
+        cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(POINTER)),
         cmb.MatchToken('COLON'),
         cmb.Ref(TYPE),
         cmb.MatchToken('ASSIGN'),
@@ -46,11 +44,9 @@ class VAR_DECLARATION(cmb.RuleItem):
 
 class VAR_INITIALIZATION(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Alt(
-          cmb.Ref(POINTER),
-          cmb.MatchToken('IDENT')  
-        ),
+        cmb.Opt(cmb.MatchKeyword('const')),
         cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(POINTER)),
         cmb.MatchToken('COLON'),
         cmb.Ref(TYPE),
     )

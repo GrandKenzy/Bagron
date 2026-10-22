@@ -34,7 +34,7 @@ class CLASS_SIGNATURE(cmb.RuleItem):
 class CLASS_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
-        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('INDENT'),
         cmb.Some(
             cmb.Alt(
                 cmb.Ref(FUNCTION),

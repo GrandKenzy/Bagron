@@ -56,8 +56,12 @@ class ENTRYPOINT(cmb.RuleItem):
         cmb.Ref(VAR),
         cmb.Ref(VAR_ASSIGNATION)
     )
+
+
     
 from core.frontend.EASYC.syntax import EASY_C_SESSION
+
+EASY_C_SESSION.entrypoint = ENTRYPOINT
 
 __all__ = [
     'EASY_C_SESSION',
