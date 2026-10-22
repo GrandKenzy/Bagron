@@ -67,20 +67,25 @@ Se planea que ECC soporte las directivas propias de **GNU C Compiler (GCC)** y d
 
 ---
 
-## Instalación y Uso Rápido
+## Herramientas
 
+ECC se apoya en dos herramientas del mismo ecosistema:
+
+* **[Gram](https://github.com/GrandKenzy/Gram):** motor de parseo del frontend de ECC. Define las reglas gramaticales BNF combinatorias del lenguaje (`core/frontend/*/syntax/`). Se instala con vnma.
+* **[vnma](https://github.com/GrandKenzy/vnma) (Vendor Manager):** gestor de dependencias y empaquetado para proyectos Python. Descarga, construye y extrae wheels compatibles con la plataforma directamente en el proyecto, con aislamiento de rutas en tiempo de ejecución y compatibilidad con binarios nativos.
+  * Instala desde PyPI, rutas locales (monorepos) y repositorios Git.
+  * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios, para builds reproducibles.
+  * Instalación: `pip install vnma`.
+
+---
+
+## Instalación y Uso Rápido
 
 * NOTA: La instalación, uso rápido y ejemplos está en discusión.
 
 ## Documentación
 
-El repositorio cuenta con una suite completa de documentación técnica en la carpeta [`docs/`](./docs/):
-
-* **[Arquitectura del Compilador](./docs/01-Arquitectura/index.md):** Frontend gramatical, procesador semántico y emisión de LLVM IR.
-* **[Módulos, Externs y Extends](./docs/02-Modulos-y-Externs/index.md):** Sistema de módulos, resolución de dependencias y aislamiento de espacios de nombres.
-* **[Integración de Librerías Compiladas](./docs/02-Modulos-y-Externs/librerias_compiladas.md):** Guía paso a paso para enlazar bibliotecas nativas C/C++ usando SDL3 como ejemplo.
-* **[CLI y Herramientas](./docs/03-Guia-del-Colaborador/cli_y_herramientas.md):** Guía detallada de comandos de consola, flags del compilador y empaquetado VSIX.
-* **[Referencia de Tipos y Palabras Clave](./docs/04-Referencia/tipos_y_palabras_clave.md):** Matriz de tipos nativos, propiedades mágicas y operadores del lenguaje.
+* NOTA: Por definir
 
 ---
 
