@@ -1,4 +1,0 @@
-clause Target 'egl-c'
-
-int saludar(int valor):
-    return valor * 2
