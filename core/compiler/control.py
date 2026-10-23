@@ -23,12 +23,12 @@ class CompilerState(Diagnostics):
         if ext == 'ec':
             EASYC.EASY_C_SESSION.load()
             TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
-            return EASYC.EASY_C_SESSION.parse(TKNS, path.name)
+            return EASYC.EASY_C_SESSION.parse(TKNS, path.name), 1
 
         elif ext == 'c':
             C.C_SESSION.load()
             TKNS = C.C_SESSION.tokenize(content, path.name)
-            return C.C_SESSION.parse(TKNS, path.name)
+            return C.C_SESSION.parse(TKNS, path.name), 0
 
         else:
             self.error(f'La extensión {ext} no está soportada.')

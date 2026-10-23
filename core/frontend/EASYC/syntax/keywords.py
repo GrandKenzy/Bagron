@@ -1,6 +1,9 @@
 from gram import lexer
+from gram.core.lexer import tokens
 
 from core.globvars import CLAUSES
+
+tokens.disabled_symbol('**')
 
 GROUPS = {
     'imports': '#E5C07B',

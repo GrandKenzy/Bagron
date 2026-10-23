@@ -2,15 +2,16 @@ clause Arch 'x86'
 clause System 'windows'
 clause Visibility 'public'
 clause StackLimit 103923
-clause Optimizations "production"
-clause CompilerTarget 'gcc'
+clause Optimizations "dev"
 
 
 const edad: int = 10
 calor *: int = 20
-const PI *: int = 3.141516
+public const PI *: int = 3.141516
 
-ala *: int = 10
+term: int
+
+ala ***: int = 10
 
 if true:
     a: int = 30

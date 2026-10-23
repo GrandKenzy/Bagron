@@ -1,12 +1,14 @@
 from pathlib import Path
 
-from core import globvars
+from core import globvars, storage
 from core.compiler.control import CompilerState, _found_main
+from core.frontend.EASYC import processor
 
 
 class Compiler(CompilerState):
     def __init__(self):
         super().__init__()
+        self.storage = storage.Storage('main')
     
     def compile(self, path: Path | str):
         if isinstance(path, str):
@@ -25,7 +27,16 @@ class Compiler(CompilerState):
             else:
                 path = r
         
-        self.process_source(path)
+        AST, LANG = self.process_source(path)
+        
+
+        self.storage.root = str(path)
+        
+        if LANG == 0: # procesar entrada C
+            pass
+        else: # procesar entrada EC.
+            processor.process(self, AST)
+            
         
         
     
