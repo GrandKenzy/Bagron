@@ -6,7 +6,20 @@ Especificacion de arquitectura y manual tecnico del compilador **ECC** y el leng
 
 ## Modulos De Documentacion
 
-* NOTA: Por definir.
+- **01. Arquitectura:**
+  - [Arquitectura Del Compilador Easy-C (EC)](01-Arquitectura/index.md): Diseno general, pipeline, integracion con Gram y VNMA.
+  - [Frontend EasyC (EC)](01-Arquitectura/frontend_ec.md): Reglas combinatorias por indentacion, clausulas y procesador semantico de EasyC.
+  - [Frontend C](01-Arquitectura/frontend_c.md): Pipeline dual, sesiones de Gram (`C_SESSION`), catalogo gramatical de C y procesador.
+
+- **02. Modulos Y Externs:**
+  - [Sistema De Modulos, Externs Y Extends](02-Modulos-y-Externs/index.md): Resolucion de dependencias, name mangling y contratos foraneos.
+  - [Integracion De Librerias Compiladas](02-Modulos-y-Externs/librerias_compiladas.md): Enlace de bibliotecas nativas de alto rendimiento (caso de estudio SDL3).
+
+- **03. Guia Del Colaborador:**
+  - [CLI Y Herramientas](03-Guia-del-Colaborador/cli_y_herramientas.md): Interfaz de comandos, lanzador nativo Win32, extension VS Code y telemetria.
+
+- **04. Referencia:**
+  - [Tipos, Palabras Clave Y Metapropiedades](04-Referencia/tipos_y_palabras_clave.md): Matriz de tipos nativos, precedencia Pratt y catalogo reservado.
 
 ---
 

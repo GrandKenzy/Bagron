@@ -97,8 +97,16 @@ Easy-C aisla sus dependencias mediante el gestor de entornos **VNMA**, evitando 
 
 ### Configuracion Del Motor Lexico
 
-- **importación `import gram`:**
-  Una vez instalado el Gram en el proyecto, se puede importar Gram sin problemas a nivel raíz o módulos profundos como si existiera en site-packages.
+- **importacion `import gram`:**
+  Una vez instalado el Gram en el proyecto, se puede importar Gram sin problemas a nivel raiz o modulos profundos como si existiera en site-packages.
 
 - **Uso de [Gram](https://github.com/GrandKenzy/Gram):**
-  El uso de [Gram](https://github.com/GrandKenzy/Gram) corresponde a su documentación. 
+  El uso de [Gram](https://github.com/GrandKenzy/Gram) corresponde a su documentacion. 
+
+---
+
+## Frontends Del Compilador
+
+EGL implementa una arquitectura dual de frontends sintacticos:
+- **[Frontend EasyC (`core/frontend/EASYC`)](./frontend_ec.md):** Parser para sintaxis basada en indentacion (`.ec`, `.egl`). Consulta [Frontend EasyC](./frontend_ec.md) para el detalle de reglas combinatorias, items y procesador.
+- **[Frontend C (`core/frontend/C`)](./frontend_c.md):** Parser formal para C ANSI / C99 / C11 / C23 delimitado por llaves `{}` y punto y coma `;` con sesion aislada `C_SESSION`. Consulta [Frontend C](./frontend_c.md) para el detalle de reglas combinatorias, items y procesador.
