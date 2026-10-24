@@ -32,9 +32,11 @@ class Compiler(CompilerState):
 
         self.storage.root = str(path)
         
-        if LANG == 0: # procesar entrada C
+        if LANG == 0:
             pass
-        else: # procesar entrada EC.
+        elif LANG == 2:
+            pass
+        else:
             processor.process(self, AST)
             
         
