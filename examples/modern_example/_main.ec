@@ -27,7 +27,6 @@ int suma(a: int, b: int):
 
 
 class Perro:
-    
     void __init__(nombre: chain):
         nombre: int = nombre
 

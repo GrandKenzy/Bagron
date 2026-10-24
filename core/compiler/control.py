@@ -1,10 +1,10 @@
 import sys
 from pathlib import Path
 
-from core.frontend import EASYC, C
+from core.frontend import EASYC, C, headers
 from tools.diagnostic import Diagnostics
 
-
+ 
 class CompilerState(Diagnostics):
     def __init__(self):
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
@@ -18,18 +18,22 @@ class CompilerState(Diagnostics):
 
         content = _open_file(self, path)
         
-        
         ext = ext.strip('.')
-        if ext == 'ec':
-            EASYC.EASY_C_SESSION.load()
-            TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
-            return EASYC.EASY_C_SESSION.parse(TKNS, path.name), 1
-
-        elif ext == 'c':
+        if ext == 'c':
             C.C_SESSION.load()
             TKNS = C.C_SESSION.tokenize(content, path.name)
             return C.C_SESSION.parse(TKNS, path.name), 0
-
+        elif ext == 'ec':
+            EASYC.EASY_C_SESSION.load()
+            TKNS = EASYC.EASY_C_SESSION.tokenize(content, path.name)
+            return EASYC.EASY_C_SESSION.parse(TKNS, path.name), 1
+        elif ext == 'h':
+            headers.HEADERS_SESSION.load()
+            TKNS = headers.HEADERS_SESSION.tokenize(content, path.name)
+            print(TKNS)
+            AST = headers.HEADERS_SESSION.parse(TKNS, path.name), 2
+            print(AST)
+            return AST
         else:
             self.error(f'La extensión {ext} no está soportada.')
             self.exit()
@@ -39,7 +43,7 @@ def _found_main(source: Path):
     for p in source.iterdir():
         if p.is_dir():
             continue
-        if p.name in ('main.ec', 'main.c'):
+        if p.name in ('main.ec', 'main.c', 'main.h'): # main.h para pruebas
             return p
     return None
         

@@ -18,7 +18,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             compiler.storage.define_clause(*tools.clauses.validate(node))
             
         elif name == 'VAR':
-            tools.variable.validate(compiler, node)         
+            compiler.storage.add(*tools.variable.validate(compiler, node))         
         
     
         else:

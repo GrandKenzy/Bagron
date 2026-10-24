@@ -1,8 +1,13 @@
-from typing import Any
+from typing import Any, Literal
 
 from tools import diagnostic
 
+from core.frontend.EASYC.objects import Variable
+
 from platform import system, architecture
+
+SemanticObject = Literal[Variable]
+
 
 class Storage(diagnostic.Diagnostics):
     Main: 'Storage | None' = None
@@ -16,7 +21,7 @@ class Storage(diagnostic.Diagnostics):
         
         
         # clauses
-        self.privacy = 'public'
+        self.privacy: str = 'public'
         self.optimizers = 'dev'
         self.stacklimit = -1
         self.system = system().lower()
@@ -26,8 +31,11 @@ class Storage(diagnostic.Diagnostics):
         self.namespace: dict[str, Any] = {}
         
     def define_clause(self, name: str, value: int | str | bool):
-        if      name == 'Visibility': self.privacy = value
+        if      name == 'Visibility': self.privacy = str(value)
         elif    name == 'Optimizers': self.optimizers = value
         elif    name == 'System'    : self.system = value
         elif    name == 'Arch'      : self.architecture = value
         elif    name == 'StackLimit': self.stacklimit = value 
+        
+    def add(self, name: str, obj: SemanticObject):
+        self.namespace[name] = obj
