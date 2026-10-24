@@ -1,6 +1,21 @@
-from core.frontend.EASYC.tools import clauses, variable
+from core.frontend.EASYC.tools import (
+    classes,
+    clauses,
+    enumeration,
+    function,
+    imports,
+    structure,
+    typealias,
+    variable,
+)
 
 __all__ = [
+    'classes',
     'clauses',
-    'variable'
+    'enumeration',
+    'function',
+    'imports',
+    'structure',
+    'typealias',
+    'variable',
 ]
