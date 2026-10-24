@@ -15,9 +15,11 @@ config.INFO_GENERATE_LOGFILE = True
 config.INFO_GENERATE_LOGFILE_ON_ERROR = True
 
 from core.frontend.HEADERS.headers.syntax.keywords import *
+from core.frontend.HEADERS.headers.syntax import items
 
 HEADERS_SESSION.migrate()
 
 __all__ = [
-    'HEADERS_SESSION'
+    'HEADERS_SESSION',
+    'items',
 ]
