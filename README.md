@@ -27,7 +27,9 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 ## Características Principales
 
-* **Compilación directa a LLVM IR:** El compilador no genera pasos intermedios superfluos; emite LLVM IR directamente para optimización y generación de código de máquina nativo.
+* **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y futura generación de código nativo.
+
+* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() bool:` con un retorno booleano; los métodos de clase no cuentan como entrypoint.
 
 * **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
 
@@ -51,8 +53,9 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 ## Requisitos / Requirements
 
-* **Python:** 3.13 o superior.
-* **LLVM:** Emisión de LLVM IR directa.
+* **Python:** 3.14 o superior.
+* **llvmlite:** 0.50.0, gestionado mediante vnma.
+* **LLVM:** La primera etapa genera y verifica archivos `.ll`; el enlace a ejecutables se añadirá después.
 
 ---
 

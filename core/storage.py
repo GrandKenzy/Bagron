@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from tools import diagnostic
 
@@ -6,15 +6,22 @@ from core.frontend.objects import FunctionSymbol, Variable
 
 from platform import system, architecture
 
-SemanticObject = Literal[Variable]
+SemanticObject = Variable
 
 
 class Storage(diagnostic.Diagnostics):
     Main: 'Storage | None' = None
     
-    def __init__(self, root: str):
+    def __init__(
+        self,
+        root: str,
+        parent: 'Storage | None' = None,
+        scope_name: str = 'module',
+    ):
         self.main: bool = False
         self.root = root        
+        self.parent = parent
+        self.scope_name = scope_name
         
         if not Storage.Main:
             self.main, Storage.Main = True, self
@@ -24,25 +31,66 @@ class Storage(diagnostic.Diagnostics):
         self.privacy: str = 'public'
         self.optimizers = 'dev'
         self.stacklimit = -1
-        self.system = system().lower()
-        self.architecture = architecture()
-        self.pointer_size = 8 if str(self.architecture[0]).startswith('64') else 4
-        print(self.architecture)
+        if parent is None:
+            self.system = system().lower()
+            host_architecture = architecture()
+            self._host_pointer_size = (
+                8 if str(host_architecture[0]).startswith('64') else 4
+            )
+            self.architecture = 'auto'
+            self.pointer_size = self._host_pointer_size
+        else:
+            self.system = parent.system
+            self._host_pointer_size = parent._host_pointer_size
+            self.architecture = parent.architecture
+            self.pointer_size = parent.pointer_size
+            self.privacy = parent.privacy
+            self.optimizers = parent.optimizers
+            self.stacklimit = parent.stacklimit
         
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
+        self.function_scopes: dict[str, Storage] = {}
         
     def define_clause(self, name: str, value: int | str | bool):
         if      name == 'Visibility': self.privacy = str(value)
-        elif    name == 'Optimizers': self.optimizers = value
+        elif    name in ('Optimizations', 'Optimizers'): self.optimizers = value
         elif    name == 'System'    : self.system = value
         elif    name == 'Arch'      :
-            self.architecture = value
-            self.pointer_size = 4 if value == 'x86' else 8
+            self.architecture = str(value).lower()
+            if self.architecture == 'auto':
+                self.pointer_size = self._host_pointer_size
+            else:
+                target_architecture = self.architecture.split('-', 1)[0]
+                self.pointer_size = 4 if target_architecture in ('x86', 'i386', 'i686') else 8
         elif    name == 'StackLimit': self.stacklimit = value 
         
-    def add(self, name: str, obj: SemanticObject):
-        self.namespace[name] = obj
+    def contains_local(self, name: str) -> bool:
+        return name in self.namespace
 
-    def define_function(self, symbol: FunctionSymbol):
+    def resolve(self, name: str) -> SemanticObject | None:
+        symbol = self.namespace.get(name)
+        if symbol is not None:
+            return symbol
+        if self.parent is not None:
+            return self.parent.resolve(name)
+        return None
+
+    def add(self, name: str, obj: SemanticObject) -> bool:
+        if self.contains_local(name):
+            return False
+        self.namespace[name] = obj
+        return True
+
+    def define_function(self, symbol: FunctionSymbol) -> bool:
+        if symbol.name in self.functions:
+            return False
+        if symbol.scope is None:
+            symbol.scope = Storage(
+                self.root,
+                parent=self,
+                scope_name=f'function:{symbol.name}',
+            )
         self.functions[symbol.name] = symbol
+        self.function_scopes[symbol.name] = symbol.scope
+        return True

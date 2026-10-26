@@ -6,12 +6,12 @@ clause Optimizations "dev"
 
 
 edad: const int = 10
-calor *: int = 20
-public const PI *: int = 3.141516
+calor *: int
+public PI: double = 3.141516
 
 term: int
 
-ala ***: int = 10
+ala ***: int
 
 if true:
     a: int = 30
@@ -24,6 +24,9 @@ else:
 
 func suma(a: int, b: int) int:
     return a + b
+
+func main() bool:
+    return true
 
 
 class Perro:

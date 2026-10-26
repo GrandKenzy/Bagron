@@ -56,6 +56,9 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 - **Firma (`FUNCTION_SIGNATURE`):** `[privacy] [inline] func ident(parametros) tipo [*]:`.
 - **Cuerpo (`FUNCTION_BODY`):** Bloque indentado `INDENT ... DEDENT` conteniendo estructuras, condicionales, bucles, llamadas, variables, retornos o `pass`.
 - **Funcion completa (`FUNCTION`):** `[DECORATORS] FUNCTION_SIGNATURE FUNCTION_BODY`.
+- **Scope semantico:** Cada funcion top-level crea un `Storage` propio para sus parametros y variables locales. El scope resuelve primero sus simbolos y despues el Storage global.
+- **Estado actual:** Los metodos de clases, valores por defecto de parametros, asignaciones, llamadas y expresiones complejas quedan para fases posteriores.
+- **Punto de entrada:** Todo modulo ejecutable debe declarar `func main() bool:` con un retorno booleano; una funcion `main` dentro de una clase no satisface este requisito.
 
 ### struct_decl.py (Estructuras, Moldes Y Flags)
 - **Alineacion (`ALIGNEMENT`):** `__align__ (numero | tipo)`.

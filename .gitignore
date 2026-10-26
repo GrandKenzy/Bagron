@@ -35,7 +35,6 @@ dist/
 .temp/
 *.log
 log/
-program.c
 
 # Bibliotecas pesadas y de terceros (SDL3, dependencias C instaladas)
 **/SDL3/

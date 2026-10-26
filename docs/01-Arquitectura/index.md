@@ -107,3 +107,4 @@ Bagron aisla sus dependencias mediante el gestor de entornos **VNMA**, evitando 
 ## Frontend Del Compilador
 
 - **[Frontend Bagron (`core/frontend`)](./frontend_bagron.md):** Parser para sintaxis basada en indentacion (`.bg`). Consulta [Frontend Bagron](./frontend_bagron.md) para el detalle de reglas combinatorias, items y procesador.
+- **[Backend LLVM (`core/backend/llvm`)](./backend_llvm.md):** Emision inicial de LLVM IR para simbolos globales validados.

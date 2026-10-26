@@ -6,6 +6,7 @@
 
 # Desde ruta local (Se requiere clonar Gram). Modificaciones en tiempo real.
 gram = { path = "~/Desktop/Gram", editable = true }
+llvmlite = "==0.50.0"
 
 [dev-dependencies]
 

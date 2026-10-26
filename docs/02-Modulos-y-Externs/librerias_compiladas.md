@@ -1,5 +1,11 @@
 # Integracion De Librerias Compiladas (Caso SDL3)
 
+> **Estado:** este documento conserva un diseño futuro de integración con C/C++.
+> El backend activo todavía no procesa contratos `.externs.egl`, directivas de
+> enlace ni genera `program.c`; actualmente solo emite y verifica LLVM IR en
+> `build/<modulo>.ll`. Además, los ejemplos de esta página usan sintaxis
+> histórica y no son una referencia para el frontend canónico actual.
+
 Este documento detalla la arquitectura de integracion de librerias nativas en **Bagron** (o **Bagron**), utilizando la biblioteca multimedia **SDL3** como caso de estudio practico.
 
 ---

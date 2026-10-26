@@ -1,24 +1,35 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from core.frontend.objects.type import TypeSpec, ValueInfo
+
+if TYPE_CHECKING:
+    from core.storage import Storage
 
 
 @dataclass(frozen=True)
-class TypeInfo:
+class ParameterSpec:
     name: str
-    pointer_level: int = 0
-    value_is_const: bool = False
-    bit_width: int | None = None
-    signed: bool | None = None
+    type_spec: TypeSpec
+    has_default: bool = False
+
+
+# Kept as a type alias while the semantic model migrates to TypeSpec.
+TypeInfo = TypeSpec
 
 
 @dataclass(frozen=True)
 class FunctionSignature:
-    parameters: tuple[TypeInfo, ...]
-    return_type: TypeInfo
+    parameters: tuple[ParameterSpec, ...]
+    return_type: TypeSpec
 
 
-@dataclass(frozen=True)
+@dataclass
 class FunctionSymbol:
     name: str
     signature: FunctionSignature
+    scope: 'Storage | None' = None
+    return_values: list[ValueInfo] = field(default_factory=list)
+    body_supported_for_entrypoint: bool = True

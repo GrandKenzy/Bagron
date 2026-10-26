@@ -5,9 +5,19 @@ from core import frontend
 from tools.diagnostic import Diagnostics
 
 
+class CompilationError(RuntimeError):
+    pass
+
+
 class CompilerState(Diagnostics):
     def __init__(self):
+        self.semantic_errors: list[str] = []
+        self.function_bindings: dict[int, object] = {}
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
+
+    def error(self, note: str):
+        self.semantic_errors.append(note)
+        super().error(note)
 
     def exit(self):  # NOTE: Función temporal en lo que armamos los errores
         print(self.last_note())

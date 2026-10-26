@@ -6,6 +6,7 @@ from core.frontend.tools import (
     imports,
     structure,
     typealias,
+    types,
     variable,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     'imports',
     'structure',
     'typealias',
+    'types',
     'variable',
 ]

@@ -1,71 +1,26 @@
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
-from core.frontend.objects import Variable
+from core.frontend.handles import VariableHandle, handle_variable
+from core.frontend.objects import TypeSpec, Variable
+from core.frontend.tools.types import (
+    TypeResolutionError,
+    UnsupportedExpressionError,
+    ValueResolutionError,
+    infer_value,
+    is_compatible,
+    resolve_type,
+)
+from gram import ast as gast
 
 if TYPE_CHECKING:
     from core.compiler import Compiler
-from gram import ast as gast
-
-
-def _declarator_info(node: gast.ASTRef):
-    is_const = False
-    name = ''
-    pointer_level = 0
-
-    for child in node.nodes:
-        if isinstance(child, gast.ASTKeyword):
-            is_const = child.token.value == 'const'
-        elif isinstance(child, gast.ASTRef) and child.name == 'POINTER':
-            pointer_level = len(child.nodes)
-        else:
-            token = getattr(child, 'token', None)
-            if token is not None:
-                name = str(token.value)
-
-    return name, pointer_level, is_const
-
-
-def _type_is_const(node: object) -> bool:
-    if isinstance(node, list):
-        return any(_type_is_const(item) for item in node)
-
-    if isinstance(node, gast.ASTRef):
-        return _type_is_const(node.nodes)
-
-    token = getattr(node, 'token', None)
-    return token is not None and token.value == 'const'
-
-def _type_name(node: object) -> str:
-    if isinstance(node, list):
-        return ''.join(_type_name(item) for item in node)
-
-    if isinstance(node, gast.ASTRef):
-        return _type_name(node.nodes)
-
-    token = getattr(node, 'token', None)
-    if token is not None:
-        return '' if token.value == 'const' else str(token.value)
-
-    return str(getattr(node, 'value', ''))
-
-
-def _bitint_info(type_name: str) -> tuple[int, bool] | None:
-    match = re.fullmatch(r'(u?Bint)<(\d+)>(?:\[\])*', type_name)
-    if match is None:
-        return None
-    return int(match.group(2)), match.group(1) == 'Bint'
 
 
 def _bare_identifier(node: object) -> str | None:
     if isinstance(node, gast.ASTRef):
-        if node.name == 'VALUE' and len(node.nodes) == 1:
-            return _bare_identifier(node.nodes[0])
-        if node.name == 'POSTFIX_EXPR' and len(node.nodes) == 1:
-            return _bare_identifier(node.nodes[0])
-        if node.name == 'PRIMARY' and len(node.nodes) == 1:
+        if node.name in ('VALUE', 'POSTFIX_EXPR', 'PRIMARY') and len(node.nodes) == 1:
             return _bare_identifier(node.nodes[0])
         return None
 
@@ -76,62 +31,147 @@ def _bare_identifier(node: object) -> str | None:
 
     return None
 
-def validate(compiler: Compiler, node: gast.ASTRef):
-    nodes: list[gast.ASTRef | gast.ASTKeyword] = node.nodes # type: ignore
-    privacy: str = compiler.storage.privacy
-    
-    # Si nodes es una lista de dos elementos, el primero siempre será el KEYWORD de privacidad.
-    if len(nodes) == 2:
-        privacy = str(nodes[0].token.value) # type: ignore
-        node = nodes[1] # type: ignore
-    else: # de lo contrario, será una lista con un solo elemento.
-        node = nodes[0] # type: ignore
-    
-    nodes: list[gast.ASTRef | gast.ASTKeyword] = node.nodes # type: ignore
-    declarator = nodes[0]
-    name, pointer_level, pointer_is_const = _declarator_info(declarator)
-    type_node = nodes[2]
-    type_ = _type_name(type_node)
-    value_is_const = _type_is_const(type_node)
 
-    if node.name == 'VAR_DECLARATION': # contiene ASSIGN y VALUE
-        value = nodes[4]
+def build_symbol(
+    storage,
+    name: str,
+    type_spec: TypeSpec,
+    value_node: object | None = None,
+    kind: str = 'local',
+    privacy: str = 'public',
+) -> Variable:
+    symbol = Variable(
+        name,
+        type_spec.canonical_name,
+        type_spec.pointer_level,
+        value_node,
+    )
+    symbol.type_spec = type_spec
+    symbol.type = type_spec.canonical_name
+    symbol.is_const = type_spec.value_is_const
+    symbol.value_is_const = type_spec.value_is_const
+    symbol.pointer_is_const = type_spec.pointer_is_const
+    symbol.pointer_size = (
+        storage.pointer_size
+        if type_spec.pointer_level > 0
+        else None
+    )
+    symbol.privacy = privacy
+    symbol.scope_kind = kind
+    symbol.initialized = kind == 'parameter' or value_node is not None
+    symbol.bit_width = type_spec.bit_width
+    symbol.signed = type_spec.signed
+    return symbol
 
-        
-    else: # VAR_INITIALIZATION no contine ASSIGN ni VALUE.
-        value = None
-        
-    var = Variable(name, type_, pointer_level, value)
-    var.is_const = value_is_const
-    var.value_is_const = value_is_const
-    var.pointer_is_const = pointer_is_const
 
-    bitint = _bitint_info(type_)
-    if bitint is not None:
-        var.bit_width, var.signed = bitint
-        if var.bit_width < 1:
-            compiler.error(f'El ancho de {type_} debe ser mayor que cero: {name}')
+def _validate_callptr(
+    compiler: Compiler,
+    storage,
+    handle: VariableHandle,
+    symbol: Variable,
+) -> None:
+    if symbol.pointer_level == 0:
+        compiler.error(
+            f'El tipo callptr requiere al menos un nivel de puntero: {handle.name}'
+        )
+        return
 
-    if type_ == 'callptr':
-        var.pointer_size = compiler.storage.pointer_size
-        if pointer_level == 0:
-            compiler.error(f'El tipo callptr requiere al menos un nivel de puntero: {name}')
-        elif value is not None:
-            target_name = _bare_identifier(value)
-            function = compiler.storage.functions.get(target_name) if target_name else None
-            source = compiler.storage.namespace.get(target_name) if target_name else None
+    if handle.value_node is None:
+        return
 
-            if function is not None:
-                var.call_signature = function.signature
-            elif source is not None and getattr(source, 'call_signature', None) is not None:
-                var.call_signature = source.call_signature
-            else:
-                compiler.error(
-                    f'El inicializador de {name} debe ser una función o un callptr compatible'
-                )
-    
-    # procesar tipos y otras cosas.
-    
-    # .
-    
-    return name, var        
+    target_name = _bare_identifier(handle.value_node)
+    function = compiler.storage.functions.get(target_name) if target_name else None
+    source = compiler.storage.namespace.get(target_name) if target_name else None
+
+    if function is not None:
+        symbol.call_signature = function.signature
+    elif source is not None and getattr(source, 'call_signature', None) is not None:
+        symbol.call_signature = source.call_signature
+    else:
+        compiler.error(
+            f'El inicializador de {handle.name} debe ser una función o un callptr compatible'
+        )
+
+
+def _validate_initializer(
+    compiler: Compiler,
+    storage,
+    handle: VariableHandle,
+    symbol: Variable,
+) -> None:
+    if handle.value_node is None:
+        return
+
+    if symbol.type_spec.name == 'callptr':
+        _validate_callptr(compiler, storage, handle, symbol)
+        return
+
+    try:
+        value_info = infer_value(handle.value_node, storage.resolve)
+    except UnsupportedExpressionError as error:
+        if symbol.scope_kind == 'global':
+            compiler.error(f'{handle.name}: {error}')
+        return
+    except ValueResolutionError as error:
+        compiler.error(f'{handle.name}: {error}')
+        return
+
+    symbol.value_info = value_info
+    if not is_compatible(symbol.type_spec, value_info):
+        compiler.error(
+            f'El valor inicial de {handle.name} no coincide con '
+            f'{symbol.type_spec.canonical_name}'
+        )
+
+
+def collect_in_scope(
+    compiler: Compiler,
+    storage,
+    node: gast.ASTRef,
+    kind: str = 'local',
+) -> Variable | None:
+    """Collect and validate one variable in the selected lexical scope."""
+    handle = handle_variable(node)
+    if handle is None:
+        return None
+
+    if storage.contains_local(handle.name):
+        compiler.error(
+            f'La variable {handle.name} ya fue declarada en el scope '
+            f'{storage.scope_name}'
+        )
+        return None
+
+    try:
+        type_spec = resolve_type(
+            handle.type_node,
+            pointer_level=handle.pointer_level,
+            pointer_is_const=handle.pointer_is_const,
+        )
+    except TypeResolutionError as error:
+        compiler.error(f'{handle.name}: {error}')
+        return None
+
+    symbol = build_symbol(
+        storage,
+        handle.name,
+        type_spec,
+        handle.value_node,
+        kind=kind,
+        privacy=handle.privacy,
+    )
+    _validate_initializer(compiler, storage, handle, symbol)
+    storage.add(handle.name, symbol)
+    return symbol
+
+
+def collect_global(compiler: Compiler, node: gast.ASTRef) -> Variable | None:
+    """Collect and validate one top-level global variable declaration."""
+    return collect_in_scope(compiler, compiler.storage, node, kind='global')
+
+
+def collect_local(compiler: Compiler, storage, node: gast.ASTRef) -> Variable | None:
+    return collect_in_scope(compiler, storage, node, kind='local')
+
+
+__all__ = ['build_symbol', 'collect_global', 'collect_in_scope', 'collect_local']

@@ -6,7 +6,8 @@ from core import globvars
 
 
 def _visibility(var: str): return var in ('public', 'private')
-def _architecture(var: str): return var in ('amd', 'arm', 'x86')
+def _architecture(var: str):
+    return var in ('auto', 'amd', 'arm', 'x86') or '-' in str(var)
 def _optimizations(var: str): return var in ('dev', 'prod', 'high')
 def _stack_limit(var: str | int): return isinstance(var, int)
 
@@ -20,9 +21,8 @@ def validate(clause: gast.ASTRef):
     clause_name = clause.nodes[1].token.value # type: ignore
     clause_value = clause.nodes[2].token.value # type: ignore
     
-    if not clause_name in globvars.CLAUSES:
-        print('La clausula', clause_name, 'no existe')
-        # temp
+    if clause_name not in globvars.CLAUSES:
+        raise ValueError(f'La clausula {clause_name!r} no existe')
         
     if clause_name == 'Visibility' and _visibility(clause_value):  # noqa: SIM114
         pass
@@ -35,6 +35,8 @@ def validate(clause: gast.ASTRef):
     elif clause_name == 'StackLimit' and _stack_limit(clause_value):
         pass
     else:
-        print('La clausula', clause_name, 'posee un valor inválido:', clause_value)
+        raise ValueError(
+            f'La clausula {clause_name!r} posee un valor invalido: {clause_value!r}'
+        )
     
     return clause_name, clause_value

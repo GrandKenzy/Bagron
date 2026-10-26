@@ -15,3 +15,8 @@ class Variable:
         self.pointer_size = None
         self.bit_width = None
         self.signed = None
+        self.type_spec = None
+        self.value_info = None
+        self.initialized = value is not None
+        self.privacy = 'public'
+        self.scope_kind = 'global'

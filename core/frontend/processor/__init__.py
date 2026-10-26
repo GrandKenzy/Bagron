@@ -11,18 +11,27 @@ from core.frontend import tools
 
 def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     compiler.debug('Se recibió la ruta de procesamiento. Procesando AST para Bagron.')
+
+    # Las clausulas deben resolverse antes de variables para fijar target,
+    # visibilidad y demas opciones independientemente del orden del archivo.
+    for node in nodes:
+        if node.name == 'CLAUSE':
+            try:
+                compiler.storage.define_clause(*tools.clauses.validate(node))
+            except ValueError as error:
+                compiler.error(str(error))
+
     tools.function.collect(compiler, nodes)
 
     for node in nodes:
         name: str = node.name
         if name == 'CLAUSE':
-            compiler.storage.define_clause(*tools.clauses.validate(node))
-
+            continue
         elif name == 'VAR':
-            compiler.storage.add(*tools.variable.validate(compiler, node))
+            tools.variable.collect_global(compiler, node)
 
         elif name == 'FUNCTION':
-            tools.function.validate(compiler, node)
+            tools.function.process(compiler, node)
 
         elif name == 'CLASS':
             tools.classes.validate(compiler, node)

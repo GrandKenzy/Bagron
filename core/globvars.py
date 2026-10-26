@@ -5,7 +5,6 @@ CLAUSES: list[str] = ['Arch',
                       'Visibility',
                       'StackLimit',
                       'Optimizations',
-                      'CompilerTarget'
 ]
 
 BASEDIR: Path = Path('./')
