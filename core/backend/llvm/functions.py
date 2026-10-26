@@ -49,11 +49,29 @@ class FunctionEmitter:
                 'El entrypoint main requiere un return literal bool'
             )
 
-        function_type = ir.FunctionType(ir.IntType(1), [])
-        function = ir.Function(self.module, function_type, name='main')
-        block = function.append_basic_block(name='entry')
-        builder = ir.IRBuilder(block)
-        builder.ret(ir.Constant(ir.IntType(1), bool(value.value)))
+        bool_type = ir.IntType(1)
+        source_type = ir.FunctionType(bool_type, [])
+        source_function = ir.Function(
+            self.module,
+            source_type,
+            name='__bagron_main',
+        )
+        source_function.linkage = 'internal'
+        source_block = source_function.append_basic_block(name='entry')
+        source_builder = ir.IRBuilder(source_block)
+        source_builder.ret(ir.Constant(bool_type, bool(value.value)))
+
+        native_type = ir.FunctionType(ir.IntType(32), [])
+        native_function = ir.Function(self.module, native_type, name='main')
+        native_block = native_function.append_basic_block(name='entry')
+        native_builder = ir.IRBuilder(native_block)
+        result = native_builder.call(source_function, [])
+        exit_code = native_builder.select(
+            result,
+            ir.Constant(ir.IntType(32), 0),
+            ir.Constant(ir.IntType(32), 1),
+        )
+        native_builder.ret(exit_code)
 
 
 __all__ = ['FunctionEmissionError', 'FunctionEmitter']

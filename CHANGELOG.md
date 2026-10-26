@@ -11,7 +11,8 @@ Todos los cambios relevantes de EasyC/Bagron se documentan en este archivo.
 - Scopes `Storage` independientes por función para parámetros, variables locales y variables de iteración `ran`.
 - Validación semántica inicial de tipos locales y retornos de funciones top-level.
 - Requisito de una función global `main` como punto de entrada del módulo.
-- Emisión LLVM inicial de `main() bool` como `define i1 @"main"()` con `ret i1 true/false`.
+- Emisión LLVM inicial de `main() bool` como `__bagron_main() i1` más un wrapper nativo `main() i32`.
+- Generación de objetos y ejecutables mínimos mediante `llvmlite` y Clang/LLD.
 - Tipos enteros de ancho exacto `Bint<n>` y `uBint<n>`.
 - Metadata semántica para ancho y signo de enteros parametrizados.
 - Tipo callable `callptr` con registro de firmas de funciones.

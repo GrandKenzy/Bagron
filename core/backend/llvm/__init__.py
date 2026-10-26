@@ -1,3 +1,3 @@
-from core.backend.llvm.module import LLVMBackend
+from core.backend.llvm.module import BuildArtifacts, LLVMBackend
 
-__all__ = ['LLVMBackend']
+__all__ = ['BuildArtifacts', 'LLVMBackend']

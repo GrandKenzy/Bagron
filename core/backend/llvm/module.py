@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from llvmlite import binding as llvm
@@ -15,10 +18,17 @@ class BackendError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class BuildArtifacts:
+    ir: Path
+    object_file: Path
+    executable: Path
+
+
 class LLVMBackend:
     """First-stage LLVM backend for validated global symbols."""
 
-    def emit_module(self, storage, output: str | Path | None = None) -> Path:
+    def _emit_verified(self, storage):
         try:
             context = LLVMContextHandle.create(
                 name=Path(storage.root).stem,
@@ -29,8 +39,13 @@ class LLVMBackend:
             module_text = str(context.module)
             verified = llvm.parse_assembly(module_text)
             verified.verify()
-        except (TargetResolutionError, ValueError, RuntimeError) as error:
+        except (TargetResolutionError, TypeError, ValueError, RuntimeError) as error:
             raise BackendError(str(error)) from error
+
+        return context, module_text, verified
+
+    def emit_module(self, storage, output: str | Path | None = None) -> Path:
+        _, module_text, _ = self._emit_verified(storage)
 
         output_path = Path(output) if output is not None else (
             Path(storage.root).parent / 'build' / f'{Path(storage.root).stem}.ll'
@@ -39,5 +54,72 @@ class LLVMBackend:
         output_path.write_text(module_text, encoding='utf-8')
         return output_path
 
+    def build(self, storage, output_dir: str | Path | None = None) -> BuildArtifacts:
+        context, module_text, verified = self._emit_verified(storage)
+        root = Path(storage.root)
+        build_dir = Path(output_dir) if output_dir is not None else root.parent / 'build'
+        build_dir.mkdir(parents=True, exist_ok=True)
 
-__all__ = ['BackendError', 'LLVMBackend']
+        stem = root.stem
+        ir_path = build_dir / f'{stem}.ll'
+        object_path = build_dir / f'{stem}.obj'
+        executable_path = build_dir / f'{stem}.exe'
+
+        ir_path.write_text(module_text, encoding='utf-8')
+        try:
+            object_path.write_bytes(context.target.machine.emit_object(verified))
+        except (OSError, TypeError, ValueError, RuntimeError) as error:
+            raise BackendError(f'No se pudo generar el objeto LLVM: {error}') from error
+
+        self._link_object(
+            object_path,
+            executable_path,
+            context.target.triple,
+        )
+        return BuildArtifacts(
+            ir=ir_path,
+            object_file=object_path,
+            executable=executable_path,
+        )
+
+    @staticmethod
+    def _link_object(object_path: Path, executable_path: Path, triple: str) -> None:
+        clang = shutil.which('clang')
+        if clang is None:
+            raise BackendError(
+                'No se encontro clang para enlazar el ejecutable. '
+                'Instala LLVM y agrega clang al PATH.'
+            )
+
+        command = [
+            clang,
+            f'--target={triple}',
+            '-fuse-ld=lld',
+            str(object_path),
+            '-o',
+            str(executable_path),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise BackendError(
+                'El enlace con clang excedio el limite de 60 segundos'
+            ) from error
+        except OSError as error:
+            raise BackendError(f'No se pudo ejecutar clang: {error}') from error
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError(
+                f'Clang no pudo enlazar el ejecutable (codigo {result.returncode}): '
+                f'{detail}'
+            )
+
+
+__all__ = ['BackendError', 'BuildArtifacts', 'LLVMBackend']

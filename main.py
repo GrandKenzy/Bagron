@@ -11,11 +11,11 @@ def main(*args):
     compiler = Compiler()
     target = argv[1] if len(argv) > 1 else argv[0]
     try:
-        output = compiler.compile(target)
+        artifacts = compiler.compile(target)
     except CompilationError as error:
         print(f'Compilation failed: {error}', file=sys.stderr)
         return 1
-    print(output)
+    print(artifacts.executable)
     return 0
 
 

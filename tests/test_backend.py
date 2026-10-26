@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import subprocess
 from pathlib import Path
 
 from core.compiler import CompilationError, Compiler
@@ -14,7 +15,7 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(source, encoding='utf-8')
-            output = Compiler().compile(path)
+            output = Compiler().compile(path, executable=False)
             return Path(output).read_text(encoding='utf-8')
 
     def test_emits_literals_bint_arrays_and_const_references(self):
@@ -33,8 +34,32 @@ class GlobalBackendTests(unittest.TestCase):
     def test_emits_bool_main_as_llvm_entrypoint(self):
         module = self.compile_source('value: int = 1\n')
 
-        self.assertIn('define i1 @"main"()', module)
+        self.assertIn('define internal i1 @"__bagron_main"()', module)
+        self.assertIn('define i32 @"main"()', module)
+        self.assertIn('select  i1', module)
         self.assertIn('ret i1 true', module)
+
+    def test_builds_and_runs_main_exit_codes(self):
+        for boolean, expected in (('true', 0), ('false', 1)):
+            with self.subTest(boolean=boolean):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / '_main.bg'
+                    path.write_text(
+                        'func main() bool:\n'
+                        f'    return {boolean}\n',
+                        encoding='utf-8',
+                    )
+                    artifacts = Compiler().compile(path)
+                    self.assertTrue(artifacts.ir.exists())
+                    self.assertTrue(artifacts.object_file.exists())
+                    self.assertTrue(artifacts.executable.exists())
+                    result = subprocess.run(
+                        [str(artifacts.executable)],
+                        capture_output=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    self.assertEqual(expected, result.returncode)
 
     def test_rejects_mutable_global_reference(self):
         with self.assertRaisesRegex(CompilationError, 'global mutable base'):

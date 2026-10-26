@@ -55,7 +55,7 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Python:** 3.14 o superior.
 * **llvmlite:** 0.50.0, gestionado mediante vnma.
-* **LLVM:** La primera etapa genera y verifica archivos `.ll`; el enlace a ejecutables se añadirá después.
+* **LLVM/Clang/LLD:** La compilación genera y verifica `.ll`, produce `.obj` y enlaza un `.exe` para el entrypoint mínimo `main`.
 
 ---
 

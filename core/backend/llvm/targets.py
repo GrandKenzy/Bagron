@@ -66,7 +66,7 @@ def resolve_target(request: str | None = None) -> TargetHandle:
 
     try:
         target = llvm.Target.from_triple(triple)
-        machine = target.create_target_machine()
+        machine = target.create_target_machine(codemodel='small')
     except (RuntimeError, ValueError) as error:
         raise TargetResolutionError(
             f'No se pudo resolver el target LLVM {triple!r}: {error}'

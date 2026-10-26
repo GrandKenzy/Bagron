@@ -64,7 +64,7 @@ Especificacion de arquitectura y manual tecnico del compilador y el lenguaje **B
    [ LLVM Backend ] ----> LLVM IR verificado (`.ll`)
               |
               v
-   [ Objeto / Binario Nativo ]  (etapa posterior)
+   [ Objeto / Ejecutable ]  (main mínimo)
 ```
 
 ---

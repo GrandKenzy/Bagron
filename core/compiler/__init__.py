@@ -10,7 +10,7 @@ class Compiler(CompilerState):
         super().__init__()
         self.storage = storage.Storage('main')
 
-    def compile(self, path: Path | str):
+    def compile(self, path: Path | str, executable: bool = True):
         if isinstance(path, str):
             path = Path(path)
 
@@ -51,6 +51,9 @@ class Compiler(CompilerState):
         from core.backend.llvm.module import BackendError
 
         try:
-            return LLVMBackend().emit_module(self.storage)
+            backend = LLVMBackend()
+            if executable:
+                return backend.build(self.storage)
+            return backend.emit_module(self.storage)
         except BackendError as error:
             raise CompilationError(str(error)) from error

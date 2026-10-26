@@ -16,7 +16,7 @@ class FunctionSemanticTests(unittest.TestCase):
         path = Path(directory.name) / '_main.bg'
         path.write_text(source, encoding='utf-8')
         compiler = Compiler()
-        compiler.compile(path)
+        compiler.compile(path, executable=False)
         return compiler
 
     def test_function_scope_contains_parameters_and_nested_locals(self):
