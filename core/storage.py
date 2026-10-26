@@ -2,7 +2,12 @@ from typing import Any
 
 from tools import diagnostic
 
-from core.frontend.objects import FunctionSymbol, Variable
+from core.frontend.objects import (
+    AggregateSymbol,
+    EnumSymbol,
+    FunctionSymbol,
+    Variable,
+)
 
 from platform import system, architecture
 
@@ -51,6 +56,7 @@ class Storage(diagnostic.Diagnostics):
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
         self.function_scopes: dict[str, Storage] = {}
+        self.types: dict[str, EnumSymbol | AggregateSymbol] = {}
         
     def define_clause(self, name: str, value: int | str | bool):
         if      name == 'Visibility': self.privacy = str(value)
@@ -94,3 +100,18 @@ class Storage(diagnostic.Diagnostics):
         self.functions[symbol.name] = symbol
         self.function_scopes[symbol.name] = symbol.scope
         return True
+
+    def define_type(self, symbol: EnumSymbol | AggregateSymbol) -> bool:
+        """Register a type in the current type namespace."""
+        if symbol.name in self.types:
+            return False
+        self.types[symbol.name] = symbol
+        return True
+
+    def resolve_type(self, name: str) -> EnumSymbol | AggregateSymbol | None:
+        symbol = self.types.get(name)
+        if symbol is not None:
+            return symbol
+        if self.parent is not None:
+            return self.parent.resolve_type(name)
+        return None

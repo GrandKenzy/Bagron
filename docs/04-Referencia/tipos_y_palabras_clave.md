@@ -129,13 +129,13 @@ esta reservado para la constancia del puntero.
 
 ## Estructuras, Moldes Y Alineacion De Memoria
 
-Bagron proporciona herramientas directas para interactuar con hardware sin desajustes de memoria:
+En la fase actual, estos constructos se registran y validan semánticamente,
+pero todavía no tienen layout físico ni instancias LLVM:
 
-- **Estructuras planas (`struct`):** Layout binario estructurado en memoria.
-- **Moldes (`mold`):** Tipos semanticos reutilizables para plantillas de datos.
-- **Decorador `@packed`:** Elimina el padding de alineacion interna en `struct`, `mold` y `flags`.
-- **Modificador `__align__ N`:** Fuerza alineacion de hardware a limites de N bytes.
-- **Campos a nivel de bits (`flags`):** Permite declarar campos tipados con valor inicial (`nombre: tipo = valor`) para protocolos binarios y registros de microcontroladores.
+- **`struct`:** Campos ordenados y tipados, sin inicializadores.
+- **`mold`:** Tipo nominal distinto de `struct`, con los mismos campos sin inicializadores.
+- **`flags`:** Campos enteros escalares con un literal compatible conservado como metadata.
+- **`@packed`, `volatile` y `__align__`:** Reservados; producen un diagnóstico de funcionalidad pendiente.
 
 ---
 
@@ -145,9 +145,9 @@ Permite definir variantes fuertemente tipadas:
 
 ```bg
 enum EventType:
-    QUIT = 256
-    KEYDOWN = 257
-    KEYUP = 258
+    QUIT = 256,
+    KEYDOWN = 257,
+    KEYUP = 258,
 ```
 
 ---

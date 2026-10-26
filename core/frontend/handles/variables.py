@@ -51,32 +51,25 @@ def _type_is_const(node: object) -> bool:
     return _token_value(node) == 'const'
 
 
-def handle_variable(node: gast.ASTRef) -> VariableHandle | None:
-    """Extract one VAR node without resolving semantic values."""
-    if node.name != 'VAR':
+def handle_declaration(
+    declaration: gast.ASTRef,
+    privacy: str = 'public',
+) -> VariableHandle | None:
+    """Extract a direct variable declaration without resolving its value."""
+    if declaration.name not in ('VAR_DECLARATION', 'VAR_INITIALIZATION'):
         return None
 
-    privacy = 'public'
-    declaration = next(
-        (
-            child for child in node.nodes
-            if isinstance(child, gast.ASTRef)
-            and child.name in ('VAR_DECLARATION', 'VAR_INITIALIZATION')
-        ),
-        None,
-    )
-    if declaration is None:
+    try:
+        declarator_index = next(
+            index for index, child in enumerate(declaration.nodes)
+            if isinstance(child, gast.ASTRef) and child.name == 'DECLARATOR'
+        )
+    except StopIteration:
         return None
 
-    for child in node.nodes:
-        if isinstance(child, gast.ASTKeyword):
-            privacy = str(child.token.value)
-            break
+    if declarator_index + 2 >= len(declaration.nodes):
+        return None
 
-    declarator_index = next(
-        index for index, child in enumerate(declaration.nodes)
-        if isinstance(child, gast.ASTRef) and child.name == 'DECLARATOR'
-    )
     declarator = declaration.nodes[declarator_index]
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
     type_node = declaration.nodes[declarator_index + 2]
@@ -98,6 +91,30 @@ def handle_variable(node: gast.ASTRef) -> VariableHandle | None:
         pointer_is_const=pointer_is_const,
         value_is_const=_type_is_const(type_node),
     )
+
+
+def handle_variable(node: gast.ASTRef) -> VariableHandle | None:
+    """Extract one VAR node without resolving semantic values."""
+    if node.name != 'VAR':
+        return None
+
+    privacy = 'public'
+    declaration = next(
+        (
+            child for child in node.nodes
+            if isinstance(child, gast.ASTRef)
+            and child.name in ('VAR_DECLARATION', 'VAR_INITIALIZATION')
+        ),
+        None,
+    )
+    if declaration is None:
+        return None
+
+    for child in node.nodes:
+        if isinstance(child, gast.ASTKeyword):
+            privacy = str(child.token.value)
+            break
+    return handle_declaration(declaration, privacy=privacy)
 
 
 GlobalVariableHandle = VariableHandle

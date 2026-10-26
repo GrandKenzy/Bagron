@@ -4,7 +4,14 @@ from core.frontend.objects.function import (
     ParameterSpec,
     TypeInfo,
 )
-from core.frontend.objects.type import TypeSpec, ValueInfo
+from core.frontend.objects.type import (
+    AggregateSymbol,
+    EnumMember,
+    EnumSymbol,
+    FieldSpec,
+    TypeSpec,
+    ValueInfo,
+)
 from core.frontend.objects.variable import Variable
 
 __all__ = [
@@ -14,5 +21,9 @@ __all__ = [
     'TypeInfo',
     'TypeSpec',
     'ValueInfo',
+    'FieldSpec',
+    'AggregateSymbol',
+    'EnumMember',
+    'EnumSymbol',
     'Variable',
 ]

@@ -68,10 +68,24 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 - **Molde (`MOLD`):** `[@packed] [privacy] [volatile] mold ident: INDENT [ATTRIBUTES] miembros DEDENT`.
 - **Campos de bits (`FLAGS`):** `[@packed] [privacy] [volatile] flags ident: INDENT [ATTRIBUTES] miembros DEDENT`, donde cada campo usa la declaracion tipada con asignacion: `nombre: tipo = valor`.
 
+En la fase semantica actual, `struct`, `mold` y `flags` se registran como tipos
+nominales en un registro separado del namespace de variables y funciones. Sus
+campos se conservan en orden como `FieldSpec`; se validan los tipos conocidos,
+los nombres duplicados y, para `flags`, los literales enteros compatibles.
+Todavia no se calcula layout, padding, offsets ni se emiten tipos agregados en
+LLVM. Las instancias y el acceso a miembros quedan para una fase posterior.
+Los modificadores `@packed`, `volatile` y `__align__` producen un diagnostico
+de funcionalidad pendiente.
+
 ### enum_decl.py (Enumeraciones)
 - **Elemento (`ENUM_ITEM`):** `ident [= numero],`.
 - **Cuerpo (`ENUM_BODY`):** Bloque indentado con elementos o `pass`.
 - **Declaracion (`ENUM`):** `[privacy] enum ident: ENUM_BODY`.
+
+Los enums usan base fija `int32`. El primer miembro implicito vale `0`; cada
+miembro posterior incrementa el valor anterior y un valor explicito reinicia
+la secuencia. La sintaxis actual exige coma despues de cada miembro, incluso
+el ultimo. Los valores numericos repetidos son validos, pero los nombres no.
 
 ### class_decl.py (Clases Y Herencia)
 - **Herencia (`CLASS_HERENCY`):** `(ident, ...)`.
@@ -115,3 +129,6 @@ Se ejecuta el tokenizador con soporte de indentacion: `TKNS = BAGRON.BAGRON_SESS
 El parser genera el AST.
 En `core/compiler/__init__.py`, se invoca `core.frontend.BAGRON.processor.process(self, AST)`.
 El procesador valida las clausulas del entorno (`storage.define_clause`) y extrae las definiciones semanticas mediante `core/frontend/tools/`.
+Primero registra todos los nombres de tipos top-level (`enum`, `struct`,
+`mold` y `flags`); despues valida sus miembros y campos. Esto permite que un
+campo nombre otro tipo declarado mas adelante en el mismo modulo.

@@ -21,6 +21,8 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             except ValueError as error:
                 compiler.error(str(error))
 
+    tools.structure.collect(compiler, nodes)
+    tools.enumeration.collect(compiler, nodes)
     tools.function.collect(compiler, nodes)
 
     for node in nodes:

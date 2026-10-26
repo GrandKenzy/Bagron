@@ -24,6 +24,41 @@ class TypeSpec:
 
 
 @dataclass(frozen=True)
+class FieldSpec:
+    """Semantic description of one field in an aggregate type."""
+
+    name: str
+    type_spec: TypeSpec
+    value_info: ValueInfo | None = None
+
+
+@dataclass
+class AggregateSymbol:
+    """Nominal declaration for a struct, mold, or flags type."""
+
+    name: str
+    kind: str
+    fields: tuple[FieldSpec, ...] = ()
+    privacy: str = 'public'
+
+
+@dataclass(frozen=True)
+class EnumMember:
+    name: str
+    value: int
+
+
+@dataclass
+class EnumSymbol:
+    """Semantic declaration for an enum with the fixed int32 base type."""
+
+    name: str
+    base_type: TypeSpec
+    members: tuple[EnumMember, ...] = ()
+    privacy: str = 'public'
+
+
+@dataclass(frozen=True)
 class ValueInfo:
     """Type information for a supported global initializer."""
 

@@ -13,6 +13,7 @@ class CompilerState(Diagnostics):
     def __init__(self):
         self.semantic_errors: list[str] = []
         self.function_bindings: dict[int, object] = {}
+        self.type_bindings: dict[int, object] = {}
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
 
     def error(self, note: str):

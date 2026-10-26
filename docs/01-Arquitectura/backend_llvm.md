@@ -22,6 +22,10 @@ se registran y validan en el frontend, pero todavía no generan instrucciones
 LLVM. El wrapper nativo convierte `true` en código de salida `0` y `false` en
 `1`.
 
+Las definiciones semánticas de `enum`, `struct`, `mold` y `flags` pueden
+coexistir con el módulo y con `main`, pero por ahora el backend las ignora:
+todavía no tienen instancias ni representación LLVM agregada.
+
 ## Inicialización de LLVM
 
 EasyC usa `llvmlite` desde el entorno gestionado por vnma. El backend inicializa

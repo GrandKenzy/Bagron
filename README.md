@@ -33,13 +33,13 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
 
-* **Cero Costo de Abstracción:** Las estructuras y llamadas mapean directamente a instrucciones de LLVM IR, optimizando el rendimiento al máximo.
+* **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
 
 * **Constantes explícitas:** `const tipo` expresa un valor constante; los punteros separan la constancia del puntero y del valor apuntado.
 
 * **Estructuras, Enumeraciones y Clases:**
-  * `struct`: Estructuras planas de memoria directa.
-  * `enum`: Enumeraciones fuertemente tipadas y con nombres cualificados (`EventType.QUIT`).
+  * `struct`, `mold` y `flags`: Tipos nominales validados semánticamente; su layout LLVM está pendiente.
+  * `enum`: Enumeraciones con base fija `int32` y valores implícitos/explícitos.
   * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
 
 * **Control de Flujo Expresivo:**
