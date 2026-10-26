@@ -1,12 +1,12 @@
 # Integracion De Librerias Compiladas (Caso SDL3)
 
-Este documento detalla la arquitectura de integracion de librerias nativas en **Easy-C** (o **c-**), utilizando la biblioteca multimedia **SDL3** como caso de estudio practico.
+Este documento detalla la arquitectura de integracion de librerias nativas en **Bagron** (o **Bagron**), utilizando la biblioteca multimedia **SDL3** como caso de estudio practico.
 
 ---
 
 ## Arquitectura De Integracion
 
-El enlace de una biblioteca nativa en c- desacopla el binario del lenguaje mediante capas especificas:
+El enlace de una biblioteca nativa en Bagron desacopla el binario del lenguaje mediante capas especificas:
 
 ```
 [ Binario Nativo C/C++: SDL3.dll, libSDL3.a ]
@@ -14,8 +14,8 @@ El enlace de una biblioteca nativa en c- desacopla el binario del lenguaje media
                      | Directivas de enlace (@link, @bin, @header)
 [ Contrato Externs: source/targets/c/extends/sdl3.externs.egl ]
                      ^
-                     | Inclusion con alias (include "sdl3" as C_SDL3)
-[ Modulo Idiomatico Easy-C: source/targets/c/libraries/sdl3.egl ]
+                     | Importacion con alias (import sdl3 as C_SDL3)
+[ Modulo Idiomatico Bagron: source/targets/c/libraries/sdl3.egl ]
                      ^
                      | Importacion y consumo (import sdl3)
 [ Codigo De Aplicacion: source/main.egl ]
@@ -42,7 +42,7 @@ Los contratos `.externs.egl` configuran las banderas del compilador nativo al in
 Se define en `source/targets/c/extends/sdl3.externs.egl` para ensenar al analizador semantico las firmas exactas de la libreria:
 
 ```egl
-; Firmas de Simple DirectMedia Layer 3 (SDL3) para Easy-C
+; Firmas de Simple DirectMedia Layer 3 (SDL3) para Bagron
 @header SDL3/SDL.h
 @link SDL3
 @bin SDL3.dll
@@ -76,12 +76,12 @@ En las firmas de contratos:
 
 ---
 
-## Modulo Idiomatico En Easy-C (`sdl3.egl`)
+## Modulo Idiomatico En Bagron (`sdl3.egl`)
 
 Construye una capa orientada a objetos en `source/targets/c/libraries/sdl3.egl` sobre el contrato en C:
 
 ```egl
-include "sdl3" as C_SDL3
+import sdl3 as C_SDL3
 import standard
 
 ; Estructuras planas compatibles con memoria C
@@ -164,7 +164,7 @@ declare sdl3.EventType as EventType
 
 sdl3.init(0)
 
-Window ventana = Window("Easy-C SDL3 - Demo", 640, 480)
+Window ventana = Window("Bagron SDL3 - Demo", 640, 480)
 FRect rect = FRect(220.0, 165.0, 200.0, 150.0)
 
 bool running = true

@@ -1,18 +1,18 @@
-# Arquitectura Del Compilador Easy-C (EC)
+# Arquitectura Del Compilador Bagron
 
-Este documento detalla la arquitectura tecnica del compilador **Easy-C** (nombrado tambien como **EC**), sus principios de diseno, la integracion del frontend con **Gram** y **VNMA**, el procesador semantico y el backend LLVM.
+Este documento detalla la arquitectura tecnica del compilador **Bagron**, sus principios de diseno, la integracion del frontend con **Gram** y **VNMA**, el procesador semantico y el backend LLVM.
 
 ---
 
 ## Principios De Diseño
 
-Easy-C fue concebido como un lenguaje de programacion de tipado estatico y sintaxis limpia basada en indentacion, con un objetivo estricto: **Interoperar con C mientras EC también sea un lenguaje de alto rendimiento sin intermediarios**.
+Bagron fue concebido como un lenguaje de programacion de tipado estatico y sintaxis limpia basada en indentacion, con un objetivo estricto: **alto rendimiento sin intermediarios**.
 
-**anti sobre carga de runtime (no runtime cost):**
-c- no implementa recolector de basura (Garbage Collector), ni maquina virtual de bytecode, ni bucle de eventos oculto. Las estructuras definidas en Easy-C mapean directamente como structs estandar de C, y los tipos escalares corresponden a anchos exactos de registros de la CPU.
+**Anti sobrecarga de runtime (no runtime cost):**
+Bagron no implementa recolector de basura (Garbage Collector), ni maquina virtual de bytecode, ni bucle de eventos oculto. Las estructuras definidas mapean directamente a nivel de memoria y los tipos escalares corresponden a anchos exactos de registros de la CPU.
 
-**separar fases:**
-El pipeline de compilacion desacopla por completo el analisis sintactico del analisis semantico. El motor sintactico **Gram** no valida tipos ni resuelve simbolos; unicamente produce un arbol de sintaxis abstracta (AST). Es el procesador semantico (`core/processor`) quien aplica las reglas de inferencia, control de ambitos y compatibilidad binaria.
+**Separar fases:**
+El pipeline de compilacion desacopla por completo el analisis sintactico del analisis semantico. El motor sintactico **Gram** no valida tipos ni resuelve simbolos; unicamente produce un arbol de sintaxis abstracta (AST). Es el procesador semantico quien aplica las reglas de inferencia, control de ambitos y compatibilidad binaria.
 
 ---
 
@@ -20,12 +20,12 @@ El pipeline de compilacion desacopla por completo el analisis sintactico del ana
 
 ```
 +-----------------------------------------------------------------------------+
-|                      Pipeline global Easy-C (C-)                            |
+|                         Pipeline global Bagron                              |
 +-----------------------------------------------------------------------------+
-   [ Codigo Fuente (.egl) ]
+   [ Codigo Fuente (.bg) ]
               |
    Tokens     v      Gram
-   +----------------------+   Configuracion global de Frontend (C/EC)
+   +----------------------+   Configuracion de Frontend (Bagron)
    |  Gram Lexer Engine   |   y registro de palabras claves y reglas sintácticas.
    +----------------------+
               |
@@ -34,19 +34,19 @@ El pipeline de compilacion desacopla por completo el analisis sintactico del ana
    | Gram Parser Engine   |   Generación de un AST Nodeizado.
    +----------------------+
               | 
-   Semantic   v       ECC
+   Semantic   v       Bagron
    +----------------------+   Resolucion de ambitos, tabla de simbolos
    | Semantic Processor   |   proyectos modularizados y otras dependencias.
    +----------------------+   Generación de objetos.
               | 
-   Opt. F1    v       ECC
+   Opt. F1    v       Bagron
    +----------------------+   Eliminación de código muerto, alineamiento y reorder.
    |  Optimizations P1    |   Constant Folding y Type Checker.
    +----------------------+   Protección ligera de memoria y diagnosticos legibles.
               |
-   IR Común   v       ECC
+   IR Común   v       Bagron
    +----------------------+   
-   |     IR Generation    |   Generación de IR (C/EC) para LLVM.
+   |     IR Generation    |   Generación de IR para LLVM.
    +----------------------+
               |
    Opt. F2    v       LLVM
@@ -63,25 +63,24 @@ El pipeline de compilacion desacopla por completo el analisis sintactico del ana
 ## Frontend Gramatical Y Gestion Con VNMA
 
 ### Integracion De Gram Mediante VNMA
-Easy-C aisla sus dependencias mediante el gestor de entornos **VNMA**, evitando la instalacion de paquetes globales en el sistema operativo:
+Bagron aisla sus dependencias mediante el gestor de entornos **VNMA**, evitando la instalacion de paquetes globales en el sistema operativo:
 
 - **Archivo `vnma.toml`:**
-  Declara `gram-framework` como dependencia local editable para desarrollo continuo:
+  Declara `gram` como dependencia local editable para desarrollo continuo:
   ```toml
   [project]
-  name = "easyc"
+  name = "bagron"
   version = "0.3.0"
 
   [dependencies]
 
-  gram-framework = { git = "https://github.com/GrandKenzy/Gram.git", branch="main" }
+  gram = { path = "~/Desktop/Gram", editable = true }
 
   [dev-dependencies]
 
   [tool.vnma]
   vendor_dir = "vendor"
   ide_integration = ["vscode", "pycharm"]
-
   ```
 - **Instalación (`vnma install`):**
   Para instalar solamente debes hacer vnma install dentro de tu proyecto.
@@ -105,8 +104,6 @@ Easy-C aisla sus dependencias mediante el gestor de entornos **VNMA**, evitando 
 
 ---
 
-## Frontends Del Compilador
+## Frontend Del Compilador
 
-EGL implementa una arquitectura dual de frontends sintacticos:
-- **[Frontend EasyC (`core/frontend/EASYC`)](./frontend_ec.md):** Parser para sintaxis basada en indentacion (`.ec`, `.egl`). Consulta [Frontend EasyC](./frontend_ec.md) para el detalle de reglas combinatorias, items y procesador.
-- **[Frontend C (`core/frontend/C`)](./frontend_c.md):** Parser formal para C ANSI / C99 / C11 / C23 delimitado por llaves `{}` y punto y coma `;` con sesion aislada `C_SESSION`. Consulta [Frontend C](./frontend_c.md) para el detalle de reglas combinatorias, items y procesador.
+- **[Frontend Bagron (`core/frontend`)](./frontend_bagron.md):** Parser para sintaxis basada en indentacion (`.bg`). Consulta [Frontend Bagron](./frontend_bagron.md) para el detalle de reglas combinatorias, items y procesador.

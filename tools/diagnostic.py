@@ -13,7 +13,7 @@ from gram.utilities.info import Node
 
 class Diagnostics(utilities.Diagnostics):
     """
-    Sistema de diagnóstico para el procesamiento y compilación de Easy-C.
+    Sistema de diagnóstico para el procesamiento y compilación de Bagron.
     Gestiona el registro estructurado de eventos en árbol jerárquico y
     la persistencia en archivos de log dentro del directorio log/.
     """

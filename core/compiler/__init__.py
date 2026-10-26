@@ -2,8 +2,7 @@ from pathlib import Path
 
 from core import globvars, storage
 from core.compiler.control import CompilerState, _found_main
-from core.frontend.C import processor as c_processor
-from core.frontend.EASYC import processor as ec_processor
+from core.frontend import processor as bagron_processor
 
 
 class Compiler(CompilerState):
@@ -23,16 +22,13 @@ class Compiler(CompilerState):
             globvars.BASEDIR = path
             r = _found_main(path)
             if not r:
-                self.error(f'No se encontró main.ec ni main.c en {path}')
+                self.error(f'No se encontró main.bg en {path}')
                 self.exit()
             else:
                 path = r
 
-        AST, LANG = self.process_source(path)
+        AST = self.process_source(path)
 
         self.storage.root = str(path)
 
-        if LANG == 0: # procesar entrada C
-            c_processor.process(self, AST)
-        else: # procesar entrada EC.
-            ec_processor.process(self, AST)
+        bagron_processor.process(self, AST)

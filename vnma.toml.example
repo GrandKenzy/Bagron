@@ -1,14 +1,11 @@
 [project]
-# name = "easyc"
+# name = "bagron"
 # version = "0.3.0"
 
 [dependencies]
 
 # Desde ruta local (Se requiere clonar Gram). Modificaciones en tiempo real.
-# gram = { path = "~/Desktop/Gram", editable = true }
-
-# Desde GitHub.
-# gramv2.0.0b = { git = "https://github.com/GrandKenzy/Gram.git", branch="main" }
+gram = { path = "~/Desktop/Gram", editable = true }
 
 [dev-dependencies]
 

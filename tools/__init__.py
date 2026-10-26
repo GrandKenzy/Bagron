@@ -1,5 +1,5 @@
 """
-Herramientas de Easy-C:
+Herramientas de Bagron:
 - tools.diagnostic: Diagnóstico para procesamiento y archivos logs.
 - tools.console: Diagnóstico y log de consola.
 - tools.config: Configuración global.
