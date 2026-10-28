@@ -7,6 +7,7 @@ from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.class_decl import CLASS
 from core.frontend.syntax.items.clauses import CLAUSE
 from core.frontend.syntax.items.enum_decl import ENUM
+from core.frontend.syntax.items.externs import EXTERN
 from core.frontend.syntax.items.func_decl import FUNCTION
 from core.frontend.syntax.items.includes import INCLUDE
 from core.frontend.syntax.items.imports import IMPORT
@@ -42,6 +43,7 @@ class ENTRYPOINT(cmb.RuleItem):
         cmb.Ref(VAR_ASSIGNATION),
         cmb.Ref(IMPORT),
         cmb.Ref(INCLUDE),
+        cmb.Ref(EXTERN),
         # cmb.Ref(OBJECT),
         cmb.Ref(CLAUSE),
         cmb.Ref(FUNCTION),

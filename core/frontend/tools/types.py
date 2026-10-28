@@ -273,6 +273,14 @@ def _deref_type(type_spec: TypeSpec) -> TypeSpec:
         raise ValueResolutionError(
             'la desreferenciacion requiere un valor puntero'
         )
+    if (
+        type_spec.name == 'void'
+        and type_spec.pointer_level == 1
+        and type_spec.array_depth == 0
+    ):
+        raise ValueResolutionError(
+            'void* no puede desreferenciarse sin conocer el tipo apuntado'
+        )
     return TypeSpec(
         name=type_spec.name,
         bit_width=type_spec.bit_width,
@@ -413,6 +421,14 @@ def _infer_postfix(
                     'a traves de un retorno puntero'
                 )
         return_type = getattr(signature, 'return_type', TypeSpec('void'))
+        if (
+            return_type.name == 'void'
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            raise ValueResolutionError(
+                'una funcion void solo puede llamarse como sentencia'
+            )
         result = ValueInfo(
             return_type,
             address_origin='unknown' if return_type.pointer_level else None,
@@ -1086,6 +1102,25 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
 
     if source_type.name == 'Null':
         return target.pointer_level > 0 and target.array_depth == 0
+
+    if (
+        target.name == 'void'
+        and source_type.name == 'void'
+        and target.pointer_level == 0
+        and source_type.pointer_level == 0
+    ):
+        return False
+
+    if (
+        target.pointer_level == 1
+        and source_type.pointer_level == 1
+        and target.array_depth == 0
+        and source_type.array_depth == 0
+        and (target.name == 'void' or source_type.name == 'void')
+    ):
+        if source_type.value_is_const and not target.value_is_const:
+            return False
+        return target.pointer_is_const == source_type.pointer_is_const
 
     if target.pointer_level > 0 and source.is_literal:
         return False

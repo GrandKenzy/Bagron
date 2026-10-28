@@ -145,6 +145,8 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
 
 def _known_field_type(compiler: Compiler, type_spec) -> bool:
     if type_spec.name in INTRINSIC_TYPES:
+        if type_spec.name == 'void':
+            return type_spec.pointer_level > 0 and type_spec.array_depth == 0
         return type_spec.name not in {'void', 'Null'}
     return compiler.storage.resolve_type(type_spec.name) is not None
 

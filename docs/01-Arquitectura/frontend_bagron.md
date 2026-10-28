@@ -69,9 +69,11 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 - **Scope semantico:** Cada funcion top-level crea un `Storage` propio para sus parametros y variables locales. El scope resuelve primero sus simbolos y despues el Storage global.
 - **Estado actual:** Las funciones enteras pueden retornar literales, parametros,
   variables locales, operaciones aritmeticas y llamadas a otras funciones
-  enteras. Las variables locales admiten declaracion, inicializacion y
-  asignacion con comprobacion de tipos. Los metodos de clases, valores por
-  defecto de parametros y expresiones complejas quedan para fases posteriores.
+  enteras. Las funciones `void` pueden terminar con `return` vacio y sus
+  llamadas solo pueden usarse como sentencias. Las variables locales admiten
+  declaracion, inicializacion y asignacion con comprobacion de tipos. Los
+  metodos de clases, valores por defecto de parametros y expresiones complejas
+  quedan para fases posteriores.
 - **Decorador `@assembler`:** habilita un único bloque `#prep assembler
   "dialecto"` opcional y un único `return`; cualquier otra sentencia se
   rechaza. Los nombres de parámetros son el contrato de la plantilla y no se agregan anotaciones `in`, `out` o `inout`.
@@ -140,6 +142,13 @@ valores numericos repetidos son validos, pero los nombres no.
 - **Resolucion:** `windows` se normaliza a `windows.h` y `kernel32` a la
   biblioteca nativa correspondiente; el header se valida con `clang` y la
   biblioteca se propaga al enlazador LLVM.
+
+### externs.py (Firmas ABI Nativas)
+- **Declaracion (`EXTERN`):** `extern "library":` seguido de firmas sin cuerpo.
+- **Firma:** `Nombre(parametro: tipo, ...) tipo`; los retornos puntero usan
+  `Nombre(...) *: tipo`, como en `GetStdHandle(...) *: void`.
+- **Frontera de seguridad:** una función `extern` es insegura por defecto y
+  debe llamarse desde una función `@unsafe`.
 
 ---
 

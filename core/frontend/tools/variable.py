@@ -194,6 +194,12 @@ def collect_in_scope(
         compiler.error(f'{handle.name}: {error}')
         return None
 
+    if type_spec.name == 'void' and type_spec.pointer_level == 0:
+        compiler.error(
+            f'La variable {handle.name} no puede usar void como almacenamiento'
+        )
+        return None
+
     symbol = build_symbol(
         storage,
         handle.name,

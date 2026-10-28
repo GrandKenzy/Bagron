@@ -42,6 +42,7 @@ KEYWORDS = {
     # Módulos, imports y cláusulas
     'import': '#E5C07B',
     'include': '#E5C07B',
+    'extern': '#E5C07B',
     'link': '#E5C07B',
     'object': '#E5C07B',
     'from': '#E5C07B',
@@ -118,6 +119,7 @@ KEYWORDS_BY_GROUP = {
     'imports': [
         'import',
         'include',
+        'extern',
         'link',
         'object',
         'from',

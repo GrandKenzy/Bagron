@@ -54,6 +54,25 @@ class PointerAndAddressTests(unittest.TestCase):
         self.assertIn('define i32* @"identity"(i32*', module)
         self.assertIn('define i32 @"read"(i32*', module)
 
+    def test_void_pointer_uses_generic_llvm_pointer(self):
+        module_path = self._compile(
+            'func consume(pointer *: void) void:\n'
+            '    return\n'
+            'func make() void*:\n'
+            '    return Null\n'
+            'func main() int:\n'
+            '    value: int = 7\n'
+            '    handle *: void = make()\n'
+            '    consume($value)\n'
+            '    consume(handle)\n'
+            '    return 0\n',
+            executable=False,
+        )
+
+        module = Path(module_path).read_text(encoding='utf-8')
+        self.assertIn('define void @"consume"(i8*', module)
+        self.assertIn('define i8* @"make"()', module)
+
     def test_global_address_and_constant_gep(self):
         module_path = self._compile(
             'struct Point:\n'

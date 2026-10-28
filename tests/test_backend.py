@@ -168,6 +168,32 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertEqual(5, result.returncode)
 
+    def test_builds_and_runs_void_function_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func touch(value: int) void:\n'
+                '    copy: int = value\n'
+                '    return\n'
+                'func main() int:\n'
+                '    touch(4)\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+            module = artifacts.ir.read_text(encoding='utf-8')
+
+        self.assertEqual(0, result.returncode)
+        self.assertIn('define void @"touch"(i32', module)
+        self.assertIn('call void @"touch"(i32', module)
+
     def test_builds_and_runs_local_declarations_and_assignments(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'

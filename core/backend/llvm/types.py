@@ -54,6 +54,13 @@ class LLVMTypeRegistry:
         spec: TypeSpec,
         array_lengths: Sequence[int] = (),
     ) -> ir.Type:
+        if spec.name == 'void':
+            if spec.array_depth:
+                raise LLVMTypeError('void no puede usarse como array')
+            value_type = ir.IntType(8) if spec.pointer_level else ir.VoidType()
+            for _ in range(spec.pointer_level):
+                value_type = value_type.as_pointer()
+            return value_type
         if spec.name == 'chain':
             raise LLVMTypeError(
                 'chain requiere un inicializador de cadena para determinar su almacenamiento'
@@ -122,7 +129,14 @@ def llvm_type(
 ) -> ir.Type:
     if type_registry is not None:
         return type_registry.resolve(spec, array_lengths)
-    if spec.name in {'callptr', 'chain', 'void', 'Null'}:
+    if spec.name == 'void':
+        if spec.array_depth:
+            raise LLVMTypeError('void no puede usarse como array')
+        value_type = ir.IntType(8) if spec.pointer_level else ir.VoidType()
+        for _ in range(spec.pointer_level):
+            value_type = value_type.as_pointer()
+        return value_type
+    if spec.name in {'callptr', 'chain', 'Null'}:
         raise LLVMTypeError(
             f'El tipo {spec.canonical_name!r} queda fuera de la primera emision LLVM'
         )
@@ -200,6 +214,8 @@ def value_type(
     value: ValueInfo | None = None,
     type_registry: LLVMTypeRegistry | None = None,
 ) -> ir.Type:
+    if spec.name == 'void' and spec.pointer_level == 0:
+        raise LLVMTypeError('void no puede usarse como almacenamiento')
     if spec.name == 'chain':
         if value is None:
             raise LLVMTypeError('chain requiere un inicializador')

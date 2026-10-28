@@ -39,13 +39,16 @@ class FunctionEmitterBase:
             if (
                 symbol.name != 'main'
                 and symbol.name not in self._functions
-                and self._supports_int_function(symbol)
+                and self._supports_function(symbol)
             ):
-                self._functions[symbol.name] = ir.Function(
+                function = ir.Function(
                     self.module,
                     self._function_type(symbol),
                     name=symbol.name,
                 )
+                if symbol.calling_convention:
+                    function.calling_convention = symbol.calling_convention
+                self._functions[symbol.name] = function
 
         emitted: set[str] = set()
         for symbol in storage.functions.values():
@@ -53,6 +56,7 @@ class FunctionEmitterBase:
                 symbol.name != 'main'
                 and symbol.name in self._functions
                 and symbol.name not in emitted
+                and not symbol.is_external
             ):
                 if symbol.return_asm_node is None:
                     self._emit_function(symbol, self._functions[symbol.name])
@@ -67,13 +71,15 @@ class FunctionEmitterBase:
         if main is not None:
             self.emit_main(main)
 
-    def _supports_int_function(self, symbol: FunctionSymbol) -> bool:
+    def _supports_function(self, symbol: FunctionSymbol) -> bool:
         try:
             return_type = llvm_type(
                 symbol.signature.return_type,
                 type_registry=self.type_registry,
             )
-            if not self._supports_runtime_type(return_type):
+            if not isinstance(return_type, ir.VoidType) and not self._supports_runtime_type(
+                return_type
+            ):
                 return False
 
             for parameter in symbol.signature.parameters:
@@ -81,7 +87,9 @@ class FunctionEmitterBase:
                     parameter.type_spec,
                     type_registry=self.type_registry,
                 )
-                if not self._supports_runtime_type(parameter_type):
+                if isinstance(parameter_type, ir.VoidType) or not self._supports_runtime_type(
+                    parameter_type
+                ):
                     return False
         except (AttributeError, TypeError, ValueError):
             return False

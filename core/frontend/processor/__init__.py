@@ -24,6 +24,9 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     tools.structure.collect(compiler, nodes)
     tools.enumeration.collect(compiler, nodes)
     tools.function.collect(compiler, nodes)
+    for node in nodes:
+        if node.name == 'EXTERN':
+            tools.externs.collect(compiler, node)
 
     # Complete nominal aggregate/enum definitions before validating global
     # initializers.  A global such as ``ptr *: int = $point.x`` needs the
@@ -82,6 +85,9 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
 
         elif name == 'INCLUDE':
             tools.includes.validate(compiler, node)
+
+        elif name == 'EXTERN':
+            continue
 
         elif name in ('IF', 'WHILE', 'FOR', 'CALL', 'VAR_ASSIGNATION'):
             # flujo secuencial

@@ -78,6 +78,29 @@ class FunctionSemanticTests(unittest.TestCase):
             '    return\n'
         )
 
+    def test_void_function_requires_an_empty_return(self):
+        with self.assertRaisesRegex(CompilationError, 'void.*return'):
+            self.compile_source(
+                'func done() void:\n'
+                '    pass\n'
+            )
+
+    def test_void_call_cannot_be_used_as_a_value(self):
+        with self.assertRaisesRegex(CompilationError, 'solo puede llamarse'):
+            self.compile_source(
+                'func done() void:\n'
+                '    return\n'
+                'func bad() int:\n'
+                '    return done()\n'
+            )
+
+    def test_void_is_not_a_value_parameter_or_local(self):
+        with self.assertRaisesRegex(CompilationError, 'no puede usar void'):
+            self.compile_source(
+                'func bad(value: void) int:\n'
+                '    return 0\n'
+            )
+
     def test_numeric_for_requires_integer_iterator_and_nonzero_step(self):
         with self.assertRaisesRegex(CompilationError, 'tipo entero escalar'):
             self.compile_source(

@@ -141,6 +141,10 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
         pointer_level=pointer_level,
         pointer_is_const=pointer_is_const,
     )
+    if type_spec.name == 'void' and type_spec.pointer_level == 0:
+        raise TypeResolutionError(
+            f'El parametro {name} no puede usar void por valor'
+        )
     return ParameterSpec(
         name=name,
         type_spec=type_spec,
@@ -180,9 +184,13 @@ def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
             return_pointer = len(child.nodes)
             break
 
+    return_type = resolve_type(return_node, pointer_level=return_pointer)
+    if return_type.name == 'void' and return_type.array_depth:
+        raise TypeResolutionError('void no puede usarse como array de retorno')
+
     return name, FunctionSignature(
         parameters=parameters,
-        return_type=resolve_type(return_node, pointer_level=return_pointer),
+        return_type=return_type,
     )
 
 
@@ -270,7 +278,11 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
     value_node = _return_value(node)
     return_type = symbol.signature.return_type
 
-    if return_type.name == 'void':
+    if (
+        return_type.name == 'void'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    ):
         if value_node is not None:
             compiler.error(f'La funcion {symbol.name} no puede retornar un valor')
         return
@@ -782,8 +794,17 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     for child in _children(body):
         _process_body_node(compiler, symbol, child, returns)
 
-    if symbol.signature.return_type.name != 'void' and returns[0] == 0:
-        compiler.error(f'La funcion {symbol.name} no tiene return')
+    return_type = symbol.signature.return_type
+    if returns[0] == 0:
+        if return_type.name == 'void' and return_type.pointer_level == 0:
+            compiler.error(
+                f'La funcion void {symbol.name} debe terminar con return'
+            )
+        elif not (
+            return_type.name == 'void'
+            and return_type.pointer_level == 0
+        ):
+            compiler.error(f'La funcion {symbol.name} no tiene return')
 
 
 __all__ = ['collect', 'process', 'signature_from_node']

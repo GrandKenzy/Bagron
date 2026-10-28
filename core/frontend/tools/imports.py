@@ -131,7 +131,7 @@ def _first_identifier(node: object) -> str | None:
 def _is_public(node: object) -> bool:
     body_names = {
         'FUNCTION_BODY', 'STRUCT_BODY', 'FLAGS_BODY', 'MOLD_BODY',
-        'ENUM_BODY', 'CLASS_BODY',
+        'ENUM_BODY', 'CLASS_BODY', 'EXTERN_BODY',
     }
 
     def visit(current: object) -> bool:
@@ -149,12 +149,27 @@ def _is_public(node: object) -> bool:
 
 def public_definition_names(nodes: list[gast.ASTRef]) -> set[str]:
     definitions = {'FUNCTION', 'VAR', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'TYPEALIAS'}
-    return {
+    names = {
         name
         for node in nodes
         if node.name in definitions and _is_public(node)
         if (name := _first_identifier(node)) is not None
     }
+
+    def extern_names(node: object) -> set[str]:
+        if getattr(node, 'name', None) == 'EXTERN_FUNCTION':
+            name = _first_identifier(node)
+            return {name} if name is not None else set()
+        names: set[str] = set()
+        for child in _children(node):
+            names.update(extern_names(child))
+        return names
+
+    for node in nodes:
+        if node.name != 'EXTERN' or not _is_public(node):
+            continue
+        names.update(extern_names(node))
+    return names
 
 
 def bind_aliases(compiler: Compiler) -> None:

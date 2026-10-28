@@ -50,8 +50,8 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
   * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
 
 * **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `include
-  "header" link "library"` resuelve headers y bibliotecas del sistema para el
-  enlace LLVM.
+  "header" link "library"` resuelve headers y bibliotecas del sistema, y
+  `extern "library":` declara firmas ABI que LLVM enlaza directamente.
 
 * **Control de Flujo Expresivo:**
   * Condicionales: `if`, `elif`, `else`, `not`.

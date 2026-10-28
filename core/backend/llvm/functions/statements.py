@@ -239,12 +239,20 @@ class StatementEmitterMixin:
             ),
             None,
         )
+        return_type = builder.function.function_type.return_type
+        if isinstance(return_type, ir.VoidType):
+            if return_node is not None:
+                raise FunctionEmissionError(
+                    'Una funcion void no puede retornar un valor'
+                )
+            builder.ret_void()
+            return
         if return_node is None:
-            raise FunctionEmissionError('El return necesita un valor entero')
+            raise FunctionEmissionError('El return necesita un valor')
         result = self._compile_expression(return_node, builder, values)
         result = self._coerce_value(
             result,
-            builder.function.function_type.return_type,
+            return_type,
             builder,
         )
         builder.ret(result)

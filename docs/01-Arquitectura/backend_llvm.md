@@ -14,8 +14,10 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
 - arrays globales y locales inicializados con literales, con tamaños inferidos;
 - referencias a globals `const` que puedan plegarse estáticamente.
 - tipos agregados nominales `struct`, `mold` y `flags`, además de sus instancias globales cero;
-- funciones auxiliares enteras con parámetros enteros o punteros, retornos de
-  puntero, llamadas y operaciones aritméticas/bitwise básicas;
+- funciones auxiliares enteras o `void` con parámetros enteros o punteros,
+  retornos de puntero, llamadas y operaciones aritméticas/bitwise básicas;
+- declaraciones `extern` como `declare` LLVM, llamadas a sus símbolos y
+  enlace de las bibliotecas registradas;
 - direccionamiento explícito `$`, desreferenciación parentizada, acceso por
   índice y acceso a miembros mediante GEP, con trampa para punteros nulos;
 - `if`, `elif`, `else`, `while` y `for` numérico con comparaciones, condiciones
@@ -32,6 +34,11 @@ ensamblan a objetos dentro de `build/prep/` para enlazarlos con LLVM. Intel y
 AT&T son los dialectos soportados; los parámetros enteros se mapean por ancho a
 los alias de `RCX/RDX/R8/R9` y los restantes a sus offsets de stack ABI. El
 resultado actual de `return asm` es el `int` retornado por `EAX`.
+
+Las firmas `extern` usan la convención C del target LLVM seleccionado por
+`Arch`/`System`; en Windows x64 esto corresponde a la ABI C de Windows. La
+primera fase admite retornos y parámetros enteros, `void` y punteros, con
+`void*` representado como `i8*`.
 
 Los globals sin inicializador se emiten con valor cero. Las direcciones de
 globals y de elementos/campos estáticos se emiten como inicializadores GEP;
