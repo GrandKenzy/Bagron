@@ -1,10 +1,9 @@
 # Integracion De Librerias Compiladas (Caso SDL3)
 
-> **Estado:** este documento conserva un diseño futuro de integración con C/C++.
-> El backend activo todavía no procesa contratos `.externs.egl`, directivas de
-> enlace ni genera `program.c`; actualmente solo emite y verifica LLVM IR en
-> `build/<modulo>.ll`. Además, los ejemplos de esta página usan sintaxis
-> histórica y no son una referencia para el frontend canónico actual.
+> **Estado:** el backend activo ya procesa `include "header" link "library"`
+> para resolver headers nativos y pasar bibliotecas al enlace LLVM. Los
+> contratos `.externs.egl` y la generación de `program.c` siguen fuera del
+> frontend canónico actual.
 
 Este documento detalla la arquitectura de integracion de librerias nativas en **Bagron** (o **Bagron**), utilizando la biblioteca multimedia **SDL3** como caso de estudio practico.
 
@@ -29,9 +28,19 @@ El enlace de una biblioteca nativa en Bagron desacopla el binario del lenguaje m
 
 ---
 
-## Directivas De Metadatos (@)
+## Directivas Nativas
 
-Los contratos `.externs.egl` configuran las banderas del compilador nativo al inicio del archivo:
+Las dependencias nativas se declaran directamente en Bagron:
+
+```bg
+include "windows" link "kernel32"
+```
+
+Bagron agrega `.h` al nombre del header y resuelve la biblioteca nativa para el
+enlace del target. El header se valida con el preprocesador de `clang`, pero no
+se copia ni se interpreta como código Bagron.
+
+El diseño histórico de contratos conserva estas directivas como referencia:
 
 | Directiva | Argumento | Funcion |
 | :--- | :--- | :--- |

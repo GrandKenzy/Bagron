@@ -32,4 +32,12 @@ class FunctionSymbol:
     signature: FunctionSignature
     scope: 'Storage | None' = None
     return_values: list[ValueInfo] = field(default_factory=list)
+    return_node: object | None = None
+    body_node: object | None = None
     body_supported_for_entrypoint: bool = True
+    decorators: tuple[str, ...] = ()
+    return_asm_node: object | None = None
+
+    @property
+    def is_assembler(self) -> bool:
+        return 'assembler' in self.decorators

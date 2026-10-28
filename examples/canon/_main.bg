@@ -1,0 +1,63 @@
+; Ejemplo canonico de Bagron.
+; Este archivo usa solo construcciones que el frontend valida y que el backend
+; LLVM actual puede compilar a un ejecutable nativo.
+
+clause Arch 'auto'
+clause System 'windows'
+
+; Globales estaticos y literales soportados por LLVM.
+limite: const int = 10
+factor: const double = 3.141516
+mascara: uBint<5> = 31
+valores: uBint<5>[] = {1, 2, 3}
+puntero *: int = Null
+nombre: char[10] = "Hola"
+bytes: byte[6] = "x0x0xb"
+mensaje: chain = "cadena estatica"
+
+; Tipos nominales validados por el frontend.
+enum Estado int8:
+    INACTIVO,
+    ACTIVO = 4,
+    PAUSADO,
+
+struct Punto:
+    x: int
+    y: Bint<16>
+    estado: Estado
+
+mold PuntoBase:
+    punto: Punto
+
+flags Permisos:
+    leer: uBint<1> = 1
+    escribir: uBint<1> = 0
+
+; Instancias globales cero para comprobar sus tipos LLVM nominales.
+punto: Punto
+base: PuntoBase
+permisos: Permisos
+
+; Las funciones int se emiten a LLVM y pueden llamarse desde main.
+func sumar(a: int, b: int) int:
+    resultado: int = a
+    puntero_local *: int = $resultado
+    (puntero_local) += b
+    return (puntero_local)
+
+@assembler
+func asm_status() int:
+    #prep assembler "intel"
+        xor eax, eax
+    #end
+    return asm
+
+; El entrypoint puede retornar el resultado de una llamada.
+func main() int:
+    datos: int[] = {0, 1, 2}
+    datos[0] = 0
+    for i: int32 ran (1, 4, 1):
+        pass
+    for j: int8 ran (3, 0, -1):
+        pass
+    return sumar(2, 3) + datos[0]

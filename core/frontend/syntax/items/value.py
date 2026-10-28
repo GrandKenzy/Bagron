@@ -2,6 +2,30 @@ from gram import combinators as cmb
 from gram import lexer
 
 
+class _SAME_LINE(cmb.Combinator):
+    """Run a postfix suffix only when it starts on the current source line."""
+
+    def __init__(self, combinator: cmb.Combinator):
+        super().__init__()
+        self.combinator = combinator
+
+    def parse(self, analyzer):
+        parser = analyzer.parser
+        current = parser.peek() if not parser.empty() else None
+        previous = (
+            parser.tokens[parser.pos - 1]
+            if parser.pos > 0
+            else None
+        )
+        if (
+            current is None
+            or previous is None
+            or current.line != previous.line
+        ):
+            return None
+        return analyzer.visitor(self.combinator)
+
+
 class VALUE(cmb.RuleItem):
     nodeable = True
 
@@ -9,6 +33,7 @@ class VALUE(cmb.RuleItem):
 class ARRAY_SUFFIX(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('LBRACKET'),
+        cmb.Opt(cmb.MatchToken('NUMBER')),
         cmb.MatchToken('RBRACKET'),
     )
     nodeable = False
@@ -113,8 +138,8 @@ class ARGUMENTS(cmb.RuleItem):
 
 class ARRAY_VALUE(cmb.RuleItem):
     entrypoint = cmb.Enclosed(
-        open=lexer.Token.LBRACKET,
-        close=lexer.Token.RBRACKET,
+        open=lexer.Token.LBRACE,
+        close=lexer.Token.RBRACE,
         content=cmb.Separator(
             sep=lexer.Token.COMMA,
             values=cmb.Ref(VALUE),
@@ -197,6 +222,7 @@ class PRIMARY(cmb.RuleItem):
         cmb.MatchToken('NULL'),
         cmb.MatchToken('STRING'),
         cmb.MatchToken('NUMBER'),
+        cmb.MatchToken('DECIMAL'),
     )
     nodeable = True
 
@@ -206,9 +232,9 @@ class POSTFIX_EXPR(cmb.RuleItem):
         cmb.Ref(PRIMARY),
         cmb.Many(
             cmb.Alt(
-                cmb.Ref(CALL_SUFFIX),
-                cmb.Ref(MEMBER_ACCESS),
-                cmb.Ref(INDEX_ACCESS),
+                _SAME_LINE(cmb.Ref(CALL_SUFFIX)),
+                _SAME_LINE(cmb.Ref(MEMBER_ACCESS)),
+                _SAME_LINE(cmb.Ref(INDEX_ACCESS)),
             )
         ),
     )
@@ -219,6 +245,14 @@ class RETURN(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchKeyword('return'),
         cmb.Opt(cmb.Ref(VALUE)),
+    )
+    nodeable = True
+
+
+class RETURN_ASM(cmb.RuleItem):
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('return'),
+        cmb.MatchKeyword('asm'),
     )
     nodeable = True
 
@@ -242,6 +276,7 @@ __all__ = [
     'POSTFIX_EXPR',
     'PRIMARY',
     'RETURN',
+    'RETURN_ASM',
     'TYPE',
     'VALUE',
 ]

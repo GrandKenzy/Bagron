@@ -101,9 +101,9 @@ class STATEMENT_BODY(cmb.RuleItem):
                 cmb.Ref(WHILE),
                 cmb.Ref(FOR),
                 cmb.Ref(IF),
+                cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(CALL),
                 cmb.Ref(VAR),
-                cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(RETURN),
                 cmb.MatchGroup('skipers'),
                 cmb.MatchKeyword('pass')

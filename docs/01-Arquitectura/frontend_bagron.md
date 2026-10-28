@@ -51,14 +51,31 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 - **Variable raiz (`VAR`):** `[privacy] (VAR_DECLARATION | VAR_INITIALIZATION)`.
 - **Asignacion (`VAR_ASSIGNATION`):** `ident operador valor` (`=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`).
 
+### prep.py (Bloques Raw De Ensamblador)
+- **Cabecera:** `#prep assembler "dialecto"`.
+- **Cierre:** `#end`.
+- **Ubicacion:** únicamente dentro del cuerpo de una función.
+- **Primera fase:** el preprocesador extrae el contenido sin tokenizarlo y lo
+  expande y escribe en `build/prep/<modulo>/<funcion>__prep_<indice>.asm`.
+  En Windows x64, `{parametro}` se sustituye por su operando ABI según el ancho declarado y los parámetros posteriores al cuarto usan el stack ABI. Se soportan `intel` y `att`; el archivo
+  se ensambla a `.obj` para enlazarlo con LLVM. El retorno usa `return asm` y
+  `EAX`.
+
 ### func_decl.py (Declaracion De Funciones)
 - **Decoradores (`DECORATORS`):** `@ident`.
 - **Firma (`FUNCTION_SIGNATURE`):** `[privacy] [inline] func ident(parametros) tipo [*]:`.
 - **Cuerpo (`FUNCTION_BODY`):** Bloque indentado `INDENT ... DEDENT` conteniendo estructuras, condicionales, bucles, llamadas, variables, retornos o `pass`.
 - **Funcion completa (`FUNCTION`):** `[DECORATORS] FUNCTION_SIGNATURE FUNCTION_BODY`.
 - **Scope semantico:** Cada funcion top-level crea un `Storage` propio para sus parametros y variables locales. El scope resuelve primero sus simbolos y despues el Storage global.
-- **Estado actual:** Los metodos de clases, valores por defecto de parametros, asignaciones, llamadas y expresiones complejas quedan para fases posteriores.
-- **Punto de entrada:** Todo modulo ejecutable debe declarar `func main() bool:` con un retorno booleano; una funcion `main` dentro de una clase no satisface este requisito.
+- **Estado actual:** Las funciones enteras pueden retornar literales, parametros,
+  variables locales, operaciones aritmeticas y llamadas a otras funciones
+  enteras. Las variables locales admiten declaracion, inicializacion y
+  asignacion con comprobacion de tipos. Los metodos de clases, valores por
+  defecto de parametros y expresiones complejas quedan para fases posteriores.
+- **Decorador `@assembler`:** habilita un único bloque `#prep assembler
+  "dialecto"` opcional y un único `return`; cualquier otra sentencia se
+  rechaza. Los nombres de parámetros son el contrato de la plantilla y no se agregan anotaciones `in`, `out` o `inout`.
+- **Punto de entrada:** Todo modulo ejecutable debe declarar `func main() int:` con una expresion entera emitible; una funcion `main` dentro de una clase no satisface este requisito.
 
 ### struct_decl.py (Estructuras, Moldes Y Flags)
 - **Alineacion (`ALIGNEMENT`):** `__align__ (numero | tipo)`.
@@ -71,21 +88,25 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 En la fase semantica actual, `struct`, `mold` y `flags` se registran como tipos
 nominales en un registro separado del namespace de variables y funciones. Sus
 campos se conservan en orden como `FieldSpec`; se validan los tipos conocidos,
-los nombres duplicados y, para `flags`, los literales enteros compatibles.
-Todavia no se calcula layout, padding, offsets ni se emiten tipos agregados en
-LLVM. Las instancias y el acceso a miembros quedan para una fase posterior.
+los nombres duplicados y, para `flags`, los literales enteros compatibles. El
+backend emite `struct` y `mold` como tipos identificados LLVM, y `flags` como
+estructuras identificadas empaquetadas con los anchos declarados. Las instancias
+globales se emiten con inicializador cero; el acceso a miembros queda para una
+fase posterior.
 Los modificadores `@packed`, `volatile` y `__align__` producen un diagnostico
 de funcionalidad pendiente.
 
 ### enum_decl.py (Enumeraciones)
 - **Elemento (`ENUM_ITEM`):** `ident [= numero],`.
 - **Cuerpo (`ENUM_BODY`):** Bloque indentado con elementos o `pass`.
-- **Declaracion (`ENUM`):** `[privacy] enum ident: ENUM_BODY`.
+- **Declaracion (`ENUM`):** `[privacy] enum ident [tipo_entero]: ENUM_BODY`.
 
-Los enums usan base fija `int32`. El primer miembro implicito vale `0`; cada
-miembro posterior incrementa el valor anterior y un valor explicito reinicia
-la secuencia. La sintaxis actual exige coma despues de cada miembro, incluso
-el ultimo. Los valores numericos repetidos son validos, pero los nombres no.
+Los enums usan `int32` por defecto, o el tipo entero escalar indicado despues
+del nombre, por ejemplo `enum Estado int8:`. El primer miembro implicito vale
+`0`; cada miembro posterior incrementa el valor anterior y un valor explicito
+reinicia la secuencia. Los valores se validan contra el rango del tipo base.
+La sintaxis actual exige coma despues de cada miembro, incluso el ultimo. Los
+valores numericos repetidos son validos, pero los nombres no.
 
 ### class_decl.py (Clases Y Herencia)
 - **Herencia (`CLASS_HERENCY`):** `(ident, ...)`.
@@ -100,13 +121,21 @@ el ultimo. Los valores numericos repetidos son validos, pero los nombres no.
 - **Condicion (`CONDITION`):** Evaluacion de regla `VALUE`.
 - **Sentencia If (`IF`):** `if condicion: cuerpo` seguido de cero o mas `elif condicion: cuerpo` y un bloque opcional `else: cuerpo`.
 - **Bucle While (`WHILE`):** `while condicion: cuerpo`.
-- **Bucle For (`FOR`):** `for identificador: tipo ran (inicio, limite, paso): cuerpo`. Esta es la unica forma de iteracion numerica; `while` permanece como bucle condicional independiente.
+- **Bucle For (`FOR`):** `for identificador: tipo ran (inicio, limite, paso): cuerpo`. El limite final es exclusivo, el iterador debe tener un tipo entero explicito y `step` no puede ser cero. Esta es la unica forma de iteracion numerica; `while` permanece como bucle condicional independiente.
 - **Cuerpo de sentencia (`STATEMENT_BODY`):** Bloque delimitado por `INDENT ... DEDENT`.
 
 ### imports.py (Modulos Bagron)
 - **Importacion modular (`IMPORT`):**
   - `import { a, b as B } from modulo`
   - `import modulo [as alias]`
+- **Resolucion:** los nombres se resuelven como archivos `.bg` relativos al
+  modulo actual, al proyecto y a `lib/` o `libs/`; se detectan ciclos.
+
+### includes.py (Dependencias Nativas)
+- **Declaracion (`INCLUDE`):** `include "header" link "library"`.
+- **Resolucion:** `windows` se normaliza a `windows.h` y `kernel32` a la
+  biblioteca nativa correspondiente; el header se valida con `clang` y la
+  biblioteca se propaga al enlazador LLVM.
 
 ---
 

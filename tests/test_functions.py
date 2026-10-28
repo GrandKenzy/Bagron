@@ -10,7 +10,7 @@ from core.compiler import CompilationError, Compiler
 class FunctionSemanticTests(unittest.TestCase):
     def compile_source(self, source: str, add_main: bool = True) -> Compiler:
         if add_main:
-            source = source.rstrip() + '\n\nfunc main() bool:\n    return true\n'
+            source = source.rstrip() + '\n\nfunc main() int:\n    return 0\n'
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'
@@ -47,6 +47,15 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return result\n'
             )
 
+    def test_rejects_local_assignment_type_mismatch(self):
+        with self.assertRaisesRegex(CompilationError, 'asignacion de result'):
+            self.compile_source(
+                'func bad(value: int) int:\n'
+                '    result: int = value\n'
+                '    result = true\n'
+                '    return result\n'
+            )
+
     def test_rejects_missing_return(self):
         with self.assertRaisesRegex(CompilationError, 'no tiene return'):
             self.compile_source(
@@ -69,6 +78,33 @@ class FunctionSemanticTests(unittest.TestCase):
             '    return\n'
         )
 
+    def test_numeric_for_requires_integer_iterator_and_nonzero_step(self):
+        with self.assertRaisesRegex(CompilationError, 'tipo entero escalar'):
+            self.compile_source(
+                'func bad() int:\n'
+                '    for i: bool ran (1, 3, 1):\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'step.*cero'):
+            self.compile_source(
+                'func bad() int:\n'
+                '    for i: int32 ran (1, 3, 0):\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+    def test_conditions_require_bool_or_integer_scalars(self):
+        with self.assertRaisesRegex(CompilationError, 'debe ser bool o entero escalar'):
+            self.compile_source(
+                'func bad() int:\n'
+                '    value: double = 1.0\n'
+                '    if value:\n'
+                '        return 1\n'
+                '    return 0\n'
+            )
+
     def test_class_methods_are_deferred(self):
         compiler = self.compile_source(
             'class Box:\n'
@@ -84,6 +120,14 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    func main() void:\n'
                 '        pass\n',
                 add_main=False,
+            )
+
+    def test_rejects_break_and_continue_outside_loops(self):
+        with self.assertRaisesRegex(CompilationError, 'solo puede usarse dentro de un bucle'):
+            self.compile_source(
+                'func main() int:\n'
+                '    break\n'
+                '    return 0\n'
             )
 
 

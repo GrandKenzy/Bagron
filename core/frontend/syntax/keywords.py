@@ -41,6 +41,8 @@ KEYWORDS = {
 
     # Módulos, imports y cláusulas
     'import': '#E5C07B',
+    'include': '#E5C07B',
+    'link': '#E5C07B',
     'object': '#E5C07B',
     'from': '#E5C07B',
     'clause': '#F5D15D',
@@ -71,6 +73,7 @@ KEYWORDS = {
     'false': '#4E0097',
     'as': '#FFFFFF',
     'const': '#FFFFFF',
+    'asm': '#AD0997',
     
     # preprocesadores
     "prep": "#AD0997",
@@ -114,6 +117,8 @@ TYPES = list(INTRINSIC_TYPES.keys())
 KEYWORDS_BY_GROUP = {
     'imports': [
         'import',
+        'include',
+        'link',
         'object',
         'from',
     ],
@@ -160,6 +165,7 @@ KEYWORDS_BY_GROUP = {
         'Null',
         'true',
         'false',
+        'asm',
     ],
     'preprocessors': [
         'prep',

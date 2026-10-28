@@ -1,5 +1,7 @@
 from gram import combinators as cmb
 
+from core.frontend.syntax.items.value import TYPE
+
 
 # IDENT = NUMBER,
 # IDENT
@@ -36,6 +38,7 @@ class ENUM(cmb.RuleItem):
         cmb.Opt(cmb.MatchGroup('privacy')),
         cmb.MatchKeyword('enum'),
         cmb.MatchToken('IDENT'),
+        cmb.Opt(cmb.Ref(TYPE)),
         cmb.MatchToken('COLON'),
         cmb.Ref(ENUM_BODY),
     )

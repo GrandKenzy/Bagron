@@ -4,7 +4,13 @@ from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
 from core.frontend.syntax.items.statements import FOR, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
-from core.frontend.syntax.items.value import PARAMETERS, POINTER, RETURN, TYPE
+from core.frontend.syntax.items.value import (
+    PARAMETERS,
+    POINTER,
+    RETURN,
+    RETURN_ASM,
+    TYPE,
+)
 from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
 
@@ -46,10 +52,12 @@ class FUNCTION_BODY(cmb.RuleItem):
                 cmb.Ref(WHILE),
                 cmb.Ref(ENUM),
                 cmb.Ref(FOR),
+                cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(CALL),
                 cmb.Ref(VAR),
-                cmb.Ref(VAR_ASSIGNATION),
+                cmb.Ref(RETURN_ASM),
                 cmb.Ref(RETURN),
+                cmb.MatchGroup('skipers'),
                 cmb.MatchKeyword('pass')
                 
             )

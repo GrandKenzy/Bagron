@@ -9,10 +9,13 @@ from core.frontend.objects import (
     TypeSpec,
 )
 from core.frontend.tools.types import (
+    INTEGER_TYPES,
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    infer_lvalue,
     infer_value,
+    is_condition_type,
     is_compatible,
     resolve_type,
 )
@@ -101,6 +104,25 @@ def _body_node(node: gast.ASTRef) -> gast.ASTRef | None:
         ),
         None,
     )
+
+
+def _decorator_names(node: gast.ASTRef) -> tuple[str, ...]:
+    decorators = next(
+        (
+            child for child in node.nodes
+            if isinstance(child, gast.ASTRef) and child.name == 'DECORATORS'
+        ),
+        None,
+    )
+    if decorators is None:
+        return ()
+
+    names: list[str] = []
+    for decorator in _children(decorators):
+        name = _identifier(decorator)
+        if name is not None:
+            names.append(name)
+    return tuple(names)
 
 
 def _parameter_items(parameters: gast.ASTRef) -> list[object]:
@@ -221,7 +243,8 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             compiler.error(f'La funcion ya fue declarada: {name}')
             continue
 
-        symbol = FunctionSymbol(name, signature)
+        decorators = _decorator_names(node)
+        symbol = FunctionSymbol(name, signature, decorators=decorators)
         compiler.storage.define_function(symbol)
         compiler.function_bindings[id(node)] = symbol
         _validate_bit_width(compiler, name, signature.return_type)
@@ -256,7 +279,11 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
         return
 
     try:
-        value_info = infer_value(value_node, scope.resolve)
+        value_info = infer_value(
+            value_node,
+            scope.resolve,
+            compiler.storage.functions,
+        )
     except UnsupportedExpressionError:
         return
     except ValueResolutionError as error:
@@ -270,7 +297,18 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
         )
         return
 
+    if (
+        value_info.address_origin == 'local'
+        and value_info.type_spec.pointer_level > 0
+    ):
+        compiler.error(
+            f'La funcion {symbol.name} no puede retornar la direccion de una '
+            'variable local'
+        )
+        return
+
     symbol.return_values.append(value_info)
+    symbol.return_node = value_node
 
 
 def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) -> None:
@@ -308,6 +346,42 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
         compiler.error(f'{name}: {error}')
         return
 
+    if (
+        type_spec.name not in INTEGER_TYPES
+        or type_spec.pointer_level
+        or type_spec.array_depth
+    ):
+        compiler.error(
+            f'El iterador {name} debe tener un tipo entero escalar especificado'
+        )
+        return
+
+    range_values = [
+        child for child in children
+        if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+    ]
+    if len(range_values) != 3:
+        compiler.error(f'El rango de {name} debe tener start, end y step')
+        return
+
+    for index, value_node in enumerate(range_values):
+        try:
+            value_info = infer_value(
+                value_node,
+                scope.resolve,
+                compiler.storage.functions,
+            )
+        except (UnsupportedExpressionError, ValueResolutionError) as error:
+            compiler.error(f'El rango de {name} es invalido: {error}')
+            continue
+        if not is_compatible(type_spec, value_info):
+            compiler.error(
+                f'El valor {index + 1} del rango de {name} no coincide con '
+                f'{type_spec.canonical_name}'
+            )
+        if index == 2 and value_info.is_literal and value_info.value == 0:
+            compiler.error(f'El step de {name} no puede ser cero')
+
     if scope.contains_local(name):
         compiler.error(
             f'La variable {name} ya fue declarada en el scope {scope.scope_name}'
@@ -317,7 +391,291 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
     scope.add(name, build_symbol(scope, name, type_spec, kind='local'))
 
 
+def _condition_value(node: object) -> object | None:
+    condition = next(
+        (
+            child for child in _children(node)
+            if isinstance(child, gast.ASTRef) and child.name == 'CONDITION'
+        ),
+        None,
+    )
+    if condition is None:
+        return None
+    return next(
+        (
+            child for child in _children(condition)
+            if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+        ),
+        None,
+    )
+
+
+def _validate_condition(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: object,
+) -> None:
+    scope = symbol.scope
+    if scope is None:
+        return
+
+    value_node = _condition_value(node)
+    if value_node is None:
+        compiler.error(f'La condicion de {symbol.name} es invalida')
+        return
+
+    try:
+        value_info = infer_value(
+            value_node,
+            scope.resolve,
+            compiler.storage.functions,
+        )
+    except (UnsupportedExpressionError, ValueResolutionError) as error:
+        compiler.error(f'La condicion de {symbol.name} es invalida: {error}')
+        return
+
+    if not is_condition_type(value_info.type_spec):
+        compiler.error(
+            f'La condicion de {symbol.name} debe ser bool o entero escalar'
+        )
+
+
 _DEFINITION_NODES = {'CLASS', 'ENUM', 'FLAGS', 'MOLD', 'STRUCT', 'FUNCTION'}
+
+_ASSIGNMENT_OPERATORS = {
+    'ASSIGN': '=',
+    'PLUS_ASSIGN': '+=',
+    'MINUS_ASSIGN': '-=',
+    'STAR_ASSIGN': '*=',
+    'SLASH_ASSIGN': '/=',
+    'PERCENT_ASSIGN': '%=',
+    'AND_ASSIGN': '&=',
+    'OR_ASSIGN': '|=',
+    'XOR_ASSIGN': '^=',
+    'SHL_ASSIGN': '<<=',
+    'SHR_ASSIGN': '>>=',
+}
+
+
+def _assignment_target(node: gast.ASTRef) -> gast.ASTRef | None:
+    return next(
+        (
+            child for child in _children(node)
+            if isinstance(child, gast.ASTRef) and child.name == 'ASSIGN_TARGET'
+        ),
+        None,
+    )
+
+
+def _assignment_parts(
+    node: gast.ASTRef,
+) -> tuple[gast.ASTRef | None, str | None, object | None]:
+    target = _assignment_target(node)
+    operator = None
+    value = next(
+        (
+            child for child in _children(node)
+            if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+        ),
+        None,
+    )
+    for child in _children(node):
+        kind = _token_kind(child)
+        if kind in _ASSIGNMENT_OPERATORS:
+            operator = _ASSIGNMENT_OPERATORS[kind]
+            break
+    return target, operator, value
+
+
+def _validate_assignment(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+) -> None:
+    scope = symbol.scope
+    if scope is None:
+        return
+
+    target, operator, value_node = _assignment_parts(node)
+    name = _identifier(target) if target is not None else None
+    variable = scope.namespace.get(name or '')
+    try:
+        target_info = infer_lvalue(
+            target,
+            scope.resolve,
+            compiler.storage.functions,
+        )
+    except (UnsupportedExpressionError, ValueResolutionError) as error:
+        compiler.error(f'{symbol.name}: {error}')
+        return
+
+    if variable is None and target_info.storage_origin != 'local':
+        compiler.error(
+            f'La asignacion de {symbol.name} requiere una variable local: '
+            f'{name or "<anonima>"}'
+        )
+        return
+    if variable is not None and (
+        variable.value_is_const
+        or (
+            variable.type_spec.pointer_level > 0
+            and variable.pointer_is_const
+        )
+    ):
+        compiler.error(f'La variable constante no puede asignarse: {name}')
+        return
+    if target_info.type_spec.value_is_const:
+        compiler.error(
+            f'El valor apuntado por {name or "<anonimo>"} no puede asignarse'
+        )
+        return
+    if operator is None or value_node is None:
+        compiler.error(f'La asignacion de {symbol.name} es invalida')
+        return
+
+    try:
+        value_info = infer_value(
+            value_node,
+            scope.resolve,
+            compiler.storage.functions,
+        )
+    except (UnsupportedExpressionError, ValueResolutionError) as error:
+        compiler.error(f'{symbol.name}: {error}')
+        return
+
+    if not is_compatible(target_info.type_spec, value_info):
+        compiler.error(
+            f'La asignacion de {name} no coincide con '
+            f'{target_info.type_spec.canonical_name}'
+        )
+        return
+
+    if operator != '=' and (
+        target_info.type_spec.name not in INTEGER_TYPES
+        or target_info.type_spec.pointer_level
+        or target_info.type_spec.array_depth
+    ):
+        compiler.error(
+            f'La asignacion {operator} solo admite enteros escalares: {name}'
+        )
+
+
+def _body_statements(body: gast.ASTRef) -> list[object]:
+    statements: list[object] = []
+    for child in _children(body):
+        if isinstance(child, list):
+            statements.extend(child)
+        elif isinstance(child, (gast.ASTRef, gast.ASTKeyword)):
+            statements.append(child)
+    return statements
+
+
+def _prep_count(compiler: Compiler, symbol: FunctionSymbol) -> int:
+    return sum(
+        block.function_name == symbol.name
+        for block in getattr(compiler, 'prep_blocks', ())
+    )
+
+
+def _validate_assembler_body(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    body: gast.ASTRef,
+) -> None:
+    prep_count = _prep_count(compiler, symbol)
+    if prep_count and not symbol.is_assembler:
+        compiler.error(
+            f'La funcion {symbol.name} requiere el decorador @assembler '
+            'para contener ensamblador'
+        )
+        return
+
+    if not symbol.is_assembler:
+        return
+
+    if prep_count > 1:
+        compiler.error(
+            f'La funcion @assembler {symbol.name} solo puede contener '
+            'un bloque de ensamblador'
+        )
+
+    return_count = 0
+    return_asm_count = 0
+    pass_count = 0
+    for statement in _body_statements(body):
+        if isinstance(statement, gast.ASTKeyword):
+            if _token_value(statement) == 'pass':
+                pass_count += 1
+                continue
+            compiler.error(
+                f'La funcion @assembler {symbol.name} solo puede contener '
+                'ensamblador y return'
+            )
+            continue
+
+        if isinstance(statement, gast.ASTRef) and statement.name == 'RETURN_ASM':
+            return_asm_count += 1
+            continue
+
+        if isinstance(statement, gast.ASTRef) and statement.name == 'RETURN':
+            return_count += 1
+            continue
+
+        compiler.error(
+            f'La funcion @assembler {symbol.name} solo puede contener '
+            'ensamblador y return'
+        )
+
+    if pass_count != prep_count:
+        compiler.error(
+            f'La funcion @assembler {symbol.name} solo puede contener '
+            'un bloque de ensamblador opcional y return'
+        )
+
+    if prep_count:
+        if return_count:
+            compiler.error(
+                f'La funcion @assembler {symbol.name} debe usar return asm '
+                'cuando contiene ensamblador'
+            )
+        if return_asm_count != 1:
+            compiler.error(
+                f'La funcion @assembler {symbol.name} requiere un unico return asm'
+            )
+    elif return_asm_count:
+        compiler.error(
+            f'La funcion @assembler {symbol.name} no puede usar return asm '
+            'sin un bloque de ensamblador'
+        )
+
+    if not prep_count and return_count != 1:
+        compiler.error(
+            f'La funcion @assembler {symbol.name} requiere un unico return'
+        )
+
+
+def _validate_return_asm(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+) -> None:
+    if not symbol.is_assembler:
+        compiler.error(
+            f'La funcion {symbol.name} requiere el decorador @assembler para usar '
+            'return asm'
+        )
+        return
+
+    if symbol.signature.return_type.name != 'int' or (
+        symbol.signature.return_type.pointer_level
+        or symbol.signature.return_type.array_depth
+    ):
+        compiler.error(
+            f'La funcion @assembler {symbol.name} debe retornar int'
+        )
+        return
+
+    symbol.return_asm_node = node
 
 
 def _process_body_node(
@@ -325,14 +683,17 @@ def _process_body_node(
     symbol: FunctionSymbol,
     node: object,
     returns: list[int],
+    loop_depth: int = 0,
 ) -> None:
     if isinstance(node, gast.ASTKeyword):
-        if node.token.value == 'pass':
-            symbol.body_supported_for_entrypoint = False
+        if _token_value(node) in {'break', 'continue'} and loop_depth == 0:
+            compiler.error(
+                f'{_token_value(node)} solo puede usarse dentro de un bucle'
+            )
         return
     if isinstance(node, list):
         for child in node:
-            _process_body_node(compiler, symbol, child, returns)
+            _process_body_node(compiler, symbol, child, returns, loop_depth)
         return
     if not isinstance(node, gast.ASTRef):
         return
@@ -340,23 +701,32 @@ def _process_body_node(
     if node.name in _DEFINITION_NODES:
         return
     if node.name == 'VAR':
-        symbol.body_supported_for_entrypoint = False
         if symbol.scope is not None:
             collect_local(compiler, symbol.scope, node)
+        return
+    if node.name == 'VAR_ASSIGNATION':
+        _validate_assignment(compiler, symbol, node)
         return
     if node.name == 'RETURN':
         _validate_return(compiler, symbol, node)
         returns[0] += 1
         return
+    if node.name == 'RETURN_ASM':
+        _validate_return_asm(compiler, symbol, node)
+        returns[0] += 1
+        return
     if node.name == 'FOR':
-        symbol.body_supported_for_entrypoint = False
         _for_binding(compiler, symbol, node)
 
-    if node.name in {'CALL', 'IF', 'WHILE', 'VAR_ASSIGNATION'}:
+    if node.name in {'IF_SIGNATURE', 'ELIF_SIGNATURE', 'WHILE_SIGNATURE'}:
+        _validate_condition(compiler, symbol, node)
+
+    if node.name in {'CALL', 'IF', 'WHILE'}:
         symbol.body_supported_for_entrypoint = False
 
+    child_loop_depth = loop_depth + (node.name in {'FOR', 'WHILE'})
     for child in _children(node):
-        _process_body_node(compiler, symbol, child, returns)
+        _process_body_node(compiler, symbol, child, returns, child_loop_depth)
 
 
 def process(compiler: Compiler, node: gast.ASTRef) -> None:
@@ -369,6 +739,10 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     if body is None:
         compiler.error(f'La funcion {symbol.name} no tiene cuerpo')
         return
+
+    symbol.body_node = body
+
+    _validate_assembler_body(compiler, symbol, body)
 
     returns = [0]
     for child in _children(body):

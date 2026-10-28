@@ -3,7 +3,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from core.backend.llvm.types import LLVMTypeError, constant_value, zero_value
+from core.backend.llvm.types import (
+    LLVMTypeError,
+    LLVMTypeRegistry,
+    constant_value,
+    value_type,
+    zero_value,
+)
 from core.frontend.objects import ValueInfo, Variable
 
 if TYPE_CHECKING:
@@ -16,14 +22,23 @@ class GlobalEmissionError(ValueError):
 
 
 class GlobalEmitter:
-    def __init__(self, module: ir.Module):
+    def __init__(self, module: ir.Module, type_registry: LLVMTypeRegistry | None = None):
         self.module = module
+        self.type_registry = type_registry
         self._resolving: list[str] = []
 
     def emit_storage(self, storage: Storage) -> None:
+        # Declare every global before resolving initializers.  This makes a
+        # static address such as ``p *: int = $x`` independent of declaration
+        # order at the LLVM layer and lets the initializer refer to a global
+        # that appears later in the source file.
         for symbol in storage.namespace.values():
             if isinstance(symbol, Variable):
-                self.emit_symbol(storage, symbol)
+                self._declare_symbol(storage, symbol)
+
+        for symbol in storage.namespace.values():
+            if isinstance(symbol, Variable):
+                self._initialize_symbol(storage, symbol)
 
     def _constant_value(self, storage: Storage, symbol: Variable) -> ValueInfo | None:
         if symbol.name in self._resolving:
@@ -76,7 +91,7 @@ class GlobalEmitter:
         )
         return replace(value, value=resolved_items, items=resolved_items)
 
-    def emit_symbol(self, storage: Storage, symbol: Variable) -> None:
+    def _declare_symbol(self, storage: Storage, symbol: Variable) -> object:
         if symbol.type_spec is None:
             raise GlobalEmissionError(f'El global {symbol.name} no tiene TypeSpec')
 
@@ -86,11 +101,16 @@ class GlobalEmitter:
             )
 
         try:
-            value = self._constant_value(storage, symbol)
-            initializer = (
-                zero_value(symbol.type_spec, value)
-                if value is None
-                else constant_value(symbol.type_spec, value)
+            value = symbol.value_info
+            target_type = value_type(
+                symbol.type_spec,
+                value,
+                self.type_registry,
+            )
+            initializer = zero_value(
+                symbol.type_spec,
+                value,
+                self.type_registry,
             )
         except LLVMTypeError as error:
             raise GlobalEmissionError(f'{symbol.name}: {error}') from error
@@ -102,7 +122,7 @@ class GlobalEmitter:
 
         global_value = ir.GlobalVariable(
             self.module,
-            initializer.type,
+            target_type,
             symbol.name,
         )
 
@@ -110,3 +130,120 @@ class GlobalEmitter:
         global_value.global_constant = symbol.value_is_const
         if symbol.privacy == 'private':
             global_value.linkage = 'internal'
+        return global_value
+
+    def _address_initializer(
+        self,
+        symbol: Variable,
+        value: ValueInfo,
+    ) -> object:
+        from llvmlite import ir
+
+        target_name = value.address_of
+        if not target_name:
+            raise GlobalEmissionError(
+                f'El inicializador de {symbol.name} no tiene un destino de direccion'
+            )
+
+        target = self.module.globals.get(target_name)
+        if target is None:
+            raise GlobalEmissionError(
+                f'El destino de la direccion global no existe: {target_name}'
+            )
+
+        destination = self.module.globals.get(symbol.name)
+        if destination is None:
+            raise GlobalEmissionError(
+                f'El global {symbol.name} no tiene declaracion LLVM'
+            )
+        # A GlobalVariable is itself a constant pointer value in LLVM IR.
+        # Passing it directly (instead of wrapping it in ir.Constant) avoids
+        # serializing the complete global definition inside the initializer.
+        address = target
+        for operation, payload in value.address_path:
+            pointee = address.type.pointee
+            if operation == 'index':
+                index_info = payload
+                if not getattr(index_info, 'is_literal', False):
+                    raise GlobalEmissionError(
+                        f'El indice de la direccion global {target_name} '
+                        'debe ser un literal'
+                    )
+                try:
+                    index = int(index_info.value)
+                except (TypeError, ValueError) as error:
+                    raise GlobalEmissionError(
+                        f'El indice de la direccion global {target_name} no es entero'
+                    ) from error
+                if not isinstance(pointee, ir.ArrayType):
+                    raise GlobalEmissionError(
+                        f'La direccion global {target_name} no indexa un array estatico'
+                    )
+                address = address.gep([
+                    ir.Constant(ir.IntType(32), 0),
+                    ir.Constant(ir.IntType(32), index),
+                ])
+                continue
+
+            if operation == 'member':
+                if not isinstance(pointee, ir.IdentifiedStructType):
+                    raise GlobalEmissionError(
+                        f'La direccion global {target_name} no referencia un struct'
+                    )
+                field_index = (
+                    self.type_registry.field_index(pointee.name, str(payload))
+                    if self.type_registry is not None
+                    else None
+                )
+                if field_index is None:
+                    raise GlobalEmissionError(
+                        f'El miembro {payload} no existe en {pointee.name}'
+                    )
+                address = address.gep([
+                    ir.Constant(ir.IntType(32), 0),
+                    ir.Constant(ir.IntType(32), field_index),
+                ])
+                continue
+
+            raise GlobalEmissionError(
+                f'Operacion de direccion global no soportada: {operation}'
+            )
+
+        if address.type != destination.type.pointee:
+            raise GlobalEmissionError(
+                f'La direccion de {target_name} no coincide con '
+                f'{symbol.type_spec.canonical_name}'
+            )
+        return address
+
+    def _initialize_symbol(self, storage: Storage, symbol: Variable) -> None:
+        destination = self.module.globals.get(symbol.name)
+        if destination is None:
+            raise GlobalEmissionError(
+                f'El global {symbol.name} no tiene declaracion LLVM'
+            )
+
+        try:
+            value = self._constant_value(storage, symbol)
+            if value is None:
+                return
+            if value.address_of is not None:
+                initializer = self._address_initializer(symbol, value)
+            else:
+                initializer = constant_value(
+                    symbol.type_spec,
+                    value,
+                    self.type_registry,
+                )
+            if initializer.type != destination.type.pointee:
+                raise GlobalEmissionError(
+                    f'El inicializador de {symbol.name} no coincide con su tipo LLVM'
+                )
+            destination.initializer = initializer
+        except LLVMTypeError as error:
+            raise GlobalEmissionError(f'{symbol.name}: {error}') from error
+
+    def emit_symbol(self, storage: Storage, symbol: Variable) -> None:
+        """Emit one symbol for callers that use the emitter incrementally."""
+        self._declare_symbol(storage, symbol)
+        self._initialize_symbol(storage, symbol)

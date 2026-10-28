@@ -11,20 +11,37 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
 - variables globales escalares;
 - enteros de ancho fijo `Bint<n>` y `uBint<n>`;
 - booleanos y números de punto flotante;
-- arrays globales inicializados con literales;
+- arrays globales y locales inicializados con literales, con tamaños inferidos;
 - referencias a globals `const` que puedan plegarse estáticamente.
-- `main() bool` como función interna LLVM `i1` y wrapper nativo `main() i32`.
+- tipos agregados nominales `struct`, `mold` y `flags`, además de sus instancias globales cero;
+- funciones auxiliares enteras con parámetros enteros o punteros, retornos de
+  puntero, llamadas y operaciones aritméticas/bitwise básicas;
+- direccionamiento explícito `$`, desreferenciación parentizada, acceso por
+  índice y acceso a miembros mediante GEP, con trampa para punteros nulos;
+- `if`, `elif`, `else`, `while` y `for` numérico con comparaciones, condiciones
+  lógicas y anidación;
+- `break` y `continue` dentro de bucles;
+- `main() int` como función interna LLVM `i32` y wrapper nativo `main() i32`.
 
-Los globals sin inicializador escalar se emiten con valor cero. Las referencias
-a globals mutables, ciclos de inicialización, `callptr`, cadenas y estructuras
-quedan fuera de esta primera emisión. Las variables locales y los parámetros ya
-se registran y validan en el frontend, pero todavía no generan instrucciones
-LLVM. El wrapper nativo convierte `true` en código de salida `0` y `false` en
-`1`.
+Los bloques `#prep assembler "dialecto"` de funciones `@assembler` se extraen
+antes del parser, se expanden con los registros ABI de Windows x64 y se
+ensamblan a objetos dentro de `build/prep/` para enlazarlos con LLVM. Intel y
+AT&T son los dialectos soportados; los parámetros enteros se mapean por ancho a
+los alias de `RCX/RDX/R8/R9` y los restantes a sus offsets de stack ABI. El
+resultado actual de `return asm` es el `int` retornado por `EAX`.
+
+Los globals sin inicializador se emiten con valor cero. Las direcciones de
+globals y de elementos/campos estáticos se emiten como inicializadores GEP;
+las referencias a globals mutables por valor, ciclos de inicialización y
+`callptr` quedan fuera de esta primera emisión. Las variables locales se
+materializan con `alloca`, `load` y `store`; los parámetros también se copian
+a slots locales para permitir su asignación. El wrapper nativo devuelve
+directamente el `int` producido por `main`.
 
 Las definiciones semánticas de `enum`, `struct`, `mold` y `flags` pueden
-coexistir con el módulo y con `main`, pero por ahora el backend las ignora:
-todavía no tienen instancias ni representación LLVM agregada.
+coexistir con el módulo y con `main`. Los enums se representan según su tipo
+base (`i8`, `i16`, `i32`, etc.); los agregados se emiten como tipos
+identificados LLVM.
 
 ## Inicialización de LLVM
 
@@ -39,6 +56,12 @@ error; no se hace fallback silencioso.
 
 ## Limitaciones actuales
 
-El ejecutable actual solo contiene el entrypoint mínimo y no traduce todavía
-funciones auxiliares, variables locales, llamadas, clases ni control de flujo.
+El backend todavía no traduce clases ni `callptr`. Las funciones auxiliares
+emitibles no pueden usar tipos flotantes en expresiones de esta etapa; las
+funciones de entrada siguen requiriendo exactamente `main() int`. Las
+variables locales emitibles pueden ser escalares enteros, punteros, arrays o
+agregados nominales; sus declaraciones, lecturas, asignaciones y asignaciones
+compuestas generan instrucciones LLVM.
+Las estructuras de control generan bloques LLVM explícitos y mantienen una pila
+de destinos para que `break` y `continue` respeten el bucle anidado actual.
 El backend no genera `program.c` ni headers C.

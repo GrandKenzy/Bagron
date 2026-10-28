@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from tools import diagnostic
@@ -6,6 +7,7 @@ from core.frontend.objects import (
     AggregateSymbol,
     EnumSymbol,
     FunctionSymbol,
+    NativeInclude,
     Variable,
 )
 
@@ -57,6 +59,14 @@ class Storage(diagnostic.Diagnostics):
         self.functions: dict[str, FunctionSymbol] = {}
         self.function_scopes: dict[str, Storage] = {}
         self.types: dict[str, EnumSymbol | AggregateSymbol] = {}
+        self.native_includes: list[NativeInclude] = []
+        self.native_links: list[str] = []
+        self.loaded_modules: list[str] = []
+        self.function_aliases: dict[str, str] = {}
+        self.variable_aliases: dict[str, Variable] = {}
+        self.type_aliases: dict[str, str] = {}
+        self.prep_sources: list[Path] = []
+        self.prep_objects: list[Path] = []
         
     def define_clause(self, name: str, value: int | str | bool):
         if      name == 'Visibility': self.privacy = str(value)
@@ -76,6 +86,9 @@ class Storage(diagnostic.Diagnostics):
 
     def resolve(self, name: str) -> SemanticObject | None:
         symbol = self.namespace.get(name)
+        if symbol is not None:
+            return symbol
+        symbol = self.variable_aliases.get(name)
         if symbol is not None:
             return symbol
         if self.parent is not None:

@@ -29,7 +29,7 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y futura generación de código nativo.
 
-* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() bool:` con un retorno booleano; los métodos de clase no cuentan como entrypoint.
+* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int:`; su expresión entera de retorno se usa como código de salida y los métodos de clase no cuentan como entrypoint.
 
 * **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
 
@@ -37,10 +37,19 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Constantes explícitas:** `const tipo` expresa un valor constante; los punteros separan la constancia del puntero y del valor apuntado.
 
+* **Memoria explícita:** `$valor` obtiene una dirección, `(p)` la
+  desreferencia y `((pp))` permite varios niveles. `&` conserva el AND
+  bitwise; los arrays se indexan con GEP LLVM y los punteros nulos se atrapan
+  en tiempo de ejecución.
+
 * **Estructuras, Enumeraciones y Clases:**
-  * `struct`, `mold` y `flags`: Tipos nominales validados semánticamente; su layout LLVM está pendiente.
-  * `enum`: Enumeraciones con base fija `int32` y valores implícitos/explícitos.
+  * `struct`, `mold` y `flags`: Tipos nominales validados y emitidos como tipos agregados LLVM.
+  * `enum`: Enumeraciones con base entera `int32` por defecto o un tipo entero explícito, además de valores implícitos/explícitos.
   * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
+
+* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `include
+  "header" link "library"` resuelve headers y bibliotecas del sistema para el
+  enlace LLVM.
 
 * **Control de Flujo Expresivo:**
   * Condicionales: `if`, `elif`, `else`, `not`.

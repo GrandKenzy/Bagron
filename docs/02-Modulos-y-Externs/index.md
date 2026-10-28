@@ -8,7 +8,12 @@ Este documento describe la arquitectura modular del compilador **Bagron**, el me
 
 Bagron permite estructurar proyectos en multiples archivos `.bg` mediante la directiva `import`:
 
-- **Directiva `import`:** Importa un modulo escrito en Bagron. El analizador semantico procesa el archivo indicado, construye su tabla `Storage` y valida los tipos de sus simbolos publicos.
+- **Directiva `import`:** Importa un modulo escrito en Bagron. `import math`
+  resuelve `math.bg`; tambien se admiten aliases y selecciones como
+  `import math as m` e `import { suma as add } from math`.
+- **Directiva `include`:** Declara una dependencia nativa y su biblioteca de
+  enlace. `include "windows" link "kernel32"` resuelve `windows.h` y
+  `kernel32.lib` para el target nativo.
 
 ### Prevencion De Recursion (`in_progress`)
 Al procesar un modulo, el compilador registra su ruta canonica en el conjunto `storage.in_progress`. Si durante la construccion de dependencias un submodulo intenta importar un ancestro que aun no ha finalizado su analisis semantico, el compilador detecta el ciclo inmediatamente y evita bloqueos en memoria.

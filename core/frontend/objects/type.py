@@ -14,12 +14,19 @@ class TypeSpec:
     array_depth: int = 0
     value_is_const: bool = False
     pointer_is_const: bool = False
+    array_lengths: tuple[int | None, ...] = ()
 
     @property
     def canonical_name(self) -> str:
         name = self.name
         if self.bit_width is not None:
             name = f'{name}<{self.bit_width}>'
+        if self.array_lengths:
+            suffix = ''.join(
+                f'[{length}]' if length is not None else '[]'
+                for length in self.array_lengths
+            )
+            return name + suffix
         return name + '[]' * self.array_depth
 
 
@@ -50,7 +57,7 @@ class EnumMember:
 
 @dataclass
 class EnumSymbol:
-    """Semantic declaration for an enum with the fixed int32 base type."""
+    """Semantic declaration for an enum with an explicit integer base type."""
 
     name: str
     base_type: TypeSpec
@@ -60,10 +67,22 @@ class EnumSymbol:
 
 @dataclass(frozen=True)
 class ValueInfo:
-    """Type information for a supported global initializer."""
+    """Type and provenance information for a resolved Bagron value."""
 
     type_spec: TypeSpec
     is_literal: bool = False
     identifier: str | None = None
     value: object = None
     items: tuple['ValueInfo', ...] = ()
+    is_lvalue: bool = False
+    address_origin: str | None = None
+    address_of: str | None = None
+    # Origin of the storage represented by an lvalue.  This is deliberately
+    # separate from ``address_origin``: a local pointer variable may contain
+    # the address of a global, while ``$pointer`` still takes the address of
+    # the local pointer slot itself.
+    storage_origin: str | None = None
+    # Postfix operations between the base symbol and an address-of operator.
+    # Entries are ('index', ValueInfo) or ('member', field_name).  Keeping the
+    # path in semantic data lets the global emitter form a constant GEP too.
+    address_path: tuple[tuple[str, object], ...] = ()

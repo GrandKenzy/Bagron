@@ -30,19 +30,10 @@ class ASSIGN_OPERATOR(cmb.RuleItem):
 
 
 class ASSIGN_TARGET(cmb.RuleItem):
-    entrypoint = cmb.Alt(
-        cmb.Ref(DEREF_ASSIGN_TARGET),
-        cmb.Seq(
-            cmb.Ref(DEREF_TARGET),
-            cmb.Many(
-                cmb.Alt(
-                    cmb.Ref(MEMBER_ACCESS),
-                    cmb.Ref(INDEX_ACCESS),
-                )
-            ),
-        ),
-        cmb.Ref(POSTFIX_EXPR),
-    )
+    # All lvalue forms share POSTFIX_EXPR.  Parenthesized pointer targets
+    # remain distinguishable in the AST through PAREN_VALUE and are resolved
+    # semantically as dereferences.
+    entrypoint = cmb.Ref(POSTFIX_EXPR)
     nodeable = True
 
 

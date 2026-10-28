@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable
 
 from core.frontend.objects import EnumMember, EnumSymbol, TypeSpec
+from core.frontend.tools.types import (
+    INTEGER_TYPES,
+    TypeResolutionError,
+    _integer_bounds,
+    resolve_type,
+)
 from gram import ast as gast
 
 if TYPE_CHECKING:
@@ -76,6 +82,47 @@ def _privacy(node: object) -> str:
     return 'public'
 
 
+def _base_type_node(node: gast.ASTRef) -> object | None:
+    children = _children(node)
+    found_name = False
+    for child in children:
+        if not found_name:
+            if _token_kind(child) == 'IDENT':
+                found_name = True
+            continue
+        if _token_value(child) == ':':
+            break
+        if isinstance(child, list) and child:
+            return child
+        if isinstance(child, gast.ASTRef):
+            return child
+    return None
+
+
+def _resolve_base_type(compiler: Compiler, node: gast.ASTRef) -> TypeSpec:
+    type_node = _base_type_node(node)
+    if type_node is None:
+        return TypeSpec('int32')
+
+    try:
+        type_spec = resolve_type(type_node)
+    except TypeResolutionError as error:
+        compiler.error(f'El tipo base del enum es invalido: {error}')
+        return TypeSpec('int32')
+
+    if (
+        type_spec.name not in INTEGER_TYPES
+        or type_spec.pointer_level
+        or type_spec.array_depth
+        or type_spec.value_is_const
+    ):
+        compiler.error(
+            'El tipo base de un enum debe ser un entero escalar sin constancia'
+        )
+        return TypeSpec('int32')
+    return type_spec
+
+
 def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
     """Register enum names before aggregate fields are resolved."""
     for node in nodes:
@@ -87,7 +134,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             continue
         symbol = EnumSymbol(
             name=name,
-            base_type=TypeSpec('int32'),
+            base_type=_resolve_base_type(compiler, node),
             privacy=_privacy(node),
         )
         if not compiler.storage.define_type(symbol):
@@ -109,6 +156,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
     members: list[EnumMember] = []
     seen: set[str] = set()
     next_value = 0
+    bounds = _integer_bounds(symbol.base_type)
     for item in _find_all(body, 'ENUM_ITEM'):
         name = _find_identifier(item)
         if not name:
@@ -122,6 +170,11 @@ def validate(compiler: Compiler, node: gast.ASTRef):
         explicit = _find_number(item)
         if explicit is not None:
             next_value = int(explicit)
+        if bounds is not None and not bounds[0] <= next_value <= bounds[1]:
+            compiler.error(
+                f'El valor de {symbol.name}.{name} esta fuera del rango de '
+                f'{symbol.base_type.canonical_name}: {next_value}'
+            )
         members.append(EnumMember(name, next_value))
         next_value += 1
 

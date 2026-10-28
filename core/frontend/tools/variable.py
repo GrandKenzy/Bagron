@@ -40,6 +40,7 @@ def build_symbol(
     kind: str = 'local',
     privacy: str = 'public',
 ) -> Variable:
+    immutable = type_spec.value_is_const or type_spec.name == 'chain'
     symbol = Variable(
         name,
         type_spec.canonical_name,
@@ -48,8 +49,8 @@ def build_symbol(
     )
     symbol.type_spec = type_spec
     symbol.type = type_spec.canonical_name
-    symbol.is_const = type_spec.value_is_const
-    symbol.value_is_const = type_spec.value_is_const
+    symbol.is_const = immutable
+    symbol.value_is_const = immutable
     symbol.pointer_is_const = type_spec.pointer_is_const
     symbol.pointer_size = (
         storage.pointer_size
@@ -129,6 +130,8 @@ def collect_in_scope(
     storage,
     node: gast.ASTRef,
     kind: str = 'local',
+    *,
+    validate: bool = True,
 ) -> Variable | None:
     """Collect and validate one variable in the selected lexical scope."""
     handle = handle_variable(node)
@@ -160,18 +163,56 @@ def collect_in_scope(
         kind=kind,
         privacy=handle.privacy,
     )
-    _validate_initializer(compiler, storage, handle, symbol)
+    if (
+        type_spec.array_depth
+        and handle.value_node is None
+        and any(length is None for length in type_spec.array_lengths)
+    ):
+        compiler.error(
+            f'El array {handle.name} requiere un inicializador para inferir su tamano'
+        )
+    if type_spec.name == 'chain' and handle.value_node is None:
+        compiler.error(f'El chain {handle.name} debe tener un inicializador')
+    if validate:
+        _validate_initializer(compiler, storage, handle, symbol)
     storage.add(handle.name, symbol)
     return symbol
 
 
-def collect_global(compiler: Compiler, node: gast.ASTRef) -> Variable | None:
+def collect_global(
+    compiler: Compiler,
+    node: gast.ASTRef,
+    *,
+    validate: bool = True,
+) -> Variable | None:
     """Collect and validate one top-level global variable declaration."""
-    return collect_in_scope(compiler, compiler.storage, node, kind='global')
+    return collect_in_scope(
+        compiler,
+        compiler.storage,
+        node,
+        kind='global',
+        validate=validate,
+    )
+
+
+def validate_initializer(
+    compiler: Compiler,
+    storage,
+    handle: VariableHandle,
+    symbol: Variable,
+) -> None:
+    """Validate an initializer after all globals have been registered."""
+    _validate_initializer(compiler, storage, handle, symbol)
 
 
 def collect_local(compiler: Compiler, storage, node: gast.ASTRef) -> Variable | None:
     return collect_in_scope(compiler, storage, node, kind='local')
 
 
-__all__ = ['build_symbol', 'collect_global', 'collect_in_scope', 'collect_local']
+__all__ = [
+    'build_symbol',
+    'collect_global',
+    'collect_in_scope',
+    'collect_local',
+    'validate_initializer',
+]

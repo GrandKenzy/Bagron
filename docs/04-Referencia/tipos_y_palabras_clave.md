@@ -39,22 +39,48 @@ Este documento contiene la especificacion normativa de los tipos nativos, conven
 
 | Tipo Bagron | Descripcion |
 | :--- | :--- |
-| `char` | Caracter individual ASCII / Byte. |
-| `chain` | Cadena de caracteres. |
+| `char` | Caracter individual ASCII. En LLVM ocupa `i8`, pero no es un entero numerico de Bagron. |
+| `byte` | Unidad binaria sin signo de 8 bits. Puede inicializarse con un valor numerico o con un byte de cadena. |
+| `chain` | Cadena estatica, inmutable y de solo lectura. Se emite como bytes UTF-8 terminados en `NUL`; no es un array mutable de `char`. |
 | `callptr` | Marcador de puntero callable; su firma se infiere del destino. |
 | `bool` | Booleano (`true` o `false`). |
 | `void` | Ausencia de valor o tipo de retorno vacio. |
 
 Los punteros se expresan como modificadores `*` sobre el tipo declarado, no como tipos nominales `ptr` o `cptr`.
 
-Los arrays se expresan mediante sufijos `[]`:
+Los arrays se expresan mediante sufijos `[]` o con una longitud fija entre corchetes:
 
 ```bg
-edades: int[] = [1, 2, 3]
-matriz: int[][] = [[1, 2], [3, 4]]
+edades: int[] = {1, 2, 3}
+matriz: int[][] = {{1, 2}, {3, 4}}
+nombre: char[10] = "Hola"
+bytes: byte[6] = "x0x0xb"
 contador: Bint<13> = 10
 mask: uBint<5> = 17
 ```
+
+`char` solo acepta ASCII. `char[n]` y `byte[n]` aceptan una cadena cuya
+longitud no exceda `n`; las posiciones restantes se rellenan con cero. La
+forma `byte[5] = "x0x0xb"` es invalida porque ese literal contiene seis bytes.
+Los arrays sin tamaño (`[]`) toman su longitud del inicializador.
+Por eso una variable sin inicializador no puede usar un tamaño inferido:
+
+```bg
+data: int[] = {1, 2, 3}  ; correcto: longitud 3
+data: int[]              ; error: no hay datos para inferir la longitud
+data: int[3]             ; correcto: tamaño explícito, queda en cero
+```
+
+`chain` requiere un inicializador y queda constante incluso sin escribir
+`const` explícitamente:
+
+```bg
+mensaje: chain = "inmutable"
+```
+
+En la emisión LLVM actual, `char` y `byte` escalares y sus arrays pueden
+usarse tanto en globales como en funciones. El acceso por índice se traduce a
+`getelementptr`; los tamaños escritos como `[]` se infieren del inicializador.
 
 `Bint<n>` y `uBint<n>` requieren que `n` sea un ancho literal positivo. El
 primer tipo admite signo y el segundo no. Pueden combinarse con punteros,
@@ -93,6 +119,26 @@ func obtener() int*:
 func leer() const int*:
 ```
 
+El operador `$` obtiene una dirección de forma explícita. No se usa `&` para
+evitar colisionar con el AND bitwise, que conserva su significado de C:
+
+```bg
+valor: int = 10
+p *: int = $valor
+pp **: int = $p
+(p) = 20
+resultado: int = ((pp))
+```
+
+Cada par de paréntesis elimina un nivel de puntero. La desreferenciación se
+comprueba en tiempo de ejecución y una dirección `Null` termina mediante
+`llvm.trap`. Para indexar un array se debe tomar la dirección del elemento,
+por ejemplo `$datos[0]`; `$datos` por sí solo es ambiguo y se rechaza.
+
+Las direcciones de variables locales no pueden escapar mediante un retorno
+puntero. Las funciones auxiliares pueden recibir punteros y devolverlos; el
+backend usa los tipos de puntero LLVM correspondientes.
+
 Los punteros a funciones se declaran con `callptr` y un nivel `*`:
 
 ```bg
@@ -129,26 +175,37 @@ esta reservado para la constancia del puntero.
 
 ## Estructuras, Moldes Y Alineacion De Memoria
 
-En la fase actual, estos constructos se registran y validan semánticamente,
-pero todavía no tienen layout físico ni instancias LLVM:
+Estos constructos se registran y validan semánticamente, y sus definiciones se
+emiten a LLVM cuando el módulo se compila:
 
 - **`struct`:** Campos ordenados y tipados, sin inicializadores.
 - **`mold`:** Tipo nominal distinto de `struct`, con los mismos campos sin inicializadores.
-- **`flags`:** Campos enteros escalares con un literal compatible conservado como metadata.
+- **`flags`:** Campos enteros escalares con un literal compatible; se emiten como
+  una estructura LLVM empaquetada con los anchos declarados.
+- **Instancias globales:** Una variable global de cualquiera de estos tipos se
+  emite con `zeroinitializer`.
 - **`@packed`, `volatile` y `__align__`:** Reservados; producen un diagnóstico de funcionalidad pendiente.
 
 ---
 
 ## Enumeraciones (`enum`)
 
-Permite definir variantes fuertemente tipadas:
+Permite definir variantes fuertemente tipadas. La base es `int32` si se omite;
+también puede indicarse cualquier tipo entero escalar compatible:
 
 ```bg
 enum EventType:
     QUIT = 256,
     KEYDOWN = 257,
     KEYUP = 258,
+
+enum SmallEvent int8:
+    NONE,
+    KEY = 1,
 ```
+
+Los valores implícitos empiezan en `0`, los explícitos reinician la secuencia y
+todos deben caber en el rango del tipo base.
 
 ---
 

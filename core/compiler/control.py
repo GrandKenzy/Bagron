@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from core import frontend
+from core.compiler.prep import extract_prep_blocks
 from tools.diagnostic import Diagnostics
 
 
@@ -22,12 +23,18 @@ class CompilerState(Diagnostics):
 
     def exit(self):  # NOTE: Función temporal en lo que armamos los errores
         print(self.last_note())
-        sys.exit(0)
+        sys.exit(1)
 
     def process_source(self, path: Path):
         ext = path.suffix
 
         content = _open_file(self, path)
+
+        content, prep_blocks, prep_errors = extract_prep_blocks(content, Path(path))
+        if hasattr(self, 'prep_blocks'):
+            self.prep_blocks.extend(prep_blocks)
+        for error in prep_errors:
+            self.error(error)
 
         ext = ext.strip('.')
         if ext == 'bg':
