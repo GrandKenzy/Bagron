@@ -135,9 +135,39 @@ comprueba en tiempo de ejecución y una dirección `Null` termina mediante
 `llvm.trap`. Para indexar un array se debe tomar la dirección del elemento,
 por ejemplo `$datos[0]`; `$datos` por sí solo es ambiguo y se rechaza.
 
-Las direcciones de variables locales no pueden escapar mediante un retorno
-puntero. Las funciones auxiliares pueden recibir punteros y devolverlos; el
-backend usa los tipos de puntero LLVM correspondientes.
+Las funciones son seguras por defecto. Una función segura puede crear un
+puntero mediante `$`, recibirlo y reenviarlo, pero solo puede desreferenciar
+punteros cuya procedencia sea conocida por el compilador. Esto permite, por
+ejemplo, usar `$valor` local o global, pero no leer directamente un puntero
+recibido como parámetro ni uno retornado por una función opaca. La asignación a
+un puntero es válida; si su procedencia pasa a ser desconocida, la siguiente
+desreferenciación exige `@unsafe`.
+
+En una función segura, los índices de arrays deben ser literales o expresiones
+constantes que el compilador pueda demostrar dentro del tamaño conocido. Los
+índices dinámicos, el indexado de punteros crudos, la aritmética/casts de
+punteros y el acceso a memoria de procedencia desconocida requieren una
+función `@unsafe`. No se insertan comprobaciones de límites en tiempo de
+ejecución.
+
+```bg
+@unsafe
+func leer(pointer *: int) int:
+    return (pointer)
+
+@unsafe
+func main() int:
+    valor: int = 10
+    return leer($valor)
+```
+
+Una función segura no puede llamar a una función `@unsafe`; una función
+`@unsafe` sí puede llamar a una segura. Si `main` llama a una función insegura,
+también debe marcarse `@unsafe`. El decorador `@assembler` implica
+automáticamente `@unsafe` porque sus plantillas tienen acceso directo a la
+ABI y a memoria. Las direcciones de variables locales no pueden escapar
+mediante un retorno puntero en funciones seguras; una función insegura asume
+esa responsabilidad explícitamente.
 
 Los punteros a funciones se declaran con `callptr` y un nivel `*`:
 

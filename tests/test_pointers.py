@@ -41,8 +41,10 @@ class PointerAndAddressTests(unittest.TestCase):
             'value: int = 7\n'
             'func identity(pointer *: int) int*:\n'
             '    return pointer\n'
+            '@unsafe\n'
             'func read(pointer *: int) int:\n'
             '    return (pointer)\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return read(identity($value))\n',
             executable=False,

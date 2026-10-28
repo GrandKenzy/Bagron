@@ -101,6 +101,53 @@ def _resolve_function(
     return _resolve_symbol(functions, name)
 
 
+def _unsafe_context(function: object | None) -> bool:
+    return bool(getattr(function, 'is_unsafe', False))
+
+
+def _require_known_pointer(
+    value: ValueInfo,
+    function: object | None,
+    operation: str,
+) -> None:
+    if _unsafe_context(function):
+        return
+    if value.address_origin == 'unknown':
+        raise ValueResolutionError(
+            f'{operation} requiere un puntero de procedencia conocida; '
+            'marca la funcion como @unsafe'
+        )
+
+
+def _validate_array_index(
+    value: ValueInfo,
+    index: ValueInfo,
+    function: object | None,
+) -> None:
+    if _unsafe_context(function):
+        return
+    if not index.is_literal or not isinstance(index.value, int):
+        raise ValueResolutionError(
+            'una funcion segura solo puede indexar arrays con un indice '
+            'conocido en compilacion; usa @unsafe para un indice dinamico'
+        )
+
+    length = (
+        value.type_spec.array_lengths[0]
+        if value.type_spec.array_lengths
+        else None
+    )
+    if length is None:
+        raise ValueResolutionError(
+            'el tamano del array no puede demostrarse en compilacion; '
+            'usa @unsafe para indexarlo'
+        )
+    if index.value < 0 or index.value >= length:
+        raise ValueResolutionError(
+            f'el indice {index.value} esta fuera del rango del array [0, {length})'
+        )
+
+
 def _type_name(node: object) -> str:
     if isinstance(node, list):
         return ''.join(_type_name(item) for item in node)
@@ -288,6 +335,7 @@ def _infer_postfix(
     current: gast.ASTRef,
     namespace: Mapping[str, object] | Callable[[str], object | None],
     functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    current_function: object | None = None,
 ) -> ValueInfo:
     children = _children(current)
     primary = children[0] if children else None
@@ -315,6 +363,12 @@ def _infer_postfix(
         function = _resolve_function(functions, name or '')
         if function is None:
             raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
+        if getattr(function, 'is_unsafe', False) and not _unsafe_context(
+            current_function
+        ):
+            raise ValueResolutionError(
+                f'La funcion segura no puede llamar a {name} porque es @unsafe'
+            )
 
         arguments = next(
             (
@@ -336,7 +390,12 @@ def _infer_postfix(
                 f'recibio {len(argument_items)}'
             )
         for parameter, argument in zip(parameters, argument_items):
-            argument_info = infer_value(argument, namespace, functions)
+            argument_info = infer_value(
+                argument,
+                namespace,
+                functions,
+                current_function=current_function,
+            )
             if not is_compatible(parameter.type_spec, argument_info):
                 raise ValueResolutionError(
                     f'El argumento de {name} no coincide con '
@@ -347,12 +406,17 @@ def _infer_postfix(
                 and argument_info.address_origin == 'local'
                 and getattr(signature, 'return_type', TypeSpec('void')).pointer_level
                 > 0
+                and not _unsafe_context(current_function)
             ):
                 raise ValueResolutionError(
                     f'La direccion local pasada a {name} no puede escapar '
                     'a traves de un retorno puntero'
                 )
-        result = ValueInfo(getattr(signature, 'return_type'))
+        return_type = getattr(signature, 'return_type', TypeSpec('void'))
+        result = ValueInfo(
+            return_type,
+            address_origin='unknown' if return_type.pointer_level else None,
+        )
         # Member accesses before the call are part of a qualified function
         # name (for example ``m.doble(3)``), not accesses on the returned
         # value.  Only suffixes after the call may be applied to its result.
@@ -368,10 +432,16 @@ def _infer_postfix(
                 index_node = _suffix_value(suffix)
                 if index_node is None:
                     raise ValueResolutionError('El indice no contiene una expresion')
-                index = infer_value(index_node, namespace, functions)
+                index = infer_value(
+                    index_node,
+                    namespace,
+                    functions,
+                    current_function=current_function,
+                )
                 if not _is_integer_scalar(index.type_spec):
                     raise ValueResolutionError('El indice debe ser un entero escalar')
                 if result.type_spec.array_depth:
+                    _validate_array_index(result, index, current_function)
                     result = ValueInfo(
                         TypeSpec(
                             name=result.type_spec.name,
@@ -389,24 +459,44 @@ def _infer_postfix(
                         address_path=(*result.address_path, ('index', index)),
                     )
                 elif result.type_spec.pointer_level:
+                    if not _unsafe_context(current_function):
+                        raise ValueResolutionError(
+                            'la indexacion de punteros crudos requiere @unsafe'
+                        )
                     result = _deref_value(result)
                 else:
                     raise ValueResolutionError('El valor no es indexable')
             elif getattr(suffix, 'name', None) == 'MEMBER_ACCESS':
-                result = _member_value(result, suffix, namespace)
+                result = _member_value(
+                    result,
+                    suffix,
+                    namespace,
+                    current_function=current_function,
+                )
         return result
 
-    result = infer_value(primary, namespace, functions)
+    result = infer_value(
+        primary,
+        namespace,
+        functions,
+        current_function=current_function,
+    )
     for suffix in suffixes:
         name = getattr(suffix, 'name', None)
         if name == 'INDEX_ACCESS':
             index_node = _suffix_value(suffix)
             if index_node is None:
                 raise ValueResolutionError('El indice no contiene una expresion')
-            index = infer_value(index_node, namespace, functions)
+            index = infer_value(
+                index_node,
+                namespace,
+                functions,
+                current_function=current_function,
+            )
             if not _is_integer_scalar(index.type_spec):
                 raise ValueResolutionError('El indice debe ser un entero escalar')
             if result.type_spec.array_depth:
+                _validate_array_index(result, index, current_function)
                 result = ValueInfo(
                     TypeSpec(
                         name=result.type_spec.name,
@@ -424,23 +514,136 @@ def _infer_postfix(
                     address_path=(*result.address_path, ('index', index)),
                 )
             elif result.type_spec.pointer_level:
+                if not _unsafe_context(current_function):
+                    raise ValueResolutionError(
+                        'la indexacion de punteros crudos requiere @unsafe'
+                    )
                 result = _deref_value(result)
             else:
                 raise ValueResolutionError('El valor no es indexable')
         elif name == 'MEMBER_ACCESS':
-            result = _member_value(result, suffix, namespace)
+            result = _member_value(
+                result,
+                suffix,
+                namespace,
+                current_function=current_function,
+            )
     return result
+
+
+def infer_call(
+    node: object,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None = None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo:
+    """Validate a call that appears as a standalone statement.
+
+    Calls used inside expressions are checked by ``_infer_postfix``.  A CALL
+    node has the same primary/suffix layout but is not wrapped in a
+    POSTFIX_EXPR, so it needs this small entry point to enforce the same
+    unsafe boundary and argument rules.
+    """
+    children = _children(node)
+    primary = children[0] if children else None
+    suffixes: list[object] = []
+    for child in children[1:]:
+        suffixes.extend(_children(child) if isinstance(child, list) else [child])
+
+    call_suffix = next(
+        (
+            suffix for suffix in suffixes
+            if isinstance(suffix, gast.ASTRef) and suffix.name == 'CALL_SUFFIX'
+        ),
+        None,
+    )
+    if call_suffix is None:
+        raise ValueResolutionError('La llamada no tiene argumentos')
+
+    name = _identifier_from_node(primary)
+    for suffix in suffixes:
+        if (
+            isinstance(suffix, gast.ASTRef)
+            and suffix.name == 'MEMBER_ACCESS'
+        ):
+            member = _identifier_from_node(suffix)
+            if member is not None:
+                name = f'{name}.{member}' if name else member
+
+    function = _resolve_function(functions, name or '')
+    if function is None:
+        raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
+    if getattr(function, 'is_unsafe', False) and not _unsafe_context(
+        current_function
+    ):
+        raise ValueResolutionError(
+            f'La funcion segura no puede llamar a {name} porque es @unsafe'
+        )
+
+    arguments = next(
+        (
+            child for child in _children(call_suffix)
+            if isinstance(child, gast.ASTRef) and child.name == 'ARGUMENTS'
+        ),
+        None,
+    )
+    argument_items: list[object] = []
+    if arguments is not None:
+        container = next(iter(_children(arguments)), None)
+        argument_items = _children(container)
+
+    signature = getattr(function, 'signature', None)
+    parameters = getattr(signature, 'parameters', ())
+    if len(argument_items) != len(parameters):
+        raise ValueResolutionError(
+            f'La funcion {name} esperaba {len(parameters)} argumentos y '
+            f'recibio {len(argument_items)}'
+        )
+    for parameter, argument in zip(parameters, argument_items):
+        argument_info = infer_value(
+            argument,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if not is_compatible(parameter.type_spec, argument_info):
+            raise ValueResolutionError(
+                f'El argumento de {name} no coincide con '
+                f'{parameter.type_spec.canonical_name}'
+            )
+        if (
+            argument_info.type_spec.pointer_level > 0
+            and argument_info.address_origin == 'local'
+            and getattr(signature, 'return_type', TypeSpec('void')).pointer_level
+            > 0
+            and not _unsafe_context(current_function)
+        ):
+            raise ValueResolutionError(
+                f'La direccion local pasada a {name} no puede escapar '
+                'a traves de un retorno puntero'
+            )
+
+    return_type = getattr(signature, 'return_type', TypeSpec('void'))
+    return ValueInfo(
+        return_type,
+        address_origin='unknown' if return_type.pointer_level else None,
+    )
 
 
 def _member_value(
     value: ValueInfo,
     suffix: object,
     namespace: Mapping[str, object] | Callable[[str], object | None],
+    *,
+    current_function: object | None = None,
 ) -> ValueInfo:
     if value.type_spec.pointer_level or value.type_spec.array_depth:
         raise ValueResolutionError(
             'el acceso a miembros requiere un struct o mold ya desreferenciado'
         )
+    if value.is_lvalue:
+        _require_known_pointer(value, current_function, 'el acceso al miembro')
     aggregate = _resolve_aggregate(namespace, value.type_spec.name)
     if aggregate is None:
         raise ValueResolutionError(
@@ -466,20 +669,37 @@ def _infer_deref_target(
     node: object,
     namespace: Mapping[str, object] | Callable[[str], object | None],
     functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    current_function: object | None = None,
 ) -> ValueInfo:
     children = _children(node)
     inner = children[0] if children else None
     if inner is None:
         raise ValueResolutionError('La desreferenciacion esta vacia')
     if _token_kind(inner) == 'IDENT':
-        return _deref_value(infer_value(inner, namespace, functions))
-    return _deref_value(_infer_deref_target(inner, namespace, functions))
+        value = infer_value(
+            inner,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        _require_known_pointer(value, current_function, 'la desreferenciacion')
+        return _deref_value(value)
+    value = _infer_deref_target(
+        inner,
+        namespace,
+        functions,
+        current_function=current_function,
+    )
+    _require_known_pointer(value, current_function, 'la desreferenciacion')
+    return _deref_value(value)
 
 
 def infer_lvalue(
     node: object,
     namespace: Mapping[str, object] | Callable[[str], object | None],
     functions: Mapping[str, object] | Callable[[str], object | None] | None = None,
+    *,
+    current_function: object | None = None,
 ) -> ValueInfo:
     """Resolve an assignment target and require addressable storage."""
     current = node
@@ -489,9 +709,19 @@ def infer_lvalue(
 
     name = getattr(current, 'name', None)
     if name in {'DEREF_TARGET', 'DEREF_ASSIGN_TARGET'}:
-        result = _infer_deref_target(current, namespace, functions)
+        result = _infer_deref_target(
+            current,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
     else:
-        result = infer_value(current, namespace, functions)
+        result = infer_value(
+            current,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
     if not result.is_lvalue:
         raise ValueResolutionError('el destino no es direccionable')
     return result
@@ -501,12 +731,19 @@ def infer_value(
     node: object,
     namespace: Mapping[str, object] | Callable[[str], object | None],
     functions: Mapping[str, object] | Callable[[str], object | None] | None = None,
+    *,
+    current_function: object | None = None,
 ) -> ValueInfo:
     current = _unwrap_value(node)
 
     if type(current).__name__ == 'ASTUnaryOp':
         operator = getattr(getattr(current.operator, 'token', None), 'name', None)
-        operand = infer_value(current.operand, namespace, functions)
+        operand = infer_value(
+            current.operand,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
         if operator == 'DOLLAR':
             if not operand.is_lvalue:
                 raise ValueResolutionError(
@@ -554,14 +791,30 @@ def infer_value(
         )
         if inner is None:
             raise ValueResolutionError('La expresion parentizada esta vacia')
-        value = infer_value(inner, namespace, functions)
+        value = infer_value(
+            inner,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
         if value.type_spec.pointer_level:
+            _require_known_pointer(value, current_function, 'la desreferenciacion')
             return _deref_value(value)
         return value
 
     if type(current).__name__ == 'ASTBinaryOp':
-        left = infer_value(current.left, namespace, functions)
-        right = infer_value(current.right, namespace, functions)
+        left = infer_value(
+            current.left,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        right = infer_value(
+            current.right,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
         operator = getattr(getattr(current.operator, 'token', None), 'name', None)
 
         if operator in COMPARISON_OPERATORS:
@@ -676,12 +929,22 @@ def infer_value(
         return ValueInfo(TypeSpec('int'))
 
     if isinstance(current, gast.ASTRef) and current.name == 'POSTFIX_EXPR':
-        return _infer_postfix(current, namespace, functions)
+        return _infer_postfix(
+            current,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
 
     if isinstance(current, gast.ASTRef) and current.name == 'ARRAY_VALUE':
         array_node = next(iter(_children(current)), None)
         items = tuple(
-            infer_value(item, namespace, functions)
+            infer_value(
+                item,
+                namespace,
+                functions,
+                current_function=current_function,
+            )
             for item in _children(array_node)
         )
         item_type = items[0].type_spec if items else TypeSpec('array')
@@ -710,29 +973,35 @@ def infer_value(
         symbol = _resolve_symbol(namespace, str(value))
         if not isinstance(symbol, Variable) or symbol.type_spec is None:
             raise ValueResolutionError(f'La variable global no existe: {value}')
+        initialized = getattr(symbol, 'value_info', None)
+        constant_literal = bool(
+            getattr(symbol, 'value_is_const', False)
+            and initialized is not None
+            and initialized.is_literal
+        )
         pointer_origin = None
         if symbol.type_spec.pointer_level:
-            initialized = getattr(symbol, 'value_info', None)
             pointer_origin = (
                 getattr(initialized, 'address_origin', None)
                 if initialized is not None
-                else None
+                else 'unknown'
             )
             if pointer_origin is None and initialized is not None:
                 # A literal Null has no storage lifetime to escape.  Other
-                # unresolved pointer values remain conservatively local.
+                # unresolved pointer values remain conservatively unknown.
                 pointer_origin = (
                     None
                     if getattr(initialized.type_spec, 'name', None) == 'Null'
-                    else getattr(symbol, 'scope_kind', None)
+                    else 'unknown'
                 )
             elif pointer_origin is None:
-                pointer_origin = getattr(symbol, 'scope_kind', None)
+                pointer_origin = 'unknown'
 
         return ValueInfo(
             type_spec=symbol.type_spec,
             identifier=str(value),
-            value=symbol.value,
+            value=(initialized.value if constant_literal else symbol.value),
+            is_literal=constant_literal,
             is_lvalue=True,
             address_origin=(
                 pointer_origin

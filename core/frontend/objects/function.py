@@ -41,3 +41,8 @@ class FunctionSymbol:
     @property
     def is_assembler(self) -> bool:
         return 'assembler' in self.decorators
+
+    @property
+    def is_unsafe(self) -> bool:
+        """Whether the function is allowed to cross the unsafe boundary."""
+        return self.is_assembler or 'unsafe' in self.decorators

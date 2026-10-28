@@ -21,6 +21,9 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
 - `if`, `elif`, `else`, `while` y `for` numérico con comparaciones, condiciones
   lógicas y anidación;
 - `break` y `continue` dentro de bucles;
+- frontera de memoria segura: `@unsafe` habilita desreferenciación de
+  procedencia desconocida, índices dinámicos y llamadas a funciones inseguras;
+  `@assembler` implica `@unsafe`;
 - `main() int` como función interna LLVM `i32` y wrapper nativo `main() i32`.
 
 Los bloques `#prep assembler "dialecto"` de funciones `@assembler` se extraen
@@ -64,4 +67,9 @@ agregados nominales; sus declaraciones, lecturas, asignaciones y asignaciones
 compuestas generan instrucciones LLVM.
 Las estructuras de control generan bloques LLVM explícitos y mantienen una pila
 de destinos para que `break` y `continue` respeten el bucle anidado actual.
+En funciones seguras no se insertan comprobaciones de límites: los índices de
+arrays deben ser demostrables en compilación. Los punteros recibidos como
+parámetros pueden reenviarse, pero su desreferenciación, el indexado crudo y
+el acceso a procedencia desconocida requieren `@unsafe`; la frontera de
+llamadas impide que una función segura invoque una función insegura.
 El backend no genera `program.c` ni headers C.

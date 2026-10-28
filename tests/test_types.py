@@ -218,6 +218,17 @@ class TypeSemanticTests(unittest.TestCase):
             '    return 0\n'
         )
 
+    def test_infers_char_and_byte_array_sizes_from_strings(self):
+        compiler = self.compile_source(
+            'nombre: char[] = "Hola"\n'
+            'bytes: byte[] = "abc"\n'
+            'func main() int:\n'
+            '    return 0\n'
+        )
+
+        self.assertEqual('char[4]', compiler.storage.namespace['nombre'].type)
+        self.assertEqual('byte[3]', compiler.storage.namespace['bytes'].type)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -40,7 +40,9 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 * **Memoria explícita:** `$valor` obtiene una dirección, `(p)` la
   desreferencia y `((pp))` permite varios niveles. `&` conserva el AND
   bitwise; los arrays se indexan con GEP LLVM y los punteros nulos se atrapan
-  en tiempo de ejecución.
+  en tiempo de ejecución. Las operaciones sobre procedencia desconocida y
+  los índices dinámicos requieren `@unsafe`; `@assembler` ya implica ese
+  decorador.
 
 * **Estructuras, Enumeraciones y Clases:**
   * `struct`, `mold` y `flags`: Tipos nominales validados y emitidos como tipos agregados LLVM.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.handles import VariableHandle, handle_variable
@@ -99,6 +100,8 @@ def _validate_initializer(
     storage,
     handle: VariableHandle,
     symbol: Variable,
+    *,
+    current_function: object | None = None,
 ) -> None:
     if handle.value_node is None:
         return
@@ -108,7 +111,12 @@ def _validate_initializer(
         return
 
     try:
-        value_info = infer_value(handle.value_node, storage.resolve)
+        value_info = infer_value(
+            handle.value_node,
+            storage.resolve,
+            compiler.storage.functions,
+            current_function=current_function,
+        )
     except UnsupportedExpressionError as error:
         if symbol.scope_kind == 'global':
             compiler.error(f'{handle.name}: {error}')
@@ -123,6 +131,36 @@ def _validate_initializer(
             f'El valor inicial de {handle.name} no coincide con '
             f'{symbol.type_spec.canonical_name}'
         )
+        return
+
+    if symbol.type_spec.array_depth:
+        lengths = list(symbol.type_spec.array_lengths)
+        source_type = value_info.type_spec
+        if (
+            symbol.type_spec.array_depth == 1
+            and source_type.name == 'chain'
+            and symbol.type_spec.name in {'char', 'byte'}
+            and isinstance(value_info.value, str)
+        ):
+            try:
+                encoded = value_info.value.encode(
+                    'ascii' if symbol.type_spec.name == 'char' else 'utf-8'
+                )
+            except UnicodeEncodeError:
+                encoded = None
+            if encoded is not None and lengths[0] is None:
+                lengths[0] = len(encoded)
+        elif source_type.array_depth == symbol.type_spec.array_depth:
+            for index, length in enumerate(source_type.array_lengths):
+                if index < len(lengths) and lengths[index] is None:
+                    lengths[index] = length
+
+        if tuple(lengths) != symbol.type_spec.array_lengths:
+            symbol.type_spec = replace(
+                symbol.type_spec,
+                array_lengths=tuple(lengths),
+            )
+            symbol.type = symbol.type_spec.canonical_name
 
 
 def collect_in_scope(
@@ -132,6 +170,7 @@ def collect_in_scope(
     kind: str = 'local',
     *,
     validate: bool = True,
+    current_function: object | None = None,
 ) -> Variable | None:
     """Collect and validate one variable in the selected lexical scope."""
     handle = handle_variable(node)
@@ -174,7 +213,13 @@ def collect_in_scope(
     if type_spec.name == 'chain' and handle.value_node is None:
         compiler.error(f'El chain {handle.name} debe tener un inicializador')
     if validate:
-        _validate_initializer(compiler, storage, handle, symbol)
+        _validate_initializer(
+            compiler,
+            storage,
+            handle,
+            symbol,
+            current_function=current_function,
+        )
     storage.add(handle.name, symbol)
     return symbol
 
@@ -200,13 +245,33 @@ def validate_initializer(
     storage,
     handle: VariableHandle,
     symbol: Variable,
+    *,
+    current_function: object | None = None,
 ) -> None:
     """Validate an initializer after all globals have been registered."""
-    _validate_initializer(compiler, storage, handle, symbol)
+    _validate_initializer(
+        compiler,
+        storage,
+        handle,
+        symbol,
+        current_function=current_function,
+    )
 
 
-def collect_local(compiler: Compiler, storage, node: gast.ASTRef) -> Variable | None:
-    return collect_in_scope(compiler, storage, node, kind='local')
+def collect_local(
+    compiler: Compiler,
+    storage,
+    node: gast.ASTRef,
+    *,
+    current_function: object | None = None,
+) -> Variable | None:
+    return collect_in_scope(
+        compiler,
+        storage,
+        node,
+        kind='local',
+        current_function=current_function,
+    )
 
 
 __all__ = [

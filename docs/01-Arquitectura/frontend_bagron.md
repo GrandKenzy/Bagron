@@ -75,6 +75,10 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 - **Decorador `@assembler`:** habilita un único bloque `#prep assembler
   "dialecto"` opcional y un único `return`; cualquier otra sentencia se
   rechaza. Los nombres de parámetros son el contrato de la plantilla y no se agregan anotaciones `in`, `out` o `inout`.
+- **Decorador `@unsafe`:** habilita la frontera insegura de una función. Las
+  funciones seguras no pueden llamar funciones `@unsafe`, desreferenciar
+  punteros de procedencia desconocida ni usar índices dinámicos de arrays.
+  `@assembler` implica `@unsafe`.
 - **Punto de entrada:** Todo modulo ejecutable debe declarar `func main() int:` con una expresion entera emitible; una funcion `main` dentro de una clase no satisface este requisito.
 
 ### struct_decl.py (Estructuras, Moldes Y Flags)

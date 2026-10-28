@@ -107,6 +107,7 @@ class PrepTests(unittest.TestCase):
             '        fallo:\n'
             '    #end\n'
             '    return asm\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return validar(2, 2)\n',
             encoding='utf-8',
@@ -189,6 +190,7 @@ class PrepTests(unittest.TestCase):
             '        nop\n'
             '    #end\n'
             '    return asm\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return fallo()\n',
             encoding='utf-8',
@@ -247,6 +249,7 @@ class PrepTests(unittest.TestCase):
             '        mov eax, {e}\n'
             '    #end\n'
             '    return asm\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return stack(1, 2, 3, 4, 5)\n'
         )
@@ -272,6 +275,7 @@ class PrepTests(unittest.TestCase):
             '        fin:\n'
             '    #end\n'
             '    return asm\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return estado(0)\n',
             encoding='utf-8',
@@ -298,6 +302,7 @@ class PrepTests(unittest.TestCase):
             '        mov eax, {e}\n'
             '    #end\n'
             '    return asm\n'
+            '@unsafe\n'
             'func main() int:\n'
             '    return quinto(1, 2, 3, 4, 5)\n',
             encoding='utf-8',

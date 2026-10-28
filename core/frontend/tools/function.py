@@ -13,6 +13,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    infer_call,
     infer_lvalue,
     infer_value,
     is_condition_type,
@@ -283,6 +284,7 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
             value_node,
             scope.resolve,
             compiler.storage.functions,
+            current_function=symbol,
         )
     except UnsupportedExpressionError:
         return
@@ -300,6 +302,7 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
     if (
         value_info.address_origin == 'local'
         and value_info.type_spec.pointer_level > 0
+        and not symbol.is_unsafe
     ):
         compiler.error(
             f'La funcion {symbol.name} no puede retornar la direccion de una '
@@ -370,6 +373,7 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
                 value_node,
                 scope.resolve,
                 compiler.storage.functions,
+                current_function=symbol,
             )
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(f'El rango de {name} es invalido: {error}')
@@ -429,6 +433,7 @@ def _validate_condition(
             value_node,
             scope.resolve,
             compiler.storage.functions,
+            current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
         compiler.error(f'La condicion de {symbol.name} es invalida: {error}')
@@ -504,6 +509,7 @@ def _validate_assignment(
             target,
             scope.resolve,
             compiler.storage.functions,
+            current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
         compiler.error(f'{symbol.name}: {error}')
@@ -538,6 +544,7 @@ def _validate_assignment(
             value_node,
             scope.resolve,
             compiler.storage.functions,
+            current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
         compiler.error(f'{symbol.name}: {error}')
@@ -558,6 +565,17 @@ def _validate_assignment(
         compiler.error(
             f'La asignacion {operator} solo admite enteros escalares: {name}'
         )
+        return
+
+    if (
+        variable is not None
+        and operator == '='
+        and target_info.type_spec.pointer_level > 0
+    ):
+        # Pointer provenance is flow-sensitive at the declaration/assignment
+        # level.  Unknown values remain unknown in safe functions and are
+        # rejected only when a later operation dereferences them.
+        variable.value_info = value_info
 
 
 def _body_statements(body: gast.ASTRef) -> list[object]:
@@ -702,7 +720,12 @@ def _process_body_node(
         return
     if node.name == 'VAR':
         if symbol.scope is not None:
-            collect_local(compiler, symbol.scope, node)
+            collect_local(
+                compiler,
+                symbol.scope,
+                node,
+                current_function=symbol,
+            )
         return
     if node.name == 'VAR_ASSIGNATION':
         _validate_assignment(compiler, symbol, node)
@@ -717,6 +740,17 @@ def _process_body_node(
         return
     if node.name == 'FOR':
         _for_binding(compiler, symbol, node)
+
+    if node.name == 'CALL':
+        try:
+            infer_call(
+                node,
+                symbol.scope.resolve if symbol.scope is not None else {},
+                compiler.storage.functions,
+                current_function=symbol,
+            )
+        except (UnsupportedExpressionError, ValueResolutionError) as error:
+            compiler.error(f'{symbol.name}: {error}')
 
     if node.name in {'IF_SIGNATURE', 'ELIF_SIGNATURE', 'WHILE_SIGNATURE'}:
         _validate_condition(compiler, symbol, node)
