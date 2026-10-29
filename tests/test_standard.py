@@ -43,7 +43,7 @@ class StandardLibraryTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'Hola / DOLLARAdiosHola\x00', result.stdout)
-        self.assertEqual(2, module.count('call i32 @"WriteFile"'))
+        self.assertEqual(4, module.count('call i32 @"WriteFile"'))
         self.assertRegex(module, r'call void @"print"\([^)]*i64 5\)')
         self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 5\)')
 
@@ -65,6 +65,35 @@ class StandardLibraryTests(unittest.TestCase):
 
             with self.assertRaisesRegex(CompilationError, 'printa'):
                 Compiler().compile(main, executable=False)
+
+    def test_printb_writes_raw_or_hex_bytes(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func main() int:\n'
+                '    raw: byte[3] = {65, 0, 255}\n'
+                '    encoded: byte[2] = {0, 255}\n'
+                '    printb(raw, false)\n'
+                '    printb(encoded, true)\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'A\x00\xff00FF', result.stdout)
 
     def test_serialize_int_appends_decimal_text(self):
         project_source = Path(__file__).resolve().parents[1] / 'standard.bg'

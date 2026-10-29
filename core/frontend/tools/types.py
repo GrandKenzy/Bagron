@@ -340,6 +340,7 @@ def _deref_value(value: ValueInfo) -> ValueInfo:
         is_lvalue=True,
         address_origin=origin,
         storage_origin=origin,
+        pointer_provenance_unknown=value.pointer_provenance_unknown,
     )
 
 
@@ -897,9 +898,19 @@ def _member_value(
         type_spec=field.type_spec,
         is_lvalue=True,
         identifier=value.identifier,
-        address_origin=value.address_origin,
+        # A pointer read through a raw union member has no safe provenance.
+        # Taking the member's address still uses ``storage_origin`` below.
+        address_origin=(
+            'unknown'
+            if aggregate.kind == 'mold' and field.type_spec.pointer_level
+            else value.address_origin
+        ),
         storage_origin=value.storage_origin or value.address_origin,
         address_path=(*value.address_path, ('member', member)),
+        is_addressable=aggregate.kind != 'flags',
+        pointer_provenance_unknown=(
+            aggregate.kind == 'mold' and field.type_spec.pointer_level > 0
+        ),
     )
 
 
@@ -986,6 +997,10 @@ def infer_value(
             if not operand.is_lvalue:
                 raise ValueResolutionError(
                     'el operador $ requiere una variable o acceso direccionable'
+                )
+            if not operand.is_addressable:
+                raise ValueResolutionError(
+                    'un campo de flags no tiene una direccion independiente'
                 )
             return ValueInfo(
                 type_spec=_address_type(operand.type_spec),

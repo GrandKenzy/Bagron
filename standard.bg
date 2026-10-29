@@ -124,6 +124,40 @@ func printa(buffer: char[], long: Len_t, size: Size_t) void:
     return
 
 @unsafe
+func printb(
+    buffer: byte[],
+    long: Len_t,
+    size: Size_t,
+    hexadecimal: bool
+) void:
+    handle *: void = GetStdHandle(4294967285)
+    if long != size:
+        return
+
+    if hexadecimal:
+        digits: chain = "0123456789ABCDEF"
+        index: uint64 = 0
+        value: byte = 0
+        high: int = 0
+        low: int = 0
+        pair: char[3] = "00"
+        while index < long:
+            value = buffer[index]
+            high = value / 16
+            low = value % 16
+            pair[0] = digits[high]
+            pair[1] = digits[low]
+            WriteFile(handle, $pair[0], 2, Null, Null)
+            index += 1
+        return
+
+    if size > 4294967295:
+        return
+    if size > 0:
+        WriteFile(handle, $buffer[0], _win32_count(size), Null, Null)
+    return
+
+@unsafe
 func print(text: chain, length: Len_t) void:
     handle *: void = GetStdHandle(4294967285)
     count: uint64 = 0

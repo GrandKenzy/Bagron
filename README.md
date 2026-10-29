@@ -45,7 +45,9 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
   decorador.
 
 * **Estructuras, Enumeraciones y Clases:**
-  * `struct`, `mold` y `flags`: Tipos nominales validados y emitidos como tipos agregados LLVM.
+  * `struct`, `mold` y `flags`: Tipos nominales emitidos a LLVM con acceso a
+    miembros; `mold` comparte almacenamiento como una unión y `flags` usa una
+    base entera explícita (`flags Nombre uint8:`) con campos de bits.
   * `enum`: Enumeraciones con base entera `int32` por defecto o un tipo entero explícito, además de valores implícitos/explícitos.
   * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
 

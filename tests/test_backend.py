@@ -114,7 +114,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    estado: Estado\n'
             'mold Base:\n'
             '    punto: Punto\n'
-            'flags Permisos:\n'
+            'flags Permisos uint8:\n'
             '    leer: uBint<1> = 1\n'
             '    escribir: uBint<1> = 0\n'
             'punto: Punto\n'
@@ -122,12 +122,86 @@ class GlobalBackendTests(unittest.TestCase):
             'permisos: Permisos\n'
         )
 
-        self.assertIn('"Punto" = type {i32, i32}', module)
-        self.assertIn('"Base" = type {%"Punto"}', module)
-        self.assertIn('"Permisos" = type <{i1, i1}>', module)
-        self.assertIn('@"punto" = global %"Punto" zeroinitializer', module)
+        self.assertIn('"Punto" = type {{i32, i32}}', module)
+        self.assertIn('"Base" = type {[0 x <4 x i8>], {[8 x i8]}}', module)
+        self.assertIn('"Permisos" = type {{i8}}', module)
+        self.assertIn('@"punto" = global %"Punto" {{i32, i32}', module)
         self.assertIn('@"base" = global %"Base" zeroinitializer', module)
-        self.assertIn('@"permisos" = global %"Permisos" zeroinitializer', module)
+        self.assertIn('@"permisos" = global %"Permisos" {{i8} {i8 1}}', module)
+
+    def test_builds_and_runs_struct_mold_and_flags_member_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'struct Punto:\n'
+                '    x: int\n'
+                '    y: int\n'
+                'mold Vista:\n'
+                '    entero: int\n'
+                '    crudo: uint\n'
+                'flags Estado uint8:\n'
+                '    listo: uBint<1> = 1\n'
+                '    modo: uBint<2> = 2\n'
+                'func calcular() int:\n'
+                '    punto: Punto\n'
+                '    punto.x = 4\n'
+                '    punto.y = 3\n'
+                '    vista: Vista\n'
+                '    vista.entero = punto.x + punto.y\n'
+                '    estado: Estado\n'
+                '    estado.listo = 0\n'
+                '    estado.modo += 1\n'
+                '    if estado.listo == 0:\n'
+                '        if estado.modo == 3:\n'
+                '            if vista.crudo == 7:\n'
+                '                return punto.x + punto.y\n'
+                '    return 0\n'
+                'func main() int:\n'
+                '    return calcular()\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(7, result.returncode)
+
+    def test_emits_packed_aligned_volatile_and_msb_flags(self):
+        module = self.compile_source(
+            '@packed\n'
+            'struct Paquete:\n'
+            '    __align__ 8\n'
+            '    etiqueta: byte\n'
+            '    valor: int\n'
+            '@order_msb\n'
+            'volatile flags Estado uint8:\n'
+            '    activo: uBint<1> = 1\n'
+            '    modo: uBint<2> = 2\n'
+            'func inspeccionar() int:\n'
+            '    paquete: Paquete\n'
+            '    paquete.etiqueta = 1\n'
+            '    paquete.valor = 7\n'
+            '    estado: Estado\n'
+            '    estado.activo = 0\n'
+            '    if estado.activo == 0:\n'
+            '        return paquete.valor\n'
+            '    return 0\n'
+            'func main() int:\n'
+            '    return inspeccionar()\n',
+            add_main=False,
+        )
+
+        self.assertIn('"Paquete" = type {[0 x <8 x i8>], <{i8, i32}>}', module)
+        self.assertIn('alloca %"Paquete", align 8', module)
+        self.assertIn('store i32 7, i32*', module)
+        self.assertIn('align 1', module)
+        self.assertIn('load volatile i8', module)
+        self.assertIn('store volatile i8', module)
+        self.assertIn('lshr i8', module)
 
     def test_emits_enum_underlying_width(self):
         module = self.compile_source(

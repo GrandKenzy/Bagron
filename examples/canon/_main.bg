@@ -15,7 +15,7 @@ nombre: char[10] = "Hola"
 bytes: byte[6] = "x0x0xb"
 mensaje: chain = "cadena estatica"
 
-; Tipos nominales validados por el frontend.
+; Tipos nominales con layout y acceso a miembros en LLVM.
 enum Estado int8:
     INACTIVO,
     ACTIVO = 4,
@@ -28,10 +28,31 @@ struct Punto:
 
 mold PuntoBase:
     punto: Punto
+    codigo: int
 
-flags Permisos:
+flags Permisos uint8:
     leer: uBint<1> = 1
     escribir: uBint<1> = 0
+
+; @packed conserva el layout byte a byte. __align__ eleva la alineacion de
+; la instancia sin cambiar la direccion de sus miembros.
+@packed
+struct Paquete:
+    __align__ 8
+    etiqueta: byte
+    valor: int
+
+; El molde comparte un unico bloque de memoria entre todas sus vistas.
+volatile mold Registro:
+    entero: int
+    crudo: uint
+
+; El contenedor de flags es uint8. @order_msb asigna el primer campo desde
+; el bit mas significativo; sin decorador, el orden es LSB.
+@order_msb
+volatile flags EstadoBits uint8:
+    activo: uBint<1> = 1
+    modo: uBint<2> = 2
 
 ; Instancias globales cero para comprobar sus tipos LLVM nominales.
 punto: Punto
@@ -44,6 +65,31 @@ func sumar(a: int, b: int) int:
     puntero_local *: int = $resultado
     (puntero_local) += b
     return (puntero_local)
+
+; Struct, mold y flags se inicializan de forma determinista. Los campos de
+; mold son vistas del mismo almacenamiento y los de flags se leen/escriben
+; mediante mascara y desplazamiento.
+func revisar_agregados() int:
+    punto_local: Punto
+    punto_local.x = 4
+    punto_local.y = 3
+    base_local: PuntoBase
+    base_local.punto = punto_local
+    permisos_local: Permisos
+    permisos_local.leer = 0
+    permisos_local.escribir = 1
+    paquete: Paquete
+    paquete.etiqueta = 1
+    paquete.valor = 7
+    registro: Registro
+    registro.entero = paquete.valor
+    estado: EstadoBits
+    estado.activo = 0
+    if permisos_local.escribir == 1:
+        if estado.activo == 0:
+            if registro.crudo == 7:
+                return base_local.punto.x + base_local.punto.y
+    return 0
 
 @assembler
 func asm_status() int:
@@ -60,4 +106,4 @@ func main() int:
         pass
     for j: int8 ran (3, 0, -1):
         pass
-    return sumar(2, 3) + datos[0]
+    return sumar(2, 3) + datos[0] + revisar_agregados()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from llvmlite import ir
@@ -47,39 +48,305 @@ def _array_parameter_type(
     return element_type.as_pointer()
 
 
+@dataclass(frozen=True)
+class AggregateLayout:
+    """LLVM storage details for one nominal Bagron aggregate.
+
+    Every named type uses an outer identified structure and an inner literal
+    payload.  The small indirection lets an alignment carrier raise the ABI
+    alignment without changing the public nominal type, while keeping packed
+    payloads and union storage explicit.
+    """
+
+    symbol: AggregateSymbol
+    llvm_type: ir.IdentifiedStructType
+    payload_type: ir.LiteralStructType
+    payload_index: int
+    field_paths: dict[str, tuple[int, ...]]
+    storage_path: tuple[int, ...] | None
+    backing_type: ir.Type | None
+    alignment: int
+    size: int
+
+
 class LLVMTypeRegistry:
-    """Map Bagron nominal types to identified LLVM struct types."""
+    """Map Bagron nominal aggregates to ABI-aware LLVM layouts."""
 
-    def __init__(self, module: Module, symbols: dict[str, object]):
+    def __init__(
+        self,
+        module: Module,
+        symbols: dict[str, object],
+        target_data: object | None = None,
+    ):
+        self.module = module
+        self.target_data = target_data
         self._types: dict[str, ir.Type] = {}
-        self._fields: dict[str, dict[str, int]] = {}
-        aggregates: list[AggregateSymbol] = []
+        self._symbols: dict[str, AggregateSymbol] = {}
+        self._layouts: dict[str, AggregateLayout] = {}
 
+        aggregates: list[AggregateSymbol] = []
         for name, symbol in symbols.items():
             if isinstance(symbol, EnumSymbol):
                 self._types[name] = scalar_type(symbol.base_type)
             elif isinstance(symbol, AggregateSymbol):
-                self._types[name] = module.context.get_identified_type(
-                    name,
-                    packed=symbol.kind == 'flags',
-                )
-                self._fields[name] = {
-                    field.name: index
-                    for index, field in enumerate(symbol.fields)
-                }
+                llvm_type = module.context.get_identified_type(name)
+                self._types[name] = llvm_type
+                self._symbols[name] = symbol
                 aggregates.append(symbol)
 
+        for aggregate in self._dependency_order(aggregates):
+            self._define_aggregate(aggregate)
+
+    def _dependency_order(
+        self,
+        aggregates: Sequence[AggregateSymbol],
+    ) -> list[AggregateSymbol]:
+        known = {aggregate.name: aggregate for aggregate in aggregates}
+        ordered: list[AggregateSymbol] = []
+        visiting: list[str] = []
+        visited: set[str] = set()
+
+        def visit(aggregate: AggregateSymbol) -> None:
+            if aggregate.name in visiting:
+                cycle = ' -> '.join((*visiting[visiting.index(aggregate.name):], aggregate.name))
+                raise LLVMTypeError(f'Ciclo de agregados por valor: {cycle}')
+            if aggregate.name in visited:
+                return
+            visiting.append(aggregate.name)
+            for field in aggregate.fields:
+                if field.type_spec.pointer_level:
+                    continue
+                dependency = known.get(field.type_spec.name)
+                if dependency is not None:
+                    visit(dependency)
+            visiting.pop()
+            visited.add(aggregate.name)
+            ordered.append(aggregate)
+
         for aggregate in aggregates:
-            llvm_type = self._types[aggregate.name]
-            if not isinstance(llvm_type, ir.IdentifiedStructType):
-                raise LLVMTypeError(
-                    f'El tipo agregado {aggregate.name} no tiene una definicion LLVM'
-                )
-            fields = [self.resolve(field.type_spec) for field in aggregate.fields]
-            llvm_type.set_body(*fields)
+            visit(aggregate)
+        return ordered
+
+    def _abi_size(self, value_type: ir.Type) -> int:
+        if self.target_data is None:
+            raise LLVMTypeError('El layout del target es necesario para agregados')
+        return value_type.get_abi_size(self.target_data, self.module.context)
+
+    def _abi_alignment(self, value_type: ir.Type) -> int:
+        if self.target_data is None:
+            raise LLVMTypeError('El layout del target es necesario para agregados')
+        return value_type.get_abi_alignment(self.target_data, self.module.context)
+
+    @staticmethod
+    def _alignment_carrier(alignment: int) -> ir.ArrayType:
+        # A zero-length vector array contributes alignment but no bytes.  It
+        # is an LLVM-native way to model ``aligned(N)`` on an identified type.
+        return ir.ArrayType(ir.VectorType(ir.IntType(8), alignment), 0)
+
+    def _requested_alignment(self, symbol: AggregateSymbol) -> int | None:
+        if symbol.alignment is not None:
+            return symbol.alignment
+        if symbol.alignment_type is not None:
+            return self._abi_alignment(self.resolve(symbol.alignment_type))
+        return None
+
+    def _effective_alignment(
+        self,
+        symbol: AggregateSymbol,
+        payload_type: ir.LiteralStructType,
+        natural_alignment: int | None = None,
+    ) -> int:
+        payload_alignment = self._abi_alignment(payload_type)
+        natural = natural_alignment or payload_alignment
+        requested = self._requested_alignment(symbol)
+        if requested is not None and requested < natural and not symbol.is_packed:
+            raise LLVMTypeError(
+                f'El __align__ de {symbol.name} no puede reducir su alineacion natural '
+                f'de {natural}'
+            )
+        if symbol.is_packed:
+            return requested or 1
+        return max(natural, requested or 1)
+
+    def _set_outer_body(
+        self,
+        llvm_type: ir.IdentifiedStructType,
+        payload_type: ir.LiteralStructType,
+        alignment: int,
+    ) -> int:
+        payload_alignment = self._abi_alignment(payload_type)
+        if alignment > payload_alignment:
+            llvm_type.set_body(self._alignment_carrier(alignment), payload_type)
+            return 1
+        llvm_type.set_body(payload_type)
+        return 0
+
+    def _define_aggregate(self, symbol: AggregateSymbol) -> None:
+        llvm_type = self._types.get(symbol.name)
+        if not isinstance(llvm_type, ir.IdentifiedStructType):
+            raise LLVMTypeError(
+                f'El tipo agregado {symbol.name} no tiene una definicion LLVM'
+            )
+
+        field_paths: dict[str, tuple[int, ...]] = {}
+        storage_path: tuple[int, ...] | None = None
+        backing_type: ir.Type | None = None
+        if symbol.kind == 'struct':
+            fields = [self.resolve(field.type_spec) for field in symbol.fields]
+            payload = ir.LiteralStructType(fields, packed=symbol.is_packed)
+            alignment = self._effective_alignment(symbol, payload)
+            payload_index = self._set_outer_body(llvm_type, payload, alignment)
+            field_paths = {
+                field.name: (payload_index, index)
+                for index, field in enumerate(symbol.fields)
+            }
+        elif symbol.kind == 'mold':
+            member_types = [self.resolve(field.type_spec) for field in symbol.fields]
+            member_sizes = [self._abi_size(value_type) for value_type in member_types]
+            member_alignments = [
+                self._abi_alignment(value_type)
+                for value_type in member_types
+            ]
+            if not member_sizes:
+                raise LLVMTypeError(f'El mold {symbol.name} no puede estar vacio')
+            storage = ir.ArrayType(ir.IntType(8), max(member_sizes))
+            payload = ir.LiteralStructType([storage], packed=symbol.is_packed)
+            natural_alignment = 1 if symbol.is_packed else max(member_alignments)
+            alignment = self._effective_alignment(
+                symbol,
+                payload,
+                natural_alignment=natural_alignment,
+            )
+            payload_index = self._set_outer_body(llvm_type, payload, alignment)
+            storage_path = (payload_index, 0)
+        elif symbol.kind == 'flags':
+            if symbol.base_type is None:
+                raise LLVMTypeError(f'El flags {symbol.name} no tiene tipo base')
+            backing_type = scalar_type(symbol.base_type)
+            payload = ir.LiteralStructType([backing_type], packed=symbol.is_packed)
+            alignment = self._effective_alignment(symbol, payload)
+            payload_index = self._set_outer_body(llvm_type, payload, alignment)
+            storage_path = (payload_index, 0)
+        else:
+            raise LLVMTypeError(f'Clase de agregado desconocida: {symbol.kind}')
+
+        self._layouts[symbol.name] = AggregateLayout(
+            symbol=symbol,
+            llvm_type=llvm_type,
+            payload_type=payload,
+            payload_index=payload_index,
+            field_paths=field_paths,
+            storage_path=storage_path,
+            backing_type=backing_type,
+            alignment=self._abi_alignment(llvm_type),
+            size=self._abi_size(llvm_type),
+        )
+
+    def layout(self, type_name: str) -> AggregateLayout | None:
+        return self._layouts.get(type_name)
+
+    def aggregate(self, type_name: str) -> AggregateSymbol | None:
+        return self._symbols.get(type_name)
+
+    def field_spec(self, type_name: str, field_name: str):
+        symbol = self._symbols.get(type_name)
+        if symbol is None:
+            return None
+        return next((field for field in symbol.fields if field.name == field_name), None)
+
+    def field_path(self, type_name: str, field_name: str) -> tuple[int, ...] | None:
+        layout = self._layouts.get(type_name)
+        if layout is None:
+            return None
+        return layout.field_paths.get(field_name)
 
     def field_index(self, type_name: str, field_name: str) -> int | None:
-        return self._fields.get(type_name, {}).get(field_name)
+        """Compatibility helper for direct struct fields.
+
+        New code uses ``field_path`` because alignment carriers can insert an
+        extra GEP level.
+        """
+        path = self.field_path(type_name, field_name)
+        return path[-1] if path else None
+
+    def storage_path(self, type_name: str) -> tuple[int, ...] | None:
+        layout = self._layouts.get(type_name)
+        return layout.storage_path if layout is not None else None
+
+    def flags_backing_type(self, type_name: str) -> ir.Type | None:
+        layout = self._layouts.get(type_name)
+        return layout.backing_type if layout is not None else None
+
+    def is_volatile(self, type_name: str) -> bool:
+        layout = self._layouts.get(type_name)
+        return bool(layout and layout.symbol.is_volatile)
+
+    def abi_alignment(self, value_type: ir.Type) -> int:
+        return self._abi_alignment(value_type)
+
+    def alignment_for_spec(self, spec: TypeSpec) -> int:
+        return self._abi_alignment(self.resolve(spec))
+
+    def default_constant(self, spec: TypeSpec) -> ir.Constant:
+        """Return the deterministic default value for a Bagron storage type."""
+        target_type = self.resolve(spec)
+        if spec.pointer_level:
+            return ir.Constant(target_type, None)
+        if spec.array_depth:
+            if not isinstance(target_type, ir.ArrayType):
+                raise LLVMTypeError(
+                    f'El array {spec.canonical_name} no tiene tipo LLVM fijo'
+                )
+            element_spec = TypeSpec(
+                name=spec.name,
+                bit_width=spec.bit_width,
+                signed=spec.signed,
+                pointer_level=spec.pointer_level,
+                array_depth=spec.array_depth - 1,
+                value_is_const=spec.value_is_const,
+                pointer_is_const=spec.pointer_is_const,
+                array_lengths=spec.array_lengths[1:] if spec.array_lengths else (),
+            )
+            element = self.default_constant(element_spec)
+            return ir.Constant(target_type, [element] * target_type.count)
+
+        layout = self._layouts.get(spec.name)
+        if layout is None:
+            return ir.Constant(target_type, None)
+        if layout.symbol.kind == 'mold':
+            return ir.Constant(target_type, None)
+        if layout.symbol.kind == 'flags':
+            if not isinstance(layout.backing_type, ir.IntType):
+                raise LLVMTypeError(f'El flags {spec.name} no tiene entero base')
+            value = 0
+            for field in layout.symbol.fields:
+                width = self._integer_width(field.type_spec)
+                if width is None or field.bit_offset is None or field.value_info is None:
+                    raise LLVMTypeError(
+                        f'El campo {spec.name}.{field.name} no tiene layout de bits'
+                    )
+                mask = (1 << width) - 1
+                value |= (int(field.value_info.value) & mask) << field.bit_offset
+            payload = ir.Constant(
+                layout.payload_type,
+                [ir.Constant(layout.backing_type, value)],
+            )
+        else:
+            payload = ir.Constant(
+                layout.payload_type,
+                [self.default_constant(field.type_spec) for field in layout.symbol.fields],
+            )
+        outer_values: list[ir.Constant] = []
+        if layout.payload_index:
+            outer_values.append(ir.Constant(target_type.elements[0], None))
+        outer_values.append(payload)
+        return ir.Constant(target_type, outer_values)
+
+    @staticmethod
+    def _integer_width(spec: TypeSpec) -> int | None:
+        if spec.name in {'Bint', 'uBint'}:
+            return spec.bit_width
+        return _INTEGER_TYPES.get(spec.name)
 
     def resolve(
         self,
@@ -283,6 +550,20 @@ def zero_value(
     value: ValueInfo | None = None,
     type_registry: LLVMTypeRegistry | None = None,
 ) -> ir.Constant:
+    target_type = value_type(spec, value, type_registry)
+    return ir.Constant(target_type, None)
+
+
+def default_value(
+    spec: TypeSpec,
+    value: ValueInfo | None = None,
+    type_registry: LLVMTypeRegistry | None = None,
+) -> ir.Constant:
+    """Return storage defaults, including declarative ``flags`` bits."""
+    if type_registry is not None and not _is_unsized_array(spec) and (
+        spec.array_depth or type_registry.layout(spec.name) is not None
+    ):
+        return type_registry.default_constant(spec)
     target_type = value_type(spec, value, type_registry)
     return ir.Constant(target_type, None)
 

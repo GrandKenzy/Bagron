@@ -5,6 +5,7 @@ from llvmlite import ir
 from core.backend.llvm.types import (
     LLVMTypeError,
     constant_value,
+    default_value,
     scalar_type,
     value_type,
 )
@@ -107,7 +108,13 @@ class StatementEmitterMixin:
                 expected_type=pointer.type.pointee,
             )
         result = self._coerce_value(result, pointer.type.pointee, builder)
-        builder.store(result, pointer)
+        self._store_address(
+            result,
+            pointer,
+            builder,
+            alignment=getattr(pointer, 'align', None),
+            volatile=self._aggregate_volatile(pointer.type.pointee),
+        )
 
     def _emit_assignment(
         self,
@@ -129,14 +136,18 @@ class StatementEmitterMixin:
                 f'La asignacion de {name or "<anonima>"} no tiene almacenamiento LLVM'
             )
 
-        pointer = self._compile_address(target, builder, values)
+        place = self._compile_place(target, builder, values)
 
         value_node = self._assignment_value(node)
         operator = self._assignment_operator(node)
         if value_node is None or operator is None:
             raise FunctionEmissionError('La asignacion local es invalida')
 
-        target_type = pointer.type.pointee
+        target_type = (
+            place.field_type
+            if hasattr(place, 'field_type')
+            else place.value_type
+        )
         right = self._coerce_value(
             self._compile_expression(
                 value_node,
@@ -150,12 +161,14 @@ class StatementEmitterMixin:
         if operator == '=':
             result = right
         else:
-            left = builder.load(pointer)
-            unsigned = False
+            left = self._load_place(place, builder)
+            unsigned = bool(getattr(place, 'unsigned', False))
             if symbol.scope is not None and name is not None:
                 variable = symbol.scope.resolve(name)
                 type_spec = getattr(variable, 'type_spec', None)
-                unsigned = getattr(type_spec, 'name', None) in UNSIGNED_INTEGER_TYPES
+                unsigned = unsigned or (
+                    getattr(type_spec, 'name', None) in UNSIGNED_INTEGER_TYPES
+                )
             operations = {
                 '+=': builder.add,
                 '-=': builder.sub,
@@ -174,7 +187,7 @@ class StatementEmitterMixin:
                     f'Operador de asignacion no soportado: {operator}'
                 )
             result = operation(left, right)
-        builder.store(result, pointer)
+        self._store_place(result, place, builder)
 
     def _prepare_values(
         self,
@@ -209,8 +222,25 @@ class StatementEmitterMixin:
                     f'La variable local {name} no tiene un tipo LLVM soportado'
                 ) from error
             pointer = builder.alloca(local_type, name=f'{name}.addr')
+            if self.type_registry is not None:
+                pointer.align = self.type_registry.abi_alignment(local_type)
             values[name] = pointer
-            builder.store(ir.Constant(local_type, None), pointer)
+            initial_value = (
+                ir.Constant(local_type, None)
+                if name in chain_parameters
+                else default_value(
+                    variable.type_spec,
+                    getattr(variable, 'value_info', None),
+                    self.type_registry,
+                )
+            )
+            self._store_address(
+                initial_value,
+                pointer,
+                builder,
+                alignment=pointer.align,
+                volatile=self._aggregate_volatile(local_type),
+            )
 
         for parameter, argument in zip(symbol.signature.parameters, arguments):
             pointer = values.get(parameter.name)
@@ -219,9 +249,12 @@ class StatementEmitterMixin:
                     f'El parametro {parameter.name} no tiene almacenamiento LLVM'
                 )
             argument.name = parameter.name
-            builder.store(
+            self._store_address(
                 self._coerce_value(argument, pointer.type.pointee, builder),
                 pointer,
+                builder,
+                alignment=getattr(pointer, 'align', None),
+                volatile=self._aggregate_volatile(pointer.type.pointee),
             )
         return values
 

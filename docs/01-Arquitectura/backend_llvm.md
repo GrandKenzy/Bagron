@@ -15,7 +15,8 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
   los `char[n]` reservan una celda final para `NUL` sin generar checks en
   runtime;
 - referencias a globals `const` que puedan plegarse estáticamente.
-- tipos agregados nominales `struct`, `mold` y `flags`, además de sus instancias globales cero;
+- tipos agregados nominales `struct`, `mold` y `flags`, con inicialización
+  determinista, acceso a miembros y asignaciones locales;
 - funciones auxiliares con parámetros y retornos enteros, `middle`, `float`,
   `double`, `void` o punteros, llamadas y operaciones aritméticas/bitwise
   básicas;
@@ -67,7 +68,12 @@ directamente el `int` producido por `main`.
 Las definiciones semánticas de `enum`, `struct`, `mold` y `flags` pueden
 coexistir con el módulo y con `main`. Los enums se representan según su tipo
 base (`i8`, `i16`, `i32`, etc.); los agregados se emiten como tipos
-identificados LLVM.
+identificados LLVM. `struct` conserva campos ordenados, `mold` reserva un
+buffer del tamaño máximo y lo proyecta al tipo del miembro solicitado, y
+`flags` usa un entero base explícito con máscaras, desplazamientos y
+read-modify-write. Los carriers internos de alineación permiten expresar
+`__align__`, mientras `@packed` reduce los accesos de miembros a alineación de
+un byte y `volatile` produce cargas y stores `volatile` verificables por LLVM.
 
 ## Inicialización de LLVM
 

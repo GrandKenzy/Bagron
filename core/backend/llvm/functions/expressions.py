@@ -1,12 +1,58 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from llvmlite import ir
 
 from .errors import FunctionEmissionError
 
 
+class _VolatileLoadInstr(ir.instructions.LoadInstr):
+    """llvmlite 0.50 lacks a public volatile-load builder API."""
+
+    def descr(self, buf):
+        [value] = self.operands
+        align = f', align {self.align}' if self.align is not None else ''
+        buf.append(
+            f'load volatile {self.type}, {value.type} {value.get_reference()}'
+            f'{align}{self._stringify_metadata(leading_comma=True)}\n'
+        )
+
+
+class _VolatileStoreInstr(ir.instructions.StoreInstr):
+    """Counterpart to ``_VolatileLoadInstr`` for type-level volatile data."""
+
+    def descr(self, buf):
+        value, pointer = self.operands
+        align = f', align {self.align}' if self.align is not None else ''
+        buf.append(
+            f'store volatile {value.type} {value.get_reference()}, '
+            f'{pointer.type} {pointer.get_reference()}{align}'
+            f'{self._stringify_metadata(leading_comma=True)}\n'
+        )
+
+
+@dataclass
+class _MemoryPlace:
+    address: ir.Value
+    value_type: ir.Type
+    alignment: int | None = None
+    volatile: bool = False
+
+
+@dataclass
+class _BitfieldPlace:
+    address: ir.Value
+    field_type: ir.IntType
+    backing_type: ir.IntType
+    offset: int
+    alignment: int | None = None
+    volatile: bool = False
+    unsigned: bool = False
+
+
 class ExpressionEmitterMixin:
-    """LLVM emission for expressions, addresses, and calls."""
+    """LLVM emission for expressions, aggregate places, and calls."""
 
     @staticmethod
     def _is_array_descriptor_type(value_type: ir.Type) -> bool:
@@ -21,13 +67,160 @@ class ExpressionEmitterMixin:
             and elements[1].width == 32
         )
 
-    def _compile_address(
+    @staticmethod
+    def _identified_name(value_type: ir.Type) -> str | None:
+        return (
+            value_type.name
+            if isinstance(value_type, ir.IdentifiedStructType)
+            else None
+        )
+
+    def _aggregate_volatile(self, value_type: ir.Type) -> bool:
+        name = self._identified_name(value_type)
+        return bool(
+            name
+            and self.type_registry is not None
+            and self.type_registry.is_volatile(name)
+        )
+
+    def _place_alignment(
+        self,
+        value_type: ir.Type,
+        fallback: int | None = None,
+    ) -> int | None:
+        if fallback is not None:
+            return fallback
+        if self.type_registry is not None:
+            return self.type_registry.abi_alignment(value_type)
+        return None
+
+    def _memory_place(
+        self,
+        address: ir.Value,
+        *,
+        alignment: int | None = None,
+        volatile: bool = False,
+    ) -> _MemoryPlace:
+        if not isinstance(address.type, ir.PointerType):
+            raise FunctionEmissionError('La expresion no tiene direccion LLVM')
+        value_type = address.type.pointee
+        return _MemoryPlace(
+            address=address,
+            value_type=value_type,
+            alignment=self._place_alignment(value_type, alignment),
+            volatile=volatile or self._aggregate_volatile(value_type),
+        )
+
+    def _load_address(
+        self,
+        address: ir.Value,
+        builder: ir.IRBuilder,
+        *,
+        alignment: int | None = None,
+        volatile: bool = False,
+        name: str = '',
+    ) -> ir.Value:
+        if volatile:
+            instruction = _VolatileLoadInstr(builder.block, address, name=name)
+            instruction.align = alignment
+            builder._insert(instruction)
+            return instruction
+        return builder.load(address, name=name, align=alignment)
+
+    def _store_address(
+        self,
+        value: ir.Value,
+        address: ir.Value,
+        builder: ir.IRBuilder,
+        *,
+        alignment: int | None = None,
+        volatile: bool = False,
+    ) -> None:
+        if volatile:
+            instruction = _VolatileStoreInstr(builder.block, value, address)
+            instruction.align = alignment
+            builder._insert(instruction)
+            return
+        builder.store(value, address, align=alignment)
+
+    def _load_place(
+        self,
+        place: _MemoryPlace | _BitfieldPlace,
+        builder: ir.IRBuilder,
+    ) -> ir.Value:
+        if isinstance(place, _MemoryPlace):
+            return self._load_address(
+                place.address,
+                builder,
+                alignment=place.alignment,
+                volatile=place.volatile,
+            )
+        stored = self._load_address(
+            place.address,
+            builder,
+            alignment=place.alignment,
+            volatile=place.volatile,
+        )
+        shifted = builder.lshr(
+            stored,
+            ir.Constant(place.backing_type, place.offset),
+        )
+        mask = (1 << place.field_type.width) - 1
+        masked = builder.and_(shifted, ir.Constant(place.backing_type, mask))
+        if place.field_type.width == place.backing_type.width:
+            return masked
+        return builder.trunc(masked, place.field_type)
+
+    def _store_place(
+        self,
+        value: ir.Value,
+        place: _MemoryPlace | _BitfieldPlace,
+        builder: ir.IRBuilder,
+    ) -> None:
+        if isinstance(place, _MemoryPlace):
+            self._store_address(
+                value,
+                place.address,
+                builder,
+                alignment=place.alignment,
+                volatile=place.volatile,
+            )
+            return
+
+        field_value = self._coerce_value(value, place.field_type, builder)
+        if place.field_type.width < place.backing_type.width:
+            field_value = builder.zext(field_value, place.backing_type)
+        mask = (1 << place.field_type.width) - 1
+        placed_mask = mask << place.offset
+        current = self._load_address(
+            place.address,
+            builder,
+            alignment=place.alignment,
+            volatile=place.volatile,
+        )
+        cleared = builder.and_(
+            current,
+            ir.Constant(place.backing_type, ~placed_mask),
+        )
+        inserted = builder.shl(
+            builder.and_(field_value, ir.Constant(place.backing_type, mask)),
+            ir.Constant(place.backing_type, place.offset),
+        )
+        self._store_address(
+            builder.or_(cleared, inserted),
+            place.address,
+            builder,
+            alignment=place.alignment,
+            volatile=place.volatile,
+        )
+
+    def _compile_place(
         self,
         node: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
-    ) -> ir.Value:
-        """Emit the address represented by an lvalue/access expression."""
+    ) -> _MemoryPlace | _BitfieldPlace:
+        """Resolve an assignable LLVM place, including union/bitfield views."""
         current = node
         while (
             getattr(current, 'name', None) in {'VALUE', 'PRIMARY'}
@@ -39,7 +232,7 @@ class ExpressionEmitterMixin:
             children = self._children(current)
             if not children:
                 raise FunctionEmissionError('El destino no tiene una expresion')
-            return self._compile_address(children[0], builder, values)
+            return self._compile_place(children[0], builder, values)
 
         if getattr(current, 'name', None) == 'PAREN_VALUE':
             inner = next(
@@ -53,8 +246,11 @@ class ExpressionEmitterMixin:
                 raise FunctionEmissionError('La expresion parentizada esta vacia')
             value = self._compile_expression(inner, builder, values)
             if isinstance(value.type, ir.PointerType):
-                return self._checked_pointer(value, builder)
-            return self._compile_address(inner, builder, values)
+                return self._memory_place(
+                    self._checked_pointer(value, builder),
+                    alignment=1,
+                )
+            return self._compile_place(inner, builder, values)
 
         if getattr(current, 'name', None) == 'DEREF_TARGET':
             children = self._children(current)
@@ -63,7 +259,10 @@ class ExpressionEmitterMixin:
             value = self._compile_expression(children[0], builder, values)
             if not isinstance(value.type, ir.PointerType):
                 raise FunctionEmissionError('La desreferenciacion requiere un puntero')
-            return self._checked_pointer(value, builder)
+            return self._memory_place(
+                self._checked_pointer(value, builder),
+                alignment=1,
+            )
 
         if getattr(current, 'name', None) == 'DEREF_ASSIGN_TARGET':
             children = self._children(current)
@@ -72,7 +271,10 @@ class ExpressionEmitterMixin:
             value = self._compile_expression(children[0], builder, values)
             if not isinstance(value.type, ir.PointerType):
                 raise FunctionEmissionError('La desreferenciacion requiere un puntero')
-            return self._checked_pointer(value, builder)
+            return self._memory_place(
+                self._checked_pointer(value, builder),
+                alignment=1,
+            )
 
         if getattr(current, 'name', None) == 'POSTFIX_EXPR':
             children = self._children(current)
@@ -85,8 +287,12 @@ class ExpressionEmitterMixin:
             if primary is None:
                 raise FunctionEmissionError('El acceso no tiene una base')
 
-            address = self._compile_address(primary, builder, values)
-            for suffix in suffixes:
+            place = self._compile_place(primary, builder, values)
+            for suffix_index, suffix in enumerate(suffixes):
+                if isinstance(place, _BitfieldPlace):
+                    raise FunctionEmissionError(
+                        'Un campo de flags no admite accesos posteriores'
+                    )
                 name = getattr(suffix, 'name', None)
                 if name == 'CALL_SUFFIX':
                     raise FunctionEmissionError(
@@ -108,71 +314,181 @@ class ExpressionEmitterMixin:
                         builder,
                         signed=False,
                     )
-                    pointee = address.type.pointee
+                    address = place.address
+                    pointee = place.value_type
                     if self._is_array_descriptor_type(pointee):
-                        descriptor = builder.load(address)
+                        descriptor = self._load_place(place, builder)
                         data = builder.extract_value(descriptor, 0)
-                        address = builder.gep(data, [index], inbounds=False)
+                        place = self._memory_place(
+                            builder.gep(data, [index], inbounds=False),
+                            alignment=1,
+                            volatile=place.volatile,
+                        )
                     elif isinstance(pointee, ir.PointerType):
                         address = self._checked_pointer(
-                            builder.load(address),
+                            self._load_place(place, builder),
                             builder,
                         )
-                        address = builder.gep(address, [index], inbounds=False)
+                        place = self._memory_place(
+                            builder.gep(address, [index], inbounds=False),
+                            alignment=1,
+                        )
                     elif isinstance(pointee, ir.ArrayType):
                         address = builder.gep(
                             address,
                             [ir.Constant(ir.IntType(32), 0), index],
                             inbounds=False,
                         )
+                        element_alignment = (
+                            1 if place.alignment == 1
+                            else self._place_alignment(pointee.element)
+                        )
+                        place = self._memory_place(
+                            address,
+                            alignment=element_alignment,
+                            volatile=place.volatile,
+                        )
                     else:
                         # The semantic pass guarantees that this is a pointer
                         # access.  A scalar GEP keeps raw-pointer indexing
                         # available for future pointer arithmetic without
                         # inventing a second address representation.
-                        address = builder.gep(address, [index], inbounds=False)
+                        place = self._memory_place(
+                            builder.gep(address, [index], inbounds=False),
+                            alignment=1,
+                        )
                     continue
                 if name == 'MEMBER_ACCESS':
                     member = self._identifier(suffix)
-                    pointee = address.type.pointee
-                    if not isinstance(pointee, ir.IdentifiedStructType):
+                    pointee = place.value_type
+                    type_name = self._identified_name(pointee)
+                    if type_name is None or self.type_registry is None:
                         raise FunctionEmissionError(
                             'El acceso a miembros requiere un struct LLVM'
                         )
-                    field_index = (
-                        self.type_registry.field_index(pointee.name, member or '')
-                        if self.type_registry is not None
-                        else None
-                    )
-                    if field_index is None:
+                    layout = self.type_registry.layout(type_name)
+                    field = self.type_registry.field_spec(type_name, member or '')
+                    if layout is None or field is None:
                         raise FunctionEmissionError(
                             f'El miembro {member or "<anonimo>"} no existe en '
-                            f'{pointee.name}'
+                            f'{type_name}'
                         )
-                    address = builder.gep(
-                        address,
-                        [
-                            ir.Constant(ir.IntType(32), 0),
-                            ir.Constant(ir.IntType(32), field_index),
-                        ],
-                        inbounds=False,
+                    volatile = place.volatile or layout.symbol.is_volatile
+                    if layout.symbol.kind == 'flags':
+                        if suffix_index != len(suffixes) - 1:
+                            raise FunctionEmissionError(
+                                'Un campo de flags debe ser el acceso final'
+                            )
+                        path = layout.storage_path
+                        backing = layout.backing_type
+                        field_type = self.type_registry.resolve(field.type_spec)
+                        if (
+                            path is None
+                            or not isinstance(backing, ir.IntType)
+                            or not isinstance(field_type, ir.IntType)
+                            or field.bit_offset is None
+                        ):
+                            raise FunctionEmissionError(
+                                f'El campo de flags {type_name}.{member} no tiene layout LLVM'
+                            )
+                        storage = builder.gep(
+                            place.address,
+                            [ir.Constant(ir.IntType(32), 0), *(
+                                ir.Constant(ir.IntType(32), item) for item in path
+                            )],
+                            inbounds=False,
+                        )
+                        alignment = 1 if layout.symbol.is_packed else min(
+                            place.alignment or layout.alignment,
+                            self._place_alignment(backing) or 1,
+                        )
+                        place = _BitfieldPlace(
+                            address=storage,
+                            field_type=field_type,
+                            backing_type=backing,
+                            offset=field.bit_offset,
+                            alignment=alignment,
+                            volatile=volatile,
+                            unsigned=(
+                                field.type_spec.name.startswith('u')
+                                or field.type_spec.name in {'uint', 'byte'}
+                            ),
+                        )
+                        continue
+
+                    field_type = self.type_registry.resolve(field.type_spec)
+                    if layout.symbol.kind == 'mold':
+                        path = layout.storage_path
+                        if path is None:
+                            raise FunctionEmissionError(
+                                f'El mold {type_name} no tiene almacenamiento LLVM'
+                            )
+                        storage = builder.gep(
+                            place.address,
+                            [ir.Constant(ir.IntType(32), 0), *(
+                                ir.Constant(ir.IntType(32), item) for item in path
+                            )],
+                            inbounds=False,
+                        )
+                        address = builder.bitcast(storage, field_type.as_pointer())
+                    else:
+                        path = self.type_registry.field_path(type_name, member or '')
+                        if path is None:
+                            raise FunctionEmissionError(
+                                f'El miembro {member or "<anonimo>"} no tiene ruta LLVM'
+                            )
+                        address = builder.gep(
+                            place.address,
+                            [ir.Constant(ir.IntType(32), 0), *(
+                                ir.Constant(ir.IntType(32), item) for item in path
+                            )],
+                            inbounds=False,
+                        )
+                    alignment = 1 if layout.symbol.is_packed else min(
+                        place.alignment or layout.alignment,
+                        self._place_alignment(field_type) or 1,
                     )
-            return address
+                    place = self._memory_place(
+                        address,
+                        alignment=alignment,
+                        volatile=volatile,
+                    )
+            return place
 
         kind = self._token_kind(current)
         value = self._token_value(current)
         if kind == 'IDENT':
             name = str(value)
             if name in values:
-                return values[name]
+                address = values[name]
+                return self._memory_place(
+                    address,
+                    alignment=getattr(address, 'align', None),
+                )
             global_value = self.module.globals.get(name)
             if isinstance(global_value, ir.GlobalVariable):
-                return global_value
+                return self._memory_place(
+                    global_value,
+                    alignment=getattr(global_value, 'align', None),
+                )
             raise FunctionEmissionError(
                 f'La variable {name} no tiene almacenamiento LLVM'
             )
 
         raise FunctionEmissionError('La expresion no es direccionable')
+
+    def _compile_address(
+        self,
+        node: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        place = self._compile_place(node, builder, values)
+        if isinstance(place, _BitfieldPlace):
+            raise FunctionEmissionError(
+                'Un campo de flags no tiene una direccion independiente'
+            )
+        return place.address
 
     def _compile_expression(
         self,
@@ -320,8 +636,8 @@ class ExpressionEmitterMixin:
                     'PLUS': builder.add,
                     'MINUS': builder.sub,
                     'STAR': builder.mul,
-                    'SLASH': builder.sdiv,
-                    'PERCENT': builder.srem,
+                    'SLASH': builder.udiv if unsigned else builder.sdiv,
+                    'PERCENT': builder.urem if unsigned else builder.srem,
                     'AND': builder.and_,
                     'OR': builder.or_,
                     'XOR': builder.xor,
@@ -374,8 +690,8 @@ class ExpressionEmitterMixin:
                     raise FunctionEmissionError(
                         'La longitud solo puede obtenerse de un array'
                     )
-                address = self._compile_address(current, builder, values)
-                return builder.load(address)
+                place = self._compile_place(current, builder, values)
+                return self._load_place(place, builder)
 
         if getattr(current, 'name', None) == 'PAREN_VALUE':
             inner = next(
@@ -389,7 +705,11 @@ class ExpressionEmitterMixin:
                 raise FunctionEmissionError('La expresion parentizada esta vacia')
             value = self._compile_expression(inner, builder, values)
             if isinstance(value.type, ir.PointerType):
-                return builder.load(self._checked_pointer(value, builder))
+                return self._load_address(
+                    self._checked_pointer(value, builder),
+                    builder,
+                    alignment=1,
+                )
             return value
 
         if getattr(current, 'name', None) in {'VALUE', 'PRIMARY'}:
@@ -466,9 +786,21 @@ class ExpressionEmitterMixin:
                             inbounds=True,
                         )
             if getattr(result, 'opname', None) == 'alloca':
-                return builder.load(result)
+                return self._load_place(
+                    self._memory_place(
+                        result,
+                        alignment=getattr(result, 'align', None),
+                    ),
+                    builder,
+                )
             if isinstance(result, ir.GlobalVariable):
-                return builder.load(result)
+                return self._load_place(
+                    self._memory_place(
+                        result,
+                        alignment=getattr(result, 'align', None),
+                    ),
+                    builder,
+                )
             return result
 
         raise FunctionEmissionError(

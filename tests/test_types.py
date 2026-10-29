@@ -39,7 +39,7 @@ class TypeSemanticTests(unittest.TestCase):
             '    estado: Estado\n'
             'mold PuntoBase:\n'
             '    punto: Punto\n'
-            'flags Permisos:\n'
+            'flags Permisos uint8:\n'
             '    leer: uBint<1> = 1\n'
             '    escribir: uBint<1> = 0\n'
             '\n'
@@ -64,7 +64,9 @@ class TypeSemanticTests(unittest.TestCase):
         self.assertEqual(['x', 'y', 'estado'], [field.name for field in point.fields])
         self.assertEqual('Estado', point.fields[2].type_spec.name)
         self.assertEqual('Punto', mold.fields[0].type_spec.name)
+        self.assertEqual('uint8', flags.base_type.name)
         self.assertEqual([1, 0], [field.value_info.value for field in flags.fields])
+        self.assertEqual([0, 1], [field.bit_offset for field in flags.fields])
 
     def test_rejects_duplicate_members_and_fields(self):
         with self.assertRaisesRegex(CompilationError, 'miembro Estado.ACTIVO'):
@@ -104,7 +106,7 @@ class TypeSemanticTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'literal entero'):
             self.compile_source(
-                'flags Permisos:\n'
+                'flags Permisos uint8:\n'
                 '    leer: uBint<1> = true\n'
                 'func main() int:\n'
                 '    return 0\n'
@@ -112,38 +114,97 @@ class TypeSemanticTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'no coincide'):
             self.compile_source(
-                'flags Permisos:\n'
+                'flags Permisos uint8:\n'
                 '    leer: uBint<1> = 2\n'
                 'func main() int:\n'
                 '    return 0\n'
             )
 
-    def test_reports_pending_type_modifiers(self):
-        with self.assertRaisesRegex(CompilationError, '@packed'):
+        with self.assertRaisesRegex(CompilationError, 'tipo base'):
             self.compile_source(
-                '@packed\n'
-                'struct Punto:\n'
-                '    x: int\n'
+                'flags Permisos int:\n'
+                '    leer: uBint<1> = 1\n'
                 'func main() int:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'volatile'):
+        with self.assertRaisesRegex(CompilationError, 'ocupan 9 bits'):
             self.compile_source(
-                'volatile struct Punto:\n'
-                '    x: int\n'
+                'flags Permisos uint8:\n'
+                '    primero: uBint<5> = 0\n'
+                '    segundo: uBint<4> = 0\n'
                 'func main() int:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, '__align__'):
+    def test_rejects_empty_and_recursive_aggregate_layouts(self):
+        with self.assertRaisesRegex(CompilationError, 'no puede estar vacio'):
             self.compile_source(
-                'struct Punto:\n'
-                '    __align__ 8\n'
-                '    x: int\n'
+                'mold Vacio:\n'
+                '    pass\n'
                 'func main() int:\n'
                 '    return 0\n'
             )
+
+        with self.assertRaisesRegex(CompilationError, 'Ciclo de agregados por valor'):
+            self.compile_source(
+                'struct A:\n'
+                '    b: B\n'
+                'struct B:\n'
+                '    a: A\n'
+                'func main() int:\n'
+                '    return 0\n'
+            )
+
+    def test_flags_have_no_address_and_mold_pointer_reads_require_unsafe(self):
+        with self.assertRaisesRegex(CompilationError, 'no tiene una direccion'):
+            self.compile_source(
+                'flags Estado uint8:\n'
+                '    activo: uBint<1> = 1\n'
+                'func main() int:\n'
+                '    estado: Estado\n'
+                '    bit *: uBint<1> = $estado.activo\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'procedencia conocida'):
+            self.compile_source(
+                'mold Vista:\n'
+                '    puntero *: int\n'
+                'func leer(vista: Vista) int:\n'
+                '    return (vista.puntero)\n'
+                'func main() int:\n'
+                '    return 0\n'
+            )
+
+    def test_registers_aggregate_modifiers_and_bit_order(self):
+        compiler = self.compile_source(
+            '@packed\n'
+            'struct Paquete:\n'
+            '    __align__ 8\n'
+            '    etiqueta: byte\n'
+            '    valor: int\n'
+            'volatile mold Registro:\n'
+            '    __align__ int64\n'
+            '    entero: int64\n'
+            '    bytes: byte[8]\n'
+            '@order_msb\n'
+            'flags Estado uint8:\n'
+            '    activo: uBint<1> = 1\n'
+            '    modo: uBint<2> = 2\n'
+            'func main() int:\n'
+            '    return 0\n'
+        )
+
+        paquete = compiler.storage.types['Paquete']
+        registro = compiler.storage.types['Registro']
+        estado = compiler.storage.types['Estado']
+        self.assertTrue(paquete.is_packed)
+        self.assertEqual(8, paquete.alignment)
+        self.assertTrue(registro.is_volatile)
+        self.assertEqual('int64', registro.alignment_type.name)
+        self.assertEqual('msb', estado.bit_order)
+        self.assertEqual([7, 5], [field.bit_offset for field in estado.fields])
 
     def test_type_definitions_still_build_minimal_executable(self):
         self.compile_source(
@@ -153,7 +214,7 @@ class TypeSemanticTests(unittest.TestCase):
             '    x: int\n'
             'mold Base:\n'
             '    x: int\n'
-            'flags Permisos:\n'
+            'flags Permisos uint8:\n'
             '    leer: uBint<1> = 1\n'
             '\n'
             'func main() int:\n'

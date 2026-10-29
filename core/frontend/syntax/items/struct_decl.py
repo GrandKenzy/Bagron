@@ -1,6 +1,7 @@
 from gram import combinators as cmb
 
 from core.frontend.syntax.items.var_decl import VAR_DECLARATION, VAR_INITIALIZATION
+from core.frontend.syntax.items.value import TYPE
 
 
 class ALIGNEMENT(cmb.RuleItem):
@@ -21,11 +22,19 @@ class ATTRIBUTES(cmb.RuleItem):
     )
     nodeable = True
 
-class PACKED_DECORATOR(cmb.RuleItem):
+class AGGREGATE_DECORATOR(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('AT'),
-        cmb.MatchKeyword('packed'),
+        cmb.Alt(
+            cmb.MatchKeyword('packed'),
+            cmb.MatchToken('IDENT'),
+        ),
     )
+    nodeable = True
+
+
+class AGGREGATE_DECORATORS(cmb.RuleItem):
+    entrypoint = cmb.Some(cmb.Ref(AGGREGATE_DECORATOR))
     nodeable = True
     
 class STRUCT_SIGNATURE(cmb.RuleItem):
@@ -44,6 +53,7 @@ class FLAGS_SIGNATURE(cmb.RuleItem):
         cmb.Opt(cmb.MatchKeyword('volatile')),
         cmb.MatchKeyword('flags'),
         cmb.MatchToken('IDENT'),
+        cmb.Ref(TYPE),
         cmb.MatchToken('COLON')
     )
     nodeable = True
@@ -106,21 +116,21 @@ class MOLD_BODY(cmb.RuleItem):
 
 class STRUCT(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Opt(cmb.Ref(PACKED_DECORATOR)),
+        cmb.Opt(cmb.Ref(AGGREGATE_DECORATORS)),
         cmb.Ref(STRUCT_SIGNATURE),
         cmb.Ref(STRUCT_BODY),
     )
     nodeable = True
 class FLAGS(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Opt(cmb.Ref(PACKED_DECORATOR)),
+        cmb.Opt(cmb.Ref(AGGREGATE_DECORATORS)),
         cmb.Ref(FLAGS_SIGNATURE),
         cmb.Ref(FLAGS_BODY),
     )
     nodeable = True
 class MOLD(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.Opt(cmb.Ref(PACKED_DECORATOR)),
+        cmb.Opt(cmb.Ref(AGGREGATE_DECORATORS)),
         cmb.Ref(MOLD_SIGNATURE),
         cmb.Ref(MOLD_BODY),
     )

@@ -38,6 +38,8 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         elif node.name == 'ENUM':
             tools.enumeration.validate(compiler, node)
 
+    tools.structure.validate_value_cycles(compiler)
+
     global_nodes = [node for node in nodes if node.name == 'VAR']
     for node in global_nodes:
         # Register every global first so address initializers can refer to a

@@ -85,22 +85,27 @@ El analizador opera mediante la sesion dedicada `BAGRON_SESSION`:
 
 ### struct_decl.py (Estructuras, Moldes Y Flags)
 - **Alineacion (`ALIGNEMENT`):** `__align__ (numero | tipo)`.
-- **Decorador de empaquetado (`PACKED_DECORATOR`):** `@packed` antes de una declaracion `struct`, `mold` o `flags`.
+- **Decoradores de agregado (`AGGREGATE_DECORATORS`):** `@packed`,
+  `@order_lsb` o `@order_msb` antes de una declaración. Los decoradores de
+  orden solo aplican a `flags`.
 - **Atributos (`ATTRIBUTES`):** Lista de modificadores `ALIGNEMENT`.
-- **Estructura (`STRUCT`):** `[@packed] [privacy] [volatile] struct ident: INDENT [ATTRIBUTES] miembros DEDENT`.
-- **Molde (`MOLD`):** `[@packed] [privacy] [volatile] mold ident: INDENT [ATTRIBUTES] miembros DEDENT`.
-- **Campos de bits (`FLAGS`):** `[@packed] [privacy] [volatile] flags ident: INDENT [ATTRIBUTES] miembros DEDENT`, donde cada campo usa la declaracion tipada con asignacion: `nombre: tipo = valor`.
+- **Estructura (`STRUCT`):** `[decoradores] [privacy] [volatile] struct ident: INDENT [ATTRIBUTES] miembros DEDENT`.
+- **Molde (`MOLD`):** `[decoradores] [privacy] [volatile] mold ident: INDENT [ATTRIBUTES] miembros DEDENT`.
+- **Campos de bits (`FLAGS`):** `[decoradores] [privacy] [volatile] flags ident tipo_base: INDENT [ATTRIBUTES] miembros DEDENT`, donde `tipo_base` es un entero fijo y cada campo usa `nombre: tipo = literal`.
 
-En la fase semantica actual, `struct`, `mold` y `flags` se registran como tipos
-nominales en un registro separado del namespace de variables y funciones. Sus
-campos se conservan en orden como `FieldSpec`; se validan los tipos conocidos,
-los nombres duplicados y, para `flags`, los literales enteros compatibles. El
-backend emite `struct` y `mold` como tipos identificados LLVM, y `flags` como
-estructuras identificadas empaquetadas con los anchos declarados. Las instancias
-globales se emiten con inicializador cero; el acceso a miembros queda para una
-fase posterior.
-Los modificadores `@packed`, `volatile` y `__align__` producen un diagnostico
-de funcionalidad pendiente.
+La fase semantica registra los tres como tipos nominales en un registro separado
+del namespace de variables y funciones. Conserva los campos como `FieldSpec`,
+valida nombres y tipos, rechaza agregados vacíos y ciclos por valor, y asigna
+offsets de bits a cada campo de `flags`. Un `flags` requiere una base entera
+explícita de 8, 16, 32 o 64 bits y no puede excederla.
+
+El backend emite `struct` como campos ordenados, `mold` como almacenamiento
+compartido de tamaño máximo y `flags` como un único entero de respaldo. Los
+accesos a miembros, asignaciones y asignaciones compuestas se emiten a LLVM;
+los campos de `flags` hacen read-modify-write con máscaras. `@packed`,
+`volatile` y `__align__` participan en el layout y las operaciones de memoria.
+Un campo de `flags` es asignable pero no direccionable, y una vista puntero de
+`mold` solo puede desreferenciarse desde una función `@unsafe`.
 
 ### enum_decl.py (Enumeraciones)
 - **Elemento (`ENUM_ITEM`):** `ident [= numero],`.

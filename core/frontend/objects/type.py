@@ -37,6 +37,10 @@ class FieldSpec:
     name: str
     type_spec: TypeSpec
     value_info: ValueInfo | None = None
+    # ``flags`` fields are logical bitfields rather than LLVM struct fields.
+    # Their offset is fixed by declaration order once the aggregate has been
+    # validated.  It remains ``None`` for struct/mold fields.
+    bit_offset: int | None = None
 
 
 @dataclass
@@ -47,6 +51,14 @@ class AggregateSymbol:
     kind: str
     fields: tuple[FieldSpec, ...] = ()
     privacy: str = 'public'
+    # ``flags`` owns a fixed, explicit integer container.  The remaining
+    # metadata describes layout properties shared by all aggregate kinds.
+    base_type: TypeSpec | None = None
+    is_packed: bool = False
+    is_volatile: bool = False
+    alignment: int | None = None
+    alignment_type: TypeSpec | None = None
+    bit_order: str = 'lsb'
 
 
 @dataclass(frozen=True)
@@ -86,3 +98,10 @@ class ValueInfo:
     # Entries are ('index', ValueInfo) or ('member', field_name).  Keeping the
     # path in semantic data lets the global emitter form a constant GEP too.
     address_path: tuple[tuple[str, object], ...] = ()
+    # A bitfield is assignable but has no independently addressable storage.
+    # This lets ``flags.value = 1`` remain legal while ``$flags.value`` is a
+    # frontend error rather than an invalid LLVM address calculation.
+    is_addressable: bool = True
+    # Reading a pointer through raw union storage produces a pointer whose
+    # provenance cannot be proven in safe Bagron code.
+    pointer_provenance_unknown: bool = False

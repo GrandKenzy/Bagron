@@ -147,6 +147,18 @@ tamano del tipo. `printa` usa `Size_t` como cantidad de bytes para `WriteFile`
 y no busca un `NUL` antes de terminar el buffer. `print` usa el `Len_t` del
 `chain` y escribe solo los bytes visibles, sin recorrerlo.
 
+Los arrays `byte` usan `printb` y requieren un flag visible para escoger el
+formato:
+
+```bg
+printb(data, false)  ; bytes crudos, una salida por byte
+printb(data, true)   ; hexadecimal ASCII, dos caracteres por byte
+```
+
+El flag no cambia `Len_t` ni `Size_t`: el buffer de entrada conserva su peso
+original. Si se selecciona hexadecimal, la salida ocupa el doble y necesita
+una conversion por byte; el modo crudo puede escribirse directamente.
+
 La biblioteca estandar incluye `serialize_int`, una funcion tipada que recibe
 un array de salida, su `Len_t`, un `int32` y su `Size_t`. La llamada solo
 escribe los argumentos visibles; Bagron expande automaticamente los metadatos,
@@ -292,16 +304,73 @@ esta reservado para la constancia del puntero.
 
 ## Estructuras, Moldes Y Alineacion De Memoria
 
-Estos constructos se registran y validan semánticamente, y sus definiciones se
-emiten a LLVM cuando el módulo se compila:
+`struct`, `mold` y `flags` son tipos nominales emitidos a LLVM. No tienen
+literales agregados: se declara la instancia y se inicializan o modifican sus
+campos de forma explícita.
 
-- **`struct`:** Campos ordenados y tipados, sin inicializadores.
-- **`mold`:** Tipo nominal distinto de `struct`, con los mismos campos sin inicializadores.
-- **`flags`:** Campos enteros escalares con un literal compatible; se emiten como
-  una estructura LLVM empaquetada con los anchos declarados.
-- **Instancias globales:** Una variable global de cualquiera de estos tipos se
-  emite con `zeroinitializer`.
-- **`@packed`, `volatile` y `__align__`:** Reservados; producen un diagnóstico de funcionalidad pendiente.
+```bg
+struct Punto:
+    x: int
+    y: int
+
+mold Entero:
+    con_signo: int
+    sin_signo: uint
+
+flags Permisos uint8:
+    leer: uBint<1> = 1
+    escribir: uBint<1> = 0
+
+func ejemplo() int:
+    punto: Punto
+    punto.x = 4
+    punto.y = 3
+    permisos: Permisos
+    permisos.escribir = 1
+    return punto.x + punto.y
+```
+
+- **`struct`:** almacena sus campos ordenados, cada uno con su layout LLVM
+  normal. Su valor inicial es cero, salvo los `flags` anidados, cuyos bits
+  declarados se aplican al inicializarse.
+- **`mold`:** es una unión real. Todos sus campos son vistas del mismo bloque
+  de memoria, cuyo tamaño es el del miembro más grande y cuya alineación cubre
+  al miembro más exigente. Leer una vista distinta es una reinterpretación
+  cruda, como una `union` de C. Si esa vista contiene un puntero, una función
+  segura no puede desreferenciarlo; debe marcarse `@unsafe`.
+- **`flags`:** requiere una base explícita: `int8`, `int16`, `int32`, `int64`
+  o sus variantes `uint`. Sus campos son enteros escalares con literales
+  compatibles y no pueden ocupar más bits que la base. Se empaquetan en ese
+  único entero mediante máscara y desplazamiento; un campo individual no tiene
+  dirección, por lo que `$permisos.leer` es inválido.
+
+Los campos de `flags` se asignan desde el bit menos significativo en el orden
+de declaración. `@order_msb` invierte ese criterio y comienza por el bit más
+significativo; `@order_lsb` es el decorador explícito equivalente al valor por
+defecto.
+
+```bg
+@order_msb
+flags Estado uint8:
+    activo: uBint<1> = 1  ; bit 7
+    modo: uBint<2> = 2    ; bits 6..5
+```
+
+Los agregados no pueden estar vacíos ni formar ciclos por valor. Un ciclo a
+través de un puntero sí es válido porque no hace crecer el layout.
+
+### Modificadores De Layout
+
+- **`@packed`:** elimina el relleno interno del payload y hace que los accesos
+  a sus campos usen alineación de un byte.
+- **`__align__ N` / `__align__ tipo`:** eleva la alineación de la instancia a
+  una potencia de dos entre 1 y 64, o a la alineación de un escalar intrínseco.
+  No puede reducir la alineación natural de un agregado no empaquetado.
+- **`volatile`:** convierte las cargas y escrituras del agregado y de sus
+  miembros en operaciones `volatile` de LLVM.
+
+Estos modificadores pueden combinarse; por ejemplo, `@packed` seguido de
+`struct`, `mold` o `flags`, y `volatile` antes de la palabra del tipo.
 
 ---
 

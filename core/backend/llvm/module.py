@@ -38,7 +38,11 @@ class LLVMBackend:
                 name=Path(storage.root).stem,
                 target_request=storage.architecture,
             )
-            type_registry = LLVMTypeRegistry(context.module, storage.types)
+            type_registry = LLVMTypeRegistry(
+                context.module,
+                storage.types,
+                context.target.machine.target_data,
+            )
             GlobalEmitter(context.module, type_registry).emit_storage(storage)
             FunctionEmitter(context.module, type_registry).emit_storage(storage)
             module_text = str(context.module)

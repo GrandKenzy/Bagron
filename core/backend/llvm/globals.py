@@ -7,8 +7,8 @@ from core.backend.llvm.types import (
     LLVMTypeError,
     LLVMTypeRegistry,
     constant_value,
+    default_value,
     value_type,
-    zero_value,
 )
 from core.frontend.objects import ValueInfo, Variable
 
@@ -48,7 +48,12 @@ class GlobalEmitter:
         self._resolving.append(symbol.name)
         try:
             if not symbol.initialized:
-                if symbol.value_is_const:
+                has_aggregate_default = (
+                    self.type_registry is not None
+                    and symbol.type_spec is not None
+                    and self.type_registry.layout(symbol.type_spec.name) is not None
+                )
+                if symbol.value_is_const and not has_aggregate_default:
                     raise GlobalEmissionError(
                         f'El global const {symbol.name} no tiene inicializador'
                     )
@@ -107,7 +112,7 @@ class GlobalEmitter:
                 value,
                 self.type_registry,
             )
-            initializer = zero_value(
+            initializer = default_value(
                 symbol.type_spec,
                 value,
                 self.type_registry,
@@ -128,6 +133,8 @@ class GlobalEmitter:
 
         global_value.initializer = initializer
         global_value.global_constant = symbol.value_is_const
+        if self.type_registry is not None:
+            global_value.align = self.type_registry.abi_alignment(target_type)
         if symbol.privacy == 'private':
             global_value.linkage = 'internal'
         return global_value
@@ -190,19 +197,46 @@ class GlobalEmitter:
                     raise GlobalEmissionError(
                         f'La direccion global {target_name} no referencia un struct'
                     )
-                field_index = (
-                    self.type_registry.field_index(pointee.name, str(payload))
+                layout = (
+                    self.type_registry.layout(pointee.name)
                     if self.type_registry is not None
                     else None
                 )
-                if field_index is None:
+                field = (
+                    self.type_registry.field_spec(pointee.name, str(payload))
+                    if self.type_registry is not None
+                    else None
+                )
+                if layout is None or field is None:
                     raise GlobalEmissionError(
                         f'El miembro {payload} no existe en {pointee.name}'
                     )
-                address = address.gep([
-                    ir.Constant(ir.IntType(32), 0),
-                    ir.Constant(ir.IntType(32), field_index),
-                ])
+                if layout.symbol.kind == 'flags':
+                    raise GlobalEmissionError(
+                        f'El campo de flags {pointee.name}.{payload} no tiene direccion'
+                    )
+                if layout.symbol.kind == 'mold':
+                    if layout.storage_path is None:
+                        raise GlobalEmissionError(
+                            f'El mold {pointee.name} no tiene almacenamiento LLVM'
+                        )
+                    address = address.gep([
+                        ir.Constant(ir.IntType(32), 0),
+                        *(
+                            ir.Constant(ir.IntType(32), item)
+                            for item in layout.storage_path
+                        ),
+                    ]).bitcast(self.type_registry.resolve(field.type_spec).as_pointer())
+                else:
+                    path = self.type_registry.field_path(pointee.name, str(payload))
+                    if path is None:
+                        raise GlobalEmissionError(
+                            f'El miembro {payload} no tiene ruta LLVM en {pointee.name}'
+                        )
+                    address = address.gep([
+                        ir.Constant(ir.IntType(32), 0),
+                        *(ir.Constant(ir.IntType(32), item) for item in path),
+                    ])
                 continue
 
             raise GlobalEmissionError(
