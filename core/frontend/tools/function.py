@@ -19,6 +19,8 @@ from core.frontend.tools.types import (
     is_condition_type,
     is_compatible,
     resolve_type,
+    _type_is_const,
+    _type_name,
 )
 from core.frontend.tools.variable import build_symbol, collect_local
 from gram import ast as gast
@@ -136,6 +138,22 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
     declarator = pair.nodes[0]
     type_node = pair.nodes[2]
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
+    special_type = _type_name(type_node)
+    if special_type in {'Len_t', 'Size_t'}:
+        if _type_is_const(type_node):
+            raise TypeResolutionError(
+                f'{special_type} ya es inmutable; no puede declararse const'
+            )
+        if pointer_level or len(pair.nodes) > 3:
+            raise TypeResolutionError(
+                f'{special_type} no puede usar punteros ni valores por defecto'
+            )
+        return ParameterSpec(
+            name=name,
+            type_spec=TypeSpec('uint64', value_is_const=True),
+            is_length=special_type == 'Len_t',
+            is_size=special_type == 'Size_t',
+        )
     type_spec = resolve_type(
         type_node,
         pointer_level=pointer_level,
@@ -150,6 +168,72 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
         type_spec=type_spec,
         has_default=len(pair.nodes) > 3,
     )
+
+
+def _signature_parameters(parameters_node: gast.ASTRef) -> tuple[ParameterSpec, ...]:
+    """Resolve visible parameters and named argument-expansion parameters."""
+    parameters: list[ParameterSpec] = []
+    last_data_parameter: ParameterSpec | None = None
+    for item in _parameter_items(parameters_node):
+        if not isinstance(item, gast.ASTRef) or item.name != 'PAIR_PARAM':
+            continue
+        parameter = _parameter_spec(item)
+        if parameter.is_length or parameter.is_size:
+            if last_data_parameter is None:
+                raise TypeResolutionError(
+                    'Len_t y Size_t deben seguir a un parametro de datos'
+                )
+            if parameter.is_length and (
+                last_data_parameter.type_spec.pointer_level
+                or last_data_parameter.type_spec.array_depth == 0
+            ):
+                raise TypeResolutionError(
+                    'Len_t solo puede asociarse a un parametro array'
+                )
+            parameters.append(
+                ParameterSpec(
+                    name=parameter.name,
+                    type_spec=parameter.type_spec,
+                    has_default=parameter.has_default,
+                    is_length=parameter.is_length,
+                    is_size=parameter.is_size,
+                    length_of=last_data_parameter.name,
+                )
+            )
+            continue
+        parameters.append(parameter)
+        last_data_parameter = parameter
+    return tuple(parameters)
+
+
+def _validate_safe_array_parameters(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+) -> None:
+    """Require an explicit compile-time length for arrays crossing safe APIs."""
+    if symbol.is_unsafe:
+        return
+
+    parameters = symbol.signature.parameters
+    length_sources = {
+        parameter.length_of
+        for parameter in parameters
+        if parameter.is_length
+    }
+    for parameter in parameters:
+        type_spec = parameter.type_spec
+        if (
+            parameter.is_length
+            or parameter.is_size
+            or type_spec.pointer_level
+            or type_spec.array_depth == 0
+        ):
+            continue
+        if parameter.name not in length_sources:
+            compiler.error(
+                f'La funcion segura {symbol.name} debe declarar Len_t para '
+                f'el array {parameter.name}; la longitud es obligatoria'
+            )
 
 
 def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
@@ -171,11 +255,7 @@ def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
         raise TypeResolutionError(f'La firma de {name or "<anonima>"} es invalida')
 
     parameters_node = children[parameter_index]
-    parameters = tuple(
-        _parameter_spec(pair)
-        for pair in _parameter_items(parameters_node)
-        if isinstance(pair, gast.ASTRef) and pair.name == 'PAIR_PARAM'
-    )
+    parameters = _signature_parameters(parameters_node)
 
     return_node = children[parameter_index + 1]
     return_pointer = 0
@@ -256,6 +336,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         symbol = FunctionSymbol(name, signature, decorators=decorators)
         compiler.storage.define_function(symbol)
         compiler.function_bindings[id(node)] = symbol
+        _validate_safe_array_parameters(compiler, symbol)
         _validate_bit_width(compiler, name, signature.return_type)
         _bind_parameters(compiler, symbol)
 
@@ -504,6 +585,47 @@ def _assignment_parts(
     return target, operator, value
 
 
+def _validate_char_array_write(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    target_info,
+    variable,
+    name: str | None,
+) -> bool:
+    """Protect the hidden terminator without emitting runtime checks."""
+    if symbol.is_unsafe or variable is None:
+        return True
+
+    type_spec = getattr(variable, 'type_spec', None)
+    if (
+        type_spec is None
+        or type_spec.name != 'char'
+        or type_spec.array_depth != 1
+    ):
+        return True
+
+    length = type_spec.array_lengths[0] if type_spec.array_lengths else None
+    if length is None:
+        return True
+
+    indexes = [
+        entry[1]
+        for entry in target_info.address_path
+        if isinstance(entry, tuple) and entry and entry[0] == 'index'
+    ]
+    if not indexes:
+        return True
+
+    index = indexes[-1]
+    if index.is_literal and index.value == length - 1:
+        compiler.error(
+            f'La escritura de {name or "<anonimo>"} no puede modificar '
+            'el terminador NUL reservado'
+        )
+        return False
+    return True
+
+
 def _validate_assignment(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -546,6 +668,14 @@ def _validate_assignment(
         compiler.error(
             f'El valor apuntado por {name or "<anonimo>"} no puede asignarse'
         )
+        return
+    if not _validate_char_array_write(
+        compiler,
+        symbol,
+        target_info,
+        variable,
+        name,
+    ):
         return
     if operator is None or value_node is None:
         compiler.error(f'La asignacion de {symbol.name} es invalida')
@@ -696,12 +826,13 @@ def _validate_return_asm(
         )
         return
 
-    if symbol.signature.return_type.name != 'int' or (
+    if symbol.signature.return_type.name not in INTEGER_TYPES or (
         symbol.signature.return_type.pointer_level
         or symbol.signature.return_type.array_depth
     ):
         compiler.error(
-            f'La funcion @assembler {symbol.name} debe retornar int'
+            f'La funcion @assembler {symbol.name} debe retornar un entero '
+            'escalar'
         )
         return
 

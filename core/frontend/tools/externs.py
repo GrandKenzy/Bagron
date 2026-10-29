@@ -138,7 +138,7 @@ def _validate_abi_type(
         )
     if type_spec.name == 'void' and not type_spec.pointer_level and not is_return:
         raise TypeResolutionError(f'{context} no puede usar void por valor')
-    scalar_names = INTEGER_TYPES | {'bool', 'char'}
+    scalar_names = INTEGER_TYPES | {'bool', 'char', 'middle', 'float', 'double'}
     pointer_base_names = scalar_names | {'float', 'double', 'middle', 'void'}
     if type_spec.pointer_level:
         if type_spec.name in pointer_base_names:
@@ -203,6 +203,14 @@ def _collect_function(
             for pair in _parameter_items(parameters_node)
             if isinstance(pair, gast.ASTRef) and pair.name == 'PAIR_PARAM'
         )
+        if any(
+            parameter.is_length or parameter.is_size
+            for parameter in parameters
+        ):
+            raise TypeResolutionError(
+                f'El extern {name} no puede usar Len_t ni Size_t: la ABI externa '
+                'requiere argumentos explicitos'
+            )
         return_type = _return_spec(node)
         _validate_abi_type(
             compiler,

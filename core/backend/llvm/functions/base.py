@@ -30,11 +30,47 @@ class FunctionEmitterBase:
         self.module = module
         self.type_registry = type_registry
         self._functions: dict[str, ir.Function] = {}
+        self._symbols: dict[str, FunctionSymbol] = {}
         self._active_specs: dict[str, TypeSpec] = {}
         self._active_values: dict[str, object] = {}
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
+        self._string_literals: dict[str, ir.GlobalVariable] = {}
+        self._pointer_size = 8
+
+    def _string_pointer(
+        self,
+        value: str,
+        builder: ir.IRBuilder,
+    ) -> ir.Value:
+        global_value = self._string_literals.get(value)
+        if global_value is None:
+            data = value.encode('utf-8')
+            byte_type = ir.IntType(8)
+            array_type = ir.ArrayType(byte_type, len(data) + 1)
+            initializer = ir.Constant(
+                array_type,
+                [ir.Constant(byte_type, byte) for byte in (*data, 0)],
+            )
+            global_value = ir.GlobalVariable(
+                self.module,
+                array_type,
+                name=f'__bagron_string_{len(self._string_literals)}',
+            )
+            global_value.linkage = 'private'
+            global_value.global_constant = True
+            global_value.initializer = initializer
+            self._string_literals[value] = global_value
+
+        index_type = ir.IntType(32)
+        return builder.gep(
+            global_value,
+            [ir.Constant(index_type, 0), ir.Constant(index_type, 0)],
+            inbounds=True,
+        )
 
     def emit_storage(self, storage: Storage) -> None:
+        self._pointer_size = getattr(storage, 'pointer_size', 8)
+        self._symbols = dict(storage.functions)
         for symbol in storage.functions.values():
             if (
                 symbol.name != 'main'
@@ -66,6 +102,9 @@ class FunctionEmitterBase:
             function = self._functions.get(target)
             if function is not None:
                 self._functions[alias] = function
+                symbol = self._symbols.get(target)
+                if symbol is not None:
+                    self._symbols[alias] = symbol
 
         main = storage.functions.get('main')
         if main is not None:
@@ -98,12 +137,23 @@ class FunctionEmitterBase:
             return True
 
         try:
+            chain_parameters = {
+                parameter.name
+                for parameter in symbol.signature.parameters
+                if parameter.type_spec.name == 'chain'
+            }
             for variable in symbol.scope.namespace.values():
-                variable_type = value_type(
-                    variable.type_spec,
-                    getattr(variable, 'value_info', None),
-                    self.type_registry,
-                )
+                if (
+                    getattr(variable, 'name', None) in chain_parameters
+                    and variable.type_spec.name == 'chain'
+                ):
+                    variable_type = ir.IntType(8).as_pointer()
+                else:
+                    variable_type = value_type(
+                        variable.type_spec,
+                        getattr(variable, 'value_info', None),
+                        self.type_registry,
+                    )
                 if not self._supports_runtime_type(variable_type):
                     return False
             return True
@@ -113,7 +163,16 @@ class FunctionEmitterBase:
     @staticmethod
     def _supports_runtime_type(value_type_: ir.Type) -> bool:
         """Return whether the first-stage emitter can store/load a value."""
-        if isinstance(value_type_, (ir.IntType, ir.PointerType)):
+        if isinstance(
+            value_type_,
+            (
+                ir.IntType,
+                ir.HalfType,
+                ir.FloatType,
+                ir.DoubleType,
+                ir.PointerType,
+            ),
+        ):
             return True
         if isinstance(value_type_, ir.ArrayType):
             return FunctionEmitterBase._supports_runtime_type(value_type_.element)
@@ -249,6 +308,46 @@ class FunctionEmitterBase:
             return builder.trunc(value, target_type)
         raise FunctionEmissionError('Se esperaba un valor entero en LLVM')
 
+    @staticmethod
+    def _is_float_type(value_type_: ir.Type) -> bool:
+        return isinstance(
+            value_type_,
+            (ir.HalfType, ir.FloatType, ir.DoubleType),
+        )
+
+    @staticmethod
+    def _float_rank(value_type_: ir.Type) -> int:
+        if isinstance(value_type_, ir.HalfType):
+            return 16
+        if isinstance(value_type_, ir.FloatType):
+            return 32
+        if isinstance(value_type_, ir.DoubleType):
+            return 64
+        raise FunctionEmissionError('Se esperaba un tipo flotante en LLVM')
+
+    def _coerce_float(
+        self,
+        value: ir.Value,
+        target_type: ir.Type,
+        builder: ir.IRBuilder,
+        signed: bool = True,
+    ) -> ir.Value:
+        if value.type == target_type:
+            return value
+        if self._is_float_type(value.type) and self._is_float_type(target_type):
+            if self._float_rank(value.type) < self._float_rank(target_type):
+                return builder.fpext(value, target_type)
+            return builder.fptrunc(value, target_type)
+        if isinstance(value.type, ir.IntType) and self._is_float_type(target_type):
+            return (
+                builder.sitofp(value, target_type)
+                if signed
+                else builder.uitofp(value, target_type)
+            )
+        raise FunctionEmissionError(
+            f'No se puede convertir {value.type} a {target_type} en LLVM'
+        )
+
     def _coerce_value(
         self,
         value: ir.Value,
@@ -258,6 +357,8 @@ class FunctionEmitterBase:
     ) -> ir.Value:
         if value.type == target_type:
             return value
+        if self._is_float_type(target_type):
+            return self._coerce_float(value, target_type, builder, signed)
         if isinstance(target_type, ir.IntType):
             return self._coerce_int(value, target_type, builder, signed)
         if isinstance(target_type, ir.PointerType) and isinstance(

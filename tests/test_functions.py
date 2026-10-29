@@ -56,6 +56,23 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return result\n'
             )
 
+    def test_safe_char_array_cannot_write_reserved_nul(self):
+        with self.assertRaisesRegex(CompilationError, 'terminador NUL'):
+            self.compile_source(
+                'func bad() int:\n'
+                '    buffer: char[5] = "Hola"\n'
+                '    buffer[4] = "X"\n'
+                '    return 0\n'
+            )
+
+        self.compile_source(
+            '@unsafe\n'
+            'func allowed() int:\n'
+            '    buffer: char[5] = "Hola"\n'
+            '    buffer[4] = "X"\n'
+            '    return 0\n'
+        )
+
     def test_rejects_missing_return(self):
         with self.assertRaisesRegex(CompilationError, 'no tiene return'):
             self.compile_source(
@@ -69,6 +86,109 @@ class FunctionSemanticTests(unittest.TestCase):
             self.compile_source(
                 'func bad(value: int = 1) int:\n'
                 '    return value\n'
+            )
+
+    def test_len_t_is_injected_for_a_concrete_array(self):
+        source = (
+            'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
+            '    return\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int:\n'
+            + '    buffer: char[5] = "Hola"\n'
+            + '    consume(buffer)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertRegex(module, r'call void @"consume"\([^)]*i64 5\)')
+
+    def test_safe_array_parameter_requires_len_t(self):
+        with self.assertRaisesRegex(CompilationError, r'Len_t.*longitud'):
+            self.compile_source(
+                'func consume(buffer: char[]) void:\n'
+                '    return\n'
+            )
+
+    def test_size_t_is_injected_for_a_scalar(self):
+        source = (
+            'func consume(value: int32, size: Size_t) uint64:\n'
+            '    return size\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int:\n'
+            + '    result: uint64 = consume(10)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertRegex(module, r'call i64 @"consume"\(i32 10, i64 4\)')
+
+    def test_size_t_is_injected_as_total_array_bytes(self):
+        source = (
+            'func consume(values: int32[], long: Len_t, size: Size_t) uint64:\n'
+            '    return size\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int:\n'
+            + '    values: int32[3] = {1, 2, 3}\n'
+            + '    result: uint64 = consume(values)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertRegex(module, r'call i64 @"consume"\([^)]*i64 12\)')
+
+    def test_expansion_parameters_cannot_be_const_or_pointers(self):
+        with self.assertRaisesRegex(CompilationError, 'Len_t ya es inmutable'):
+            self.compile_source(
+                'func bad(values: char[], long: const Len_t) void:\n'
+                '    return\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'Len_t.*punteros'):
+            self.compile_source(
+                'func bad(values: char[], long *: Len_t) void:\n'
+                '    return\n'
+            )
+
+    def test_len_t_rejects_a_scalar_source(self):
+        with self.assertRaisesRegex(CompilationError, r'char\[\]|Len_t'):
+            self.compile_source(
+                'func consume(buffer: char[], long: Len_t) void:\n'
+                '    return\n'
+                'func bad() int:\n'
+                '    letter: char = "A"\n'
+                '    consume(letter)\n'
+                '    return 0\n'
+            )
+
+    def test_len_t_rejects_an_array_without_a_compile_time_length(self):
+        with self.assertRaisesRegex(CompilationError, 'Len_t.*longitud'):
+            self.compile_source(
+                'func consume(buffer: char[], long: Len_t) void:\n'
+                '    return\n'
+                'func relay(buffer: char[]) void:\n'
+                '    consume(buffer)\n'
+                '    return\n'
             )
 
     def test_void_function_accepts_empty_return(self):

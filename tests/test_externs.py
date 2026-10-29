@@ -86,6 +86,30 @@ class ExternTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual(['kernel32'], compiler.storage.native_links)
 
+    def test_extern_accepts_llvm_floating_scalars(self):
+        source = (
+            'extern "kernel32":\n'
+            '    HalfNative(value: middle) middle\n'
+            '    FloatNative(value: float) float\n'
+            '    DoubleNative(value: double) double\n'
+            '@unsafe\n'
+            'func main() int:\n'
+            '    half: middle = HalfNative(1.0)\n'
+            '    single: float = FloatNative(2.0)\n'
+            '    wide: double = DoubleNative(3.0)\n'
+            '    return 0\n'
+        )
+
+        directory, output = self.compile_source(source)
+        try:
+            module = Path(output).read_text(encoding='utf-8')
+        finally:
+            directory.cleanup()
+
+        self.assertIn('declare half @"HalfNative"(half', module)
+        self.assertIn('declare float @"FloatNative"(float', module)
+        self.assertIn('declare double @"DoubleNative"(double', module)
+
     def test_extern_is_unsafe_from_safe_functions(self):
         with self.assertRaisesRegex(CompilationError, 'no puede llamar'):
             self.compile_source(
@@ -101,6 +125,14 @@ class ExternTests(unittest.TestCase):
             self.compile_source(
                 'extern "kernel32":\n'
                 '    Bad(values: uint32[]) uint32\n'
+                'func main() int:\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'no puede usar Len_t'):
+            self.compile_source(
+                'extern "kernel32":\n'
+                '    Native(values: char[], long: Len_t) void\n'
                 'func main() int:\n'
                 '    return 0\n'
             )

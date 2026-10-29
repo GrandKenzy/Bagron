@@ -22,6 +22,7 @@ INTEGER_WIDTHS = {
 SIGNED_INTEGER_TYPES = {'int', 'int8', 'int16', 'int32', 'int64', 'Bint'}
 UNSIGNED_INTEGER_TYPES = {'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'byte', 'uBint'}
 INTEGER_TYPES = SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES
+FLOAT_TYPES = {'middle', 'float', 'double'}
 COMPARISON_OPERATORS = {
     'EQUAL',
     'NOT_EQUAL',
@@ -189,6 +190,18 @@ def is_condition_type(type_spec: TypeSpec) -> bool:
     )
 
 
+def _is_float_scalar(type_spec: TypeSpec) -> bool:
+    return (
+        type_spec.pointer_level == 0
+        and type_spec.array_depth == 0
+        and type_spec.name in FLOAT_TYPES
+    )
+
+
+def _float_rank(type_spec: TypeSpec) -> int:
+    return {'middle': 16, 'float': 32, 'double': 64}[type_spec.name]
+
+
 def resolve_type(
     type_node: object,
     *,
@@ -201,6 +214,11 @@ def resolve_type(
         raise TypeResolutionError(f'Tipo invalido: {text or "<vacio>"}')
 
     base_name = match.group(1)
+    if base_name in {'Len_t', 'Size_t'}:
+        raise TypeResolutionError(
+            'Len_t y Size_t solo pueden aparecer como parametros especiales '
+            'de una funcion'
+        )
     array_lengths = tuple(
         int(length) if length else None
         for length in re.findall(r'\[(\d*)\]', match.group(2))
@@ -211,6 +229,10 @@ def resolve_type(
                 f'El tamano de un array debe ser mayor que cero: {length}'
             )
     array_depth = len(array_lengths)
+    if base_name == 'chain' and _type_is_const(type_node):
+        raise TypeResolutionError(
+            'chain ya es constante; no puede declararse const chain'
+        )
     if base_name == 'chain' and (array_depth or pointer_level):
         raise TypeResolutionError(
             'chain es una cadena estatica y no puede combinarse con arrays ni punteros'
@@ -331,6 +353,137 @@ def _suffix_value(suffix: object) -> object | None:
     )
 
 
+def _call_arguments(call_suffix: object) -> list[object]:
+    arguments = next(
+        (
+            child for child in _children(call_suffix)
+            if isinstance(child, gast.ASTRef) and child.name == 'ARGUMENTS'
+        ),
+        None,
+    )
+    if arguments is None:
+        return []
+    container = next(iter(_children(arguments)), None)
+    return _children(container)
+
+
+def _visible_parameters(parameters: object) -> list[object]:
+    return [
+        parameter for parameter in parameters
+        if not (
+            getattr(parameter, 'is_length', False)
+            or getattr(parameter, 'is_size', False)
+        )
+    ]
+
+
+def _validate_expansion_parameters(
+    function_name: str,
+    parameters: object,
+    argument_infos: Mapping[str, ValueInfo],
+) -> None:
+    """Ensure compiler-supplied lengths and sizes have valid sources."""
+    for parameter in parameters:
+        is_length = getattr(parameter, 'is_length', False)
+        is_size = getattr(parameter, 'is_size', False)
+        if not (is_length or is_size):
+            continue
+        source_name = getattr(parameter, 'length_of', None)
+        source = argument_infos.get(source_name or '')
+        source_type = source.type_spec if source is not None else None
+        array_length = (
+            source_type.array_lengths[0]
+            if source_type is not None
+            and source_type.array_depth > 0
+            and not source_type.pointer_level
+            and source_type.array_lengths
+            else None
+        )
+        if is_length and array_length is None:
+            raise ValueResolutionError(
+                f'Len_t de {function_name} requiere que {source_name} '
+                'sea un array con longitud conocida en compilacion'
+            )
+        if is_size and source_type is None:
+            raise ValueResolutionError(
+                f'Size_t de {function_name} no tiene un valor fuente valido'
+            )
+        if is_size and source_type.array_depth > 0 and not source_type.pointer_level:
+            if not source_type.array_lengths or any(
+                length is None for length in source_type.array_lengths
+            ):
+                raise ValueResolutionError(
+                    f'Size_t de {function_name} requiere que {source_name} '
+                    'sea un array con longitud conocida en compilacion'
+                )
+
+
+def _constant_char_bytes(value: ValueInfo) -> bytes | None:
+    """Return compile-time bytes from a constant char or char array."""
+    if not value.is_literal:
+        return None
+
+    type_spec = value.type_spec
+    if type_spec.name == 'chain' and type_spec.array_depth == 0:
+        return _string_bytes(value.value)
+
+    if (
+        type_spec.name == 'char'
+        and type_spec.pointer_level == 0
+        and type_spec.array_depth == 0
+    ):
+        if isinstance(value.value, str):
+            data = _string_bytes(value.value, ascii_only=True)
+            return data if data is not None and len(data) == 1 else None
+        if isinstance(value.value, int) and 0 <= value.value <= 255:
+            return bytes((value.value,))
+        return None
+
+    if (
+        type_spec.name != 'char'
+        or type_spec.pointer_level
+        or type_spec.array_depth != 1
+    ):
+        return None
+
+    if isinstance(value.value, str):
+        return _string_bytes(value.value, ascii_only=True)
+
+    if not value.items:
+        return None
+
+    result = bytearray()
+    for item in value.items:
+        if item.type_spec.name == 'chain' and item.is_literal:
+            data = _string_bytes(item.value, ascii_only=True)
+            if data is None or len(data) != 1:
+                return None
+            result.extend(data)
+            continue
+        if (
+            item.type_spec.name == 'char'
+            and item.is_literal
+            and isinstance(item.value, int)
+            and 0 <= item.value <= 255
+        ):
+            result.append(item.value)
+            continue
+        return None
+    return bytes(result)
+
+
+def constant_chain_value(value: ValueInfo) -> ValueInfo | None:
+    """Convert a compile-time char value into the chain semantic value."""
+    data = _constant_char_bytes(value)
+    if data is None:
+        return None
+    try:
+        text = data.decode('ascii')
+    except UnicodeDecodeError as error:
+        raise ValueResolutionError('Una conversion a chain solo acepta ASCII') from error
+    return ValueInfo(TypeSpec('chain'), is_literal=True, value=text)
+
+
 def _is_integer_scalar(type_spec: TypeSpec) -> bool:
     return (
         type_spec.pointer_level == 0
@@ -378,32 +531,25 @@ def _infer_postfix(
                 f'La funcion segura no puede llamar a {name} porque es @unsafe'
             )
 
-        arguments = next(
-            (
-                child for child in _children(call_suffix)
-                if isinstance(child, gast.ASTRef) and child.name == 'ARGUMENTS'
-            ),
-            None,
-        )
-        argument_items: list[object] = []
-        if arguments is not None:
-            container = next(iter(_children(arguments)), None)
-            argument_items = _children(container)
+        argument_items = _call_arguments(call_suffix)
 
         signature = getattr(function, 'signature', None)
         parameters = getattr(signature, 'parameters', ())
-        if len(argument_items) != len(parameters):
+        visible_parameters = _visible_parameters(parameters)
+        if len(argument_items) != len(visible_parameters):
             raise ValueResolutionError(
-                f'La funcion {name} esperaba {len(parameters)} argumentos y '
+                f'La funcion {name} esperaba {len(visible_parameters)} argumentos y '
                 f'recibio {len(argument_items)}'
             )
-        for parameter, argument in zip(parameters, argument_items):
+        argument_infos: dict[str, ValueInfo] = {}
+        for parameter, argument in zip(visible_parameters, argument_items):
             argument_info = infer_value(
                 argument,
                 namespace,
                 functions,
                 current_function=current_function,
             )
+            argument_infos[parameter.name] = argument_info
             if not is_compatible(parameter.type_spec, argument_info):
                 raise ValueResolutionError(
                     f'El argumento de {name} no coincide con '
@@ -420,6 +566,7 @@ def _infer_postfix(
                     f'La direccion local pasada a {name} no puede escapar '
                     'a traves de un retorno puntero'
                 )
+        _validate_expansion_parameters(name, parameters, argument_infos)
         return_type = getattr(signature, 'return_type', TypeSpec('void'))
         if (
             return_type.name == 'void'
@@ -468,6 +615,19 @@ def _infer_postfix(
                             value_is_const=result.type_spec.value_is_const,
                             array_lengths=result.type_spec.array_lengths[1:],
                         ),
+                        is_lvalue=True,
+                        address_origin=result.address_origin,
+                        storage_origin=result.storage_origin or result.address_origin,
+                        identifier=result.identifier,
+                        address_path=(*result.address_path, ('index', index)),
+                    )
+                elif result.type_spec.name == 'chain':
+                    if not _unsafe_context(current_function):
+                        raise ValueResolutionError(
+                            'la indexacion de chain requiere @unsafe'
+                        )
+                    result = ValueInfo(
+                        TypeSpec('char'),
                         is_lvalue=True,
                         address_origin=result.address_origin,
                         storage_origin=result.storage_origin or result.address_origin,
@@ -523,6 +683,19 @@ def _infer_postfix(
                         value_is_const=result.type_spec.value_is_const,
                         array_lengths=result.type_spec.array_lengths[1:],
                     ),
+                    is_lvalue=True,
+                    address_origin=result.address_origin,
+                    storage_origin=result.storage_origin or result.address_origin,
+                    identifier=result.identifier,
+                    address_path=(*result.address_path, ('index', index)),
+                )
+            elif result.type_spec.name == 'chain':
+                if not _unsafe_context(current_function):
+                    raise ValueResolutionError(
+                        'la indexacion de chain requiere @unsafe'
+                    )
+                result = ValueInfo(
+                    TypeSpec('char'),
                     is_lvalue=True,
                     address_origin=result.address_origin,
                     storage_origin=result.storage_origin or result.address_origin,
@@ -597,32 +770,25 @@ def infer_call(
             f'La funcion segura no puede llamar a {name} porque es @unsafe'
         )
 
-    arguments = next(
-        (
-            child for child in _children(call_suffix)
-            if isinstance(child, gast.ASTRef) and child.name == 'ARGUMENTS'
-        ),
-        None,
-    )
-    argument_items: list[object] = []
-    if arguments is not None:
-        container = next(iter(_children(arguments)), None)
-        argument_items = _children(container)
+    argument_items = _call_arguments(call_suffix)
 
     signature = getattr(function, 'signature', None)
     parameters = getattr(signature, 'parameters', ())
-    if len(argument_items) != len(parameters):
+    visible_parameters = _visible_parameters(parameters)
+    if len(argument_items) != len(visible_parameters):
         raise ValueResolutionError(
-            f'La funcion {name} esperaba {len(parameters)} argumentos y '
+            f'La funcion {name} esperaba {len(visible_parameters)} argumentos y '
             f'recibio {len(argument_items)}'
         )
-    for parameter, argument in zip(parameters, argument_items):
+    argument_infos: dict[str, ValueInfo] = {}
+    for parameter, argument in zip(visible_parameters, argument_items):
         argument_info = infer_value(
             argument,
             namespace,
             functions,
             current_function=current_function,
         )
+        argument_infos[parameter.name] = argument_info
         if not is_compatible(parameter.type_spec, argument_info):
             raise ValueResolutionError(
                 f'El argumento de {name} no coincide con '
@@ -639,6 +805,7 @@ def infer_call(
                 f'La direccion local pasada a {name} no puede escapar '
                 'a traves de un retorno puntero'
             )
+    _validate_expansion_parameters(name, parameters, argument_infos)
 
     return_type = getattr(signature, 'return_type', TypeSpec('void'))
     return ValueInfo(
@@ -654,6 +821,22 @@ def _member_value(
     *,
     current_function: object | None = None,
 ) -> ValueInfo:
+    member = _identifier_from_node(suffix)
+    if (
+        member == 'len'
+        and value.type_spec.pointer_level == 0
+        and value.type_spec.array_depth == 1
+    ):
+        length = (
+            value.type_spec.array_lengths[0]
+            if value.type_spec.array_lengths
+            else None
+        )
+        return ValueInfo(
+            TypeSpec('uint32'),
+            is_literal=length is not None,
+            value=length,
+        )
     if value.type_spec.pointer_level or value.type_spec.array_depth:
         raise ValueResolutionError(
             'el acceso a miembros requiere un struct o mold ya desreferenciado'
@@ -665,7 +848,6 @@ def _member_value(
         raise ValueResolutionError(
             f'El tipo {value.type_spec.canonical_name} no tiene miembros'
         )
-    member = _identifier_from_node(suffix)
     field = next((field for field in aggregate.fields if field.name == member), None)
     if field is None:
         raise ValueResolutionError(
@@ -784,18 +966,29 @@ def infer_value(
                 )
             return ValueInfo(TypeSpec('bool'))
 
-        if operand.type_spec.name != 'int' or operand.type_spec.pointer_level:
+        if not (
+            (
+                operand.type_spec.pointer_level == 0
+                and operand.type_spec.array_depth == 0
+                and operand.type_spec.name in INTEGER_TYPES
+            )
+            or _is_float_scalar(operand.type_spec)
+        ):
             raise ValueResolutionError(
-                'el operando de una operacion unaria debe ser de tipo int'
+                'el operando de una operacion unaria debe ser entero o flotante'
             )
         if operator not in {'PLUS', 'MINUS'}:
             raise UnsupportedExpressionError(
-                'solo se soportan signos unarios sobre enteros'
+                'solo se soportan signos unarios sobre enteros y flotantes'
             )
         if operand.is_literal:
             value = operand.value if operator == 'PLUS' else -operand.value
-            return ValueInfo(TypeSpec('int'), is_literal=True, value=value)
-        return ValueInfo(TypeSpec('int'))
+            return ValueInfo(
+                operand.type_spec,
+                is_literal=True,
+                value=value,
+            )
+        return ValueInfo(operand.type_spec)
 
     if isinstance(current, gast.ASTRef) and current.name == 'PAREN_VALUE':
         inner = next(
@@ -837,20 +1030,40 @@ def infer_value(
             left_is_integer = (
                 left.type_spec.pointer_level == 0
                 and left.type_spec.array_depth == 0
-                and left.type_spec.name in INTEGER_TYPES
+                and left.type_spec.name in INTEGER_TYPES | {'char'}
             )
             right_is_integer = (
                 right.type_spec.pointer_level == 0
                 and right.type_spec.array_depth == 0
-                and right.type_spec.name in INTEGER_TYPES
+                and right.type_spec.name in INTEGER_TYPES | {'char'}
+            )
+            left_is_float = _is_float_scalar(left.type_spec)
+            right_is_float = _is_float_scalar(right.type_spec)
+            float_comparison = (
+                (left_is_float and right_is_float)
+                or (
+                    left_is_float
+                    and right.is_literal
+                    and right.type_spec.name == 'int'
+                )
+                or (
+                    right_is_float
+                    and left.is_literal
+                    and left.type_spec.name == 'int'
+                )
             )
             both_bool = (
                 left.type_spec.name == 'bool'
                 and right.type_spec.name == 'bool'
             )
-            if not ((left_is_integer and right_is_integer) or both_bool):
+            if not (
+                (left_is_integer and right_is_integer)
+                or float_comparison
+                or both_bool
+            ):
                 raise ValueResolutionError(
-                    'los operandos de una comparacion deben ser enteros o bool'
+                    'los operandos de una comparacion deben ser enteros, '
+                    'flotantes o bool'
                 )
             if left.is_literal and right.is_literal:
                 operations = {
@@ -921,12 +1134,63 @@ def infer_value(
 
         if operator not in {'PLUS', 'MINUS', 'STAR', 'SLASH', 'PERCENT'}:
             raise UnsupportedExpressionError(
-                'solo se soportan operaciones aritmeticas enteras en esta fase'
+                'solo se soportan operaciones aritmeticas enteras o flotantes'
             )
-        if left.type_spec != TypeSpec('int') or right.type_spec != TypeSpec('int'):
+        left_is_int = (
+            left.type_spec.pointer_level == 0
+            and left.type_spec.array_depth == 0
+            and left.type_spec.name in INTEGER_TYPES
+        )
+        right_is_int = (
+            right.type_spec.pointer_level == 0
+            and right.type_spec.array_depth == 0
+            and right.type_spec.name in INTEGER_TYPES
+        )
+        left_is_float = _is_float_scalar(left.type_spec)
+        right_is_float = _is_float_scalar(right.type_spec)
+        float_arithmetic = (
+            (left_is_float and right_is_float)
+            or (left_is_float and right.is_literal and right_is_int)
+            or (right_is_float and left.is_literal and left_is_int)
+        )
+        if not float_arithmetic and not (left_is_int and right_is_int):
             raise ValueResolutionError(
-                'los operandos de una operacion aritmetica deben ser de tipo int'
+                'los operandos de una operacion aritmetica deben ser enteros o '
+                'flotantes compatibles'
             )
+
+        if float_arithmetic:
+            if left_is_float and right_is_float:
+                result_type = (
+                    left.type_spec
+                    if _float_rank(left.type_spec) >= _float_rank(right.type_spec)
+                    else right.type_spec
+                )
+            elif left_is_float:
+                result_type = left.type_spec
+            else:
+                result_type = right.type_spec
+            if left.is_literal and right.is_literal:
+                operations = {
+                    'PLUS': lambda: left.value + right.value,
+                    'MINUS': lambda: left.value - right.value,
+                    'STAR': lambda: left.value * right.value,
+                    'SLASH': lambda: left.value / right.value,
+                    'PERCENT': lambda: left.value % right.value,
+                }
+                try:
+                    value = operations[operator]()
+                except (KeyError, ZeroDivisionError) as error:
+                    raise ValueResolutionError(
+                        'la operacion aritmetica flotante no es valida'
+                    ) from error
+                return ValueInfo(
+                    result_type,
+                    is_literal=True,
+                    value=value,
+                )
+            return ValueInfo(result_type)
+
         if left.is_literal and right.is_literal:
             operations = {
                 'PLUS': lambda: left.value + right.value,
@@ -1122,6 +1386,20 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             return False
         return target.pointer_is_const == source_type.pointer_is_const
 
+    if (
+        source.is_literal
+        and source_type.name == 'chain'
+        and target.pointer_level == 1
+        and target.array_depth == 0
+        and target.name in {'char', 'byte'}
+        and target.value_is_const
+    ):
+        data = _string_bytes(
+            source.value,
+            ascii_only=target.name == 'char',
+        )
+        return data is not None
+
     if target.pointer_level > 0 and source.is_literal:
         return False
 
@@ -1130,13 +1408,34 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             target.array_depth == 1
             and source.is_literal
             and source_type.name == 'chain'
+            and source_type.array_depth == 0
             and target.name in {'char', 'byte'}
         ):
             data = _string_bytes(source.value, ascii_only=target.name == 'char')
             if data is None:
                 return False
             declared_length = _target_array_length(target, 0)
-            return declared_length is None or len(data) <= declared_length
+            required_length = len(data) + (1 if target.name == 'char' else 0)
+            return declared_length is None or required_length <= declared_length
+
+        if (
+            target.array_depth == 1
+            and target.name == 'char'
+            and source.is_literal
+            and source_type.array_depth == 1
+        ):
+            declared_length = _target_array_length(target, 0)
+            source_length = (
+                source_type.array_lengths[0]
+                if source_type.array_lengths
+                else None
+            )
+            if (
+                declared_length is not None
+                and source_length is not None
+                and source_length + 1 > declared_length
+            ):
+                return False
 
         if source_type.array_depth != target.array_depth:
             return False
@@ -1176,6 +1475,11 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         )
         return all(is_compatible(element_target, item) for item in source.items)
 
+    if target.name == 'chain':
+        if source_type.name == 'chain' and source_type.array_depth == 0:
+            return True
+        return _constant_char_bytes(source) is not None
+
     if source_type.array_depth > 0:
         return False
 
@@ -1185,9 +1489,6 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
     }:
         data = _string_bytes(source.value, ascii_only=target.name == 'char')
         return data is not None and len(data) == 1
-
-    if target.name == 'chain':
-        return source_type.name == 'chain'
 
     if source.is_literal and source_type.name == 'int' and target.name in INTEGER_TYPES:
         if not isinstance(source.value, int) or isinstance(source.value, bool):

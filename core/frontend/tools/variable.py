@@ -9,6 +9,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    constant_chain_value,
     infer_value,
     is_compatible,
     resolve_type,
@@ -125,13 +126,23 @@ def _validate_initializer(
         compiler.error(f'{handle.name}: {error}')
         return
 
-    symbol.value_info = value_info
     if not is_compatible(symbol.type_spec, value_info):
         compiler.error(
             f'El valor inicial de {handle.name} no coincide con '
             f'{symbol.type_spec.canonical_name}'
         )
         return
+
+    if symbol.type_spec.name == 'chain' and value_info.type_spec.name != 'chain':
+        converted = constant_chain_value(value_info)
+        if converted is None:
+            compiler.error(
+                f'El valor inicial de {handle.name} requiere un char constante'
+            )
+            return
+        value_info = converted
+
+    symbol.value_info = value_info
 
     if symbol.type_spec.array_depth:
         lengths = list(symbol.type_spec.array_lengths)
@@ -149,11 +160,22 @@ def _validate_initializer(
             except UnicodeEncodeError:
                 encoded = None
             if encoded is not None and lengths[0] is None:
-                lengths[0] = len(encoded)
+                lengths[0] = (
+                    len(encoded) + 1
+                    if symbol.type_spec.name == 'char'
+                    else len(encoded)
+                )
         elif source_type.array_depth == symbol.type_spec.array_depth:
             for index, length in enumerate(source_type.array_lengths):
                 if index < len(lengths) and lengths[index] is None:
-                    lengths[index] = length
+                    if (
+                        symbol.type_spec.name == 'char'
+                        and symbol.type_spec.array_depth == 1
+                        and index == 0
+                    ):
+                        lengths[index] = length + 1
+                    else:
+                        lengths[index] = length
 
         if tuple(lengths) != symbol.type_spec.array_lengths:
             symbol.type_spec = replace(

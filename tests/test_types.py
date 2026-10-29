@@ -189,6 +189,13 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                'nombre: char[4] = "Hola"\n'
+                'func main() int:\n'
+                '    return 0\n'
+            )
+
         with self.assertRaisesRegex(CompilationError, 'debe tener un inicializador'):
             self.compile_source(
                 'mensaje: chain\n'
@@ -201,6 +208,13 @@ class TypeSemanticTests(unittest.TestCase):
                 'func main() int:\n'
                 '    mensaje: chain = "hola"\n'
                 '    mensaje = "adios"\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'chain ya es constante'):
+            self.compile_source(
+                'mensaje: const chain = "hola"\n'
+                'func main() int:\n'
                 '    return 0\n'
             )
 
@@ -226,8 +240,31 @@ class TypeSemanticTests(unittest.TestCase):
             '    return 0\n'
         )
 
-        self.assertEqual('char[4]', compiler.storage.namespace['nombre'].type)
+        self.assertEqual('char[5]', compiler.storage.namespace['nombre'].type)
         self.assertEqual('byte[3]', compiler.storage.namespace['bytes'].type)
+
+        compiler = self.compile_source(
+            'letras: char[] = {"H", "i"}\n'
+            'func main() int:\n'
+            '    return 0\n'
+        )
+        self.assertEqual('char[3]', compiler.storage.namespace['letras'].type)
+
+    def test_compile_time_char_array_to_chain_conversion(self):
+        compiler = self.compile_source(
+            'source: const char[5] = "Hola"\n'
+            'message: chain = source\n'
+            'func main() int:\n'
+            '    return 0\n'
+        )
+        self.assertTrue(compiler.storage.namespace['message'].value_is_const)
+
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                'func bad(value: char) int:\n'
+                '    message: chain = value\n'
+                '    return 0\n'
+            )
 
 
 if __name__ == '__main__':

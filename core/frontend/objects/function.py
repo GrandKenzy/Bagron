@@ -14,6 +14,11 @@ class ParameterSpec:
     name: str
     type_spec: TypeSpec
     has_default: bool = False
+    # ``Len_t``/``Size_t`` are named parameters whose values are supplied by
+    # the compiler from the data parameter immediately before them.
+    is_length: bool = False
+    is_size: bool = False
+    length_of: str | None = None
 
 
 # Kept as a type alias while the semantic model migrates to TypeSpec.

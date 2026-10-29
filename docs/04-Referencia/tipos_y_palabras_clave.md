@@ -41,6 +41,7 @@ Este documento contiene la especificacion normativa de los tipos nativos, conven
 | :--- | :--- |
 | `char` | Caracter individual ASCII. En LLVM ocupa `i8`, pero no es un entero numerico de Bagron. |
 | `byte` | Unidad binaria sin signo de 8 bits. Puede inicializarse con un valor numerico o con un byte de cadena. |
+| `char[n]` | Buffer ASCII mutable de capacidad fija; la ultima celda se reserva para un `NUL` oculto. |
 | `chain` | Cadena estatica, inmutable y de solo lectura. Se emite como bytes UTF-8 terminados en `NUL`; no es un array mutable de `char`. |
 | `callptr` | Marcador de puntero callable; su firma se infiere del destino. |
 | `bool` | Booleano (`true` o `false`). |
@@ -59,9 +60,12 @@ contador: Bint<13> = 10
 mask: uBint<5> = 17
 ```
 
-`char` solo acepta ASCII. `char[n]` y `byte[n]` aceptan una cadena cuya
-longitud no exceda `n`; las posiciones restantes se rellenan con cero. La
-forma `byte[5] = "x0x0xb"` es invalida porque ese literal contiene seis bytes.
+`char` solo acepta ASCII. En `char[n]`, el tamaño incluye el `NUL` oculto, por
+lo que como maximo caben `n - 1` caracteres visibles. El compilador inserta el
+terminador al inicializar desde una cadena o un array literal y rellena el
+resto con cero. Por ejemplo, `char[] = "Hola"` infiere `char[5]`, mientras
+que `char[4] = "Hola"` es invalido. La forma `byte[5] = "x0x0xb"` tambien es
+invalida porque ese literal contiene seis bytes.
 Los arrays sin tamaño (`[]`) toman su longitud del inicializador.
 Por eso una variable sin inicializador no puede usar un tamaño inferido:
 
@@ -71,12 +75,79 @@ data: int[]              ; error: no hay datos para inferir la longitud
 data: int[3]             ; correcto: tamaño explícito, queda en cero
 ```
 
+### Modelo De Buffers Deterministas
+
+Bagron adopta un modelo de memoria explicito, cercano a la programacion de
+hardware con recursos limitados: cada capacidad, ancho y byte transmitido debe
+ser visible en el contrato del programa. El compilador no intenta adivinar una
+longitud logica ni insertar asignaciones dinamicas para corregir un buffer.
+
+- Un `char[n]` reserva exactamente `n` celdas, incluida la celda `NUL`.
+- Una capacidad insuficiente para un literal produce un error en compilacion.
+- Una capacidad mayor conserva sus ceros de relleno; no es una corrupcion,
+  pero puede aumentar el trafico cuando se escribe el buffer completo.
+- `Len_t` expresa la capacidad de elementos y `Size_t` el tamano total en
+  bytes; no representan la cantidad de caracteres visibles.
+- En funciones seguras, un parametro array debe declarar su `Len_t`.
+- `printa` escribe toda la region descrita por `Size_t`, incluido el relleno,
+  sin buscar un `NUL` en runtime.
+
+Este diseño favorece costes predecibles, ausencia de asignaciones ocultas y
+control preciso de la ABI. El usuario puede elegir buffers ajustados para
+minimizar I/O o buffers sobredimensionados para reservar espacio de trabajo,
+pero la eleccion y su coste permanecen explicitos.
+
 `chain` requiere un inicializador y queda constante incluso sin escribir
 `const` explícitamente:
 
 ```bg
 mensaje: chain = "inmutable"
 ```
+
+La asignacion a `chain` permite una conversion implicita evaluada en
+compilacion desde un `char` constante o un `char[n]` constante cuyo contenido
+sea conocido. El compilador genera una copia estatica e inmutable sin ejecutar
+codigo en runtime. Los valores mutables o dinamicos requieren un tipo de texto
+runtime, que aun no forma parte de esta etapa.
+
+La biblioteca `standard.bg` separa la salida de texto estatica de la salida de
+buffers mutables: `print(chain)` escribe un `chain`, mientras `printa(char[])`
+escribe el buffer completo de caracteres, incluidos sus `NUL` de relleno. Una
+funcion puede pedir el tamano automatico de un array con `Len_t`:
+
+```bg
+printa(buffer: char[], long: Len_t, size: Size_t) void:
+    return
+```
+
+El llamador continua escribiendo `printa(buffer)`. El compilador verifica que
+`buffer` sea un array con longitud conocida e inserta esa longitud como un
+`uint64`/`i64`; no se acepta un escalar, un puntero ni un array de longitud
+desconocida. En una funcion segura, todo parametro array debe estar seguido
+por su `Len_t` correspondiente; asi la firma declara explicitamente la
+capacidad que recibe la funcion. `Len_t` es un parametro especial de funciones
+Bagron y no puede usarse en una declaracion `extern` ni como variable local.
+`Size_t` funciona igual, pero inserta el tamano en bytes: para arrays
+multiplica la longitud por el tamano del elemento y para escalares usa el
+tamano del tipo. `printa` usa `Size_t` como cantidad de bytes para `WriteFile`
+y no busca un `NUL` antes de terminar el buffer.
+
+La biblioteca estandar incluye `serialize_int`, una funcion tipada que recibe
+un array de salida, su `Len_t`, un `int32` y su `Size_t`. La llamada solo
+escribe los argumentos visibles; Bagron expande automaticamente los metadatos,
+serializa el entero en decimal y conserva el `NUL` final.
+
+Para escribir en una posicion concreta se usa `serialize_int_at`:
+
+```bg
+serialize_int_at(buffer, 10, 20)
+```
+
+El segundo argumento visible es un indice `uint64` dentro de `buffer`; la
+funcion sobrescribe desde esa posicion, comprueba que quepan los digitos y el
+`NUL`, y retorna la cantidad de caracteres escritos. Si no hay espacio,
+retorna `0` sin modificar el buffer. No inserta ni desplaza datos: una futura
+operacion de insercion tendra que ser una funcion distinta.
 
 En la emisión LLVM actual, `char` y `byte` escalares y sus arrays pueden
 usarse tanto en globales como en funciones. El acceso por índice se traduce a
@@ -147,8 +218,9 @@ En una función segura, los índices de arrays deben ser literales o expresiones
 constantes que el compilador pueda demostrar dentro del tamaño conocido. Los
 índices dinámicos, el indexado de punteros crudos, la aritmética/casts de
 punteros y el acceso a memoria de procedencia desconocida requieren una
-función `@unsafe`. No se insertan comprobaciones de límites en tiempo de
-ejecución.
+función `@unsafe`. En un `char[n]`, la escritura sobre la última celda se
+rechaza en funciones seguras porque está reservada para el `NUL`. No se
+insertan comprobaciones de límites ni de terminador en tiempo de ejecución.
 
 ```bg
 @unsafe

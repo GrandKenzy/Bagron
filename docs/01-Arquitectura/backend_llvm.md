@@ -12,14 +12,25 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
 - enteros de ancho fijo `Bint<n>` y `uBint<n>`;
 - booleanos y números de punto flotante;
 - arrays globales y locales inicializados con literales, con tamaños inferidos;
+  los `char[n]` reservan una celda final para `NUL` sin generar checks en
+  runtime;
 - referencias a globals `const` que puedan plegarse estáticamente.
 - tipos agregados nominales `struct`, `mold` y `flags`, además de sus instancias globales cero;
-- funciones auxiliares enteras o `void` con parámetros enteros o punteros,
-  retornos de puntero, llamadas y operaciones aritméticas/bitwise básicas;
+- funciones auxiliares con parámetros y retornos enteros, `middle`, `float`,
+  `double`, `void` o punteros, llamadas y operaciones aritméticas/bitwise
+  básicas;
+- parámetros especiales `Len_t` y `Size_t`: el frontend exige datos con
+  metadatos calculables en compilación y el backend baja los valores como
+  `i64` constantes adicionales;
+- las funciones seguras que reciben arrays deben declarar su `Len_t`; las
+  funciones `@unsafe` pueden optar por una firma de bajo nivel sin esa
+  expansión;
 - declaraciones `extern` como `declare` LLVM, llamadas a sus símbolos y
   enlace de las bibliotecas registradas;
 - direccionamiento explícito `$`, desreferenciación parentizada, acceso por
   índice y acceso a miembros mediante GEP, con trampa para punteros nulos;
+- conversiones constantes de `char` a `chain`, emitidas como regiones LLVM
+  `private constant` sin asignaciones ni llamadas durante la ejecución;
 - `if`, `elif`, `else`, `while` y `for` numérico con comparaciones, condiciones
   lógicas y anidación;
 - `break` y `continue` dentro de bucles;
@@ -33,12 +44,14 @@ antes del parser, se expanden con los registros ABI de Windows x64 y se
 ensamblan a objetos dentro de `build/prep/` para enlazarlos con LLVM. Intel y
 AT&T son los dialectos soportados; los parámetros enteros se mapean por ancho a
 los alias de `RCX/RDX/R8/R9` y los restantes a sus offsets de stack ABI. El
-resultado actual de `return asm` es el `int` retornado por `EAX`.
+resultado actual de `return asm` es el entero retornado por `EAX`.
 
 Las firmas `extern` usan la convención C del target LLVM seleccionado por
 `Arch`/`System`; en Windows x64 esto corresponde a la ABI C de Windows. La
-primera fase admite retornos y parámetros enteros, `void` y punteros, con
-`void*` representado como `i8*`.
+primera fase admite retornos y parámetros enteros, `middle`, `float`, `double`,
+`void` y punteros, con `void*` representado como `i8*`.
+`Len_t` y `Size_t` no forman parte de las firmas `extern`, porque sus
+argumentos expandidos solo pueden ser insertados por el compilador de Bagron.
 
 Los globals sin inicializador se emiten con valor cero. Las direcciones de
 globals y de elementos/campos estáticos se emiten como inicializadores GEP;
@@ -66,10 +79,11 @@ error; no se hace fallback silencioso.
 
 ## Limitaciones actuales
 
-El backend todavía no traduce clases ni `callptr`. Las funciones auxiliares
-emitibles no pueden usar tipos flotantes en expresiones de esta etapa; las
-funciones de entrada siguen requiriendo exactamente `main() int`. Las
-variables locales emitibles pueden ser escalares enteros, punteros, arrays o
+El backend todavía no traduce clases ni `callptr`; las funciones de entrada
+siguen requiriendo exactamente `main() int`. `middle`, `float` y `double` se
+representan respectivamente como `half`, `float` y `double` en LLVM, aunque la
+ABI concreta de una plataforma puede promover o pasar `half` de otra forma.
+Las variables locales emitibles pueden ser escalares enteros, punteros, arrays o
 agregados nominales; sus declaraciones, lecturas, asignaciones y asignaciones
 compuestas generan instrucciones LLVM.
 Las estructuras de control generan bloques LLVM explícitos y mantienen una pila

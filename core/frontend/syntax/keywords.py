@@ -106,6 +106,8 @@ INTRINSIC_TYPES = {
     'bool': '#3B82F6',
     'void': '#3B82F6',
     'wsize': '#3B82F6', # size_t
+    'Len_t': '#3B82F6', # hidden compile-time array length parameter
+    'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
     'callptr': '#3B82F6',
     'Bint': '#3B82F6',
     'uBint': '#3B82F6',

@@ -15,6 +15,38 @@ class LLVMTypeError(ValueError):
     """Raised when a Bagron type has no first-stage LLVM representation."""
 
 
+def _is_unsized_array(spec: TypeSpec) -> bool:
+    return spec.array_depth > 0 and any(
+        length is None for length in spec.array_lengths
+    )
+
+
+def _array_parameter_type(
+    spec: TypeSpec,
+    type_registry: 'LLVMTypeRegistry | None' = None,
+) -> ir.Type:
+    if (
+        spec.pointer_level
+        or spec.array_depth != 1
+    ):
+        raise LLVMTypeError(
+            f'El parametro array {spec.canonical_name} debe ser un array '
+            'unidimensional sin puntero'
+        )
+    element_spec = TypeSpec(
+        name=spec.name,
+        bit_width=spec.bit_width,
+        signed=spec.signed,
+        value_is_const=spec.value_is_const,
+        pointer_is_const=spec.pointer_is_const,
+    )
+    if type_registry is not None:
+        element_type = type_registry.resolve(element_spec)
+    else:
+        element_type = scalar_type(element_spec)
+    return element_type.as_pointer()
+
+
 class LLVMTypeRegistry:
     """Map Bagron nominal types to identified LLVM struct types."""
 
@@ -54,6 +86,8 @@ class LLVMTypeRegistry:
         spec: TypeSpec,
         array_lengths: Sequence[int] = (),
     ) -> ir.Type:
+        if _is_unsized_array(spec):
+            return _array_parameter_type(spec, self)
         if spec.name == 'void':
             if spec.array_depth:
                 raise LLVMTypeError('void no puede usarse como array')
@@ -62,9 +96,14 @@ class LLVMTypeRegistry:
                 value_type = value_type.as_pointer()
             return value_type
         if spec.name == 'chain':
-            raise LLVMTypeError(
-                'chain requiere un inicializador de cadena para determinar su almacenamiento'
-            )
+            if spec.pointer_level or spec.array_depth:
+                raise LLVMTypeError(
+                    'chain no puede combinarse con punteros ni arrays'
+                )
+            # In function signatures a chain is a read-only pointer to its
+            # static, NUL-terminated bytes.  Locals and globals still use
+            # value_type(), which preserves their concrete array storage.
+            return ir.IntType(8).as_pointer()
         value_type = self._types.get(spec.name)
         if value_type is None:
             value_type = scalar_type(spec)
@@ -129,6 +168,8 @@ def llvm_type(
 ) -> ir.Type:
     if type_registry is not None:
         return type_registry.resolve(spec, array_lengths)
+    if _is_unsized_array(spec):
+        return _array_parameter_type(spec)
     if spec.name == 'void':
         if spec.array_depth:
             raise LLVMTypeError('void no puede usarse como array')
@@ -136,10 +177,16 @@ def llvm_type(
         for _ in range(spec.pointer_level):
             value_type = value_type.as_pointer()
         return value_type
-    if spec.name in {'callptr', 'chain', 'Null'}:
+    if spec.name in {'callptr', 'Null'}:
         raise LLVMTypeError(
             f'El tipo {spec.canonical_name!r} queda fuera de la primera emision LLVM'
         )
+    if spec.name == 'chain':
+        if spec.pointer_level or spec.array_depth:
+            raise LLVMTypeError(
+                'chain no puede combinarse con punteros ni arrays'
+            )
+        return ir.IntType(8).as_pointer()
 
     value_type = scalar_type(spec)
     for level in range(spec.pointer_level):
@@ -198,7 +245,11 @@ def _string_bytes(value: object, *, ascii_only: bool = False) -> bytes:
 
 
 def _array_lengths(value: ValueInfo) -> tuple[int, ...]:
-    if value.type_spec.name == 'chain' and value.is_literal:
+    if (
+        value.type_spec.name == 'chain'
+        and value.type_spec.array_depth == 0
+        and value.is_literal
+    ):
         return (len(_string_bytes(value.value)),)
     if not value.items:
         return (0,)
@@ -214,6 +265,8 @@ def value_type(
     value: ValueInfo | None = None,
     type_registry: LLVMTypeRegistry | None = None,
 ) -> ir.Type:
+    if _is_unsized_array(spec):
+        return _array_parameter_type(spec, type_registry)
     if spec.name == 'void' and spec.pointer_level == 0:
         raise LLVMTypeError('void no puede usarse como almacenamiento')
     if spec.name == 'chain':
@@ -248,7 +301,11 @@ def constant_value(
         return ir.Constant(target_type, values)
 
     if spec.array_depth:
-        if value.type_spec.name == 'chain' and value.is_literal:
+        if (
+            value.type_spec.name == 'chain'
+            and value.type_spec.array_depth == 0
+            and value.is_literal
+        ):
             data = _string_bytes(
                 value.value,
                 ascii_only=spec.name == 'char',

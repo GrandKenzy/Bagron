@@ -100,7 +100,12 @@ class StatementEmitterMixin:
                 # for non-static aggregate initializers.
                 result = None
         if result is None:
-            result = self._compile_expression(value_node, builder, values)
+            result = self._compile_expression(
+                value_node,
+                builder,
+                values,
+                expected_type=pointer.type.pointee,
+            )
         result = self._coerce_value(result, pointer.type.pointee, builder)
         builder.store(result, pointer)
 
@@ -133,7 +138,12 @@ class StatementEmitterMixin:
 
         target_type = pointer.type.pointee
         right = self._coerce_value(
-            self._compile_expression(value_node, builder, values),
+            self._compile_expression(
+                value_node,
+                builder,
+                values,
+                expected_type=target_type,
+            ),
             target_type,
             builder,
         )
@@ -177,13 +187,23 @@ class StatementEmitterMixin:
         if scope is None:
             return values
 
+        chain_parameters = {
+            parameter.name
+            for parameter in symbol.signature.parameters
+            if parameter.type_spec.name == 'chain'
+        }
         for name, variable in scope.namespace.items():
             try:
-                local_type = value_type(
-                    variable.type_spec,
-                    getattr(variable, 'value_info', None),
-                    self.type_registry,
-                )
+                if name in chain_parameters:
+                    # A chain parameter is passed as a pointer to its static
+                    # NUL-terminated storage.  Locals/globals remain arrays.
+                    local_type = ir.IntType(8).as_pointer()
+                else:
+                    local_type = value_type(
+                        variable.type_spec,
+                        getattr(variable, 'value_info', None),
+                        self.type_registry,
+                    )
             except (AttributeError, TypeError, ValueError, LLVMTypeError) as error:
                 raise FunctionEmissionError(
                     f'La variable local {name} no tiene un tipo LLVM soportado'
@@ -249,7 +269,12 @@ class StatementEmitterMixin:
             return
         if return_node is None:
             raise FunctionEmissionError('El return necesita un valor')
-        result = self._compile_expression(return_node, builder, values)
+        result = self._compile_expression(
+            return_node,
+            builder,
+            values,
+            expected_type=return_type,
+        )
         result = self._coerce_value(
             result,
             return_type,

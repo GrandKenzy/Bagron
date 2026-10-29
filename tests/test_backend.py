@@ -36,9 +36,37 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertIn('global double ', module)
 
+    def test_emits_middle_float_and_double_function_arithmetic(self):
+        module = self.compile_source(
+            'func add_middle(left: middle, right: middle) middle:\n'
+            '    return left + right\n'
+            'func add_float(left: float, right: float) float:\n'
+            '    return left * right + 1.0\n'
+            'func add_double(left: double, right: double) double:\n'
+            '    return left / right\n'
+            'func less_than(left: float, right: float) bool:\n'
+            '    return left < right\n'
+            'func main() int:\n'
+            '    half: middle = add_middle(1.5, 2.5)\n'
+            '    single: float = add_float(2.0, 3.0)\n'
+            '    wide: double = add_double(9.0, 3.0)\n'
+            '    return 0\n',
+            add_main=False,
+        )
+
+        self.assertIn('define half @"add_middle"', module)
+        self.assertIn('fadd half', module)
+        self.assertIn('define float @"add_float"', module)
+        self.assertIn('fmul float', module)
+        self.assertIn('define double @"add_double"', module)
+        self.assertIn('fdiv double', module)
+        self.assertIn('define i1 @"less_than"', module)
+        self.assertIn('fcmp', module)
+
     def test_emits_char_byte_arrays_and_static_chain(self):
         module = self.compile_source(
             'nombre: char[10] = "Hola"\n'
+            'inferido: char[] = "Hola"\n'
             'bytes: byte[6] = "x0x0xb"\n'
             'mensaje: chain = "Hola"\n'
             'letra: char = "A"\n'
@@ -46,6 +74,12 @@ class GlobalBackendTests(unittest.TestCase):
         )
 
         self.assertIn('@"nombre" = global [10 x i8]', module)
+        self.assertIn('@"inferido" = global [5 x i8]', module)
+        self.assertIn(
+            '@"inferido" = global [5 x i8] '
+            '[i8 72, i8 111, i8 108, i8 97, i8 0]',
+            module,
+        )
         self.assertIn('@"bytes" = global [6 x i8]', module)
         self.assertIn('@"mensaje" = constant [5 x i8]', module)
         self.assertIn('global i8 65', module)

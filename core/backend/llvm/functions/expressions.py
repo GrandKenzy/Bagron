@@ -8,6 +8,19 @@ from .errors import FunctionEmissionError
 class ExpressionEmitterMixin:
     """LLVM emission for expressions, addresses, and calls."""
 
+    @staticmethod
+    def _is_array_descriptor_type(value_type: ir.Type) -> bool:
+        elements = getattr(value_type, 'elements', ())
+        return (
+            isinstance(value_type, ir.LiteralStructType)
+            and len(elements) == 2
+            and isinstance(elements[0], ir.PointerType)
+            and isinstance(elements[0].pointee, ir.IntType)
+            and elements[0].pointee.width == 8
+            and isinstance(elements[1], ir.IntType)
+            and elements[1].width == 32
+        )
+
     def _compile_address(
         self,
         node: object,
@@ -96,7 +109,11 @@ class ExpressionEmitterMixin:
                         signed=False,
                     )
                     pointee = address.type.pointee
-                    if isinstance(pointee, ir.PointerType):
+                    if self._is_array_descriptor_type(pointee):
+                        descriptor = builder.load(address)
+                        data = builder.extract_value(descriptor, 0)
+                        address = builder.gep(data, [index], inbounds=False)
+                    elif isinstance(pointee, ir.PointerType):
                         address = self._checked_pointer(
                             builder.load(address),
                             builder,
@@ -162,6 +179,7 @@ class ExpressionEmitterMixin:
         node: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
+        expected_type: ir.Type | None = None,
     ) -> ir.Value:
         current = self._unwrap(node)
 
@@ -178,7 +196,11 @@ class ExpressionEmitterMixin:
             if operator == 'PLUS':
                 return operand
             if operator == 'MINUS':
-                return builder.neg(operand)
+                return (
+                    builder.fneg(operand)
+                    if self._is_float_type(operand.type)
+                    else builder.neg(operand)
+                )
             if operator in {'NOT_LOGIC', 'LOGIC_NOT', 'EXCLAMATION'}:
                 operand = self._coerce_condition_value(operand, builder)
                 return builder.xor(operand, ir.Constant(ir.IntType(1), 1))
@@ -213,17 +235,42 @@ class ExpressionEmitterMixin:
                     else builder.or_(left, right)
                 )
 
+            left_is_float = self._is_float_type(left.type)
+            right_is_float = self._is_float_type(right.type)
             if left.type != right.type:
-                if not isinstance(left.type, ir.IntType):
-                    raise FunctionEmissionError(
-                        'Los operandos aritmeticos deben ser enteros'
+                if left_is_float and right_is_float:
+                    target_type = (
+                        left.type
+                        if self._float_rank(left.type) >= self._float_rank(right.type)
+                        else right.type
                     )
-                right = self._coerce_int(
-                    right,
-                    left.type,
-                    builder,
-                    signed=not unsigned,
-                )
+                    left = self._coerce_value(left, target_type, builder)
+                    right = self._coerce_value(right, target_type, builder)
+                elif left_is_float:
+                    right = self._coerce_value(
+                        right,
+                        left.type,
+                        builder,
+                        signed=not unsigned,
+                    )
+                elif right_is_float:
+                    left = self._coerce_value(
+                        left,
+                        right.type,
+                        builder,
+                        signed=not unsigned,
+                    )
+                elif isinstance(left.type, ir.IntType):
+                    right = self._coerce_int(
+                        right,
+                        left.type,
+                        builder,
+                        signed=not unsigned,
+                    )
+                else:
+                    raise FunctionEmissionError(
+                        'Los operandos aritmeticos deben ser enteros o flotantes'
+                    )
 
             if operator in {
                 'EQUAL',
@@ -241,6 +288,18 @@ class ExpressionEmitterMixin:
                     'GREATER': '>',
                     'GREATER_EQUAL': '>=',
                 }
+                if self._is_float_type(left.type):
+                    if operator == 'NOT_EQUAL':
+                        return builder.fcmp_unordered(
+                            predicates[operator],
+                            left,
+                            right,
+                        )
+                    return builder.fcmp_ordered(
+                        predicates[operator],
+                        left,
+                        right,
+                    )
                 compare = (
                     builder.icmp_unsigned
                     if unsigned
@@ -248,18 +307,27 @@ class ExpressionEmitterMixin:
                 )
                 return compare(predicates[operator], left, right)
 
-            operations = {
-                'PLUS': builder.add,
-                'MINUS': builder.sub,
-                'STAR': builder.mul,
-                'SLASH': builder.sdiv,
-                'PERCENT': builder.srem,
-                'AND': builder.and_,
-                'OR': builder.or_,
-                'XOR': builder.xor,
-                'SHL': builder.shl,
-                'SHR': builder.lshr if unsigned else builder.ashr,
-            }
+            if self._is_float_type(left.type):
+                operations = {
+                    'PLUS': builder.fadd,
+                    'MINUS': builder.fsub,
+                    'STAR': builder.fmul,
+                    'SLASH': builder.fdiv,
+                    'PERCENT': builder.frem,
+                }
+            else:
+                operations = {
+                    'PLUS': builder.add,
+                    'MINUS': builder.sub,
+                    'STAR': builder.mul,
+                    'SLASH': builder.sdiv,
+                    'PERCENT': builder.srem,
+                    'AND': builder.and_,
+                    'OR': builder.or_,
+                    'XOR': builder.xor,
+                    'SHL': builder.shl,
+                    'SHR': builder.lshr if unsigned else builder.ashr,
+                }
             operation = operations.get(operator)
             if operation is None:
                 raise FunctionEmissionError(
@@ -287,6 +355,25 @@ class ExpressionEmitterMixin:
             if primary is not None and not suffixes:
                 return self._compile_expression(primary, builder, values)
             if primary is not None:
+                member_suffix = next(
+                    (
+                        suffix for suffix in suffixes
+                        if getattr(suffix, 'name', None) == 'MEMBER_ACCESS'
+                        and self._identifier(suffix) == 'len'
+                    ),
+                    None,
+                )
+                if member_suffix is not None and len(suffixes) == 1:
+                    address = self._compile_address(primary, builder, values)
+                    pointee = address.type.pointee
+                    if isinstance(pointee, ir.ArrayType):
+                        return ir.Constant(ir.IntType(32), pointee.count)
+                    if self._is_array_descriptor_type(pointee):
+                        descriptor = builder.load(address)
+                        return builder.extract_value(descriptor, 1)
+                    raise FunctionEmissionError(
+                        'La longitud solo puede obtenerse de un array'
+                    )
                 address = self._compile_address(current, builder, values)
                 return builder.load(address)
 
@@ -312,7 +399,14 @@ class ExpressionEmitterMixin:
 
         kind = self._token_kind(current)
         value = self._token_value(current)
-        if kind == 'NUMBER':
+        if kind in {'NUMBER', 'DECIMAL'}:
+            if self._is_float_type(expected_type) or kind == 'DECIMAL':
+                target_type = (
+                    expected_type
+                    if self._is_float_type(expected_type)
+                    else ir.FloatType()
+                )
+                return ir.Constant(target_type, float(value))
             return ir.Constant(ir.IntType(32), int(value))
         if kind == 'BOOL':
             return ir.Constant(ir.IntType(1), int(str(value).lower() == 'true'))
@@ -320,18 +414,20 @@ class ExpressionEmitterMixin:
             return ir.Constant(ir.IntType(8).as_pointer(), None)
         if kind == 'STRING':
             if not isinstance(value, str):
-                raise FunctionEmissionError('El literal de char no es valido')
+                raise FunctionEmissionError('El literal de cadena no es valido')
             try:
                 data = value.encode('ascii')
             except UnicodeEncodeError as error:
                 raise FunctionEmissionError(
-                    'Un literal de char solo puede contener ASCII'
+                    'Una cadena usada por la ABI actual solo puede contener ASCII'
                 ) from error
-            if len(data) != 1:
-                raise FunctionEmissionError(
-                    'Un literal usado como char o byte debe contener un byte'
-                )
-            return ir.Constant(ir.IntType(8), data[0])
+            if isinstance(expected_type, ir.IntType) and expected_type.width == 8:
+                if len(data) != 1:
+                    raise FunctionEmissionError(
+                        'Un literal usado como char o byte debe contener un byte'
+                    )
+                return ir.Constant(expected_type, data[0])
+            return self._string_pointer(value, builder)
         if kind == 'IDENT':
             name = str(value)
             if name in values:
@@ -342,6 +438,33 @@ class ExpressionEmitterMixin:
                 raise FunctionEmissionError(
                     f'La variable {name} no tiene emision LLVM en esta fase'
                 )
+            chain_pointer = (
+                self._active_specs.get(name) is not None
+                and self._active_specs[name].name == 'chain'
+                and isinstance(expected_type, ir.PointerType)
+                and isinstance(expected_type.pointee, ir.IntType)
+                and expected_type.pointee.width == 8
+            )
+            if chain_pointer:
+                if isinstance(result, ir.GlobalVariable):
+                    return builder.gep(
+                        result,
+                        [ir.Constant(ir.IntType(32), 0)] * 2,
+                        inbounds=True,
+                    )
+                if getattr(result, 'opname', None) == 'alloca':
+                    pointee = result.type.pointee
+                    if isinstance(pointee, ir.PointerType):
+                        return builder.load(result)
+                    if isinstance(pointee, ir.ArrayType):
+                        return builder.gep(
+                            result,
+                            [
+                                ir.Constant(ir.IntType(32), 0),
+                                ir.Constant(ir.IntType(32), 0),
+                            ],
+                            inbounds=True,
+                        )
             if getattr(result, 'opname', None) == 'alloca':
                 return builder.load(result)
             if isinstance(result, ir.GlobalVariable):
@@ -363,6 +486,116 @@ class ExpressionEmitterMixin:
             if member is not None:
                 name = f'{name}.{member}' if name else member
         return name
+
+    def _compile_array_argument(
+        self,
+        argument: object,
+        target_type: ir.Type,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        if not isinstance(target_type, ir.PointerType):
+            raise FunctionEmissionError(
+                'El parametro array no tiene una representacion de puntero'
+            )
+        address = self._compile_address(argument, builder, values)
+        pointee = address.type.pointee
+        if isinstance(pointee, ir.PointerType):
+            pointer = builder.load(address)
+        elif isinstance(pointee, ir.ArrayType):
+            pointer = builder.gep(
+                address,
+                [
+                    ir.Constant(ir.IntType(32), 0),
+                    ir.Constant(ir.IntType(32), 0),
+                ],
+                inbounds=True,
+            )
+        else:
+            raise FunctionEmissionError(
+                'El argumento no es un array compatible'
+            )
+        if pointer.type != target_type:
+            raise FunctionEmissionError(
+                'El elemento del array no coincide con el parametro de la funcion'
+            )
+        return pointer
+
+    def _compile_array_length(
+        self,
+        argument: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        address = self._compile_address(argument, builder, values)
+        pointee = address.type.pointee
+        if not isinstance(pointee, ir.ArrayType):
+            raise FunctionEmissionError(
+                'Len_t requiere un array con tamano conocido en compilacion'
+            )
+        return ir.Constant(ir.IntType(64), pointee.count)
+
+    @staticmethod
+    def _llvm_type_size(value_type: ir.Type, pointer_size: int) -> int:
+        if isinstance(value_type, ir.ArrayType):
+            return value_type.count * ExpressionEmitterMixin._llvm_type_size(
+                value_type.element,
+                pointer_size,
+            )
+        if isinstance(value_type, ir.IntType):
+            return max(1, (value_type.width + 7) // 8)
+        if isinstance(value_type, ir.HalfType):
+            return 2
+        if isinstance(value_type, ir.FloatType):
+            return 4
+        if isinstance(value_type, ir.DoubleType):
+            return 8
+        if isinstance(value_type, ir.PointerType):
+            return pointer_size
+        raise FunctionEmissionError(
+            f'No se puede determinar el tamano LLVM de {value_type}'
+        )
+
+    def _compile_array_size(
+        self,
+        argument: object,
+        source_type: ir.Type,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        address = self._compile_address(argument, builder, values)
+        pointee = address.type.pointee
+        if not isinstance(pointee, ir.ArrayType):
+            raise FunctionEmissionError(
+                'Size_t requiere un array con tamano conocido en compilacion'
+            )
+        return ir.Constant(
+            ir.IntType(64),
+            self._llvm_type_size(pointee, self._pointer_size),
+        )
+
+    def _compile_size_argument(
+        self,
+        argument: object,
+        source_type: ir.Type,
+        source_spec: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        if (
+            getattr(source_spec, 'array_depth', 0) > 0
+            and not getattr(source_spec, 'pointer_level', 0)
+        ):
+            return self._compile_array_size(
+                argument,
+                source_type,
+                builder,
+                values,
+            )
+        return ir.Constant(
+            ir.IntType(64),
+            self._llvm_type_size(source_type, self._pointer_size),
+        )
 
     def _compile_call(
         self,
@@ -405,18 +638,102 @@ class ExpressionEmitterMixin:
         if arguments is not None:
             container = next(iter(self._children(arguments)), None)
             argument_items = self._children(container)
-        if len(argument_items) != len(callee.args):
+        symbol = self._symbols.get(name or '')
+        parameters = list(getattr(symbol.signature, 'parameters', ())) if symbol else []
+        visible_parameters = [
+            parameter for parameter in parameters
+            if not (
+                getattr(parameter, 'is_length', False)
+                or getattr(parameter, 'is_size', False)
+            )
+        ]
+        if len(argument_items) != len(visible_parameters):
             raise FunctionEmissionError(
                 f'La funcion {name or "<anonima>"} recibio un numero invalido '
                 'de argumentos'
             )
-        compiled = [
-            self._coerce_value(
-                self._compile_expression(argument, builder, values),
-                callee.args[index].type,
-                builder,
-            )
-            for index, argument in enumerate(argument_items)
-        ]
+        compiled: list[ir.Value] = []
+        source_arguments = dict(zip(
+            (parameter.name for parameter in visible_parameters),
+            argument_items,
+        ))
+        source_parameters = {
+            parameter.name: parameter
+            for parameter in visible_parameters
+        }
+        source_llvm_indices: dict[str, int] = {}
+        for index, parameter in enumerate(parameters):
+            if not (
+                getattr(parameter, 'is_length', False)
+                or getattr(parameter, 'is_size', False)
+            ):
+                source_llvm_indices[parameter.name] = index
+        argument_index = 0
+        llvm_index = 0
+        for parameter in parameters:
+            if parameter.is_length or parameter.is_size:
+                source = source_arguments.get(parameter.length_of or '')
+                source_parameter = source_parameters.get(parameter.length_of or '')
+                if source is None:
+                    raise FunctionEmissionError(
+                        'Len_t/Size_t no tiene un valor fuente asociado'
+                    )
+                if source_parameter is None:
+                    raise FunctionEmissionError(
+                        'Len_t/Size_t no tiene un parametro fuente asociado'
+                    )
+                source_llvm_type = callee.args[
+                    source_llvm_indices[source_parameter.name]
+                ].type
+                if parameter.is_length:
+                    compiled.append(
+                        self._compile_array_length(source, builder, values)
+                    )
+                else:
+                    compiled.append(
+                        self._compile_size_argument(
+                            source,
+                            source_llvm_type,
+                            source_parameter.type_spec,
+                            builder,
+                            values,
+                        )
+                    )
+                llvm_index += 1
+                continue
+
+            if argument_index >= len(argument_items):
+                raise FunctionEmissionError(
+                    f'La funcion {name or "<anonima>"} recibio un numero invalido '
+                    'de argumentos'
+                )
+            argument = argument_items[argument_index]
+            target_type = callee.args[llvm_index].type
+            if parameter.type_spec.array_depth and any(
+                length is None for length in parameter.type_spec.array_lengths
+            ):
+                compiled.append(
+                    self._compile_array_argument(
+                        argument,
+                        target_type,
+                        builder,
+                        values,
+                    )
+                )
+            else:
+                compiled.append(
+                    self._coerce_value(
+                        self._compile_expression(
+                            argument,
+                            builder,
+                            values,
+                            expected_type=target_type,
+                        ),
+                        target_type,
+                        builder,
+                    )
+                )
+            argument_index += 1
+            llvm_index += 1
         return builder.call(callee, compiled)
 
