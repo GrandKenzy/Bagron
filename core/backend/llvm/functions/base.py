@@ -34,6 +34,7 @@ class FunctionEmitterBase:
         self._method_symbols: dict[tuple[str, str], FunctionSymbol] = {}
         self._active_specs: dict[str, TypeSpec] = {}
         self._global_specs: dict[str, TypeSpec] = {}
+        self._global_symbols: dict[str, str] = {}
         self._active_values: dict[str, object] = {}
         self._global_values: dict[str, object] = {}
         self._active_function_symbol: FunctionSymbol | None = None
@@ -88,11 +89,25 @@ class FunctionEmitterBase:
             for name, variable in storage.namespace.items()
             if getattr(variable, 'type_spec', None) is not None
         }
+        self._global_symbols = {
+            name: name
+            for name, variable in storage.namespace.items()
+            if getattr(variable, 'type_spec', None) is not None
+        }
         self._global_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in storage.namespace.items()
             if getattr(variable, 'value_info', None) is not None
         }
+        for alias, variable in storage.variable_aliases.items():
+            target_name = getattr(variable, 'name', None)
+            type_spec = getattr(variable, 'type_spec', None)
+            if target_name and type_spec is not None:
+                self._global_symbols[alias] = target_name
+                self._global_specs[alias] = type_spec
+                value_info = getattr(variable, 'value_info', None)
+                if value_info is not None:
+                    self._global_values[alias] = value_info
         for symbol in all_symbols:
             if (
                 symbol.name != 'main'
@@ -138,6 +153,9 @@ class FunctionEmitterBase:
         if spec is not None:
             return spec
         return self._global_specs.get(name)
+
+    def _global_llvm_name(self, name: str) -> str:
+        return self._global_symbols.get(name, name)
 
     def _resolve_method_symbol(
         self,

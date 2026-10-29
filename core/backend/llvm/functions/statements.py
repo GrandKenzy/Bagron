@@ -736,6 +736,10 @@ class StatementEmitterMixin:
             name = getattr(child, 'name', None)
             if name == 'VAR':
                 self._emit_local_declaration(child, builder, values)
+            elif name == 'GLOBAL':
+                # ``global`` is a compile-time visibility declaration.
+                # Storage is already represented by the module global.
+                continue
             elif name == 'VAR_ASSIGNATION':
                 self._emit_assignment(child, builder, values, symbol)
             elif name == 'DEL':

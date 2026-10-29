@@ -35,6 +35,10 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
 
+* **Datos globales explícitos:** Las funciones y métodos son locales para los
+  datos por defecto; `global nombre` habilita de forma estática una variable de
+  módulo concreta. Las llamadas a funciones no requieren esa declaración.
+
 * **Terminación explícita:** `Never` es un tipo de retorno para funciones que
   no regresan; una llamada a una función `Never` termina el flujo actual y no
   puede usarse como valor ni como almacenamiento.
@@ -73,7 +77,10 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
     `__mul__`, `__div__`/`__truediv__`, `__mod__`, `__pos__` y `__neg__`;
     también se reconocen los operadores bitwise equivalentes. `Del instancia`
     llama a `__deletion__() void` si la clase lo define; sin ese método, `Del`
-    no ejecuta ninguna acción automática.
+    no ejecuta ninguna acción automática. `@frozen` permite inicializar sus
+    atributos únicamente en `__init__` o `__frontend__`; después rechaza
+    escrituras directas, compuestas y alias de puntero conocidos. La
+    congelación es superficial y se propaga por la herencia.
 
 * **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `include
   "header" link "library"` resuelve headers y bibliotecas del sistema, y

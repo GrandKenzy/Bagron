@@ -804,7 +804,7 @@ class ExpressionEmitterMixin:
                 self_place = self._method_self_place(builder, values)
                 if self_place is not None:
                     return self_place
-            global_value = self.module.globals.get(name)
+            global_value = self.module.globals.get(self._global_llvm_name(name))
             if isinstance(global_value, ir.GlobalVariable):
                 return self._memory_place(
                     global_value,
@@ -1212,8 +1212,10 @@ class ExpressionEmitterMixin:
                         result = None
                 else:
                     result = None
-                if result is None and name in self.module.globals:
-                    result = self.module.globals[name]
+                if result is None:
+                    global_name = self._global_llvm_name(name)
+                    if global_name in self.module.globals:
+                        result = self.module.globals[global_name]
                 if result is None:
                     raise FunctionEmissionError(
                         f'La variable {name} no tiene emision LLVM en esta fase'

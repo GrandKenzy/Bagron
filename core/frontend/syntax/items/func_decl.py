@@ -2,7 +2,7 @@ from gram import combinators as cmb
 
 from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
-from core.frontend.syntax.items.statements import DEL, FOR, IF, WHILE
+from core.frontend.syntax.items.statements import DEL, FOR, GLOBAL, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.value import (
     PARAMETERS,
@@ -55,6 +55,7 @@ class FUNCTION_BODY(cmb.RuleItem):
                 cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(CALL),
                 cmb.Ref(DEL),
+                cmb.Ref(GLOBAL),
                 cmb.Ref(VAR),
                 cmb.Ref(RETURN_ASM),
                 cmb.Ref(RETURN),

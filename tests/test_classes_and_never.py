@@ -118,6 +118,111 @@ class ClassAndNeverTests(unittest.TestCase):
             'metodo estatico.*debe llamarse',
         )
 
+    def test_frozen_allows_initialization_but_rejects_method_writes(self):
+        self.assert_compile_error(
+            '@frozen\n'
+            'class Box:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func mutate() void:\n'
+            '        self.value = 2\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    box: Box = Box(1)\n'
+            '    return 0\n',
+            'clase @frozen Box.*no permite modificar',
+        )
+
+    def test_frozen_rejects_external_and_compound_writes(self):
+        self.assert_compile_error(
+            '@frozen\n'
+            'class Box:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            'func main() int32:\n'
+            '    box: Box = Box(1)\n'
+            '    box.value += 1\n'
+            '    return 0\n',
+            'clase @frozen Box.*no permite modificar',
+        )
+
+    def test_frozen_blocks_known_pointer_aliases(self):
+        self.assert_compile_error(
+            '@frozen\n'
+            'class Box:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '@unsafe\n'
+            'func mutate(box: Box) void:\n'
+            '    pointer *: int32 = $box.value\n'
+            '    (pointer) = 2\n'
+            '    return\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'clase @frozen Box.*no permite modificar',
+        )
+
+    def test_frozen_inheritance_must_match_parent_state(self):
+        self.assert_compile_error(
+            '@frozen\n'
+            'class Base:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            'class Child(Base):\n'
+            '    func __init__(value: int32) void:\n'
+            '        super.__init__(value)\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'hereda de la clase @frozen.*tambien debe ser @frozen',
+        )
+        self.assert_compile_error(
+            'class Base:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '@frozen\n'
+            'class Child(Base):\n'
+            '    func __init__(value: int32) void:\n'
+            '        super.__init__(value)\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'clase @frozen Child.*solo puede heredar',
+        )
+
+    def test_frozen_is_shallow_for_mutable_nested_classes(self):
+        result = self.run_source(
+            'class Inner:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '@frozen\n'
+            'class Outer:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.inner = Inner(value)\n'
+            'func main() int32:\n'
+            '    outer: Outer = Outer(1)\n'
+            '    outer.inner.value = 4\n'
+            '    return outer.inner.value\n'
+        )
+        self.assertEqual(4, result.returncode)
+
+    def test_frozen_rejects_unknown_and_duplicate_class_decorators(self):
+        self.assert_compile_error(
+            '@mystery\n'
+            'class Box:\n'
+            '    pass\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'decorador @mystery.*clase Box',
+        )
+        self.assert_compile_error(
+            '@frozen\n'
+            '@frozen\n'
+            'class Box:\n'
+            '    pass\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'decorador @frozen esta repetido.*clase Box',
+        )
+
     def test_frontend_initializer_converts_source_value(self):
         result = self.run_source(
             'class Text:\n'
@@ -489,11 +594,147 @@ class ClassAndNeverTests(unittest.TestCase):
         self.assertIn('call void @"Resource____deletion__"', module)
         self.assertNotIn('Plain____deletion__', module)
 
+    def test_del_accepts_parentheses_and_repeats_the_hook(self):
+        result = self.run_source(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value += 1\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    resource: Resource = Resource(3)\n'
+            '    Del (resource)\n'
+            '    Del resource\n'
+            '    return resource.value\n'
+        )
+        self.assertEqual(5, result.returncode)
+
+    def test_del_nested_class_member(self):
+        result = self.run_source(
+            'class Inner:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 40\n'
+            '        return\n'
+            'class Outer:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.inner = Inner(value)\n'
+            '    func read() int32:\n'
+            '        return self.inner.value\n'
+            'func main() int32:\n'
+            '    outer: Outer = Outer(7)\n'
+            '    Del outer.inner\n'
+            '    return outer.read()\n'
+        )
+        self.assertEqual(40, result.returncode)
+
+    def test_del_temporary_constructor_runs_deletion(self):
+        module = self.compile_module(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 9\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    Del Resource(1)\n'
+            '    return 0\n'
+        )
+        main = module[module.index('define internal i32 @"__bagron_main"'):]
+        self.assertIn('call void @"Resource____deletion__"', main)
+
+    def test_del_temporary_method_result_runs_deletion(self):
+        module = self.compile_module(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 9\n'
+            '        return\n'
+            'class Factory:\n'
+            '    @static\n'
+            '    func make(value: int32) Resource:\n'
+            '        return Resource(value)\n'
+            'func main() int32:\n'
+            '    Del Factory.make(1)\n'
+            '    return 0\n'
+        )
+        main = module[module.index('define internal i32 @"__bagron_main"'):]
+        self.assertIn('call void @"Resource____deletion__"', main)
+
+    def test_del_inside_method_uses_the_instance_context(self):
+        result = self.run_source(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 12\n'
+            '        return\n'
+            '    func dispose() void:\n'
+            '        Del self\n'
+            '        return\n'
+            '    func read() int32:\n'
+            '        return self.value\n'
+            'func main() int32:\n'
+            '    resource: Resource = Resource(12)\n'
+            '    resource.dispose()\n'
+            '    return resource.read()\n'
+        )
+        self.assertEqual(12, result.returncode)
+
+    def test_del_prefers_child_deletion_over_inherited_one(self):
+        result = self.run_source(
+            'class Base:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 1\n'
+            '        return\n'
+            'class Child(Base):\n'
+            '    func __init__(value: int32) void:\n'
+            '        super.__init__(value)\n'
+            '    func __deletion__() void:\n'
+            '        self.value = 2\n'
+            '        return\n'
+            '    func read() int32:\n'
+            '        return self.value\n'
+            'func main() int32:\n'
+            '    child: Child = Child(1)\n'
+            '    Del child\n'
+            '    return child.read()\n'
+        )
+        self.assertEqual(2, result.returncode)
+
     def test_del_rejects_non_class_values(self):
         self.assert_compile_error(
             'func main() int32:\n'
             '    value: int32 = 1\n'
             '    Del value\n'
+            '    return 0\n',
+            'Del en main requiere una instancia escalar de class',
+        )
+
+    def test_del_rejects_class_pointers_and_arrays(self):
+        self.assert_compile_error(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            'func main() int32:\n'
+            '    resource: Resource = Resource(1)\n'
+            '    pointer *: Resource = $resource\n'
+            '    Del pointer\n'
+            '    return 0\n',
+            'Del en main requiere una instancia escalar de class',
+        )
+        self.assert_compile_error(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            'func main() int32:\n'
+            '    resources: Resource[2]\n'
+            '    Del resources\n'
             '    return 0\n',
             'Del en main requiere una instancia escalar de class',
         )

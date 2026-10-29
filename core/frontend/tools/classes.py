@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 
 _INITIALIZER_NAMES = frozenset({'__init__', '__frontend__'})
+_CLASS_DECORATORS = frozenset({'frozen'})
 
 
 def _children(node: object) -> list[object]:
@@ -265,6 +266,7 @@ def _initializer_fields(
         compiler.storage.root,
         parent=compiler.storage,
         scope_name=f'class:{class_name}.{initializer_name}',
+        function_scope=True,
     )
     seen_parameters: set[str] = set()
     for parameter in parameters:
@@ -396,6 +398,24 @@ def validate(compiler: Compiler, node: gast.ASTRef):
     if not isinstance(symbol, AggregateSymbol):
         return node
 
+    from core.frontend.tools import function as function_tools
+
+    decorators = function_tools._decorator_names(node)
+    seen_decorators: set[str] = set()
+    for decorator in decorators:
+        if decorator not in _CLASS_DECORATORS:
+            compiler.error(
+                f'El decorador @{decorator} no existe para la clase '
+                f'{symbol.name}'
+            )
+        elif decorator in seen_decorators:
+            compiler.error(
+                f'El decorador @{decorator} esta repetido en la clase '
+                f'{symbol.name}'
+            )
+        seen_decorators.add(decorator)
+    symbol.is_frozen = 'frozen' in decorators
+
     body = _class_body(node)
     if body is None:
         compiler.error(f'La clase {symbol.name} no tiene cuerpo')
@@ -469,8 +489,6 @@ def validate(compiler: Compiler, node: gast.ASTRef):
         return node
 
     try:
-        from core.frontend.tools import function as function_tools
-
         function_name, signature = function_tools.signature_from_node(
             initializer_node,
             pointer_size=compiler.storage.pointer_size,
@@ -537,6 +555,7 @@ def _initializer_parameter_scope(
         compiler.storage.root,
         parent=compiler.storage,
         scope_name=f'class:{symbol.name}.{symbol.initializer_name or "initializer"}',
+        function_scope=True,
     )
     for parameter in symbol.constructor_parameters or ():
         if getattr(parameter, 'is_length', False) or getattr(parameter, 'is_size', False):
@@ -656,6 +675,16 @@ def validate_inheritance(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             symbol.parent_type = None
             parent = None
         elif parent is not None:
+            if symbol.is_frozen and not parent.is_frozen:
+                compiler.error(
+                    f'La clase @frozen {symbol.name} solo puede heredar de '
+                    f'otra clase @frozen ({parent.name})'
+                )
+            elif parent.is_frozen and not symbol.is_frozen:
+                compiler.error(
+                    f'La clase {symbol.name} que hereda de la clase @frozen '
+                    f'{parent.name} tambien debe ser @frozen'
+                )
             if symbol.is_packed and not parent.is_packed:
                 compiler.error(
                     f'La clase {symbol.name} no puede ser @packed si su padre '

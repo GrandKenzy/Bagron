@@ -89,6 +89,32 @@ de la llamada cuando lo considere apropiado.
 la expansión aumenta demasiado el código o no es conveniente. No cambia la
 firma, el tipo de retorno ni las reglas de seguridad de la función.
 
+## Acceso explícito a datos globales
+
+Las funciones y los métodos tienen visibilidad local para los datos: los
+parámetros y variables locales están disponibles normalmente, pero una
+variable declarada en el módulo debe solicitarse de forma explícita:
+
+```bg
+contador: int32 = 0
+
+func siguiente() int32:
+    global contador
+    contador += 1
+    return contador
+```
+
+`global` solo acepta una variable de módulo que ya exista. La declaración es
+válida para toda la función aunque aparezca dentro de un bloque, y no crea
+instrucciones ni almacenamiento adicional en LLVM. Una función puede seguir
+llamando a otras funciones —incluidas `extern`— sin escribir `global`, porque
+las funciones pertenecen a un espacio de nombres distinto de los datos.
+
+El acceso implícito a una variable global produce un error de compilación. Esto
+evita que una función adquiera estado compartido accidentalmente y hace visible
+en el código cada dependencia mutable del módulo. `main` conserva la misma
+regla; su privilegio especial es únicamente ser el punto de entrada.
+
 ## Especificadores de almacenamiento
 
 ### `volatile`
@@ -163,6 +189,28 @@ compatibilidad de [Estructuras](02-Estructuras.md).
 
 `@order_lsb` y `@order_msb` son alternativas del orden de bits y no deben
 usarse simultáneamente.
+
+## Decoradores de `class`
+
+Las clases admiten `@frozen`:
+
+```bg
+@frozen
+class Punto:
+    func __init__(x: int32) void:
+        self.x = x
+```
+
+Una clase congelada solo puede escribir sus atributos durante `__init__` o
+`__frontend__`. Las escrituras posteriores, incluidas las compuestas y las
+realizadas mediante un alias de puntero que el compilador pueda demostrar,
+producen un error de compilación. La congelación es superficial: un objeto
+contenido en un campo puede seguir siendo mutable si su propia clase no es
+`@frozen`.
+
+La propiedad se mantiene en toda la jerarquía: una clase `@frozen` solo puede
+heredar de otra `@frozen`, y una clase hija de una clase `@frozen` también debe
+ser `@frozen`.
 
 ### Cuándo usar cada decorador
 

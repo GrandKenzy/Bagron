@@ -64,6 +64,8 @@ class StandardLibraryTests(unittest.TestCase):
                 'import alphabet\n'
                 '@unsafe\n'
                 'func main() int32:\n'
+                '    global NumericString\n'
+                '    global AlphabetString\n'
                 '    print(NumericString)\n'
                 '    print(AlphabetString)\n'
                 '    return 0\n',

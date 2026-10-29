@@ -134,6 +134,68 @@ def _body_node(node: gast.ASTRef) -> gast.ASTRef | None:
     )
 
 
+def _global_declarations(node: object) -> list[gast.ASTRef]:
+    """Collect ``global`` declarations from the complete function body."""
+    if isinstance(node, gast.ASTRef) and node.name == 'GLOBAL':
+        return [node]
+
+    declarations: list[gast.ASTRef] = []
+    for child in _children(node):
+        declarations.extend(_global_declarations(child))
+    return declarations
+
+
+def _module_variable(compiler: Compiler, name: str) -> object | None:
+    variable = compiler.storage.namespace.get(name)
+    if variable is not None:
+        return variable
+    return compiler.storage.variable_aliases.get(name)
+
+
+def _register_global_declarations(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    body: gast.ASTRef,
+) -> None:
+    """Make module data visible only after an explicit source declaration."""
+    scope = symbol.scope
+    if scope is None:
+        return
+
+    seen: set[str] = set()
+    for declaration in _global_declarations(body):
+        name = _identifier(declaration)
+        if not name:
+            compiler.error(
+                f'La declaracion global de {symbol.name} no contiene un nombre'
+            )
+            continue
+        if name in seen:
+            compiler.error(
+                f'La variable global {name} fue declarada dos veces en '
+                f'{symbol.name}'
+            )
+            continue
+        seen.add(name)
+
+        if name in symbol.local_variables or scope.contains_local(name):
+            compiler.error(
+                f'La variable global {name} entra en conflicto con un '
+                f'parametro o local de {symbol.name}'
+            )
+            continue
+
+        if _module_variable(compiler, name) is None:
+            compiler.error(
+                f'global {name} solo puede referirse a una variable de modulo '
+                f'existente en {symbol.name}'
+            )
+            continue
+
+        symbol.global_variables.add(name)
+        scope.global_names.add(name)
+
+
 def _decorator_names(node: gast.ASTRef) -> tuple[str, ...]:
     decorators = next(
         (
@@ -598,7 +660,7 @@ def _resolve_function_local(
 
     A block may assign an outer local, but this helper deliberately stops at
     the function scope so a module global is not mistaken for a local target.
-    Normal expression lookup still uses ``scope.resolve`` and can see globals.
+    Normal expression lookup uses the function's explicit global allowlist.
     """
     root = symbol.scope
     current = scope
@@ -787,6 +849,7 @@ def _for_binding(
 
     if (
         name in symbol.local_variables
+        or name in symbol.global_variables
         or _resolve_function_local(symbol, scope, name) is not None
     ):
         compiler.error(
@@ -1022,6 +1085,12 @@ def _validate_assignment(
     target, operator, value_node = _assignment_parts(node)
     name = _identifier(target) if target is not None else None
     variable = _resolve_function_local(symbol, scope, name or '')
+    global_variable = (
+        _module_variable(compiler, name or '')
+        if name in symbol.global_variables
+        else None
+    )
+    binding = variable if variable is not None else global_variable
     try:
         target_info = infer_lvalue(
             target,
@@ -1033,31 +1102,48 @@ def _validate_assignment(
         compiler.error(f'{symbol.name}: {error}')
         return
 
-    if variable is None and target_info.storage_origin != 'local':
+    member_owner = getattr(target_info, 'member_owner', None)
+    frozen_owner = (
+        compiler.storage.resolve_type(member_owner)
+        if member_owner
+        else None
+    )
+    if (
+        isinstance(frozen_owner, AggregateSymbol)
+        and frozen_owner.is_class
+        and frozen_owner.is_frozen
+    ):
+        compiler.error(
+            f'La clase @frozen {frozen_owner.name} no permite modificar sus '
+            'atributos despues de inicializarse'
+        )
+        return
+
+    if binding is None and target_info.storage_origin != 'local':
         compiler.error(
             f'La asignacion de {symbol.name} requiere una variable local: '
             f'{name or "<anonima>"}'
         )
         return
     if (
-        variable is not None
-        and getattr(variable, 'is_receiver', False)
+        binding is not None
+        and getattr(binding, 'is_receiver', False)
         and not target_info.address_path
     ):
         compiler.error(
             f'El receptor self del metodo {symbol.name} no puede reasignarse'
         )
         return
-    if variable is not None and (
-        variable.value_is_const
+    if binding is not None and (
+        binding.value_is_const
         or (
-            variable.type_spec.pointer_level > 0
-            and variable.pointer_is_const
+            binding.type_spec.pointer_level > 0
+            and binding.pointer_is_const
         )
     ):
         compiler.error(f'La variable constante no puede asignarse: {name}')
         return
-    if variable is not None and getattr(variable, 'is_for_iterator', False):
+    if binding is not None and getattr(binding, 'is_for_iterator', False):
         compiler.error(f'El iterador {name} es de solo lectura dentro del for')
         return
     if target_info.type_spec.value_is_const:
@@ -1069,7 +1155,7 @@ def _validate_assignment(
         compiler,
         symbol,
         target_info,
-        variable,
+        binding,
         name,
     ):
         return
@@ -1106,14 +1192,14 @@ def _validate_assignment(
         return
 
     if (
-        variable is not None
+        binding is not None
         and operator == '='
         and target_info.type_spec.pointer_level > 0
     ):
         # Pointer provenance is flow-sensitive at the declaration/assignment
         # level.  Unknown values remain unknown in safe functions and are
         # rejected only when a later operation dereferences them.
-        variable.value_info = value_info
+        binding.value_info = value_info
 
 
 def _body_statements(body: gast.ASTRef) -> list[object]:
@@ -1382,9 +1468,17 @@ def _process_body_node(
 
     if node.name in _DEFINITION_NODES:
         return
+    if node.name == 'GLOBAL':
+        return
     if node.name == 'VAR':
         handle = handle_variable(node)
         if handle is None:
+            return
+        if handle.name in symbol.global_variables:
+            compiler.error(
+                f'La variable {handle.name} fue declarada como global y no '
+                f'puede redeclararse como local en {symbol.name}'
+            )
             return
         if handle.name in symbol.local_variables:
             compiler.error(
@@ -1474,6 +1568,8 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
         return
 
     symbol.body_node = body
+
+    _register_global_declarations(compiler, symbol, body)
 
     _validate_assembler_body(compiler, symbol, body)
 

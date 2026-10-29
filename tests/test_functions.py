@@ -23,6 +23,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = self.compile_source(
             'base: const int32 = 3\n'
             'func suma(a: int32, b: int8) int32:\n'
+            '    global base\n'
             '    total: int32 = a\n'
             '    if true:\n'
             '        nested: int32 = base\n'
@@ -800,7 +801,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = self.compile_source(
             'class Box:\n'
             '    func init(value: int32) void:\n'
-            '        pass\n'
+            '        return\n'
         )
         self.assertEqual({'main'}, set(compiler.storage.functions))
 

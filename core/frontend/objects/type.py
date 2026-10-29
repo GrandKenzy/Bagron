@@ -57,6 +57,10 @@ class AggregateSymbol:
     fields: tuple[FieldSpec, ...] = ()
     inherited_fields: tuple[FieldSpec, ...] = ()
     is_class: bool = False
+    # A frozen class may initialize its fields only through its single
+    # initializer.  The frontend enforces the restriction; the backend keeps
+    # the same struct-backed representation.
+    is_frozen: bool = False
     privacy: str = 'public'
     # ``flags`` owns a fixed, explicit integer container.  The remaining
     # metadata describes layout properties shared by all aggregate kinds.
@@ -128,3 +132,7 @@ class ValueInfo:
     # Reading a pointer through raw union storage produces a pointer whose
     # provenance cannot be proven in safe Bagron code.
     pointer_provenance_unknown: bool = False
+    # Name of the aggregate that owns the last member reached by this value.
+    # Keeping this metadata lets assignment validation enforce @frozen through
+    # indexing and known pointer aliases without adding runtime state.
+    member_owner: str | None = None

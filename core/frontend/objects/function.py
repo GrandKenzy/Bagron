@@ -62,6 +62,10 @@ class FunctionSymbol:
     # this manifest lets LLVM reserve static storage for every local at
     # function entry, including locals declared in nested control blocks.
     local_variables: dict[str, object] = field(default_factory=dict)
+    # Module data is hidden from function/method scopes by default. A source
+    # ``global name`` declaration records the explicit opt-in and is shared
+    # with the function's Storage visibility gate.
+    global_variables: set[str] = field(default_factory=set)
     # Methods are emitted under a reserved name while retaining their source
     # name for ``object.method(...)`` resolution.
     owner_type: str | None = None

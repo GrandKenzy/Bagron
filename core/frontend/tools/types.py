@@ -646,6 +646,7 @@ def _deref_value(value: ValueInfo) -> ValueInfo:
         address_origin=origin,
         storage_origin=origin,
         pointer_provenance_unknown=value.pointer_provenance_unknown,
+        member_owner=value.member_owner,
     )
 
 
@@ -1015,6 +1016,7 @@ def _infer_postfix(
                         storage_origin=result.storage_origin or result.address_origin,
                         identifier=result.identifier,
                         address_path=(*result.address_path, ('index', index)),
+                        member_owner=result.member_owner,
                     )
                 elif result.type_spec.name == 'chain':
                     if not _unsafe_context(current_function):
@@ -1028,6 +1030,7 @@ def _infer_postfix(
                         storage_origin=result.storage_origin or result.address_origin,
                         identifier=result.identifier,
                         address_path=(*result.address_path, ('index', index)),
+                        member_owner=result.member_owner,
                     )
                 elif result.type_spec.pointer_level:
                     if not _unsafe_context(current_function):
@@ -1083,6 +1086,7 @@ def _infer_postfix(
                     storage_origin=result.storage_origin or result.address_origin,
                     identifier=result.identifier,
                     address_path=(*result.address_path, ('index', index)),
+                    member_owner=result.member_owner,
                 )
             elif result.type_spec.name == 'chain':
                 if not _unsafe_context(current_function):
@@ -1096,6 +1100,7 @@ def _infer_postfix(
                     storage_origin=result.storage_origin or result.address_origin,
                     identifier=result.identifier,
                     address_path=(*result.address_path, ('index', index)),
+                    member_owner=result.member_owner,
                 )
             elif result.type_spec.pointer_level:
                 if not _unsafe_context(current_function):
@@ -1300,6 +1305,7 @@ def _member_value(
         pointer_provenance_unknown=(
             aggregate.kind == 'mold' and field.type_spec.pointer_level > 0
         ),
+        member_owner=aggregate.name,
     )
 
 
@@ -1426,6 +1432,7 @@ def infer_value(
                 address_origin=operand.storage_origin or operand.address_origin,
                 address_of=operand.identifier,
                 address_path=operand.address_path,
+                member_owner=operand.member_owner,
             )
         if operator in LOGICAL_NOT_OPERATORS:
             if not is_condition_type(operand.type_spec):
@@ -1808,6 +1815,11 @@ def infer_value(
             ),
             storage_origin=getattr(symbol, 'scope_kind', None),
             address_path=(),
+            member_owner=(
+                getattr(initialized, 'member_owner', None)
+                if initialized is not None
+                else None
+            ),
         )
 
     if kind == 'BOOL' or isinstance(value, bool):

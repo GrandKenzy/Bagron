@@ -46,6 +46,7 @@ class PointerAndAddressTests(unittest.TestCase):
             '    return (pointer)\n'
             '@unsafe\n'
             'func main() int32:\n'
+            '    global value\n'
             '    return read(identity($value))\n',
             executable=False,
         )
@@ -83,6 +84,8 @@ class PointerAndAddressTests(unittest.TestCase):
             'field *: int32 = $point.x\n'
             'element *: int32 = $values[1]\n'
             'func main() int32:\n'
+            '    global element\n'
+            '    global field\n'
             '    return (element) + (field)\n',
             executable=False,
         )

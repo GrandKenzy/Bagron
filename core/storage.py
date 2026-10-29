@@ -24,11 +24,28 @@ class Storage(diagnostic.Diagnostics):
         root: str,
         parent: 'Storage | None' = None,
         scope_name: str = 'module',
+        function_scope: bool = False,
     ):
         self.main: bool = False
         self.root = root        
         self.parent = parent
         self.scope_name = scope_name
+        self.is_function_scope = function_scope
+        self._function_root = self if function_scope else (
+            parent._function_root if parent is not None else None
+        )
+        # Names in this shared set are the only module data bindings visible
+        # from a function/method lexical scope. Child block scopes reuse the
+        # same set, so ``global`` is function-wide rather than block-local.
+        self.global_names: set[str] = (
+            set()
+            if function_scope
+            else (
+                parent.global_names
+                if parent is not None
+                else set()
+            )
+        )
         
         if not Storage.Main:
             self.main, Storage.Main = True, self
@@ -93,6 +110,8 @@ class Storage(diagnostic.Diagnostics):
         if symbol is not None:
             return symbol
         if self.parent is not None:
+            if self._function_root is self and name not in self.global_names:
+                return None
             return self.parent.resolve(name)
         return None
 
@@ -110,6 +129,7 @@ class Storage(diagnostic.Diagnostics):
                 self.root,
                 parent=self,
                 scope_name=f'function:{symbol.name}',
+                function_scope=True,
             )
         self.functions[symbol.name] = symbol
         self.function_scopes[symbol.name] = symbol.scope
@@ -131,6 +151,7 @@ class Storage(diagnostic.Diagnostics):
                 self.root,
                 parent=self,
                 scope_name=f'method:{owner}.{source_name}',
+                function_scope=True,
             )
         self.methods[key] = symbol
         self.function_scopes[symbol.name] = symbol.scope
