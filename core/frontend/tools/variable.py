@@ -4,7 +4,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.handles import VariableHandle, handle_variable
-from core.frontend.objects import TypeSpec, Variable
+from core.frontend.objects import TypeSpec, ValueInfo, Variable
 from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
@@ -14,6 +14,7 @@ from core.frontend.tools.types import (
     is_compatible,
     resolve_type,
 )
+from core.storage import Storage
 from gram import ast as gast
 
 if TYPE_CHECKING:
@@ -96,6 +97,149 @@ def _validate_callptr(
         )
 
 
+def _frontend_initializer_value(
+    storage,
+    symbol: Variable,
+    value_node: object,
+    functions,
+    *,
+    current_function: object | None = None,
+) -> tuple[object, bool]:
+    """Resolve an implicit class conversion and report whether it was used."""
+    source_info = infer_value(
+        value_node,
+        storage.resolve,
+        functions,
+        current_function=current_function,
+    )
+    if is_compatible(symbol.type_spec, source_info):
+        return source_info, False
+
+    aggregate = storage.resolve_type(symbol.type_spec.name)
+    parameters = getattr(aggregate, 'constructor_parameters', None)
+    initializer_name = getattr(aggregate, 'initializer_name', None)
+    visible_parameters = [
+        parameter for parameter in (parameters or ())
+        if not (
+            getattr(parameter, 'is_length', False)
+            or getattr(parameter, 'is_size', False)
+        )
+    ]
+    if initializer_name != '__frontend__' or len(visible_parameters) != 1:
+        return source_info, False
+
+    parameter = visible_parameters[0]
+    if not is_compatible(parameter.type_spec, source_info):
+        raise ValueResolutionError(
+            f'La conversion frontend de {symbol.type_spec.name} no acepta '
+            f'{source_info.type_spec.canonical_name}; esperaba '
+            f'{parameter.type_spec.canonical_name}'
+        )
+
+    # Preserve field constants for global aggregate initializers.  Local
+    # declarations use the original AST in the LLVM emitter, so a dynamic
+    # source remains valid there even when this value is not literal.
+    context = Storage(
+        storage.root,
+        parent=storage,
+        scope_name=f'frontend:{symbol.type_spec.name}',
+    )
+    parameter_symbol = build_symbol(
+        context,
+        parameter.name,
+        parameter.type_spec,
+        kind='parameter',
+    )
+    parameter_symbol.value_info = source_info
+    parameter_symbol.value_is_const = source_info.is_literal
+    context.add(parameter.name, parameter_symbol)
+
+    def collect_fields(
+        current_aggregate,
+        current_context,
+    ) -> list[ValueInfo] | None:
+        parent_name = getattr(current_aggregate, 'parent_type', None)
+        parent = (
+            storage.resolve_type(parent_name)
+            if parent_name
+            else None
+        )
+        values: list[ValueInfo] = []
+        if parent is not None and getattr(parent, 'initializer_name', None):
+            parameters = [
+                parameter for parameter in (
+                    getattr(parent, 'constructor_parameters', None) or ()
+                )
+                if not (
+                    getattr(parameter, 'is_length', False)
+                    or getattr(parameter, 'is_size', False)
+                    or getattr(parameter, 'is_receiver', False)
+                )
+            ]
+            arguments = getattr(
+                current_aggregate,
+                'parent_initializer_arguments',
+                (),
+            )
+            parent_context = Storage(
+                storage.root,
+                parent=current_context,
+                scope_name=f'frontend:{parent.name}',
+            )
+            for parameter, argument in zip(parameters, arguments):
+                try:
+                    argument_info = infer_value(
+                        argument,
+                        current_context.resolve,
+                        functions,
+                        current_function=current_function,
+                    )
+                except (UnsupportedExpressionError, ValueResolutionError):
+                    return None
+                parameter_symbol = build_symbol(
+                    parent_context,
+                    parameter.name,
+                    parameter.type_spec,
+                    kind='parameter',
+                )
+                parameter_symbol.value_info = argument_info
+                parameter_symbol.value_is_const = argument_info.is_literal
+                parent_context.add(parameter.name, parameter_symbol)
+
+            parent_values = collect_fields(parent, parent_context)
+            if parent_values is None:
+                return None
+            values.extend(parent_values)
+
+        for field in getattr(current_aggregate, 'fields', ()):
+            initializer = getattr(field, 'initializer_node', None)
+            if initializer is None:
+                values.append(ValueInfo(field.type_spec))
+                continue
+            try:
+                field_value = infer_value(
+                    initializer,
+                    current_context.resolve,
+                    functions,
+                    current_function=current_function,
+                )
+            except (UnsupportedExpressionError, ValueResolutionError):
+                return None
+            values.append(field_value)
+        return values
+
+    field_values = collect_fields(aggregate, context) or []
+
+    return ValueInfo(
+        symbol.type_spec,
+        is_literal=all(
+            field_value.is_literal for field_value in field_values
+        ),
+        value=tuple(field_values),
+        items=tuple(field_values),
+    ), True
+
+
 def _validate_initializer(
     compiler: Compiler,
     storage,
@@ -112,6 +256,24 @@ def _validate_initializer(
         return
 
     try:
+        aggregate = storage.resolve_type(symbol.type_spec.name)
+        if (
+            symbol.type_spec.pointer_level == 0
+            and symbol.type_spec.array_depth == 0
+            and getattr(aggregate, 'initializer_name', None) == '__frontend__'
+        ):
+            value_info, uses_frontend = _frontend_initializer_value(
+                storage,
+                symbol,
+                handle.value_node,
+                compiler.storage.functions,
+                current_function=current_function,
+            )
+            if uses_frontend:
+                symbol.value_info = value_info
+                symbol.uses_frontend_initializer = True
+                return
+
         value_info = infer_value(
             handle.value_node,
             storage.resolve,
@@ -217,6 +379,12 @@ def collect_in_scope(
         compiler.error(f'{handle.name}: {error}')
         return None
 
+    if type_spec.name == 'Never':
+        compiler.error(
+            f'La variable {handle.name} no puede usar Never como almacenamiento'
+        )
+        return None
+
     if type_spec.name == 'void' and type_spec.pointer_level == 0:
         compiler.error(
             f'La variable {handle.name} no puede usar void como almacenamiento'
@@ -235,11 +403,29 @@ def collect_in_scope(
     # arrays and named aggregates already receive deterministic static
     # zero/storage initialization, so declarations such as a matrix that is
     # populated element by element remain valid without a synthetic literal.
+    aggregate = storage.resolve_type(type_spec.name)
+    initializer_name = getattr(aggregate, 'initializer_name', None)
+    requires_constructor = (
+        type_spec.pointer_level == 0
+        and type_spec.array_depth == 0
+        and getattr(aggregate, 'constructor_parameters', None) is not None
+    )
     implicit_zero_storage = (
         type_spec.array_depth > 0
         or storage.resolve_type(type_spec.name) is not None
     )
-    if kind == 'local' and handle.value_node is None and not implicit_zero_storage:
+    if handle.value_node is None and requires_constructor:
+        if initializer_name == '__frontend__':
+            compiler.error(
+                f'La instancia {handle.name} de {type_spec.name} requiere un '
+                'valor compatible con __frontend__'
+            )
+        else:
+            compiler.error(
+                f'La instancia {handle.name} de {type_spec.name} requiere una '
+                f'llamada a {type_spec.name}(...)'
+            )
+    elif kind == 'local' and handle.value_node is None and not implicit_zero_storage:
         compiler.error(
             f'La variable local {handle.name} debe tener un inicializador; '
             'las variables locales se inicializan al declararse'

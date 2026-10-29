@@ -26,6 +26,89 @@ class GlobalEmitter:
         self.module = module
         self.type_registry = type_registry
         self._resolving: list[str] = []
+        self._string_literals: dict[str, object] = {}
+
+    def _string_pointer(self, value: str):
+        from llvmlite import ir
+
+        global_value = self._string_literals.get(value)
+        if global_value is None:
+            data = value.encode('utf-8')
+            byte_type = ir.IntType(8)
+            array_type = ir.ArrayType(byte_type, len(data) + 1)
+            global_value = ir.GlobalVariable(
+                self.module,
+                array_type,
+                name=f'__bagron_global_string_{len(self._string_literals)}',
+            )
+            global_value.linkage = 'private'
+            global_value.global_constant = True
+            global_value.initializer = ir.Constant(
+                array_type,
+                [ir.Constant(byte_type, byte) for byte in (*data, 0)],
+            )
+            self._string_literals[value] = global_value
+
+        index_type = ir.IntType(32)
+        return global_value.gep([
+            ir.Constant(index_type, 0),
+            ir.Constant(index_type, 0),
+        ])
+
+    def _aggregate_constant(self, spec, value: ValueInfo):
+        from llvmlite import ir
+
+        if self.type_registry is None:
+            raise GlobalEmissionError(
+                f'El agregado {spec.canonical_name} requiere un registro de tipos'
+            )
+        layout = self.type_registry.layout(spec.name)
+        if layout is None or layout.symbol.kind != 'struct':
+            raise GlobalEmissionError(
+                f'El agregado {spec.canonical_name} no admite un inicializador '
+                'frontend global'
+            )
+        if not value.items:
+            if not value.is_literal:
+                raise GlobalEmissionError(
+                    f'El inicializador frontend de {spec.name} debe ser constante '
+                    'en una variable global'
+                )
+            return self.type_registry.default_constant(spec)
+        if len(value.items) != len(layout.symbol.all_fields):
+            raise GlobalEmissionError(
+                f'El agregado {spec.canonical_name} no tiene todos sus campos'
+            )
+
+        field_values = []
+        for field, field_value in zip(layout.symbol.all_fields, value.items):
+            if field.type_spec.name == 'chain':
+                if not field_value.is_literal or not isinstance(field_value.value, str):
+                    raise GlobalEmissionError(
+                        f'El campo {spec.name}.{field.name} requiere un chain constante'
+                    )
+                field_values.append(self._string_pointer(field_value.value))
+                continue
+            if (
+                self.type_registry.layout(field.type_spec.name) is not None
+                and field.type_spec.pointer_level == 0
+                and field.type_spec.array_depth == 0
+            ):
+                field_values.append(
+                    self._aggregate_constant(field.type_spec, field_value)
+                )
+                continue
+            field_values.append(
+                constant_value(field.type_spec, field_value, self.type_registry)
+            )
+
+        payload = ir.Constant(layout.payload_type, field_values)
+        target_type = value_type(spec, value, self.type_registry)
+        outer_values = []
+        if layout.payload_index:
+            outer_values.append(ir.Constant(target_type.elements[0], None))
+        outer_values.append(payload)
+        return ir.Constant(target_type, outer_values)
 
     def emit_storage(self, storage: Storage) -> None:
         # Declare every global before resolving initializers.  This makes a
@@ -70,7 +153,7 @@ class GlobalEmitter:
             self._resolving.pop()
 
     def _resolve_value(self, storage: Storage, value: ValueInfo) -> ValueInfo:
-        if value.identifier is not None:
+        if value.identifier is not None and not value.is_literal:
             target = storage.namespace.get(value.identifier)
             if not isinstance(target, Variable):
                 raise GlobalEmissionError(
@@ -263,6 +346,15 @@ class GlobalEmitter:
                 return
             if value.address_of is not None:
                 initializer = self._address_initializer(symbol, value)
+            elif (
+                self.type_registry is not None
+                and getattr(
+                    self.type_registry.aggregate(symbol.type_spec.name),
+                    'initializer_name',
+                    None,
+                ) == '__frontend__'
+            ):
+                initializer = self._aggregate_constant(symbol.type_spec, value)
             else:
                 initializer = constant_value(
                     symbol.type_spec,

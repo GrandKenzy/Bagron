@@ -29,11 +29,15 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y futura generación de código nativo.
 
-* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida y los métodos de clase no cuentan como entrypoint.
+* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida, salvo que el flujo termine mediante una llamada `Never`. Los métodos de clase no cuentan como entrypoint.
 
 * **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
 
 * **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
+
+* **Terminación explícita:** `Never` es un tipo de retorno para funciones que
+  no regresan; una llamada a una función `Never` termina el flujo actual y no
+  puede usarse como valor ni como almacenamiento.
 
 * **Constantes explícitas:** `const tipo` expresa un valor constante; los punteros separan la constancia del puntero y del valor apuntado.
 
@@ -49,7 +53,27 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
     miembros; `mold` comparte almacenamiento como una unión y `flags` usa una
     base entera explícita (`flags Nombre uint8:`) con campos de bits.
   * `enum`: Enumeraciones con base entera `int32` por defecto o un tipo entero explícito, además de valores implícitos/explícitos.
-  * `class`: Tipos orientados a objetos con ciclo de vida RAII (`__init__`, `@method`, `destroy`).
+  * `class`: Tipos nominales respaldados por `struct`; sus atributos se definen
+    con un unico iniciador `func __init__(...) void:` o
+    `func __frontend__(...) void:`. El segundo permite conversiones como
+    `element: Clase = "Hola"`. Sus métodos se declaran indentados dentro de la
+    clase y reciben la instancia implícitamente; `@static` queda encapsulado
+    en la clase. Admite herencia simple estática (`class Hija(Padre):`): los
+    campos se aplanan en el layout y los métodos se resuelven en compilación;
+    `super.__init__(...)` inicializa explícitamente al padre. No hay vtables ni
+    estado de herencia en runtime. Incluye hooks mágicos opcionales:
+    `__ongetter__(nombre: chain, longitud: Len_t) int32` y
+    `__onsetter__(nombre: chain, longitud: Len_t) int32`; deben retornar `1`
+    para permitir el flujo y `0` para detenerlo. `__eq__() bool` se usa
+    automáticamente cuando una instancia aparece como condición y, si no se
+    declara, la condición vale `false`. Estos hooks solo se insertan desde
+    fuera de la clase; los accesos internos no los disparan. `@after` mueve
+    cualquiera de esos dos hooks después de la lectura o escritura. Las
+    operaciones matemáticas pueden sobrecargarse con `__add__`, `__sub__`,
+    `__mul__`, `__div__`/`__truediv__`, `__mod__`, `__pos__` y `__neg__`;
+    también se reconocen los operadores bitwise equivalentes. `Del instancia`
+    llama a `__deletion__() void` si la clase lo define; sin ese método, `Del`
+    no ejecuta ninguna acción automática.
 
 * **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `include
   "header" link "library"` resuelve headers y bibliotecas del sistema, y

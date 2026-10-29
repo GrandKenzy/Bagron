@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from core.frontend.objects import (
+    AggregateSymbol,
     FunctionSignature,
     FunctionSymbol,
     ParameterSpec,
@@ -33,6 +34,24 @@ from core.storage import Storage
 
 if TYPE_CHECKING:
     from core.compiler import Compiler
+
+
+_FUNCTION_DECORATORS = frozenset({'unsafe', 'assembler'})
+_MAGIC_STATUS_METHODS = frozenset({'__ongetter__', '__onsetter__'})
+_MAGIC_COMPARISON_METHODS = frozenset({'__eq__'})
+_MAGIC_LIFECYCLE_METHODS = frozenset({'__deletion__'})
+_MAGIC_BINARY_METHODS = frozenset({
+    '__add__', '__sub__', '__mul__', '__div__', '__truediv__', '__mod__',
+    '__and__', '__or__', '__xor__', '__shl__', '__shr__',
+})
+_MAGIC_UNARY_METHODS = frozenset({'__pos__', '__neg__'})
+_MAGIC_METHODS = (
+    _MAGIC_COMPARISON_METHODS
+    | _MAGIC_STATUS_METHODS
+    | _MAGIC_LIFECYCLE_METHODS
+    | _MAGIC_BINARY_METHODS
+    | _MAGIC_UNARY_METHODS
+)
 
 
 def _children(node: object) -> list[object]:
@@ -134,6 +153,154 @@ def _decorator_names(node: gast.ASTRef) -> tuple[str, ...]:
     return tuple(names)
 
 
+def _contains_token_value(node: object, value: str) -> bool:
+    if _token_value(node) == value:
+        return True
+    return any(_contains_token_value(child, value) for child in _children(node))
+
+
+def _is_inline(node: gast.ASTRef) -> bool:
+    signature = _signature_node(node)
+    return signature is not None and _contains_token_value(signature, 'inline')
+
+
+def _validate_decorators(
+    compiler: Compiler,
+    function_name: str,
+    decorators: tuple[str, ...],
+) -> None:
+    seen: set[str] = set()
+    for decorator in decorators:
+        if decorator not in _FUNCTION_DECORATORS:
+            compiler.error(
+                f'El decorador @{decorator} no existe para la funcion '
+                f'{function_name}'
+            )
+        elif decorator in seen:
+            compiler.error(
+                f'El decorador @{decorator} esta repetido en {function_name}'
+            )
+        seen.add(decorator)
+
+
+def validate_magic_method_signature(
+    compiler: Compiler,
+    class_name: str,
+    method_name: str,
+    signature: FunctionSignature,
+    decorators: tuple[str, ...],
+) -> None:
+    """Validate reserved signatures used by class magic methods.
+
+    These methods remain ordinary class methods in the semantic model.  Their
+    names only opt them into compiler-generated calls at the relevant access
+    sites.
+    """
+    if method_name not in _MAGIC_METHODS:
+        return
+
+    if 'static' in decorators:
+        compiler.error(
+            f'El metodo magico {class_name}.{method_name} no puede ser @static'
+        )
+
+    parameters = signature.parameters
+    visible = [
+        parameter for parameter in parameters
+        if not (
+            parameter.is_length
+            or parameter.is_size
+            or parameter.is_receiver
+        )
+    ]
+    return_type = signature.return_type
+
+    if method_name in _MAGIC_STATUS_METHODS:
+        length_parameters = [
+            parameter for parameter in parameters if parameter.is_length
+        ]
+        valid_chain = (
+            len(visible) == 1
+            and visible[0].type_spec.name == 'chain'
+            and visible[0].type_spec.pointer_level == 0
+            and visible[0].type_spec.array_depth == 0
+        )
+        valid_length = (
+            len(length_parameters) == 1
+            and length_parameters[0].length_of == visible[0].name
+            if visible
+            else False
+        )
+        if not valid_chain or not valid_length:
+            compiler.error(
+                f'{class_name}.{method_name} debe recibir un chain y su Len_t'
+            )
+        if not (
+            return_type.name == 'int32'
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            compiler.error(
+                f'{class_name}.{method_name} debe retornar int32 (0 o 1)'
+            )
+        return
+
+    if method_name in _MAGIC_LIFECYCLE_METHODS:
+        if parameters:
+            compiler.error(
+                f'{class_name}.__deletion__ no puede recibir parametros'
+            )
+        if not (
+            return_type.name == 'void'
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            compiler.error(f'{class_name}.__deletion__ debe retornar void')
+        return
+
+    if method_name in _MAGIC_BINARY_METHODS:
+        if len(parameters) != 1 or len(visible) != 1:
+            compiler.error(
+                f'{class_name}.{method_name} debe recibir exactamente un '
+                'parametro explicito'
+            )
+        if (
+            return_type.name in {'void', 'Never'}
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            compiler.error(
+                f'{class_name}.{method_name} debe retornar un valor'
+            )
+        return
+
+    if method_name in _MAGIC_UNARY_METHODS:
+        if parameters:
+            compiler.error(
+                f'{class_name}.{method_name} no puede recibir parametros'
+            )
+        if (
+            return_type.name in {'void', 'Never'}
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            compiler.error(
+                f'{class_name}.{method_name} debe retornar un valor'
+            )
+        return
+
+    if parameters:
+        compiler.error(
+            f'{class_name}.__eq__ no puede recibir parametros explicitos'
+        )
+    if not (
+        return_type.name == 'bool'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    ):
+        compiler.error(f'{class_name}.__eq__ debe retornar bool')
+
+
 def _parameter_items(parameters: gast.ASTRef) -> list[object]:
     if not parameters.nodes:
         return []
@@ -171,6 +338,10 @@ def _parameter_spec(pair: gast.ASTRef, *, pointer_size: int = 8) -> ParameterSpe
         pointer_is_const=pointer_is_const,
         pointer_size=pointer_size,
     )
+    if type_spec.name == 'Never':
+        raise TypeResolutionError(
+            f'El parametro {name} no puede usar Never'
+        )
     if type_spec.name == 'void' and type_spec.pointer_level == 0:
         raise TypeResolutionError(
             f'El parametro {name} no puede usar void por valor'
@@ -317,6 +488,12 @@ def signature_from_node(
         pointer_level=return_pointer,
         pointer_size=pointer_size,
     )
+    if return_type.name == 'Never' and (
+        return_type.pointer_level or return_type.array_depth
+    ):
+        raise TypeResolutionError(
+            'Never solo puede usarse como retorno escalar'
+        )
     if return_type.name == 'void' and return_type.array_depth:
         raise TypeResolutionError('void no puede usarse como array de retorno')
 
@@ -389,7 +566,13 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             continue
 
         decorators = _decorator_names(node)
-        symbol = FunctionSymbol(name, signature, decorators=decorators)
+        _validate_decorators(compiler, name, decorators)
+        symbol = FunctionSymbol(
+            name,
+            signature,
+            decorators=decorators,
+            is_inline=_is_inline(node),
+        )
         compiler.storage.define_function(symbol)
         compiler.function_bindings[id(node)] = symbol
         _validate_bit_width(compiler, name, signature.return_type)
@@ -443,6 +626,16 @@ def _validate_return(
     return_type = symbol.signature.return_type
 
     if (
+        return_type.name == 'Never'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    ):
+        compiler.error(
+            f'La funcion Never {symbol.name} no puede usar return'
+        )
+        return
+
+    if (
         return_type.name == 'void'
         and return_type.pointer_level == 0
         and return_type.array_depth == 0
@@ -472,6 +665,18 @@ def _validate_return(
         compiler.error(
             f'El return de {symbol.name} no coincide con '
             f'{return_type.canonical_name}'
+        )
+        return
+
+    if (
+        symbol.is_method
+        and symbol.source_name in _MAGIC_STATUS_METHODS
+        and value_info.is_literal
+        and value_info.value not in (0, 1)
+    ):
+        compiler.error(
+            f'El metodo magico {symbol.owner_type}.{symbol.source_name} '
+            'solo puede retornar 0 o 1'
         )
         return
 
@@ -615,6 +820,53 @@ def _condition_value(node: object) -> object | None:
     )
 
 
+def _deletion_value(node: object) -> object | None:
+    return next(
+        (
+            child for child in _children(node)
+            if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+        ),
+        None,
+    )
+
+
+def _validate_deletion(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: object,
+    scope: Storage | None = None,
+) -> None:
+    scope = scope or symbol.scope
+    if scope is None:
+        return
+
+    value_node = _deletion_value(node)
+    if value_node is None:
+        compiler.error(f'Del en {symbol.name} no contiene una instancia')
+        return
+    try:
+        value_info = infer_value(
+            value_node,
+            scope.resolve,
+            compiler.storage.functions,
+            current_function=symbol,
+        )
+    except (UnsupportedExpressionError, ValueResolutionError) as error:
+        compiler.error(f'{symbol.name}: Del es invalido: {error}')
+        return
+
+    aggregate = compiler.storage.resolve_type(value_info.type_spec.name)
+    if not (
+        isinstance(aggregate, AggregateSymbol)
+        and aggregate.is_class
+        and value_info.type_spec.pointer_level == 0
+        and value_info.type_spec.array_depth == 0
+    ):
+        compiler.error(
+            f'Del en {symbol.name} requiere una instancia escalar de class'
+        )
+
+
 def _validate_condition(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -641,21 +893,31 @@ def _validate_condition(
         compiler.error(f'La condicion de {symbol.name} es invalida: {error}')
         return
 
+    aggregate = compiler.storage.resolve_type(value_info.type_spec.name)
+    is_class_instance = bool(
+        isinstance(aggregate, AggregateSymbol)
+        and aggregate.is_class
+        and value_info.type_spec.pointer_level == 0
+        and value_info.type_spec.array_depth == 0
+    )
+
     condition_kind = {
         'IF_SIGNATURE': 'if',
         'ELIF_SIGNATURE': 'elif',
         'WHILE_SIGNATURE': 'while',
     }.get(node.name)
     if condition_kind is not None:
-        if not is_bool_scalar(value_info.type_spec):
+        if not is_bool_scalar(value_info.type_spec) and not is_class_instance:
             compiler.error(
-                f'La condicion de {condition_kind} en {symbol.name} debe ser bool'
+                f'La condicion de {condition_kind} en {symbol.name} debe ser '
+                'bool o una instancia de class'
             )
         return
 
-    if not is_condition_type(value_info.type_spec):
+    if not is_condition_type(value_info.type_spec) and not is_class_instance:
         compiler.error(
-            f'La condicion de {symbol.name} debe ser bool o entero escalar'
+            f'La condicion de {symbol.name} debe ser bool o una instancia de '
+            'class'
         )
 
 
@@ -775,6 +1037,15 @@ def _validate_assignment(
         compiler.error(
             f'La asignacion de {symbol.name} requiere una variable local: '
             f'{name or "<anonima>"}'
+        )
+        return
+    if (
+        variable is not None
+        and getattr(variable, 'is_receiver', False)
+        and not target_info.address_path
+    ):
+        compiler.error(
+            f'El receptor self del metodo {symbol.name} no puede reasignarse'
         )
         return
     if variable is not None and (
@@ -964,28 +1235,41 @@ def _validate_return_asm(
     symbol.return_asm_node = node
 
 
-def _statement_body_guarantees_return(body: object) -> bool:
-    return _statement_sequence_guarantees_return(_children(body))
+def _statement_body_guarantees_return(
+    body: object,
+    symbol: FunctionSymbol | None = None,
+) -> bool:
+    return _statement_sequence_guarantees_return(_children(body), symbol)
 
 
-def _statement_sequence_guarantees_return(nodes: list[object]) -> bool:
-    """Return whether one sequential path must terminate in ``return``.
+def _statement_sequence_guarantees_return(
+    nodes: list[object],
+    symbol: FunctionSymbol | None = None,
+) -> bool:
+    """Return whether one sequential path must terminate.
+
+    A source ``return`` and a standalone call to a ``Never`` function both
+    terminate the current path.
 
     Loops are deliberately not considered guaranteed returns: a ``while`` may
     execute zero times and a ``for`` may have an empty range.  This keeps a
-    return nested only inside a loop from masking a missing fall-through path.
+    terminating statement nested only inside a loop from masking a missing
+    fall-through path.
     """
     for node in nodes:
         if isinstance(node, list):
-            if _statement_sequence_guarantees_return(node):
+            if _statement_sequence_guarantees_return(node, symbol):
                 return True
             continue
-        if _statement_guarantees_return(node):
+        if _statement_guarantees_return(node, symbol):
             return True
     return False
 
 
-def _if_guarantees_return(node: gast.ASTRef) -> bool:
+def _if_guarantees_return(
+    node: gast.ASTRef,
+    symbol: FunctionSymbol | None = None,
+) -> bool:
     branches: list[object] = []
     else_body = None
     awaiting_if_body = False
@@ -1015,20 +1299,29 @@ def _if_guarantees_return(node: gast.ASTRef) -> bool:
     if else_body is None or not branches:
         return False
     return all(
-        _statement_body_guarantees_return(branch)
+        _statement_body_guarantees_return(branch, symbol)
         for branch in (*branches, else_body)
     )
 
 
-def _statement_guarantees_return(node: object) -> bool:
+def _statement_guarantees_return(
+    node: object,
+    symbol: FunctionSymbol | None = None,
+) -> bool:
     if not isinstance(node, gast.ASTRef):
         return False
     if node.name in {'RETURN', 'RETURN_ASM'}:
         return True
+    if (
+        node.name == 'CALL'
+        and symbol is not None
+        and id(node) in symbol.never_call_nodes
+    ):
+        return True
     if node.name in {'FUNCTION_BODY', 'STATEMENT_BODY'}:
-        return _statement_body_guarantees_return(node)
+        return _statement_body_guarantees_return(node, symbol)
     if node.name == 'IF':
-        return _if_guarantees_return(node)
+        return _if_guarantees_return(node, symbol)
     return False
 
 
@@ -1111,6 +1404,10 @@ def _process_body_node(
     if node.name == 'VAR_ASSIGNATION':
         _validate_assignment(compiler, symbol, node, scope)
         return
+    if node.name == 'DEL':
+        _validate_deletion(compiler, symbol, node, scope)
+        symbol.body_supported_for_entrypoint = False
+        return
     if node.name == 'RETURN':
         _validate_return(compiler, symbol, node, scope)
         returns[0] += 1
@@ -1125,12 +1422,18 @@ def _process_body_node(
 
     if node.name == 'CALL':
         try:
-            infer_call(
+            call_info = infer_call(
                 node,
                 scope.resolve,
                 compiler.storage.functions,
                 current_function=symbol,
             )
+            if (
+                call_info.type_spec.name == 'Never'
+                and call_info.type_spec.pointer_level == 0
+                and call_info.type_spec.array_depth == 0
+            ):
+                symbol.never_call_nodes.add(id(node))
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(f'{symbol.name}: {error}')
 
@@ -1180,7 +1483,13 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
             _process_body_node(compiler, symbol, child, returns, symbol.scope)
 
     return_type = symbol.signature.return_type
-    if not _statement_body_guarantees_return(body):
+    body_terminates = _statement_body_guarantees_return(body, symbol)
+    symbol.body_terminates = body_terminates or (
+        return_type.name == 'Never'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    )
+    if not body_terminates and not symbol.body_terminates:
         if return_type.name == 'void' and return_type.pointer_level == 0:
             compiler.error(
                 f'La funcion void {symbol.name} debe terminar con return'
@@ -1192,4 +1501,9 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
             compiler.error(f'La funcion {symbol.name} no tiene return')
 
 
-__all__ = ['collect', 'process', 'signature_from_node']
+__all__ = [
+    'collect',
+    'process',
+    'signature_from_node',
+    'validate_magic_method_signature',
+]

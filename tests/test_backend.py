@@ -58,6 +58,15 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('define i1 @"less_than"', module)
         self.assertIn('fcmp', module)
 
+    def test_emits_inline_hint_for_inline_function(self):
+        module = self.compile_source(
+            'inline func helper(value: int32) int32:\n'
+            '    return value\n'
+        )
+
+        self.assertIn('define i32 @"helper"', module)
+        self.assertIn('inlinehint', module)
+
     def test_emits_char_byte_arrays_and_static_chain(self):
         module = self.compile_source(
             'nombre: char[10] = "Hola"\n'

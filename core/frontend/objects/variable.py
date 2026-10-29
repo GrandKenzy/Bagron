@@ -21,3 +21,5 @@ class Variable:
         self.privacy = 'public'
         self.scope_kind = 'global'
         self.is_for_iterator = False
+        self.is_receiver = False
+        self.uses_frontend_initializer = False

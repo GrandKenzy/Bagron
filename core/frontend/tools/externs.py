@@ -135,6 +135,12 @@ def _validate_abi_type(
         raise TypeResolutionError(
             f'{context} no puede usar arrays en una firma extern'
         )
+    if type_spec.name == 'Never':
+        if is_return and not type_spec.pointer_level:
+            return
+        raise TypeResolutionError(
+            f'{context} solo puede usar Never como retorno escalar'
+        )
     if type_spec.name in _UNSUPPORTED_ABI_TYPES:
         raise TypeResolutionError(
             f'{context} usa un tipo no disponible en la ABI: '

@@ -113,7 +113,10 @@ class LLVMTypeRegistry:
             if aggregate.name in visited:
                 return
             visiting.append(aggregate.name)
-            for field in aggregate.fields:
+            parent = known.get(aggregate.parent_type or '')
+            if parent is not None:
+                visit(parent)
+            for field in aggregate.all_fields:
                 if field.type_spec.pointer_level:
                     continue
                 dependency = known.get(field.type_spec.name)
@@ -188,13 +191,45 @@ class LLVMTypeRegistry:
         storage_path: tuple[int, ...] | None = None
         backing_type: ir.Type | None = None
         if symbol.kind == 'struct':
-            fields = [self.resolve(field.type_spec) for field in symbol.fields]
-            payload = ir.LiteralStructType(fields, packed=symbol.is_packed)
-            alignment = self._effective_alignment(symbol, payload)
+            layout_fields = symbol.all_fields
+            parent_layout = self._layouts.get(symbol.parent_type or '')
+            packed = bool(
+                symbol.is_packed
+                or (
+                    parent_layout is not None
+                    and parent_layout.symbol.is_packed
+                )
+            )
+            fields = [self.resolve(field.type_spec) for field in layout_fields]
+            payload = ir.LiteralStructType(fields, packed=packed)
+            payload_alignment = self._abi_alignment(payload)
+            parent_alignment = parent_layout.alignment if parent_layout else 1
+            requested_alignment = self._requested_alignment(symbol)
+            natural_alignment = max(payload_alignment, parent_alignment)
+            if packed:
+                alignment = requested_alignment or 1
+            else:
+                if (
+                    requested_alignment is not None
+                    and requested_alignment < natural_alignment
+                ):
+                    raise LLVMTypeError(
+                        f'El @align de {symbol.name} no puede reducir su alineacion '
+                        f'natural de {natural_alignment}'
+                    )
+                alignment = max(natural_alignment, requested_alignment or 1)
             payload_index = self._set_outer_body(llvm_type, payload, alignment)
+            if (
+                parent_layout is not None
+                and payload_index != parent_layout.payload_index
+            ):
+                raise LLVMTypeError(
+                    f'La clase {symbol.name} no conserva el prefijo de su padre '
+                    f'{symbol.parent_type}'
+                )
             field_paths = {
                 field.name: (payload_index, index)
-                for index, field in enumerate(symbol.fields)
+                for index, field in enumerate(layout_fields)
             }
         elif symbol.kind == 'mold':
             member_types = [self.resolve(field.type_spec) for field in symbol.fields]
@@ -248,7 +283,10 @@ class LLVMTypeRegistry:
         symbol = self._symbols.get(type_name)
         if symbol is None:
             return None
-        return next((field for field in symbol.fields if field.name == field_name), None)
+        return next(
+            (field for field in symbol.all_fields if field.name == field_name),
+            None,
+        )
 
     def field_path(self, type_name: str, field_name: str) -> tuple[int, ...] | None:
         layout = self._layouts.get(type_name)
@@ -275,7 +313,12 @@ class LLVMTypeRegistry:
 
     def is_volatile(self, type_name: str) -> bool:
         layout = self._layouts.get(type_name)
-        return bool(layout and layout.symbol.is_volatile)
+        if layout is None:
+            return False
+        if layout.symbol.is_volatile:
+            return True
+        parent = layout.symbol.parent_type
+        return bool(parent and self.is_volatile(parent))
 
     def abi_alignment(self, value_type: ir.Type) -> int:
         return self._abi_alignment(value_type)
@@ -330,7 +373,10 @@ class LLVMTypeRegistry:
         else:
             payload = ir.Constant(
                 layout.payload_type,
-                [self.default_constant(field.type_spec) for field in layout.symbol.fields],
+                [
+                    self.default_constant(field.type_spec)
+                    for field in layout.symbol.all_fields
+                ],
             )
         outer_values: list[ir.Constant] = []
         if layout.payload_index:
@@ -351,6 +397,12 @@ class LLVMTypeRegistry:
         spec: TypeSpec,
         array_lengths: Sequence[int] = (),
     ) -> ir.Type:
+        if spec.name == 'Never':
+            if spec.pointer_level or spec.array_depth:
+                raise LLVMTypeError(
+                    'Never solo puede usarse como retorno escalar'
+                )
+            return ir.VoidType()
         if _is_unsized_array(spec):
             return _array_parameter_type(spec, self)
         if spec.name == 'void':
@@ -431,6 +483,12 @@ def llvm_type(
 ) -> ir.Type:
     if type_registry is not None:
         return type_registry.resolve(spec, array_lengths)
+    if spec.name == 'Never':
+        if spec.pointer_level or spec.array_depth:
+            raise LLVMTypeError(
+                'Never solo puede usarse como retorno escalar'
+            )
+        return ir.VoidType()
     if _is_unsized_array(spec):
         return _array_parameter_type(spec)
     if spec.name == 'void':
@@ -528,6 +586,8 @@ def value_type(
     value: ValueInfo | None = None,
     type_registry: LLVMTypeRegistry | None = None,
 ) -> ir.Type:
+    if spec.name == 'Never':
+        raise LLVMTypeError('Never no puede usarse como almacenamiento')
     if _is_unsized_array(spec):
         return _array_parameter_type(spec, type_registry)
     if spec.name == 'void' and spec.pointer_level == 0:
@@ -576,6 +636,35 @@ def constant_value(
         byte_type = ir.IntType(8)
         values = [ir.Constant(byte_type, item) for item in (*data, 0)]
         return ir.Constant(target_type, values)
+
+    if (
+        type_registry is not None
+        and spec.pointer_level == 0
+        and spec.array_depth == 0
+        and type_registry.layout(spec.name) is not None
+    ):
+        layout = type_registry.layout(spec.name)
+        if layout is None or layout.symbol.kind != 'struct':
+            raise LLVMTypeError(
+                f'El agregado {spec.canonical_name} no admite este inicializador'
+            )
+        if not value.items:
+            return type_registry.default_constant(spec)
+        if len(value.items) != len(layout.symbol.all_fields):
+            raise LLVMTypeError(
+                f'El agregado {spec.canonical_name} no tiene todos sus campos'
+            )
+        fields = [
+            constant_value(field.type_spec, field_value, type_registry)
+            for field, field_value in zip(layout.symbol.all_fields, value.items)
+        ]
+        payload = ir.Constant(layout.payload_type, fields)
+        outer_values: list[ir.Constant] = []
+        target_elements = getattr(target_type, 'elements', ())
+        if layout.payload_index:
+            outer_values.append(ir.Constant(target_elements[0], None))
+        outer_values.append(payload)
+        return ir.Constant(target_type, outer_values)
 
     if spec.array_depth:
         if (

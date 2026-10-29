@@ -110,6 +110,38 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return value\n'
             )
 
+    def test_rejects_unknown_function_decorators(self):
+        for decorator in ('mystery', 'not_a_function_decorator'):
+            with self.subTest(decorator=decorator):
+                with self.assertRaisesRegex(
+                    CompilationError,
+                    rf'decorador @{decorator}.*funcion bad',
+                ):
+                    self.compile_source(
+                        f'@{decorator}\n'
+                        'func bad() int32:\n'
+                        '    return 0\n'
+                    )
+
+    def test_rejects_duplicate_function_decorators(self):
+        with self.assertRaisesRegex(
+            CompilationError,
+            r'decorador @unsafe esta repetido en bad',
+        ):
+            self.compile_source(
+                '@unsafe\n'
+                '@unsafe\n'
+                'func bad() int32:\n'
+                '    return 0\n'
+            )
+
+    def test_inline_is_recorded_in_function_symbol(self):
+        compiler = self.compile_source(
+            'inline func helper(value: int32) int32:\n'
+            '    return value\n'
+        )
+        self.assertTrue(compiler.storage.functions['helper'].is_inline)
+
     def test_len_t_is_injected_for_a_concrete_array(self):
         source = (
             "clause Arch 'x86'\n"

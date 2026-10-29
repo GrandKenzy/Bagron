@@ -37,6 +37,11 @@ class FieldSpec:
     name: str
     type_spec: TypeSpec
     value_info: ValueInfo | None = None
+    # Class fields are inferred from ``self.field = value`` inside the single
+    # initializer (``func __init__`` or ``func __frontend__``).  The AST is
+    # retained so the backend can inline the initializer when emitting a
+    # class value.
+    initializer_node: object | None = None
     # ``flags`` fields are logical bitfields rather than LLVM struct fields.
     # Their offset is fixed by declaration order once the aggregate has been
     # validated.  It remains ``None`` for struct/mold fields.
@@ -50,6 +55,8 @@ class AggregateSymbol:
     name: str
     kind: str
     fields: tuple[FieldSpec, ...] = ()
+    inherited_fields: tuple[FieldSpec, ...] = ()
+    is_class: bool = False
     privacy: str = 'public'
     # ``flags`` owns a fixed, explicit integer container.  The remaining
     # metadata describes layout properties shared by all aggregate kinds.
@@ -58,6 +65,23 @@ class AggregateSymbol:
     is_volatile: bool = False
     alignment: int | None = None
     bit_order: str = 'lsb'
+    # ``None`` means this aggregate has no initializer.  Classes use a tuple
+    # of ParameterSpec-like objects here; structs and other aggregates leave
+    # it unset.  The loose object type avoids a frontend-object import cycle.
+    constructor_parameters: tuple[object, ...] | None = None
+    # Classes may use exactly one initializer hook: ``__init__`` for explicit
+    # construction or ``__frontend__`` for implicit source conversion.
+    initializer_name: str | None = None
+    # Class inheritance is compile-time metadata only.  The backend flattens
+    # ``inherited_fields`` into the child layout; no parent pointer is stored.
+    parent_type: str | None = None
+    parent_initializer_name: str | None = None
+    parent_initializer_arguments: tuple[object, ...] = ()
+
+    @property
+    def all_fields(self) -> tuple[FieldSpec, ...]:
+        """Return inherited fields followed by fields declared by this type."""
+        return (*self.inherited_fields, *self.fields)
 
 
 @dataclass(frozen=True)

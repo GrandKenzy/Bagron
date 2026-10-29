@@ -44,6 +44,22 @@ LOGICAL_OPERATORS = {
 }
 LOGICAL_NOT_OPERATORS = {'NOT_LOGIC', 'LOGIC_NOT', 'EXCLAMATION'}
 BITWISE_OPERATORS = {'AND', 'OR', 'XOR', 'SHL', 'SHR'}
+MAGIC_BINARY_OPERATORS = {
+    'PLUS': ('__add__',),
+    'MINUS': ('__sub__',),
+    'STAR': ('__mul__',),
+    'SLASH': ('__div__', '__truediv__'),
+    'PERCENT': ('__mod__',),
+    'AND': ('__and__',),
+    'OR': ('__or__',),
+    'XOR': ('__xor__',),
+    'SHL': ('__shl__',),
+    'SHR': ('__shr__',),
+}
+MAGIC_UNARY_OPERATORS = {
+    'PLUS': ('__pos__',),
+    'MINUS': ('__neg__',),
+}
 
 
 class TypeResolutionError(ValueError):
@@ -341,6 +357,244 @@ def _resolve_aggregate(
     return aggregate if isinstance(aggregate, AggregateSymbol) else None
 
 
+def _resolve_method_call(
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    primary: object,
+    suffixes: list[object],
+    current_function: object | None = None,
+) -> object | None:
+    """Resolve a class method without exposing its hidden receiver in source."""
+    owner = _namespace_owner(namespace)
+    resolver = getattr(owner, 'resolve_method', None)
+    if not callable(resolver):
+        return None
+
+    member_suffix = next(
+        (
+            suffix for suffix in reversed(suffixes)
+            if getattr(suffix, 'name', None) == 'MEMBER_ACCESS'
+        ),
+        None,
+    )
+    if member_suffix is not None:
+        base_name = _identifier_from_node(primary)
+        member_name = _identifier_from_node(member_suffix)
+        if not base_name or not member_name:
+            return None
+        base = _resolve_symbol(namespace, base_name)
+        type_name = getattr(getattr(base, 'type_spec', None), 'name', None)
+        class_reference = False
+        if type_name is None and _resolve_aggregate(namespace, base_name) is not None:
+            type_name = base_name
+            class_reference = True
+        if type_name is None:
+            return None
+        method = resolver(type_name, member_name)
+        if (
+            method is not None
+            and class_reference
+            and not getattr(method, 'is_static', False)
+        ):
+            raise ValueResolutionError(
+                f'El metodo {type_name}.{member_name} requiere una instancia'
+            )
+        if (
+            method is not None
+            and not class_reference
+            and getattr(method, 'is_static', False)
+        ):
+            raise ValueResolutionError(
+                f'El metodo estatico {type_name}.{member_name} debe llamarse '
+                f'como {type_name}.{member_name}'
+            )
+        return method
+
+    owner_type = getattr(current_function, 'owner_type', None)
+    method_name = _identifier_from_node(primary)
+    if owner_type and method_name:
+        method = resolver(owner_type, method_name)
+        if (
+            method is not None
+            and getattr(current_function, 'is_static', False)
+            and not getattr(method, 'is_static', False)
+        ):
+            raise ValueResolutionError(
+                f'El metodo {owner_type}.{method_name} requiere una instancia'
+            )
+        if method is not None and getattr(method, 'is_static', False):
+            raise ValueResolutionError(
+                f'El metodo estatico {owner_type}.{method_name} debe llamarse '
+                f'como {owner_type}.{method_name}'
+            )
+        return method
+    return None
+
+
+def _class_instance_type(
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    value: ValueInfo,
+) -> AggregateSymbol | None:
+    if (
+        value.type_spec.pointer_level
+        or value.type_spec.array_depth
+    ):
+        return None
+    aggregate = _resolve_aggregate(namespace, value.type_spec.name)
+    return (
+        aggregate
+        if aggregate is not None and aggregate.is_class
+        else None
+    )
+
+
+def _infer_magic_operator(
+    operator_names: tuple[str, ...],
+    left: ValueInfo,
+    right: ValueInfo | None,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo | None:
+    aggregate = _class_instance_type(namespace, left)
+    if aggregate is None:
+        return None
+    if getattr(current_function, 'is_method', False):
+        return None
+
+    owner = _namespace_owner(namespace)
+    resolver = getattr(owner, 'resolve_method', None)
+    if not callable(resolver):
+        return None
+    method = next(
+        (
+            resolver(aggregate.name, name)
+            for name in operator_names
+            if resolver(aggregate.name, name) is not None
+        ),
+        None,
+    )
+    if method is None:
+        return None
+    if getattr(method, 'is_static', False):
+        raise ValueResolutionError(
+            f'El metodo {aggregate.name}.{method.source_name} requiere '
+            'una instancia implicita'
+        )
+    if getattr(method, 'is_unsafe', False) and not _unsafe_context(
+        current_function
+    ):
+        raise ValueResolutionError(
+            f'La funcion segura no puede llamar a {aggregate.name}.'
+            f'{method.source_name} porque es @unsafe'
+        )
+
+    parameters = getattr(method.signature, 'parameters', ())
+    visible_parameters = _visible_parameters(parameters)
+    explicit_parameters = [
+        parameter for parameter in parameters
+        if not getattr(parameter, 'is_receiver', False)
+    ]
+    expected_count = 1 if right is not None else 0
+    if (
+        len(visible_parameters) != expected_count
+        or len(explicit_parameters) != expected_count
+        or any(
+            parameter.is_length or parameter.is_size
+            for parameter in explicit_parameters
+        )
+    ):
+        raise ValueResolutionError(
+            f'El metodo magico {aggregate.name}.{method.source_name} tiene una '
+            f'firma invalida para este operador (se esperaban {expected_count} '
+            'parametros)'
+        )
+    if right is not None:
+        parameter = visible_parameters[0]
+        _validate_array_argument_storage(
+            f'{aggregate.name}.{method.source_name}',
+            parameter,
+            right,
+        )
+        if not is_compatible(parameter.type_spec, right):
+            raise ValueResolutionError(
+                f'El operando derecho de {aggregate.name}.{method.source_name} '
+                f'no coincide con {parameter.type_spec.canonical_name}'
+            )
+
+    return_type = getattr(method.signature, 'return_type', TypeSpec('void'))
+    if (
+        return_type.name == 'void'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    ):
+        raise ValueResolutionError(
+            f'El metodo magico {aggregate.name}.{method.source_name} debe '
+            'retornar un valor'
+        )
+    return ValueInfo(
+        return_type,
+        address_origin='unknown' if return_type.pointer_level else None,
+    )
+
+
+def _constructor_parameters(
+    aggregate: AggregateSymbol | None,
+) -> tuple[object, ...] | None:
+    if aggregate is None:
+        return None
+    parameters = getattr(aggregate, 'constructor_parameters', None)
+    return parameters if parameters is not None else None
+
+
+def _infer_constructor_call(
+    name: str,
+    aggregate: AggregateSymbol,
+    argument_items: list[object],
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo:
+    parameters = _constructor_parameters(aggregate)
+    if parameters is None:
+        initializer_name = getattr(aggregate, 'initializer_name', None) or '__init__'
+        raise ValueResolutionError(
+            f'La clase {name} no tiene un {initializer_name} utilizable'
+        )
+
+    visible_parameters = _visible_parameters(parameters)
+    if len(argument_items) != len(visible_parameters):
+        raise ValueResolutionError(
+            f'El constructor {name} esperaba {len(visible_parameters)} '
+            f'argumentos y recibio {len(argument_items)}'
+        )
+
+    argument_infos: dict[str, ValueInfo] = {}
+    for parameter, argument in zip(visible_parameters, argument_items):
+        argument_info = infer_value(
+            argument,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        argument_infos[parameter.name] = argument_info
+        _validate_array_argument_storage(name, parameter, argument_info)
+        if not is_compatible(parameter.type_spec, argument_info):
+            raise ValueResolutionError(
+                f'El argumento de {name} no coincide con '
+                f'{parameter.type_spec.canonical_name}'
+            )
+
+    _validate_expansion_parameters(
+        name,
+        parameters,
+        argument_infos,
+        current_function=current_function,
+    )
+    return ValueInfo(TypeSpec(aggregate.name))
+
+
 def _deref_type(type_spec: TypeSpec) -> TypeSpec:
     if type_spec.pointer_level < 1:
         raise ValueResolutionError(
@@ -425,6 +679,7 @@ def _visible_parameters(parameters: object) -> list[object]:
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_receiver', False)
         )
     ]
 
@@ -630,7 +885,24 @@ def _infer_postfix(
                 member = _identifier_from_node(suffix)
                 if member is not None:
                     name = f'{name}.{member}' if name else member
-        function = _resolve_function(functions, name or '')
+        aggregate = _resolve_aggregate(namespace, name or '')
+        if aggregate is not None:
+            return _infer_constructor_call(
+                name or aggregate.name,
+                aggregate,
+                _call_arguments(call_suffix),
+                namespace,
+                functions,
+                current_function=current_function,
+            )
+        function = _resolve_method_call(
+            namespace,
+            primary,
+            suffixes,
+            current_function=current_function,
+        )
+        if function is None:
+            function = _resolve_function(functions, name or '')
         if function is None:
             raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
         if getattr(function, 'is_unsafe', False) and not _unsafe_context(
@@ -690,6 +962,14 @@ def _infer_postfix(
         ):
             raise ValueResolutionError(
                 'una funcion void solo puede llamarse como sentencia'
+            )
+        if (
+            return_type.name == 'Never'
+            and return_type.pointer_level == 0
+            and return_type.array_depth == 0
+        ):
+            raise ValueResolutionError(
+                'una funcion Never solo puede llamarse como sentencia'
             )
         result = ValueInfo(
             return_type,
@@ -875,7 +1155,25 @@ def infer_call(
             if member is not None:
                 name = f'{name}.{member}' if name else member
 
-    function = _resolve_function(functions, name or '')
+    aggregate = _resolve_aggregate(namespace, name or '')
+    if aggregate is not None:
+        return _infer_constructor_call(
+            name or aggregate.name,
+            aggregate,
+            _call_arguments(call_suffix),
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+
+    function = _resolve_method_call(
+        namespace,
+        primary,
+        suffixes,
+        current_function=current_function,
+    )
+    if function is None:
+        function = _resolve_function(functions, name or '')
     if function is None:
         raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
     if getattr(function, 'is_unsafe', False) and not _unsafe_context(
@@ -974,7 +1272,13 @@ def _member_value(
         raise ValueResolutionError(
             f'El tipo {value.type_spec.canonical_name} no tiene miembros'
         )
-    field = next((field for field in aggregate.fields if field.name == member), None)
+    owner = _namespace_owner(namespace)
+    resolver = getattr(owner, 'resolve_field', None)
+    field = (
+        resolver(value.type_spec.name, member)
+        if callable(resolver)
+        else next((field for field in aggregate.fields if field.name == member), None)
+    )
     if field is None:
         raise ValueResolutionError(
             f'El miembro {member or "<anonimo>"} no existe en {aggregate.name}'
@@ -1136,6 +1440,17 @@ def infer_value(
                 )
             return ValueInfo(TypeSpec('bool'))
 
+        magic_result = _infer_magic_operator(
+            MAGIC_UNARY_OPERATORS.get(operator, ()),
+            operand,
+            None,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if magic_result is not None:
+            return magic_result
+
         if not (
             (
                 operand.type_spec.pointer_level == 0
@@ -1195,6 +1510,17 @@ def infer_value(
             current_function=current_function,
         )
         operator = getattr(getattr(current.operator, 'token', None), 'name', None)
+
+        magic_result = _infer_magic_operator(
+            MAGIC_BINARY_OPERATORS.get(operator, ()),
+            left,
+            right,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if magic_result is not None:
+            return magic_result
 
         if operator in COMPARISON_OPERATORS:
             left_is_integer = (
@@ -1585,6 +1911,9 @@ def target_iteration_limit(pointer_size: int) -> int:
 
 def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
     source_type = source.type_spec
+
+    if target.name == 'Never' or source_type.name == 'Never':
+        return False
 
     if source_type.name == 'Null':
         return target.pointer_level > 0 and target.array_depth == 0

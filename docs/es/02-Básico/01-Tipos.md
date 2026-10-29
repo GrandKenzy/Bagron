@@ -20,6 +20,23 @@ tipos cuyo ancho está fijado explícitamente.
 | Carácteres | `char` | 8 bits | `0` a `127` en ASCII; representa un carácter. |
 | Lógico | `bool` | 1 bit lógico | `false` o `true`; almacenamiento y alineación mínimos de 1 byte. |
 | Ausencia de valor | `void` | 0 bits | Sin rango; indica que no existe un valor. |
+| Terminación | `Never` | No almacenable | Tipo de retorno para funciones que no regresan; una llamada `Never` termina el flujo. |
+
+`Never` solo puede aparecer como retorno escalar de una función. No es un valor,
+no puede declararse como variable, parámetro o campo, y una llamada a una
+función `Never` solo puede usarse como sentencia:
+
+```bg
+func stop() Never:
+    while true:
+        pass
+
+func main() int32:
+    stop()
+```
+
+El compilador representa estas funciones como terminaciones sin retorno en
+LLVM y marca como inalcanzable el código posterior a una llamada `Never`.
 
 ## Diferencia entre `char` y `byte`
 

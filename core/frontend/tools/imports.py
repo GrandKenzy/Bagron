@@ -148,7 +148,10 @@ def _is_public(node: object) -> bool:
 
 
 def public_definition_names(nodes: list[gast.ASTRef]) -> set[str]:
-    definitions = {'FUNCTION', 'VAR', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'TYPEALIAS'}
+    definitions = {
+        'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM',
+        'TYPEALIAS',
+    }
     names = {
         name
         for node in nodes

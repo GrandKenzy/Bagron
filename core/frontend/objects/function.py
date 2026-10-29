@@ -19,6 +19,10 @@ class ParameterSpec:
     is_length: bool = False
     is_size: bool = False
     length_of: str | None = None
+    # Instance methods receive the class object through an implicit first
+    # parameter.  It is part of the generated ABI but hidden from source
+    # calls.
+    is_receiver: bool = False
 
 
 # Kept as a type alias while the semantic model migrates to TypeSpec.
@@ -40,7 +44,13 @@ class FunctionSymbol:
     return_node: object | None = None
     body_node: object | None = None
     body_supported_for_entrypoint: bool = True
+    # A body may terminate without a source-level return when its last
+    # reachable operation is a call to a ``Never`` function.  ``Never``
+    # functions themselves are also marked as terminating by contract.
+    body_terminates: bool = False
+    never_call_nodes: set[int] = field(default_factory=set)
     decorators: tuple[str, ...] = ()
+    is_inline: bool = False
     return_asm_node: object | None = None
     external_library: str | None = None
     calling_convention: str | None = None
@@ -52,6 +62,13 @@ class FunctionSymbol:
     # this manifest lets LLVM reserve static storage for every local at
     # function entry, including locals declared in nested control blocks.
     local_variables: dict[str, object] = field(default_factory=dict)
+    # Methods are emitted under a reserved name while retaining their source
+    # name for ``object.method(...)`` resolution.
+    owner_type: str | None = None
+    source_name: str | None = None
+    is_method: bool = False
+    is_static: bool = False
+    receiver_name: str | None = None
 
     @property
     def is_external(self) -> bool:

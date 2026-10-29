@@ -9,7 +9,7 @@ from core.backend.llvm.types import (
     scalar_type,
     value_type,
 )
-from core.frontend.objects import FunctionSymbol
+from core.frontend.objects import FunctionSymbol, TypeSpec
 from core.frontend.tools.types import (
     FOR_ITERATOR_TYPES,
     UNSIGNED_INTEGER_TYPES,
@@ -89,6 +89,21 @@ class StatementEmitterMixin:
         pointer = values[name]
         semantic_value = self._active_values.get(name)
         result = None
+        variable = None
+        if self._active_function_symbol is not None:
+            variable = self._active_function_symbol.local_variables.get(name)
+        if (
+            getattr(variable, 'uses_frontend_initializer', False)
+            and self.type_registry is not None
+        ):
+            target_name = self._identified_name(pointer.type.pointee)
+            if target_name is not None:
+                result = self._compile_frontend_constructor(
+                    target_name,
+                    value_node,
+                    builder,
+                    values,
+                )
         if (
             semantic_value is not None
             and isinstance(pointer.type.pointee, ir.ArrayType)
@@ -140,7 +155,12 @@ class StatementEmitterMixin:
                 f'La asignacion de {name or "<anonima>"} no tiene almacenamiento LLVM'
             )
 
-        place = self._compile_place(target, builder, values)
+        place = self._compile_place(
+            target,
+            builder,
+            values,
+            hook_mode='write',
+        )
 
         value_node = self._assignment_value(node)
         operator = self._assignment_operator(node)
@@ -169,7 +189,7 @@ class StatementEmitterMixin:
             left = self._load_place(place, builder)
             unsigned = bool(getattr(place, 'unsigned', False))
             if symbol.scope is not None and name is not None:
-                type_spec = self._active_specs.get(name)
+                type_spec = self._active_type_spec(name)
                 unsigned = unsigned or (
                     getattr(type_spec, 'name', None) in UNSIGNED_INTEGER_TYPES
                 )
@@ -192,6 +212,55 @@ class StatementEmitterMixin:
                 )
             result = operation(left, right)
         self._store_place(result, place, builder)
+        if hasattr(place, 'after_hooks') and place.after_hooks:
+            self._emit_after_access_hooks(
+                place.after_hooks,
+                builder,
+                hook_mode='write',
+            )
+
+    def _emit_deletion(
+        self,
+        node: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> None:
+        value_node = next(
+            (
+                child for child in self._children(node)
+                if getattr(child, 'name', None) == 'VALUE'
+            ),
+            None,
+        )
+        if value_node is None:
+            raise FunctionEmissionError('Del no contiene una instancia')
+
+        type_name = self._class_expression_type_name(value_node)
+        if type_name is None:
+            raise FunctionEmissionError(
+                'Del requiere una instancia escalar de class'
+            )
+        method = self._resolve_method_symbol(type_name, '__deletion__')
+        if method is None:
+            # Del is intentionally a no-op when the class has no deletion hook,
+            # but the expression is still evaluated for ordinary side effects.
+            self._compile_expression(value_node, builder, values)
+            return
+
+        receiver_address = self._compile_class_receiver_address(
+            value_node,
+            type_name,
+            builder,
+            values,
+        )
+        self._emit_operator_method_call(
+            type_name,
+            '__deletion__',
+            receiver_address,
+            (),
+            builder,
+            values,
+        )
 
     def _prepare_values(
         self,
@@ -314,6 +383,16 @@ class StatementEmitterMixin:
             None,
         )
         return_type = builder.function.function_type.return_type
+        active_symbol = self._active_function_symbol
+        if (
+            active_symbol is not None
+            and active_symbol.signature.return_type.name == 'Never'
+            and active_symbol.signature.return_type.pointer_level == 0
+            and active_symbol.signature.return_type.array_depth == 0
+        ):
+            raise FunctionEmissionError(
+                f'La funcion Never {active_symbol.name} no puede usar return'
+            )
         if isinstance(return_type, ir.VoidType):
             if return_node is not None:
                 raise FunctionEmissionError(
@@ -659,6 +738,8 @@ class StatementEmitterMixin:
                 self._emit_local_declaration(child, builder, values)
             elif name == 'VAR_ASSIGNATION':
                 self._emit_assignment(child, builder, values, symbol)
+            elif name == 'DEL':
+                self._emit_deletion(child, builder, values)
             elif name == 'RETURN':
                 self._emit_return(child, builder, values)
             elif name == 'CALL':
@@ -697,6 +778,8 @@ class StatementEmitterMixin:
             if getattr(variable, 'type_spec', None) is not None
         }
         self._active_specs.update(getattr(symbol, 'loop_iterators', {}))
+        if symbol.is_method and not symbol.is_static and symbol.owner_type:
+            self._active_specs['self'] = TypeSpec(symbol.owner_type)
         self._active_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in variables.items()
@@ -705,6 +788,12 @@ class StatementEmitterMixin:
         self._loop_targets.clear()
         values = self._prepare_values(symbol, builder, list(function.args))
         self._emit_body(symbol.body_node, builder, values, function, symbol)
+        if builder.block.terminator is None and (
+            symbol.signature.return_type.name == 'Never'
+            and symbol.signature.return_type.pointer_level == 0
+            and symbol.signature.return_type.array_depth == 0
+        ):
+            builder.unreachable()
         if builder.block.terminator is None:
             raise FunctionEmissionError(
                 f'La funcion {symbol.name} no termina con return'
@@ -724,7 +813,11 @@ class StatementEmitterMixin:
             raise FunctionEmissionError(
                 'El entrypoint main debe retornar int32'
             )
-        if symbol.return_asm_node is None and len(symbol.return_values) != 1:
+        if (
+            symbol.return_asm_node is None
+            and len(symbol.return_values) != 1
+            and not symbol.body_terminates
+        ):
             raise FunctionEmissionError(
                 'El entrypoint main requiere un unico return int32'
             )
@@ -740,6 +833,7 @@ class StatementEmitterMixin:
             source_type,
             name='__bagron_main',
         )
+        self._apply_function_attributes(source_function, symbol)
         if symbol.return_asm_node is not None:
             native_type = ir.FunctionType(int_type, [])
             native_function = ir.Function(self.module, native_type, name='main')

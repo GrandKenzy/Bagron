@@ -33,10 +33,19 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     # struct field table during semantic inference, even when the declaration
     # appears before the type's source body is visited in the normal pass.
     for node in nodes:
-        if node.name in ('STRUCT', 'MOLD', 'FLAGS'):
+        if node.name == 'CLASS':
+            tools.classes.validate(compiler, node)
+        elif node.name in ('STRUCT', 'MOLD', 'FLAGS'):
             tools.structure.validate(compiler, node)
         elif node.name == 'ENUM':
             tools.enumeration.validate(compiler, node)
+
+    tools.classes.validate_inheritance(compiler, nodes)
+
+    # Class fields are needed before method scopes can expose them.  Register
+    # every method before processing any function body so calls can be resolved
+    # regardless of source order.
+    tools.classes.collect_methods(compiler, nodes)
 
     tools.structure.validate_value_cycles(compiler)
 
@@ -72,7 +81,9 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             tools.function.process(compiler, node)
 
         elif name == 'CLASS':
-            tools.classes.validate(compiler, node)
+            # Classes were lowered to their struct representation before
+            # global initializers are checked.  Methods remain deferred.
+            continue
 
         elif name in ('STRUCT', 'MOLD', 'FLAGS', 'ENUM'):
             # Definitions were validated before globals so postfix/member
@@ -98,3 +109,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         else:
             compiler.error(f'Falta por resolver {node}')
             compiler.exit()
+
+    # Methods live inside CLASS nodes rather than in the top-level function
+    # list, but use the same body validator and local-variable collector.
+    tools.classes.process_methods(compiler, nodes)

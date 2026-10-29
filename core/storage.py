@@ -57,6 +57,7 @@ class Storage(diagnostic.Diagnostics):
         
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
+        self.methods: dict[tuple[str, str], FunctionSymbol] = {}
         self.function_scopes: dict[str, Storage] = {}
         self.types: dict[str, EnumSymbol | AggregateSymbol] = {}
         self.native_includes: list[NativeInclude] = []
@@ -113,6 +114,61 @@ class Storage(diagnostic.Diagnostics):
         self.functions[symbol.name] = symbol
         self.function_scopes[symbol.name] = symbol.scope
         return True
+
+    def define_method(self, symbol: FunctionSymbol) -> bool:
+        """Register one class method by owner type and source name."""
+        owner = symbol.owner_type
+        source_name = symbol.source_name
+        if not owner or not source_name:
+            return False
+        key = (owner, source_name)
+        if key in self.methods or symbol.name in self.functions:
+            return False
+        if any(existing.name == symbol.name for existing in self.methods.values()):
+            return False
+        if symbol.scope is None:
+            symbol.scope = Storage(
+                self.root,
+                parent=self,
+                scope_name=f'method:{owner}.{source_name}',
+            )
+        self.methods[key] = symbol
+        self.function_scopes[symbol.name] = symbol.scope
+        return True
+
+    def resolve_method(self, owner: str, name: str) -> FunctionSymbol | None:
+        visited: set[str] = set()
+        current = owner
+        while current and current not in visited:
+            visited.add(current)
+            symbol = self.methods.get((current, name))
+            if symbol is not None:
+                return symbol
+            aggregate = self.resolve_type(current)
+            current = getattr(aggregate, 'parent_type', None)
+        if self.parent is not None:
+            return self.parent.resolve_method(owner, name)
+        return None
+
+    def resolve_field(self, owner: str, name: str):
+        """Resolve an aggregate field through its compile-time parent chain."""
+        visited: set[str] = set()
+        current = owner
+        while current and current not in visited:
+            visited.add(current)
+            aggregate = self.resolve_type(current)
+            if aggregate is None:
+                break
+            field = next(
+                (field for field in aggregate.fields if field.name == name),
+                None,
+            )
+            if field is not None:
+                return field
+            current = getattr(aggregate, 'parent_type', None)
+        if self.parent is not None:
+            return self.parent.resolve_field(owner, name)
+        return None
 
     def define_type(self, symbol: EnumSymbol | AggregateSymbol) -> bool:
         """Register a type in the current type namespace."""

@@ -81,9 +81,9 @@ inline func sumar(a: int32, b: int32) int32:
 ```
 
 Una llamada normal salta a otra dirección y vuelve después de ejecutar la
-función. El tratamiento inline permite que el compilador inserte el cuerpo de
-una función pequeña directamente en el lugar de la llamada, reduciendo ese
-coste en casos apropiados.
+función. `inline` emite una sugerencia `inlinehint` para LLVM: permite que el
+compilador inserte el cuerpo de una función pequeña directamente en el lugar
+de la llamada cuando lo considere apropiado.
 
 `inline` es una petición, no una obligación: el compilador puede ignorarla si
 la expansión aumenta demasiado el código o no es conveniente. No cambia la
@@ -134,6 +134,9 @@ elimine ni se trate como una lectura o escritura ordinaria.
 
 ## Decoradores de funciones
 
+Las funciones solo admiten decoradores de nombre simple, sin argumentos, y no
+se pueden repetir. Un decorador desconocido produce un error de compilación.
+
 | Decorador | Forma | Función |
 |:---|:---|:---|
 | `unsafe` | `@unsafe` | Permite operaciones que cruzan la frontera insegura, como indexación dinámica o acceso a punteros crudos. |
@@ -142,7 +145,9 @@ elimine ni se trate como una lectura o escritura ordinaria.
 Una función segura no puede llamar a una función `@unsafe` o `@assembler`.
 `@unsafe` debe reservarse para la pequeña frontera que realmente necesita
 operaciones sin garantía automática; el resto del programa puede permanecer
-en contexto seguro.
+en contexto seguro. Una función `@assembler` puede tener un único bloque
+`#prep` y debe terminarlo con `return asm`; también puede existir sin bloque
+`#prep`, en cuyo caso solo admite un `return` normal.
 
 ## Decoradores de agregados
 

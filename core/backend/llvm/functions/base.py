@@ -31,10 +31,13 @@ class FunctionEmitterBase:
         self.type_registry = type_registry
         self._functions: dict[str, ir.Function] = {}
         self._symbols: dict[str, FunctionSymbol] = {}
+        self._method_symbols: dict[tuple[str, str], FunctionSymbol] = {}
         self._active_specs: dict[str, TypeSpec] = {}
+        self._global_specs: dict[str, TypeSpec] = {}
         self._active_values: dict[str, object] = {}
         self._global_values: dict[str, object] = {}
         self._active_function_symbol: FunctionSymbol | None = None
+        self._suppress_magic_hooks = False
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
         self._string_literals: dict[str, ir.GlobalVariable] = {}
         self._pointer_size = 8
@@ -72,13 +75,25 @@ class FunctionEmitterBase:
 
     def emit_storage(self, storage: Storage) -> None:
         self._pointer_size = getattr(storage, 'pointer_size', 8)
-        self._symbols = dict(storage.functions)
+        method_symbols = list(getattr(storage, 'methods', {}).values())
+        all_symbols = [*storage.functions.values(), *method_symbols]
+        self._symbols = {symbol.name: symbol for symbol in all_symbols}
+        self._method_symbols = {
+            (symbol.owner_type, symbol.source_name): symbol
+            for symbol in method_symbols
+            if symbol.owner_type and symbol.source_name
+        }
+        self._global_specs = {
+            name: variable.type_spec
+            for name, variable in storage.namespace.items()
+            if getattr(variable, 'type_spec', None) is not None
+        }
         self._global_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in storage.namespace.items()
             if getattr(variable, 'value_info', None) is not None
         }
-        for symbol in storage.functions.values():
+        for symbol in all_symbols:
             if (
                 symbol.name != 'main'
                 and symbol.name not in self._functions
@@ -89,12 +104,13 @@ class FunctionEmitterBase:
                     self._function_type(symbol),
                     name=symbol.name,
                 )
+                self._apply_function_attributes(function, symbol)
                 if symbol.calling_convention:
                     function.calling_convention = symbol.calling_convention
                 self._functions[symbol.name] = function
 
         emitted: set[str] = set()
-        for symbol in storage.functions.values():
+        for symbol in all_symbols:
             if (
                 symbol.name != 'main'
                 and symbol.name in self._functions
@@ -116,6 +132,33 @@ class FunctionEmitterBase:
         main = storage.functions.get('main')
         if main is not None:
             self.emit_main(main)
+
+    def _active_type_spec(self, name: str) -> TypeSpec | None:
+        spec = self._active_specs.get(name)
+        if spec is not None:
+            return spec
+        return self._global_specs.get(name)
+
+    def _resolve_method_symbol(
+        self,
+        owner: str | None,
+        name: str,
+    ) -> FunctionSymbol | None:
+        """Resolve an own or inherited method without introducing runtime state."""
+        visited: set[str] = set()
+        current = owner
+        while current and current not in visited:
+            visited.add(current)
+            method = self._method_symbols.get((current, name))
+            if method is not None:
+                return method
+            aggregate = (
+                self.type_registry.aggregate(current)
+                if self.type_registry is not None
+                else None
+            )
+            current = getattr(aggregate, 'parent_type', None)
+        return None
 
     def _supports_function(self, symbol: FunctionSymbol) -> bool:
         try:
@@ -223,6 +266,16 @@ class FunctionEmitterBase:
         return ir.FunctionType(return_type, parameters)
 
     @staticmethod
+    def _apply_function_attributes(
+        function: ir.Function,
+        symbol: FunctionSymbol,
+    ) -> None:
+        if symbol.is_inline:
+            # ``inlinehint`` is a request to LLVM, not a mandatory inlining
+            # directive. This matches Bagron's ``inline`` contract.
+            function.attributes.add('inlinehint')
+
+    @staticmethod
     def _children(node: object) -> list[object]:
         if isinstance(node, list):
             return list(node)
@@ -271,7 +324,7 @@ class FunctionEmitterBase:
             children = self._children(current)
             primary = children[0] if children else None
             base_name = self._identifier(primary)
-            base_spec = self._active_specs.get(base_name or '')
+            base_spec = self._active_type_spec(base_name or '')
             if base_spec is not None and self.type_registry is not None:
                 suffixes: list[object] = []
                 for child in children[1:]:
@@ -291,7 +344,7 @@ class FunctionEmitterBase:
         name = self._identifier(node)
         if name is None:
             return False
-        spec = self._active_specs.get(name)
+        spec = self._active_type_spec(name)
         return spec is not None and spec.name in UNSIGNED_INTEGER_TYPES
 
     @staticmethod
@@ -325,6 +378,13 @@ class FunctionEmitterBase:
         value_node = self._condition_value(node)
         if value_node is None:
             raise FunctionEmissionError('La condicion no tiene una expresion')
+        class_condition = self._compile_class_condition(
+            value_node,
+            builder,
+            values,
+        )
+        if class_condition is not None:
+            return class_condition
         result = self._compile_expression(value_node, builder, values)
         if isinstance(result.type, ir.IntType):
             if result.type.width == 1:

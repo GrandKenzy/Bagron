@@ -25,6 +25,7 @@ KEYWORDS = {
     'pass': '#220502',
     'break': '#F50000',
     'continue': '#F50000',
+    'Del': '#F50000',
 
     # Condicionales
     'if': '#7D5DF0',
@@ -103,6 +104,7 @@ INTRINSIC_TYPES = {
     'chain': '#3B82F6', # array de carácteres
     'bool': '#3B82F6',
     'void': '#3B82F6',
+    'Never': '#3B82F6',
     'Len_t': '#3B82F6', # hidden compile-time array length parameter
     'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
     'callptr': '#3B82F6',
@@ -145,6 +147,7 @@ KEYWORDS_BY_GROUP = {
     ],
     'keywords': [
         'func',
+        'Del',
         'as',
         'clause',
         'return',

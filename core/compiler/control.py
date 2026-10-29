@@ -40,7 +40,7 @@ class CompilerState(Diagnostics):
         if ext == 'bg':
             frontend.BAGRON_SESSION.load()
             TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
-            return frontend.BAGRON_SESSION.parse(TKNS, path.name)
+            return frontend.BAGRON_SESSION.parse(TKNS, path.name, trace='off')
         else:
             self.error(f'La extensión {ext} no está soportada.')
             self.exit()

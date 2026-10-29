@@ -283,9 +283,14 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         if node.name == 'FLAGS'
         else None
     )
+    # A class starts as a struct-backed type.  Keeping the nominal kind as
+    # ``struct`` lets the existing field validation and LLVM layout code serve
+    # classes without introducing object/lifetime semantics yet.
+    kind = 'struct' if node.name == 'CLASS' else node.name.lower()
     symbol = AggregateSymbol(
         name=name,
-        kind=node.name.lower(),
+        kind=kind,
+        is_class=node.name == 'CLASS',
         privacy=_privacy(signature),
         base_type=base_type,
         is_packed=packed,
@@ -302,12 +307,14 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
 def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
     """Register aggregate names before any field is validated."""
     for node in nodes:
-        if node.name in ('STRUCT', 'MOLD', 'FLAGS'):
+        if node.name in ('CLASS', 'STRUCT', 'MOLD', 'FLAGS'):
             _register_node(compiler, node)
 
 
 def _known_field_type(compiler: Compiler, type_spec: TypeSpec) -> bool:
     if type_spec.name in INTRINSIC_TYPES:
+        if type_spec.name == 'Never':
+            return False
         if type_spec.name == 'void':
             return type_spec.pointer_level > 0 and type_spec.array_depth == 0
         return type_spec.name not in {'void', 'Null'}
@@ -518,7 +525,7 @@ def validate_value_cycles(compiler: Compiler) -> None:
     }
     graph: dict[str, list[str]] = {name: [] for name in aggregates}
     for name, symbol in aggregates.items():
-        for field in symbol.fields:
+        for field in symbol.all_fields:
             if field.type_spec.pointer_level:
                 continue
             target = aggregates.get(field.type_spec.name)

@@ -66,6 +66,14 @@ class ELSE_SIGNATURE(cmb.RuleItem):
         cmb.MatchKeyword('else'),
         cmb.MatchToken('COLON')
     )
+
+
+class DEL(cmb.RuleItem):
+    nodeable = True
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('Del'),
+        cmb.Ref(VALUE),
+    )
     
 # for i: uint32 ran (inicio, limite, paso):
 class FOR_SIGNATURE(cmb.RuleItem):
@@ -103,6 +111,7 @@ class STATEMENT_BODY(cmb.RuleItem):
                 cmb.Ref(IF),
                 cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(CALL),
+                cmb.Ref(DEL),
                 cmb.Ref(VAR),
                 cmb.Ref(RETURN),
                 cmb.MatchGroup('skipers'),
@@ -144,4 +153,5 @@ __all__ = [
     'FOR',
     'IF',
     'WHILE',
+    'DEL',
 ]
