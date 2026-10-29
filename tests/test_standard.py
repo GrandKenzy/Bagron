@@ -44,6 +44,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'Hola / DOLLARAdiosHola\x00', result.stdout)
         self.assertEqual(2, module.count('call i32 @"WriteFile"'))
+        self.assertRegex(module, r'call void @"print"\([^)]*i64 5\)')
         self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 5\)')
 
     def test_printa_rejects_scalar_char(self):

@@ -109,6 +109,56 @@ class FunctionSemanticTests(unittest.TestCase):
         module = Path(ir_path).read_text(encoding='utf-8')
         self.assertRegex(module, r'call void @"consume"\([^)]*i64 5\)')
 
+    def test_len_t_is_injected_for_a_static_chain(self):
+        source = (
+            'func consume(text: chain, length: Len_t) uint64:\n'
+            '    return length\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int:\n'
+            + '    message: chain = "Hola"\n'
+            + '    result: uint64 = consume(message)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertRegex(module, r'call i64 @"consume"\([^)]*i64 5\)')
+
+    def test_len_t_can_be_forwarded_for_a_chain_parameter(self):
+        source = (
+            'func consume(text: chain, length: Len_t) uint64:\n'
+            '    return length\n'
+            'func relay(text: chain, length: Len_t) uint64:\n'
+            '    return consume(text)\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int:\n'
+            + '    message: chain = "Hola"\n'
+            + '    result: uint64 = relay(message)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        Compiler().compile(path, executable=False)
+
+    def test_len_t_rejects_an_unknown_chain_length(self):
+        with self.assertRaisesRegex(CompilationError, 'chain.*Len_t'):
+            self.compile_source(
+                'func consume(text: chain, length: Len_t) uint64:\n'
+                '    return length\n'
+                'func relay(text: chain) uint64:\n'
+                '    return consume(text)\n'
+            )
+
     def test_safe_array_parameter_requires_len_t(self):
         with self.assertRaisesRegex(CompilationError, r'Len_t.*longitud'):
             self.compile_source(

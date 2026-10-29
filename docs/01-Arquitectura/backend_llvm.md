@@ -22,6 +22,9 @@ La primera etapa genera `build/<modulo>.ll`, `build/<modulo>.obj` y
 - parámetros especiales `Len_t` y `Size_t`: el frontend exige datos con
   metadatos calculables en compilación y el backend baja los valores como
   `i64` constantes adicionales;
+- `Len_t` también puede expandirse para un `chain` constante; la longitud
+  emitida incluye su `NUL`, y la biblioteca de salida descuenta ese byte para
+  escribir el texto visible sin escanearlo;
 - las funciones seguras que reciben arrays deben declarar su `Len_t`; las
   funciones `@unsafe` pueden optar por una firma de bajo nivel sin esa
   expansión;

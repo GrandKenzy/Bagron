@@ -33,6 +33,8 @@ class FunctionEmitterBase:
         self._symbols: dict[str, FunctionSymbol] = {}
         self._active_specs: dict[str, TypeSpec] = {}
         self._active_values: dict[str, object] = {}
+        self._global_values: dict[str, object] = {}
+        self._active_function_symbol: FunctionSymbol | None = None
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
         self._string_literals: dict[str, ir.GlobalVariable] = {}
         self._pointer_size = 8
@@ -71,6 +73,11 @@ class FunctionEmitterBase:
     def emit_storage(self, storage: Storage) -> None:
         self._pointer_size = getattr(storage, 'pointer_size', 8)
         self._symbols = dict(storage.functions)
+        self._global_values = {
+            name: getattr(variable, 'value_info', None)
+            for name, variable in storage.namespace.items()
+            if getattr(variable, 'value_info', None) is not None
+        }
         for symbol in storage.functions.values():
             if (
                 symbol.name != 'main'

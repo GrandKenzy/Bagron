@@ -381,8 +381,21 @@ def _validate_expansion_parameters(
     function_name: str,
     parameters: object,
     argument_infos: Mapping[str, ValueInfo],
+    current_function: object | None = None,
 ) -> None:
     """Ensure compiler-supplied lengths and sizes have valid sources."""
+
+    def forwarded_chain_length(source: ValueInfo | None) -> bool:
+        source_name = getattr(source, 'identifier', None)
+        signature = getattr(current_function, 'signature', None)
+        if not source_name or signature is None:
+            return False
+        return any(
+            getattr(parameter, 'is_length', False)
+            and getattr(parameter, 'length_of', None) == source_name
+            for parameter in getattr(signature, 'parameters', ())
+        )
+
     for parameter in parameters:
         is_length = getattr(parameter, 'is_length', False)
         is_size = getattr(parameter, 'is_size', False)
@@ -391,6 +404,23 @@ def _validate_expansion_parameters(
         source_name = getattr(parameter, 'length_of', None)
         source = argument_infos.get(source_name or '')
         source_type = source.type_spec if source is not None else None
+        if is_length and source_type is not None and source_type.name == 'chain':
+            if (
+                source is None
+                or (
+                    source.is_literal
+                    and not isinstance(source.value, str)
+                )
+                or (
+                    not source.is_literal
+                    and not forwarded_chain_length(source)
+                )
+            ):
+                raise ValueResolutionError(
+                    f'Len_t de {function_name} requiere que {source_name} '
+                    'sea un chain constante o un chain con Len_t propagado'
+                )
+            continue
         array_length = (
             source_type.array_lengths[0]
             if source_type is not None
@@ -566,7 +596,12 @@ def _infer_postfix(
                     f'La direccion local pasada a {name} no puede escapar '
                     'a traves de un retorno puntero'
                 )
-        _validate_expansion_parameters(name, parameters, argument_infos)
+        _validate_expansion_parameters(
+            name,
+            parameters,
+            argument_infos,
+            current_function=current_function,
+        )
         return_type = getattr(signature, 'return_type', TypeSpec('void'))
         if (
             return_type.name == 'void'
@@ -805,7 +840,12 @@ def infer_call(
                 f'La direccion local pasada a {name} no puede escapar '
                 'a traves de un retorno puntero'
             )
-    _validate_expansion_parameters(name, parameters, argument_infos)
+    _validate_expansion_parameters(
+        name,
+        parameters,
+        argument_infos,
+        current_function=current_function,
+    )
 
     return_type = getattr(signature, 'return_type', TypeSpec('void'))
     return ValueInfo(

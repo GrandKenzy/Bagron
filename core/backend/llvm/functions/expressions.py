@@ -521,12 +521,72 @@ class ExpressionEmitterMixin:
             )
         return pointer
 
-    def _compile_array_length(
+    def _compile_chain_length(
         self,
         argument: object,
+    ) -> int:
+        current = self._unwrap(argument)
+        kind = self._token_kind(current)
+        if kind == 'STRING':
+            value = self._token_value(current)
+        elif kind == 'IDENT':
+            name = str(self._token_value(current))
+            info = self._active_values.get(name)
+            if info is None:
+                info = self._global_values.get(name)
+            value = getattr(info, 'value', None)
+            if (
+                info is None
+                or not getattr(info, 'is_literal', False)
+                or getattr(getattr(info, 'type_spec', None), 'name', None)
+                != 'chain'
+            ):
+                value = None
+        else:
+            value = None
+
+        if not isinstance(value, str):
+            raise FunctionEmissionError(
+                'Len_t requiere un chain constante con longitud conocida '
+                'en compilacion'
+            )
+        try:
+            return len(value.encode('ascii')) + 1
+        except UnicodeEncodeError as error:
+            raise FunctionEmissionError(
+                'Un chain usado por la ABI actual solo puede contener ASCII'
+            ) from error
+
+    def _compile_length_argument(
+        self,
+        argument: object,
+        source_spec: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value:
+        if getattr(source_spec, 'name', None) == 'chain':
+            source_name = self._identifier(argument)
+            if self._active_function_symbol is not None and source_name:
+                forwarded = next(
+                    (
+                        parameter
+                        for parameter in self._active_function_symbol.signature.parameters
+                        if parameter.is_length
+                        and parameter.length_of == source_name
+                    ),
+                    None,
+                )
+                if forwarded is not None:
+                    pointer = values.get(forwarded.name)
+                    if pointer is None:
+                        raise FunctionEmissionError(
+                            f'El Len_t {forwarded.name} no tiene almacenamiento LLVM'
+                        )
+                    return builder.load(pointer)
+            return ir.Constant(
+                ir.IntType(64),
+                self._compile_chain_length(argument),
+            )
         address = self._compile_address(argument, builder, values)
         pointee = address.type.pointee
         if not isinstance(pointee, ir.ArrayType):
@@ -687,7 +747,12 @@ class ExpressionEmitterMixin:
                 ].type
                 if parameter.is_length:
                     compiled.append(
-                        self._compile_array_length(source, builder, values)
+                        self._compile_length_argument(
+                            source,
+                            source_parameter.type_spec,
+                            builder,
+                            values,
+                        )
                     )
                 else:
                     compiled.append(

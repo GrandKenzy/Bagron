@@ -551,6 +551,7 @@ class StatementEmitterMixin:
         symbol: FunctionSymbol,
         function: ir.Function,
     ) -> None:
+        self._active_function_symbol = symbol
         if symbol.body_node is None:
             raise FunctionEmissionError(
                 f'La funcion {symbol.name} no tiene cuerpo emitible'
@@ -576,6 +577,7 @@ class StatementEmitterMixin:
             )
 
     def emit_main(self, symbol: FunctionSymbol) -> None:
+        self._active_function_symbol = symbol
         if symbol.signature.parameters:
             raise FunctionEmissionError(
                 'El entrypoint main no puede tener parametros'

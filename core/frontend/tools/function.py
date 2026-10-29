@@ -183,12 +183,19 @@ def _signature_parameters(parameters_node: gast.ASTRef) -> tuple[ParameterSpec, 
                 raise TypeResolutionError(
                     'Len_t y Size_t deben seguir a un parametro de datos'
                 )
-            if parameter.is_length and (
-                last_data_parameter.type_spec.pointer_level
-                or last_data_parameter.type_spec.array_depth == 0
-            ):
+            source_type = last_data_parameter.type_spec
+            lengthable_chain = (
+                source_type.name == 'chain'
+                and source_type.pointer_level == 0
+                and source_type.array_depth == 0
+            )
+            lengthable_array = (
+                source_type.pointer_level == 0
+                and source_type.array_depth > 0
+            )
+            if parameter.is_length and not (lengthable_chain or lengthable_array):
                 raise TypeResolutionError(
-                    'Len_t solo puede asociarse a un parametro array'
+                    'Len_t solo puede asociarse a un parametro array o chain'
                 )
             parameters.append(
                 ParameterSpec(

@@ -120,17 +120,32 @@ printa(buffer: char[], long: Len_t, size: Size_t) void:
     return
 ```
 
+La salida estatica usa la misma expansion:
+
+```bg
+print(text: chain, length: Len_t) void:
+    return
+```
+
+El llamador sigue escribiendo `print(text)`. Para un `chain` constante, el
+compilador inserta su tamano estatico incluyendo el `NUL`; `print` descuenta
+ese byte y envia directamente los bytes visibles.
+
 El llamador continua escribiendo `printa(buffer)`. El compilador verifica que
 `buffer` sea un array con longitud conocida e inserta esa longitud como un
 `uint64`/`i64`; no se acepta un escalar, un puntero ni un array de longitud
 desconocida. En una funcion segura, todo parametro array debe estar seguido
 por su `Len_t` correspondiente; asi la firma declara explicitamente la
-capacidad que recibe la funcion. `Len_t` es un parametro especial de funciones
-Bagron y no puede usarse en una declaracion `extern` ni como variable local.
+capacidad que recibe la funcion. `Len_t` tambien puede seguir a un `chain`
+constante: en ese caso representa sus bytes estaticos incluyendo el `NUL`.
+Un `chain` de longitud desconocida no puede cruzar una llamada que requiera
+esa expansion. `Len_t` es un parametro especial de funciones Bagron y no puede
+usarse en una declaracion `extern` ni como variable local.
 `Size_t` funciona igual, pero inserta el tamano en bytes: para arrays
 multiplica la longitud por el tamano del elemento y para escalares usa el
 tamano del tipo. `printa` usa `Size_t` como cantidad de bytes para `WriteFile`
-y no busca un `NUL` antes de terminar el buffer.
+y no busca un `NUL` antes de terminar el buffer. `print` usa el `Len_t` del
+`chain` y escribe solo los bytes visibles, sin recorrerlo.
 
 La biblioteca estandar incluye `serialize_int`, una funcion tipada que recibe
 un array de salida, su `Len_t`, un `int32` y su `Size_t`. La llamada solo

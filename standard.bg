@@ -124,11 +124,14 @@ func printa(buffer: char[], long: Len_t, size: Size_t) void:
     return
 
 @unsafe
-func print(text: chain) void:
+func print(text: chain, length: Len_t) void:
     handle *: void = GetStdHandle(4294967285)
-    count: uint32 = 0
-    while text[count] != 0:
-        count += 1
+    count: uint64 = 0
+    if length > 0:
+        count = length
+        count -= 1
+    if count > 4294967295:
+        return
     if count > 0:
-        WriteFile(handle, $text[0], count, Null, Null)
+        WriteFile(handle, $text[0], _win32_count(count), Null, Null)
     return
