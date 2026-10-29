@@ -112,11 +112,11 @@ class Compiler(CompilerState):
             if main.signature.parameters:
                 self.error('La funcion global main no puede recibir parametros')
             if (
-                main.signature.return_type.name != 'int'
+                main.signature.return_type.name != 'int32'
                 or main.signature.return_type.pointer_level
                 or main.signature.return_type.array_depth
             ):
-                self.error('La funcion global main debe retornar int')
+                self.error('La funcion global main debe retornar int32')
             if 'main' in self.storage.namespace:
                 self.error('El nombre main no puede ser variable y funcion global a la vez')
 

@@ -157,6 +157,7 @@ class StatementEmitterMixin:
             ),
             target_type,
             builder,
+            signed=not self._expression_is_unsigned(value_node),
         )
         if operator == '=':
             result = right
@@ -312,6 +313,7 @@ class StatementEmitterMixin:
             result,
             return_type,
             builder,
+            signed=not self._expression_is_unsigned(return_node),
         )
         builder.ret(result)
 
@@ -339,7 +341,7 @@ class StatementEmitterMixin:
         if not isinstance(iterator_type, ir.IntType):
             raise FunctionEmissionError(f'El iterador {name} no es entero')
         signed = type_spec.name in {
-            'int', 'int8', 'int16', 'int32', 'int64', 'Bint'
+            'int8', 'int16', 'int32', 'int64', 'isize', 'Bint'
         }
 
         range_values = [
@@ -616,16 +618,16 @@ class StatementEmitterMixin:
                 'El entrypoint main no puede tener parametros'
             )
         if (
-            symbol.signature.return_type.name != 'int'
+            symbol.signature.return_type.name != 'int32'
             or symbol.signature.return_type.pointer_level
             or symbol.signature.return_type.array_depth
         ):
             raise FunctionEmissionError(
-                'El entrypoint main debe retornar int'
+                'El entrypoint main debe retornar int32'
             )
         if symbol.return_asm_node is None and len(symbol.return_values) != 1:
             raise FunctionEmissionError(
-                'El entrypoint main requiere un unico return int'
+                'El entrypoint main requiere un unico return int32'
             )
         if symbol.body_node is None:
             raise FunctionEmissionError(

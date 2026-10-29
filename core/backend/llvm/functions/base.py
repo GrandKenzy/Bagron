@@ -249,6 +249,28 @@ class FunctionEmitterBase:
         return current
 
     def _expression_is_unsigned(self, node: object) -> bool:
+        current = self._unwrap(node)
+        if getattr(current, 'name', None) == 'POSTFIX_EXPR':
+            children = self._children(current)
+            primary = children[0] if children else None
+            base_name = self._identifier(primary)
+            base_spec = self._active_specs.get(base_name or '')
+            if base_spec is not None and self.type_registry is not None:
+                suffixes: list[object] = []
+                for child in children[1:]:
+                    suffixes.extend(
+                        self._children(child) if isinstance(child, list) else [child]
+                    )
+                for suffix in suffixes:
+                    if getattr(suffix, 'name', None) != 'MEMBER_ACCESS':
+                        continue
+                    field = self.type_registry.field_spec(
+                        base_spec.name,
+                        self._identifier(suffix) or '',
+                    )
+                    field_spec = getattr(field, 'type_spec', None)
+                    if field_spec is not None:
+                        return field_spec.name in UNSIGNED_INTEGER_TYPES
         name = self._identifier(node)
         if name is None:
             return False

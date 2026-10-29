@@ -63,7 +63,7 @@ KEYWORDS = {
     # Modificadores de bajo nivel
     'inline': '#E2B93D',
     'packed': '#E2B93D',
-    '__align__': '#E2B93D',
+    'align': '#E2B93D',
     'volatile': '#E2B93D',
     '__instfron__': '#E2B93D',
     '__fref__': "#E2B93D",
@@ -83,7 +83,6 @@ KEYWORDS = {
 
 INTRINSIC_TYPES = {
     # Enteros con y sin signo
-    'int': '#3B82F6',
     'int8': '#3B82F6',
     'int16': '#3B82F6',
     'int32': '#3B82F6',
@@ -94,6 +93,8 @@ INTRINSIC_TYPES = {
     'uint16': '#3B82F6',
     'uint32': '#3B82F6',
     'uint64': '#3B82F6',
+    'usize': '#3B82F6',
+    'isize': '#3B82F6',
 
     # Punto flotante (16, 32, 64 bits)
     'middle': '#3B82F6',
@@ -105,7 +106,6 @@ INTRINSIC_TYPES = {
     'chain': '#3B82F6', # array de carácteres
     'bool': '#3B82F6',
     'void': '#3B82F6',
-    'wsize': '#3B82F6', # size_t
     'Len_t': '#3B82F6', # hidden compile-time array length parameter
     'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
     'callptr': '#3B82F6',
@@ -156,7 +156,7 @@ KEYWORDS_BY_GROUP = {
         'pass',
         'inline',
         'packed',
-        '__align__',
+        'align',
         'volatile',
         'TypeAlias',
         'struct',

@@ -19,7 +19,7 @@ class TypeSpec:
     @property
     def canonical_name(self) -> str:
         name = self.name
-        if self.bit_width is not None:
+        if self.name in {'Bint', 'uBint'} and self.bit_width is not None:
             name = f'{name}<{self.bit_width}>'
         if self.array_lengths:
             suffix = ''.join(
@@ -57,7 +57,6 @@ class AggregateSymbol:
     is_packed: bool = False
     is_volatile: bool = False
     alignment: int | None = None
-    alignment_type: TypeSpec | None = None
     bit_order: str = 'lsb'
 
 

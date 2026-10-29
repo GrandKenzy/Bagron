@@ -19,7 +19,7 @@ class PrepTests(unittest.TestCase):
     def test_extracts_raw_assembler_to_function_file(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    #prep assembler "intel"\n'
             '        mov eax, ebx\n'
             '        nop\n'
@@ -45,7 +45,7 @@ class PrepTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'solo puede contener un bloque'):
             self._compile(
             '@assembler\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    #prep assembler "intel"\n'
             '        nop\n'
             '    #end\n'
@@ -58,7 +58,7 @@ class PrepTests(unittest.TestCase):
     def test_rejects_prep_without_assembler_decorator(self):
         with self.assertRaisesRegex(CompilationError, 'requiere el decorador @assembler'):
             self._compile(
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    #prep assembler "intel"\n'
                 '        nop\n'
                 '    #end\n'
@@ -69,25 +69,25 @@ class PrepTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'no puede usar return asm'):
             self._compile(
                 '@assembler\n'
-                'func bad() int:\n'
+                'func bad() int32:\n'
                 '    return asm\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
     def test_rejects_return_asm_without_assembler_decorator(self):
         with self.assertRaisesRegex(CompilationError, 'requiere el decorador @assembler'):
             self._compile(
-                'func bad() int:\n'
+                'func bad() int32:\n'
                 '    return asm\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
     def test_assembler_function_may_only_have_return_without_prep(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return 0\n'
         )
         self.assertTrue(ir_path.exists())
@@ -98,7 +98,7 @@ class PrepTests(unittest.TestCase):
         path = Path(directory.name) / '_main.bg'
         path.write_text(
             '@assembler\n'
-            'func validar(a: int, b: int) int:\n'
+            'func validar(a: int32, b: int32) int32:\n'
             '    #prep assembler "intel"\n'
             '        mov eax, 1\n'
             '        cmp {a}, {b}\n'
@@ -108,7 +108,7 @@ class PrepTests(unittest.TestCase):
             '    #end\n'
             '    return asm\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return validar(2, 2)\n',
             encoding='utf-8',
         )
@@ -129,7 +129,7 @@ class PrepTests(unittest.TestCase):
     def test_supports_att_syntax_and_register_placeholders(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    #prep assembler "att"\n'
             '        xorl %eax, %eax\n'
             '    #end\n'
@@ -145,7 +145,7 @@ class PrepTests(unittest.TestCase):
     def test_infers_register_aliases_from_parameter_width(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func widths(a: int8, b: int16, c: int32, d: int64) int:\n'
+            'func widths(a: int8, b: int16, c: int32, d: int64) int32:\n'
             '    #prep assembler "intel"\n'
             '        mov al, {a}\n'
             '        mov dx, {b}\n'
@@ -153,7 +153,7 @@ class PrepTests(unittest.TestCase):
             '        mov r9, {d}\n'
             '    #end\n'
             '    return asm\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return 0\n'
         )
 
@@ -167,12 +167,12 @@ class PrepTests(unittest.TestCase):
     def test_maps_pointer_parameter_to_full_abi_register(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func read(pointer *: int) int:\n'
+            'func read(pointer *: int32) int32:\n'
             '    #prep assembler "intel"\n'
             '        mov eax, [{pointer}]\n'
             '    #end\n'
             '    return asm\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return 0\n'
         )
 
@@ -185,13 +185,13 @@ class PrepTests(unittest.TestCase):
         path = Path(directory.name) / '_main.bg'
         path.write_text(
             '@assembler\n'
-            'func fallo() int:\n'
+            'func fallo() int32:\n'
             '    #prep assembler "intel"\n'
             '        nop\n'
             '    #end\n'
             '    return asm\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return fallo()\n',
             encoding='utf-8',
         )
@@ -210,8 +210,8 @@ class PrepTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'solo puede contener'):
             self._compile(
                 '@assembler\n'
-                'func main() int:\n'
-                '    result: int = 1\n'
+                'func main() int32:\n'
+                '    result: int32 = 1\n'
                 '    return result\n'
             )
 
@@ -219,12 +219,12 @@ class PrepTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'parametro ASM no existe'):
             self._compile(
                 '@assembler\n'
-                'func bad(value: int) int:\n'
+                'func bad(value: int32) int32:\n'
                 '    #prep assembler "intel"\n'
                 '        mov eax, {missing}\n'
                 '    #end\n'
                 '    return asm\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
@@ -232,25 +232,25 @@ class PrepTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'usa "intel" o "att"'):
             self._compile(
                 '@assembler\n'
-                'func bad() int:\n'
+                'func bad() int32:\n'
                 '    #prep assembler "nasm"\n'
                 '        xor eax, eax\n'
                 '    #end\n'
                 '    return asm\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
     def test_maps_fifth_assembler_parameter_to_windows_stack(self):
         ir_path = self._compile(
             '@assembler\n'
-            'func stack(a: int, b: int, c: int, d: int, e: int) int:\n'
+            'func stack(a: int32, b: int32, c: int32, d: int32, e: int32) int32:\n'
             '    #prep assembler "intel"\n'
             '        mov eax, {e}\n'
             '    #end\n'
             '    return asm\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return stack(1, 2, 3, 4, 5)\n'
         )
 
@@ -264,7 +264,7 @@ class PrepTests(unittest.TestCase):
         path = Path(directory.name) / '_main.bg'
         path.write_text(
             '@assembler\n'
-            'func estado(a: int8) int:\n'
+            'func estado(a: int8) int32:\n'
             '    #prep assembler "att"\n'
             '        xorl %eax, %eax\n'
             '        testb {a}, {a}\n'
@@ -276,7 +276,7 @@ class PrepTests(unittest.TestCase):
             '    #end\n'
             '    return asm\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return estado(0)\n',
             encoding='utf-8',
         )
@@ -297,13 +297,13 @@ class PrepTests(unittest.TestCase):
         path = Path(directory.name) / '_main.bg'
         path.write_text(
             '@assembler\n'
-            'func quinto(a: int, b: int, c: int, d: int, e: int) int:\n'
+            'func quinto(a: int32, b: int32, c: int32, d: int32, e: int32) int32:\n'
             '    #prep assembler "intel"\n'
             '        mov eax, {e}\n'
             '    #end\n'
             '    return asm\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return quinto(1, 2, 3, 4, 5)\n',
             encoding='utf-8',
         )
@@ -324,14 +324,14 @@ class PrepTests(unittest.TestCase):
                 '#prep assembler "intel"\n'
                 'mov eax, ebx\n'
                 '#end\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
     def test_rejects_unclosed_prep(self):
         with self.assertRaisesRegex(CompilationError, 'no tiene un #end de cierre'):
             self._compile(
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    #prep assembler "intel"\n'
                 '        nop\n'
             )

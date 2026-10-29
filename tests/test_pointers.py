@@ -18,12 +18,12 @@ class PointerAndAddressTests(unittest.TestCase):
 
     def test_local_pointer_nested_dereference_and_array_index(self):
         artifacts = self._compile(
-            'func main() int:\n'
-            '    value: int = 10\n'
-            '    pointer *: int = $value\n'
-            '    pointer_pointer **: int = $pointer\n'
+            'func main() int32:\n'
+            '    value: int32 = 10\n'
+            '    pointer *: int32 = $value\n'
+            '    pointer_pointer **: int32 = $pointer\n'
             '    ((pointer_pointer)) = 20\n'
-            '    values: int[] = {1, 2, 3}\n'
+            '    values: int32[] = {1, 2, 3}\n'
             '    values[1] = (pointer)\n'
             '    return values[1]\n'
         )
@@ -38,14 +38,14 @@ class PointerAndAddressTests(unittest.TestCase):
 
     def test_pointer_parameter_and_pointer_return_follow_llvm_types(self):
         module_path = self._compile(
-            'value: int = 7\n'
-            'func identity(pointer *: int) int*:\n'
+            'value: int32 = 7\n'
+            'func identity(pointer *: int32) int32*:\n'
             '    return pointer\n'
             '@unsafe\n'
-            'func read(pointer *: int) int:\n'
+            'func read(pointer *: int32) int32:\n'
             '    return (pointer)\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return read(identity($value))\n',
             executable=False,
         )
@@ -60,8 +60,8 @@ class PointerAndAddressTests(unittest.TestCase):
             '    return\n'
             'func make() void*:\n'
             '    return Null\n'
-            'func main() int:\n'
-            '    value: int = 7\n'
+            'func main() int32:\n'
+            '    value: int32 = 7\n'
             '    handle *: void = make()\n'
             '    consume($value)\n'
             '    consume(handle)\n'
@@ -76,13 +76,13 @@ class PointerAndAddressTests(unittest.TestCase):
     def test_global_address_and_constant_gep(self):
         module_path = self._compile(
             'struct Point:\n'
-            '    x: int\n'
-            '    y: int\n'
+            '    x: int32\n'
+            '    y: int32\n'
             'point: Point\n'
-            'values: int[3] = {1, 2, 3}\n'
-            'field *: int = $point.x\n'
-            'element *: int = $values[1]\n'
-            'func main() int:\n'
+            'values: int32[3] = {1, 2, 3}\n'
+            'field *: int32 = $point.x\n'
+            'element *: int32 = $values[1]\n'
+            'func main() int32:\n'
             '    return (element) + (field)\n',
             executable=False,
         )
@@ -93,8 +93,8 @@ class PointerAndAddressTests(unittest.TestCase):
 
     def test_null_dereference_is_trapped_and_local_address_cannot_escape(self):
         module_path = self._compile(
-            'func main() int:\n'
-            '    pointer *: int = Null\n'
+            'func main() int32:\n'
+            '    pointer *: int32 = Null\n'
             '    return (pointer)\n',
             executable=False,
         )
@@ -103,17 +103,17 @@ class PointerAndAddressTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'no puede retornar'):
             self._compile(
-                'func leak() int*:\n'
-                '    value: int = 1\n'
+                'func leak() int32*:\n'
+                '    value: int32 = 1\n'
                 '    return $value\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n',
                 executable=False,
             )
 
     def test_ampersand_remains_bitwise_and(self):
         artifacts = self._compile(
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return 6 & 3\n'
         )
         result = subprocess.run(

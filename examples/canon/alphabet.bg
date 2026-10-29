@@ -1,0 +1,10 @@
+clause Visibility "private"
+
+
+
+
+; exports
+
+public NumericString: chain = "0123456789"
+public AlphabetString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+

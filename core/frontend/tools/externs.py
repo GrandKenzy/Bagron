@@ -89,7 +89,7 @@ def _extern_functions(body: gast.ASTRef) -> list[gast.ASTRef]:
     return result
 
 
-def _return_spec(node: gast.ASTRef) -> TypeSpec:
+def _return_spec(node: gast.ASTRef, *, pointer_size: int = 8) -> TypeSpec:
     return_node = next(
         (
             child for child in _children(node)
@@ -117,7 +117,11 @@ def _return_spec(node: gast.ASTRef) -> TypeSpec:
 
     if type_node is None:
         raise TypeResolutionError('La declaracion extern no tiene un tipo de retorno')
-    return resolve_type(type_node, pointer_level=pointer_level)
+    return resolve_type(
+        type_node,
+        pointer_level=pointer_level,
+        pointer_size=pointer_size,
+    )
 
 
 def _validate_abi_type(
@@ -199,7 +203,10 @@ def _collect_function(
 
     try:
         parameters = tuple(
-            _parameter_spec(pair)
+            _parameter_spec(
+                pair,
+                pointer_size=compiler.storage.pointer_size,
+            )
             for pair in _parameter_items(parameters_node)
             if isinstance(pair, gast.ASTRef) and pair.name == 'PAIR_PARAM'
         )
@@ -211,7 +218,10 @@ def _collect_function(
                 f'El extern {name} no puede usar Len_t ni Size_t: la ABI externa '
                 'requiere argumentos explicitos'
             )
-        return_type = _return_spec(node)
+        return_type = _return_spec(
+            node,
+            pointer_size=compiler.storage.pointer_size,
+        )
         _validate_abi_type(
             compiler,
             return_type,

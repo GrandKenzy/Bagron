@@ -21,11 +21,9 @@ if TYPE_CHECKING:
 
 
 _FLAGS_BASE_TYPES = {
-    'int8', 'int16', 'int32', 'int64',
     'uint8', 'uint16', 'uint32', 'uint64',
 }
 _INTEGER_WIDTHS = {
-    'int': 32,
     'int8': 8,
     'int16': 16,
     'int32': 32,
@@ -37,7 +35,7 @@ _INTEGER_WIDTHS = {
     'uint64': 64,
     'byte': 8,
 }
-_AGGREGATE_DECORATORS = {'packed', 'order_lsb', 'order_msb'}
+_AGGREGATE_DECORATORS = {'packed', 'align', 'order_lsb', 'order_msb'}
 
 
 def _children(node: object) -> list[object]:
@@ -129,7 +127,11 @@ def _decorator_name(node: object) -> str | None:
 
     def collect(current: object) -> None:
         value = _token_value(current)
-        if isinstance(value, str) and value != '@':
+        if (
+            isinstance(value, str)
+            and value not in {'@', '(', ')'}
+            and _token_kind(current) != 'NUMBER'
+        ):
             values.append(value)
         for child in _children(current):
             collect(child)
@@ -174,7 +176,10 @@ def _flags_base_type(
         compiler.error(f'El flags {name} requiere un tipo base explicito')
         return None
     try:
-        type_spec = resolve_type(node)
+        type_spec = resolve_type(
+            node,
+            pointer_size=compiler.storage.pointer_size,
+        )
     except TypeResolutionError as error:
         compiler.error(f'El tipo base de flags {name} es invalido: {error}')
         return None
@@ -185,68 +190,49 @@ def _flags_base_type(
         or type_spec.value_is_const
     ):
         compiler.error(
-            f'El tipo base de flags {name} debe ser int8/16/32/64 o '
-            'uint8/16/32/64 sin punteros ni constancia'
+            f'El tipo base de flags {name} debe ser uint8/16/32/64 '
+            'sin punteros ni constancia'
         )
         return None
     return type_spec
 
 
 def _alignment_payload(node: gast.ASTRef) -> object | None:
-    children = _children(node)
-    if len(children) < 2:
-        return None
-    return children[-1]
+    if _token_kind(node) == 'NUMBER':
+        return node
+    for child in _children(node):
+        payload = _alignment_payload(child)
+        if payload is not None:
+            return payload
+    return None
 
 
 def _alignment_metadata(
     compiler: Compiler,
     node: gast.ASTRef,
     name: str,
-) -> tuple[int | None, TypeSpec | None]:
-    attributes = list(_find_all(node, {'ALIGNEMENT'}))
+) -> int | None:
+    attributes = list(_find_all(node, {'ALIGNMENT'}))
     if len(attributes) > 1:
-        compiler.error(f'El tipo {name} solo puede declarar un __align__')
-        return None, None
+        compiler.error(f'El tipo {name} solo puede declarar un @align')
+        return None
     if not attributes:
-        return None, None
+        return None
 
     payload = _alignment_payload(attributes[0])
     if payload is None:
-        compiler.error(f'El __align__ de {name} no tiene valor')
-        return None, None
-    if _token_kind(payload) == 'NUMBER':
-        try:
-            alignment = int(_token_value(payload))
-        except (TypeError, ValueError):
-            alignment = 0
-        if (
-            alignment < 1
-            or alignment > 64
-            or alignment & (alignment - 1)
-        ):
-            compiler.error(
-                f'El __align__ de {name} debe ser una potencia de dos entre 1 y 64'
-            )
-            return None, None
-        return alignment, None
-
+        compiler.error(f'El decorador @align de {name} no tiene valor')
+        return None
     try:
-        type_spec = resolve_type(payload)
-    except TypeResolutionError as error:
-        compiler.error(f'El __align__ de {name} es invalido: {error}')
-        return None, None
-    if (
-        type_spec.name not in INTRINSIC_TYPES
-        or type_spec.name in {'void', 'Null', 'chain', 'callptr'}
-        or type_spec.pointer_level
-        or type_spec.array_depth
-    ):
+        alignment = int(_token_value(payload))
+    except (TypeError, ValueError):
+        alignment = 0
+    if alignment < 1 or alignment > 64 or alignment & (alignment - 1):
         compiler.error(
-            f'El __align__ de {name} debe usar un escalar intrinseco o un numero'
+            f'El @align de {name} debe ser una potencia de dos entre 1 y 64'
         )
-        return None, None
-    return None, type_spec
+        return None
+    return alignment
 
 
 def _declaration_metadata(
@@ -271,12 +257,11 @@ def _declaration_metadata(
     if len(orders) > 1:
         compiler.error(f'{name} no puede combinar @order_lsb y @order_msb')
 
-    alignment, alignment_type = _alignment_metadata(compiler, node, name)
+    alignment = _alignment_metadata(compiler, node, name)
     return (
         'packed' in decorators,
         _contains_token(signature, 'volatile'),
         alignment,
-        alignment_type,
         'msb' if 'order_msb' in decorators else 'lsb',
     )
 
@@ -288,7 +273,7 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         compiler.error(f'La declaracion {node.name.lower()} no tiene nombre')
         return
 
-    packed, volatile, alignment, alignment_type, bit_order = _declaration_metadata(
+    packed, volatile, alignment, bit_order = _declaration_metadata(
         compiler,
         node,
         signature,
@@ -307,7 +292,6 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         is_packed=packed,
         is_volatile=volatile,
         alignment=alignment,
-        alignment_type=alignment_type,
         bit_order=bit_order,
     )
     if not compiler.storage.define_type(symbol):
@@ -339,12 +323,16 @@ def _resolve_field_type(
     compiler: Compiler,
     handle,
     owner: str,
+    *,
+    allow_bit_types: bool = False,
 ) -> TypeSpec | None:
     try:
         type_spec = resolve_type(
             handle.type_node,
             pointer_level=handle.pointer_level,
             pointer_is_const=handle.pointer_is_const,
+            pointer_size=compiler.storage.pointer_size,
+            allow_bit_types=allow_bit_types,
         )
     except TypeResolutionError as error:
         compiler.error(f'{owner}.{handle.name}: {error}')
@@ -360,6 +348,8 @@ def _resolve_field_type(
 
 
 def _field_width(type_spec: TypeSpec) -> int | None:
+    if type_spec.name == 'bool':
+        return 1
     if type_spec.name in {'Bint', 'uBint'}:
         return type_spec.bit_width
     return _INTEGER_WIDTHS.get(type_spec.name)
@@ -374,10 +364,10 @@ def _validate_flags_value(
     if (
         type_spec.pointer_level
         or type_spec.array_depth
-        or type_spec.name not in INTEGER_TYPES
+        or type_spec.name not in {'Bint', 'uBint', 'bool'}
     ):
         compiler.error(
-            f'El campo {owner}.{handle.name} debe usar un tipo entero escalar'
+            f'El campo {owner}.{handle.name} debe usar Bint, uBint o bool'
         )
         return None
 
@@ -387,9 +377,11 @@ def _validate_flags_value(
         compiler.error(f'{owner}.{handle.name}: {error}')
         return None
 
-    if not value_info.is_literal or value_info.type_spec.name != 'int':
+    expected_literal = 'bool' if type_spec.name == 'bool' else 'int32'
+    if not value_info.is_literal or value_info.type_spec.name != expected_literal:
         compiler.error(
-            f'El valor de {owner}.{handle.name} debe ser un literal entero'
+            f'El valor de {owner}.{handle.name} debe ser un literal '
+            f'{"booleano" if expected_literal == "bool" else "entero"}'
         )
         return None
 
@@ -434,7 +426,12 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             )
             continue
 
-        type_spec = _resolve_field_type(compiler, handle, symbol.name)
+        type_spec = _resolve_field_type(
+            compiler,
+            handle,
+            symbol.name,
+            allow_bit_types=symbol.kind == 'flags',
+        )
         if type_spec is None:
             continue
         if type_spec.name == 'chain':
@@ -477,10 +474,10 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             return node
         base_width = _INTEGER_WIDTHS[symbol.base_type.name]
         total_width = sum(_field_width(field.type_spec) or 0 for field in fields)
-        if total_width > base_width:
+        if total_width != base_width:
             compiler.error(
                 f'Los campos de flags {symbol.name} ocupan {total_width} bits, '
-                f'pero {symbol.base_type.name} solo admite {base_width}'
+                f'pero {symbol.base_type.name} requiere exactamente {base_width}'
             )
         if symbol.bit_order == 'msb':
             offset = base_width

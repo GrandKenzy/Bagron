@@ -211,6 +211,7 @@ def collect_in_scope(
             handle.type_node,
             pointer_level=handle.pointer_level,
             pointer_is_const=handle.pointer_is_const,
+            pointer_size=compiler.storage.pointer_size,
         )
     except TypeResolutionError as error:
         compiler.error(f'{handle.name}: {error}')

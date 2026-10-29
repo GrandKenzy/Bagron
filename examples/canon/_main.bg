@@ -5,12 +5,16 @@
 clause Arch 'auto'
 clause System 'windows'
 
+import standard
+import time
+import alphabet
+
 ; Globales estaticos y literales soportados por LLVM.
-limite: const int = 10
+limite: const int32 = 10
 factor: const double = 3.141516
 mascara: uBint<5> = 31
 valores: uBint<5>[] = {1, 2, 3}
-puntero *: int = Null
+puntero *: int32 = Null
 nombre: char[10] = "Hola"
 bytes: byte[6] = "x0x0xb"
 mensaje: chain = "cadena estatica"
@@ -22,29 +26,30 @@ enum Estado int8:
     PAUSADO,
 
 struct Punto:
-    x: int
+    x: int32
     y: Bint<16>
     estado: Estado
 
 mold PuntoBase:
     punto: Punto
-    codigo: int
+    codigo: int32
 
 flags Permisos uint8:
     leer: uBint<1> = 1
     escribir: uBint<1> = 0
+    reservado: uBint<6> = 0
 
-; @packed conserva el layout byte a byte. __align__ eleva la alineacion de
+; @packed conserva el layout byte a byte. @align(N) eleva la alineacion de
 ; la instancia sin cambiar la direccion de sus miembros.
 @packed
+@align(8)
 struct Paquete:
-    __align__ 8
     etiqueta: byte
-    valor: int
+    valor: int32
 
 ; El molde comparte un unico bloque de memoria entre todas sus vistas.
 volatile mold Registro:
-    entero: int
+    entero: int32
     crudo: uint
 
 ; El contenedor de flags es uint8. @order_msb asigna el primer campo desde
@@ -53,23 +58,24 @@ volatile mold Registro:
 volatile flags EstadoBits uint8:
     activo: uBint<1> = 1
     modo: uBint<2> = 2
+    reservado: uBint<5> = 0
 
 ; Instancias globales cero para comprobar sus tipos LLVM nominales.
 punto: Punto
 base: PuntoBase
 permisos: Permisos
 
-; Las funciones int se emiten a LLVM y pueden llamarse desde main.
-func sumar(a: int, b: int) int:
-    resultado: int = a
-    puntero_local *: int = $resultado
+; Las funciones int32 se emiten a LLVM y pueden llamarse desde main.
+func sumar(a: int32, b: int32) int32:
+    resultado: int32 = a
+    puntero_local *: int32 = $resultado
     (puntero_local) += b
     return (puntero_local)
 
 ; Struct, mold y flags se inicializan de forma determinista. Los campos de
 ; mold son vistas del mismo almacenamiento y los de flags se leen/escriben
 ; mediante mascara y desplazamiento.
-func revisar_agregados() int:
+func revisar_agregados() int32:
     punto_local: Punto
     punto_local.x = 4
     punto_local.y = 3
@@ -92,18 +98,18 @@ func revisar_agregados() int:
     return 0
 
 @assembler
-func asm_status() int:
+func asm_status() int32:
     #prep assembler "intel"
         xor eax, eax
     #end
     return asm
 
 ; El entrypoint puede retornar el resultado de una llamada.
-func main() int:
-    datos: int[] = {0, 1, 2}
-    datos[0] = 0
-    for i: int32 ran (1, 4, 1):
-        pass
-    for j: int8 ran (3, 0, -1):
-        pass
-    return sumar(2, 3) + datos[0] + revisar_agregados()
+
+@unsafe
+func main() int32:
+
+    print(NumericString)
+    print(AlphabetString)
+
+    return 0

@@ -1,33 +1,33 @@
 from gram import combinators as cmb
+from gram import lexer
 
 from core.frontend.syntax.items.var_decl import VAR_DECLARATION, VAR_INITIALIZATION
 from core.frontend.syntax.items.value import TYPE
 
 
-class ALIGNEMENT(cmb.RuleItem):
+class ALIGNMENT(cmb.RuleItem):
     entrypoint = cmb.Seq(
-        cmb.MatchKeyword('__align__'),
-        cmb.Alt(
-            cmb.MatchToken('NUMBER'),
-            cmb.MatchGroup('types')
-        )
-    )
-    nodeable = True
-    
-class ATTRIBUTES(cmb.RuleItem):
-    entrypoint = cmb.Some(
-        cmb.Alt(
-            cmb.Ref(ALIGNEMENT),
+        cmb.MatchToken('AT'),
+        cmb.MatchKeyword('align'),
+        cmb.Enclosed(
+            open=lexer.Token.LPAREN,
+            close=lexer.Token.RPAREN,
+            content=cmb.MatchToken('NUMBER'),
+            allow_empty=False,
+            skip_whitespace=True,
         )
     )
     nodeable = True
 
 class AGGREGATE_DECORATOR(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchToken('AT'),
-        cmb.Alt(
-            cmb.MatchKeyword('packed'),
-            cmb.MatchToken('IDENT'),
+    entrypoint = cmb.Alt(
+        cmb.Ref(ALIGNMENT),
+        cmb.Seq(
+            cmb.MatchToken('AT'),
+            cmb.Alt(
+                cmb.MatchKeyword('packed'),
+                cmb.MatchToken('IDENT'),
+            ),
         ),
     )
     nodeable = True
@@ -72,7 +72,6 @@ class MOLD_SIGNATURE(cmb.RuleItem):
 class STRUCT_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
-        cmb.Opt(cmb.Ref(ATTRIBUTES)),
         cmb.Some(
             cmb.Alt(
                 cmb.Ref(VAR_INITIALIZATION),
@@ -87,7 +86,6 @@ class STRUCT_BODY(cmb.RuleItem):
 class FLAGS_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
-        cmb.Opt(cmb.Ref(ATTRIBUTES)),
         cmb.Some(
             cmb.Alt(
                 cmb.Ref(VAR_DECLARATION),
@@ -102,7 +100,6 @@ class FLAGS_BODY(cmb.RuleItem):
 class MOLD_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
-        cmb.Opt(cmb.Ref(ATTRIBUTES)),
         cmb.Some(
             cmb.Alt(
                 cmb.Ref(VAR_INITIALIZATION),

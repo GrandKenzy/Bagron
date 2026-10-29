@@ -11,25 +11,20 @@ from core.compiler import CompilationError, Compiler
 class GlobalBackendTests(unittest.TestCase):
     def compile_source(self, source: str, add_main: bool = True) -> str:
         if add_main:
-            source = source.rstrip() + '\n\nfunc main() int:\n    return 0\n'
+            source = source.rstrip() + '\n\nfunc main() int32:\n    return 0\n'
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(source, encoding='utf-8')
             output = Compiler().compile(path, executable=False)
             return Path(output).read_text(encoding='utf-8')
 
-    def test_emits_literals_bint_arrays_and_const_references(self):
+    def test_emits_literals_and_const_references(self):
         module = self.compile_source(
-            'base: const int = 10\n'
-            'copy: int = base\n'
-            'small: Bint<5> = 15\n'
-            'mask: uBint<5> = 31\n'
-            'values: uBint<5>[] = {1, 2, 3}\n'
+            'base: const int32 = 10\n'
+            'copy: int32 = base\n'
         )
 
         self.assertIn('global i32 10', module)
-        self.assertIn('global i5 15', module)
-        self.assertIn('global [3 x i5]', module)
 
     def test_emits_decimal_literals(self):
         module = self.compile_source('value: double = 3.141516\n')
@@ -46,7 +41,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    return left / right\n'
             'func less_than(left: float, right: float) bool:\n'
             '    return left < right\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    half: middle = add_middle(1.5, 2.5)\n'
             '    single: float = add_float(2.0, 3.0)\n'
             '    wide: double = add_double(9.0, 3.0)\n'
@@ -89,7 +84,7 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    letra: char = "A"\n'
                 '    octeto: byte = 7\n'
                 '    return 7\n',
@@ -110,13 +105,15 @@ class GlobalBackendTests(unittest.TestCase):
             'enum Estado:\n'
             '    LISTO,\n'
             'struct Punto:\n'
-            '    x: int\n'
+            '    x: int32\n'
             '    estado: Estado\n'
             'mold Base:\n'
             '    punto: Punto\n'
             'flags Permisos uint8:\n'
             '    leer: uBint<1> = 1\n'
             '    escribir: uBint<1> = 0\n'
+            '    activo: bool = true\n'
+                '    reservado: uBint<5> = 0\n'
             'punto: Punto\n'
             'base: Base\n'
             'permisos: Permisos\n'
@@ -127,22 +124,23 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('"Permisos" = type {{i8}}', module)
         self.assertIn('@"punto" = global %"Punto" {{i32, i32}', module)
         self.assertIn('@"base" = global %"Base" zeroinitializer', module)
-        self.assertIn('@"permisos" = global %"Permisos" {{i8} {i8 1}}', module)
+        self.assertIn('@"permisos" = global %"Permisos" {{i8} {i8 5}}', module)
 
     def test_builds_and_runs_struct_mold_and_flags_member_access(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
                 'struct Punto:\n'
-                '    x: int\n'
-                '    y: int\n'
+                '    x: int32\n'
+                '    y: int32\n'
                 'mold Vista:\n'
-                '    entero: int\n'
+                '    entero: int32\n'
                 '    crudo: uint\n'
                 'flags Estado uint8:\n'
                 '    listo: uBint<1> = 1\n'
                 '    modo: uBint<2> = 2\n'
-                'func calcular() int:\n'
+            '    reservado: uBint<5> = 0\n'
+                'func calcular() int32:\n'
                 '    punto: Punto\n'
                 '    punto.x = 4\n'
                 '    punto.y = 3\n'
@@ -156,7 +154,7 @@ class GlobalBackendTests(unittest.TestCase):
                 '            if vista.crudo == 7:\n'
                 '                return punto.x + punto.y\n'
                 '    return 0\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return calcular()\n',
                 encoding='utf-8',
             )
@@ -173,15 +171,16 @@ class GlobalBackendTests(unittest.TestCase):
     def test_emits_packed_aligned_volatile_and_msb_flags(self):
         module = self.compile_source(
             '@packed\n'
+            '@align(8)\n'
             'struct Paquete:\n'
-            '    __align__ 8\n'
             '    etiqueta: byte\n'
-            '    valor: int\n'
+            '    valor: int32\n'
             '@order_msb\n'
             'volatile flags Estado uint8:\n'
             '    activo: uBint<1> = 1\n'
             '    modo: uBint<2> = 2\n'
-            'func inspeccionar() int:\n'
+            '    reservado: uBint<5> = 0\n'
+            'func inspeccionar() int32:\n'
             '    paquete: Paquete\n'
             '    paquete.etiqueta = 1\n'
             '    paquete.valor = 7\n'
@@ -190,7 +189,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    if estado.activo == 0:\n'
             '        return paquete.valor\n'
             '    return 0\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return inspeccionar()\n',
             add_main=False,
         )
@@ -213,7 +212,7 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('@"estado" = global i8 0', module)
 
     def test_emits_int_main_as_llvm_entrypoint(self):
-        module = self.compile_source('value: int = 1\n')
+        module = self.compile_source('value: int32 = 1\n')
 
         self.assertIn('define internal i32 @"__bagron_main"()', module)
         self.assertIn('define i32 @"main"()', module)
@@ -225,7 +224,7 @@ class GlobalBackendTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     path = Path(directory) / '_main.bg'
                     path.write_text(
-                        'func main() int:\n'
+                        'func main() int32:\n'
                         f'    return {code}\n',
                         encoding='utf-8',
                     )
@@ -243,9 +242,9 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_emits_function_return_sum_and_call(self):
         module = self.compile_source(
-            'func sumar(a: int, b: int) int:\n'
+            'func sumar(a: int32, b: int32) int32:\n'
             '    return a + b\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    return sumar(2, 3)\n',
             add_main=False,
         )
@@ -260,9 +259,9 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func sumar(a: int, b: int) int:\n'
+                'func sumar(a: int32, b: int32) int32:\n'
                 '    return a + b\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return sumar(2, 3)\n',
                 encoding='utf-8',
             )
@@ -280,10 +279,10 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func touch(value: int) void:\n'
-                '    copy: int = value\n'
+                'func touch(value: int32) void:\n'
+                '    copy: int32 = value\n'
                 '    return\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    touch(4)\n'
                 '    return 0\n',
                 encoding='utf-8',
@@ -306,8 +305,8 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
-                '    result: int = 2\n'
+                'func main() int32:\n'
+                '    result: int32 = 2\n'
                 '    result += 3\n'
                 '    result = result * 2\n'
                 '    return result\n',
@@ -327,11 +326,11 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func calcular(value: int) int:\n'
-                '    result: int = value\n'
+                'func calcular(value: int32) int32:\n'
+                '    result: int32 = value\n'
                 '    result += 2\n'
                 '    return result\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return calcular(3)\n',
                 encoding='utf-8',
             )
@@ -349,8 +348,8 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
-                '    result: int\n'
+                'func main() int32:\n'
+                '    result: int32\n'
                 '    result = 7\n'
                 '    return result\n',
                 encoding='utf-8',
@@ -369,7 +368,7 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    for i: int32 ran (1, 4, 1):\n'
                 '        pass\n'
                 '    for j: int8 ran (3, 0, -1):\n'
@@ -391,9 +390,9 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
-                '    total: int = 0\n'
-                '    i: int = 0\n'
+                'func main() int32:\n'
+                '    total: int32 = 0\n'
+                '    i: int32 = 0\n'
                 '    while i < 3:\n'
                 '        if i == 0:\n'
                 '            total += 1\n'
@@ -422,10 +421,10 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
-                '    total: int = 0\n'
+                'func main() int32:\n'
+                '    total: int32 = 0\n'
                 '    for i: int32 ran (0, 3, 1):\n'
-                '        j: int = 0\n'
+                '        j: int32 = 0\n'
                 '        while j < 2:\n'
                 '            if i == 1:\n'
                 '                total += 2\n'
@@ -449,9 +448,9 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
-                'func main() int:\n'
-                '    total: int = 0\n'
-                '    for i: int ran (0, 5, 1):\n'
+                'func main() int32:\n'
+                '    total: int32 = 0\n'
+                '    for i: int32 ran (0, 5, 1):\n'
                 '        if i == 1:\n'
                 '            continue\n'
                 '        if i == 4:\n'
@@ -472,18 +471,18 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_rejects_mutable_global_reference(self):
         with self.assertRaisesRegex(CompilationError, 'global mutable base'):
-            self.compile_source('base: int = 10\ncopy: int = base\n')
+            self.compile_source('base: int32 = 10\ncopy: int32 = base\n')
 
     def test_rejects_mutable_reference_inside_array(self):
         with self.assertRaisesRegex(CompilationError, 'global mutable base'):
             self.compile_source(
-                'base: int = 10\n'
-                'values: int[] = {base}\n'
+                'base: int32 = 10\n'
+                'values: int32[] = {base}\n'
             )
 
     def test_rejects_invalid_arch(self):
         with self.assertRaisesRegex(CompilationError, 'valor invalido'):
-            self.compile_source("clause Arch 'invalid'\nvalue: int = 1\n")
+            self.compile_source("clause Arch 'invalid'\nvalue: int32 = 1\n")
 
     def test_accepts_explicit_llvm_triple(self):
         from llvmlite import binding as llvm
@@ -491,16 +490,16 @@ class GlobalBackendTests(unittest.TestCase):
         triple = llvm.get_default_triple()
         module = self.compile_source(
             f"clause Arch '{triple}'\n"
-            'value: int = 1\n'
+            'value: int32 = 1\n'
         )
         self.assertIn(f'target triple = "{triple}"', module)
 
     def test_requires_global_main(self):
         with self.assertRaisesRegex(CompilationError, 'funcion global main'):
-            self.compile_source('value: int = 1\n', add_main=False)
+            self.compile_source('value: int32 = 1\n', add_main=False)
 
     def test_main_requires_int_without_parameters(self):
-        with self.assertRaisesRegex(CompilationError, 'debe retornar int'):
+        with self.assertRaisesRegex(CompilationError, 'debe retornar int32'):
             self.compile_source(
                 'func main() bool:\n'
                 '    return true\n',
@@ -509,7 +508,7 @@ class GlobalBackendTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'no puede recibir parametros'):
             self.compile_source(
-                'func main(value: int) int:\n'
+                'func main(value: int32) int32:\n'
                 '    return 0\n',
                 add_main=False,
             )

@@ -19,7 +19,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import standard\n'
                 '@unsafe\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    message: chain = "Hola"\n'
                 '    source: const char[6] = "Adios"\n'
                 '    converted: chain = source\n'
@@ -45,7 +45,47 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'Hola / DOLLARAdiosHola\x00', result.stdout)
         self.assertEqual(4, module.count('call i32 @"WriteFile"'))
         self.assertRegex(module, r'call void @"print"\([^)]*i64 5\)')
-        self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 5\)')
+        self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 1\)')
+
+    def test_print_writes_immutable_global_chains(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            (root / 'alphabet.bg').write_text(
+                'public NumericString: chain = "0123456789"\n'
+                'public AlphabetString: chain = '
+                '"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                'import alphabet\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    print(NumericString)\n'
+                '    print(AlphabetString)\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            module = artifacts.ir.read_text(encoding='utf-8')
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(
+            b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+            result.stdout,
+        )
+        self.assertIn('getelementptr inbounds [11 x i8]', module)
+        self.assertIn('getelementptr inbounds [53 x i8]', module)
 
     def test_printa_rejects_scalar_char(self):
         project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
@@ -56,7 +96,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import standard\n'
                 '@unsafe\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    letter: char = "A"\n'
                 '    printa(letter)\n'
                 '    return 0\n',
@@ -75,7 +115,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import standard\n'
                 '@unsafe\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    raw: byte[3] = {65, 0, 255}\n'
                 '    encoded: byte[2] = {0, 255}\n'
                 '    printb(raw, false)\n'
@@ -104,7 +144,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import standard\n'
                 '@unsafe\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    positive: char[50] = "Mi edad es: "\n'
                 '    negative: char[50] = "Negativo: "\n'
                 '    zero: char[50] = "Cero: "\n'

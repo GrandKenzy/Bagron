@@ -19,8 +19,12 @@ INTEGER_WIDTHS = {
     'uint64': 64,
     'byte': 8,
 }
-SIGNED_INTEGER_TYPES = {'int', 'int8', 'int16', 'int32', 'int64', 'Bint'}
-UNSIGNED_INTEGER_TYPES = {'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'byte', 'uBint'}
+SIGNED_INTEGER_TYPES = {
+    'int8', 'int16', 'int32', 'int64', 'isize', 'Bint',
+}
+UNSIGNED_INTEGER_TYPES = {
+    'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'usize', 'byte', 'uBint',
+}
 INTEGER_TYPES = SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES
 FLOAT_TYPES = {'middle', 'float', 'double'}
 COMPARISON_OPERATORS = {
@@ -207,6 +211,8 @@ def resolve_type(
     *,
     pointer_level: int = 0,
     pointer_is_const: bool = False,
+    pointer_size: int = 8,
+    allow_bit_types: bool = False,
 ) -> TypeSpec:
     text = _type_name(type_node)
     match = re.fullmatch(r'(.+?)((?:\[\d*\])*)', text)
@@ -214,6 +220,14 @@ def resolve_type(
         raise TypeResolutionError(f'Tipo invalido: {text or "<vacio>"}')
 
     base_name = match.group(1)
+    if base_name == 'int':
+        raise TypeResolutionError(
+            'El tipo int fue eliminado; usa int8, int16, int32 o int64'
+        )
+    if base_name == 'wsize':
+        raise TypeResolutionError(
+            'El tipo wsize fue eliminado; usa usize o isize segun el signo'
+        )
     if base_name in {'Len_t', 'Size_t'}:
         raise TypeResolutionError(
             'Len_t y Size_t solo pueden aparecer como parametros especiales '
@@ -240,12 +254,29 @@ def resolve_type(
     bit_width = None
     signed = None
 
+    if base_name in {'usize', 'isize'}:
+        if pointer_size not in {4, 8}:
+            raise TypeResolutionError(
+                f'El tamano de puntero del target no es valido: {pointer_size} bytes'
+            )
+        bit_width = pointer_size * 8
+        signed = base_name == 'isize'
+
     match = re.fullmatch(r'(Bint|uBint)<(\d+)>', base_name)
     if match is not None:
+        if not allow_bit_types:
+            raise TypeResolutionError(
+                'Bint<n> y uBint<n> solo pueden usarse como campos de flags'
+            )
         base_name = match.group(1)
         bit_width = int(match.group(2))
         signed = base_name == 'Bint'
-        if bit_width < 1:
+        minimum_width = 2 if base_name == 'Bint' else 1
+        if bit_width < minimum_width:
+            if base_name == 'Bint':
+                raise TypeResolutionError(
+                    f'El ancho de Bint debe ser de al menos 2 bits: {bit_width}'
+                )
             raise TypeResolutionError(
                 f'El ancho de {base_name} debe ser mayor que cero: {bit_width}'
             )
@@ -873,8 +904,13 @@ def _member_value(
             if value.type_spec.array_lengths
             else None
         )
+        pointer_size = getattr(_namespace_owner(namespace), 'pointer_size', 8)
         return ValueInfo(
-            TypeSpec('uint32'),
+            TypeSpec(
+                'usize',
+                bit_width=pointer_size * 8,
+                signed=False,
+            ),
             is_literal=length is not None,
             value=length,
         )
@@ -1099,12 +1135,12 @@ def infer_value(
                 or (
                     left_is_float
                     and right.is_literal
-                    and right.type_spec.name == 'int'
+                    and right.type_spec.name == 'int32'
                 )
                 or (
                     right_is_float
                     and left.is_literal
-                    and left.type_spec.name == 'int'
+                    and left.type_spec.name == 'int32'
                 )
             )
             both_bool = (
@@ -1119,6 +1155,15 @@ def infer_value(
                 raise ValueResolutionError(
                     'los operandos de una comparacion deben ser enteros, '
                     'flotantes o bool'
+                )
+            if (
+                left.type_spec.name in INTEGER_TYPES
+                and right.type_spec.name in INTEGER_TYPES
+                and _integer_common_type(left, right) is None
+            ):
+                raise ValueResolutionError(
+                    'los operandos enteros deben conservar el signo y permitir '
+                    'un ensanchamiento seguro'
                 )
             if left.is_literal and right.is_literal:
                 operations = {
@@ -1166,6 +1211,12 @@ def infer_value(
                 raise ValueResolutionError(
                     'los operandos bitwise deben ser enteros escalares'
                 )
+            result_type = _integer_common_type(left, right)
+            if result_type is None:
+                raise ValueResolutionError(
+                    'los operandos bitwise deben conservar el signo y permitir '
+                    'un ensanchamiento seguro'
+                )
             if left.is_literal and right.is_literal:
                 operations = {
                     'AND': lambda: left.value & right.value,
@@ -1181,11 +1232,11 @@ def infer_value(
                         'la operacion bitwise no es valida'
                     ) from None
                 return ValueInfo(
-                    left.type_spec,
+                    result_type,
                     is_literal=True,
                     value=value,
                 )
-            return ValueInfo(left.type_spec)
+            return ValueInfo(result_type)
 
         if operator not in {'PLUS', 'MINUS', 'STAR', 'SLASH', 'PERCENT'}:
             raise UnsupportedExpressionError(
@@ -1246,6 +1297,13 @@ def infer_value(
                 )
             return ValueInfo(result_type)
 
+        result_type = _integer_common_type(left, right)
+        if result_type is None:
+            raise ValueResolutionError(
+                'los operandos enteros deben conservar el signo y permitir '
+                'un ensanchamiento seguro'
+            )
+
         if left.is_literal and right.is_literal:
             operations = {
                 'PLUS': lambda: left.value + right.value,
@@ -1260,8 +1318,8 @@ def infer_value(
                 raise ValueResolutionError(
                     'la operacion aritmetica no es valida'
                 ) from error
-            return ValueInfo(TypeSpec('int'), is_literal=True, value=value)
-        return ValueInfo(TypeSpec('int'))
+            return ValueInfo(result_type, is_literal=True, value=value)
+        return ValueInfo(result_type)
 
     if isinstance(current, gast.ASTRef) and current.name == 'POSTFIX_EXPR':
         return _infer_postfix(
@@ -1357,7 +1415,7 @@ def infer_value(
         return ValueInfo(TypeSpec('Null'), is_literal=True, value=value)
 
     if kind in ('NUMBER', 'DECIMAL'):
-        number_type = 'float' if isinstance(value, float) else 'int'
+        number_type = 'float' if isinstance(value, float) else 'int32'
         return ValueInfo(TypeSpec(number_type), is_literal=True, value=value)
 
     raise UnsupportedExpressionError('el inicializador no es un literal compatible')
@@ -1371,11 +1429,9 @@ def _integer_bounds(type_spec: TypeSpec) -> tuple[int, int] | None:
 
     width = INTEGER_WIDTHS.get(type_spec.name)
     if width is None:
-        if type_spec.name == 'int':
+        if type_spec.name == 'uint':
             width = 32
-        elif type_spec.name in ('uint', 'wsize'):
-            width = 32
-        elif type_spec.name == 'uBint' and type_spec.bit_width is not None:
+        elif type_spec.name in {'uBint', 'usize', 'isize'} and type_spec.bit_width is not None:
             width = type_spec.bit_width
         else:
             return None
@@ -1414,6 +1470,14 @@ def _same_shape(left: TypeSpec, right: TypeSpec) -> bool:
             and not left.value_is_const
         )
     )
+
+
+def _integer_width(type_spec: TypeSpec) -> int | None:
+    if type_spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
+        return type_spec.bit_width
+    if type_spec.name == 'uint':
+        return 32
+    return INTEGER_WIDTHS.get(type_spec.name)
 
 
 def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
@@ -1545,14 +1609,71 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         data = _string_bytes(source.value, ascii_only=target.name == 'char')
         return data is not None and len(data) == 1
 
-    if source.is_literal and source_type.name == 'int' and target.name in INTEGER_TYPES:
+    if source.is_literal and source_type.name == 'int32' and target.name in INTEGER_TYPES:
         if not isinstance(source.value, int) or isinstance(source.value, bool):
             return False
         bounds = _integer_bounds(target)
         return bounds is not None and bounds[0] <= source.value <= bounds[1]
 
-    if source.is_literal and source_type.name in ('int', 'float'):
+    if source.is_literal and source_type.name in ('int32', 'float'):
         if target.name in ('middle', 'float', 'double'):
             return True
 
+    if (
+        target.pointer_level == 0
+        and source_type.pointer_level == 0
+        and target.array_depth == 0
+        and source_type.array_depth == 0
+        and target.name in INTEGER_TYPES
+        and source_type.name in INTEGER_TYPES
+    ):
+        target_width = _integer_width(target)
+        source_width = _integer_width(source_type)
+        if target_width is None or source_width is None:
+            return False
+        if _same_shape(target, source_type):
+            return True
+        if target.name == 'byte' or source_type.name == 'byte':
+            return False
+        same_sign = (
+            target.name in SIGNED_INTEGER_TYPES
+            and source_type.name in SIGNED_INTEGER_TYPES
+        ) or (
+            target.name in UNSIGNED_INTEGER_TYPES
+            and source_type.name in UNSIGNED_INTEGER_TYPES
+        )
+        return same_sign and target_width > source_width
+
     return _same_shape(target, source_type)
+
+
+def _integer_common_type(left: ValueInfo, right: ValueInfo) -> TypeSpec | None:
+    """Find a safe integer type for an operation without hidden narrowing."""
+    left_type = left.type_spec
+    right_type = right.type_spec
+    if not _is_integer_scalar(left_type) or not _is_integer_scalar(right_type):
+        return None
+    if _same_shape(left_type, right_type):
+        return left_type
+
+    if left.is_literal and is_compatible(right_type, left):
+        return right_type
+    if right.is_literal and is_compatible(left_type, right):
+        return left_type
+
+    if left_type.name == 'byte' or right_type.name == 'byte':
+        return None
+
+    left_width = _integer_width(left_type)
+    right_width = _integer_width(right_type)
+    if left_width is None or right_width is None:
+        return None
+    left_signed = left_type.name in SIGNED_INTEGER_TYPES
+    right_signed = right_type.name in SIGNED_INTEGER_TYPES
+    if left_signed != right_signed:
+        return None
+    if left_width > right_width:
+        return left_type
+    if right_width > left_width:
+        return right_type
+    return None

@@ -36,7 +36,7 @@ class ExternTests(unittest.TestCase):
             '    GetLastError() uint32\n'
             '    ExitProcess(uExitCode: uint32) void\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    handle *: void = GetStdHandle(0)\n'
             '    WriteFile(handle, Null, 0, Null, Null)\n'
             '    return 0\n'
@@ -66,7 +66,7 @@ class ExternTests(unittest.TestCase):
             'extern "kernel32":\n'
             '    GetCurrentProcessId() uint32\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    pid: uint32 = GetCurrentProcessId()\n'
             '    return 0\n'
         )
@@ -93,7 +93,7 @@ class ExternTests(unittest.TestCase):
             '    FloatNative(value: float) float\n'
             '    DoubleNative(value: double) double\n'
             '@unsafe\n'
-            'func main() int:\n'
+            'func main() int32:\n'
             '    half: middle = HalfNative(1.0)\n'
             '    single: float = FloatNative(2.0)\n'
             '    wide: double = DoubleNative(3.0)\n'
@@ -115,7 +115,7 @@ class ExternTests(unittest.TestCase):
             self.compile_source(
                 'extern "kernel32":\n'
                 '    GetCurrentProcessId() uint32\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
                 '    GetCurrentProcessId()\n'
             )
@@ -125,7 +125,7 @@ class ExternTests(unittest.TestCase):
             self.compile_source(
                 'extern "kernel32":\n'
                 '    Bad(values: uint32[]) uint32\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
@@ -133,7 +133,7 @@ class ExternTests(unittest.TestCase):
             self.compile_source(
                 'extern "kernel32":\n'
                 '    Native(values: char[], long: Len_t) void\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 
@@ -149,7 +149,7 @@ class ExternTests(unittest.TestCase):
             main.write_text(
                 'import native as n\n'
                 '@unsafe\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    pid: uint32 = n.GetCurrentProcessId()\n'
                 '    return 0\n',
                 encoding='utf-8',
@@ -164,10 +164,10 @@ class ExternTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'ya fue declarada'):
             self.compile_source(
                 'extern "kernel32":\n'
-                '    Same() int\n'
+                '    Same() int32\n'
                 'extern "user32":\n'
-                '    Same() int\n'
-                'func main() int:\n'
+                '    Same() int32\n'
+                'func main() int32:\n'
                 '    return 0\n'
             )
 

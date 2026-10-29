@@ -10,7 +10,7 @@ en un ejecutable nativo:
 - `mold` como una unión real: sus vistas comparten el mismo almacenamiento;
 - `flags Nombre uint8` como campos de bits dentro de un entero explícito, con
   orden LSB por defecto y `@order_msb` cuando se requiere;
-- `@packed`, `__align__` y `volatile` en agregados, incluyendo accesos
+- `@packed`, `@align(N)` y `volatile` en agregados, incluyendo accesos
   volátiles y alineación explícita en el IR;
 - variables locales enteras y agregadas con inicialización determinista,
   lectura y asignación compuesta;
@@ -21,7 +21,7 @@ en un ejecutable nativo:
 - una función `sumar` y una comprobación de agregados emitidas en LLVM y
   llamadas desde `main`;
 - `for` numéricos con iteradores `int32` e `int8`, rangos ascendente y descendente, y paso;
-- `func main() int` como entrypoint LLVM y código de salida.
+- `func main() int32` como entrypoint LLVM y código de salida.
 
 Ejecutar desde la raíz del repositorio:
 

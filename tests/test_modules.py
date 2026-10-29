@@ -13,14 +13,14 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'math.bg').write_text(
-                'func doble(value: int) int:\n'
+                'func doble(value: int32) int32:\n'
                 '    return value + value\n',
                 encoding='utf-8',
             )
             main = root / '_main.bg'
             main.write_text(
                 'import math\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return doble(3)\n',
                 encoding='utf-8',
             )
@@ -38,7 +38,7 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
             main = Path(directory) / '_main.bg'
             main.write_text(
                 'import missing\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n',
                 encoding='utf-8',
             )
@@ -50,14 +50,14 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'math.bg').write_text(
-                'func doble(value: int) int:\n'
+                'func doble(value: int32) int32:\n'
                 '    return value + value\n',
                 encoding='utf-8',
             )
             main = root / '_main.bg'
             main.write_text(
                 'import math as m\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return m.doble(3)\n',
                 encoding='utf-8',
             )
@@ -71,14 +71,14 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'math.bg').write_text(
-                'func doble(value: int) int:\n'
+                'func doble(value: int32) int32:\n'
                 '    return value + value\n',
                 encoding='utf-8',
             )
             main = root / '_main.bg'
             main.write_text(
                 'import { doble as twice } from math\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return twice(3)\n',
                 encoding='utf-8',
             )
@@ -93,7 +93,7 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
             main = Path(directory) / '_main.bg'
             main.write_text(
                 'include "windows" link "kernel32"\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n',
                 encoding='utf-8',
             )
@@ -117,7 +117,7 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
             root = Path(directory)
             (root / 'a.bg').write_text(
                 'import b\n'
-                'func doble(value: int) int:\n'
+                'func doble(value: int32) int32:\n'
                 '    return value + value\n',
                 encoding='utf-8',
             )
@@ -128,7 +128,7 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
             main = root / '_main.bg'
             main.write_text(
                 'import a\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n',
                 encoding='utf-8',
             )
@@ -141,7 +141,7 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
             main = Path(directory) / '_main.bg'
             main.write_text(
                 'include "does_not_exist" link "kernel32"\n'
-                'func main() int:\n'
+                'func main() int32:\n'
                 '    return 0\n',
                 encoding='utf-8',
             )

@@ -134,7 +134,7 @@ def _parameter_items(parameters: gast.ASTRef) -> list[object]:
     return _children(parameters.nodes[0])
 
 
-def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
+def _parameter_spec(pair: gast.ASTRef, *, pointer_size: int = 8) -> ParameterSpec:
     declarator = pair.nodes[0]
     type_node = pair.nodes[2]
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
@@ -150,7 +150,12 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
             )
         return ParameterSpec(
             name=name,
-            type_spec=TypeSpec('uint64', value_is_const=True),
+            type_spec=TypeSpec(
+                'usize',
+                bit_width=pointer_size * 8,
+                signed=False,
+                value_is_const=True,
+            ),
             is_length=special_type == 'Len_t',
             is_size=special_type == 'Size_t',
         )
@@ -158,6 +163,7 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
         type_node,
         pointer_level=pointer_level,
         pointer_is_const=pointer_is_const,
+        pointer_size=pointer_size,
     )
     if type_spec.name == 'void' and type_spec.pointer_level == 0:
         raise TypeResolutionError(
@@ -170,14 +176,18 @@ def _parameter_spec(pair: gast.ASTRef) -> ParameterSpec:
     )
 
 
-def _signature_parameters(parameters_node: gast.ASTRef) -> tuple[ParameterSpec, ...]:
+def _signature_parameters(
+    parameters_node: gast.ASTRef,
+    *,
+    pointer_size: int = 8,
+) -> tuple[ParameterSpec, ...]:
     """Resolve visible parameters and named argument-expansion parameters."""
     parameters: list[ParameterSpec] = []
     last_data_parameter: ParameterSpec | None = None
     for item in _parameter_items(parameters_node):
         if not isinstance(item, gast.ASTRef) or item.name != 'PAIR_PARAM':
             continue
-        parameter = _parameter_spec(item)
+        parameter = _parameter_spec(item, pointer_size=pointer_size)
         if parameter.is_length or parameter.is_size:
             if last_data_parameter is None:
                 raise TypeResolutionError(
@@ -243,7 +253,11 @@ def _validate_safe_array_parameters(
             )
 
 
-def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
+def signature_from_node(
+    node: gast.ASTRef,
+    *,
+    pointer_size: int = 8,
+) -> tuple[str, FunctionSignature]:
     signature = _signature_node(node)
     if signature is None:
         raise TypeResolutionError('La funcion no contiene una firma valida')
@@ -262,7 +276,7 @@ def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
         raise TypeResolutionError(f'La firma de {name or "<anonima>"} es invalida')
 
     parameters_node = children[parameter_index]
-    parameters = _signature_parameters(parameters_node)
+    parameters = _signature_parameters(parameters_node, pointer_size=pointer_size)
 
     return_node = children[parameter_index + 1]
     return_pointer = 0
@@ -271,7 +285,11 @@ def signature_from_node(node: gast.ASTRef) -> tuple[str, FunctionSignature]:
             return_pointer = len(child.nodes)
             break
 
-    return_type = resolve_type(return_node, pointer_level=return_pointer)
+    return_type = resolve_type(
+        return_node,
+        pointer_level=return_pointer,
+        pointer_size=pointer_size,
+    )
     if return_type.name == 'void' and return_type.array_depth:
         raise TypeResolutionError('void no puede usarse como array de retorno')
 
@@ -327,7 +345,10 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             continue
 
         try:
-            name, signature = signature_from_node(node)
+            name, signature = signature_from_node(
+                node,
+                pointer_size=compiler.storage.pointer_size,
+            )
         except TypeResolutionError as error:
             compiler.error(str(error))
             continue
@@ -444,7 +465,10 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
         return
 
     try:
-        type_spec = resolve_type(type_node)
+        type_spec = resolve_type(
+            type_node,
+            pointer_size=compiler.storage.pointer_size,
+        )
     except TypeResolutionError as error:
         compiler.error(f'{name}: {error}')
         return

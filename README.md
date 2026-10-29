@@ -29,7 +29,7 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y futura generación de código nativo.
 
-* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int:`; su expresión entera de retorno se usa como código de salida y los métodos de clase no cuentan como entrypoint.
+* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida y los métodos de clase no cuentan como entrypoint.
 
 * **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
 

@@ -144,11 +144,7 @@ class LLVMTypeRegistry:
         return ir.ArrayType(ir.VectorType(ir.IntType(8), alignment), 0)
 
     def _requested_alignment(self, symbol: AggregateSymbol) -> int | None:
-        if symbol.alignment is not None:
-            return symbol.alignment
-        if symbol.alignment_type is not None:
-            return self._abi_alignment(self.resolve(symbol.alignment_type))
-        return None
+        return symbol.alignment
 
     def _effective_alignment(
         self,
@@ -161,7 +157,7 @@ class LLVMTypeRegistry:
         requested = self._requested_alignment(symbol)
         if requested is not None and requested < natural and not symbol.is_packed:
             raise LLVMTypeError(
-                f'El __align__ de {symbol.name} no puede reducir su alineacion natural '
+                f'El @align de {symbol.name} no puede reducir su alineacion natural '
                 f'de {natural}'
             )
         if symbol.is_packed:
@@ -344,7 +340,9 @@ class LLVMTypeRegistry:
 
     @staticmethod
     def _integer_width(spec: TypeSpec) -> int | None:
-        if spec.name in {'Bint', 'uBint'}:
+        if spec.name == 'bool':
+            return 1
+        if spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
             return spec.bit_width
         return _INTEGER_TYPES.get(spec.name)
 
@@ -390,7 +388,6 @@ class LLVMTypeRegistry:
 
 
 _INTEGER_TYPES = {
-    'int': 32,
     'int8': 8,
     'int16': 16,
     'int32': 32,
@@ -405,7 +402,7 @@ _INTEGER_TYPES = {
 
 
 def scalar_type(spec: TypeSpec) -> ir.Type:
-    if spec.name == 'Bint' or spec.name == 'uBint':
+    if spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
         if spec.bit_width is None or spec.bit_width < 1:
             raise LLVMTypeError(f'Ancho invalido para {spec.canonical_name}')
         return ir.IntType(spec.bit_width)
@@ -639,7 +636,9 @@ def constant_value(
                 f'El literal para {spec.name} debe contener exactamente un byte'
             )
         return ir.Constant(target_type, data[0])
-    if spec.name in _INTEGER_TYPES or spec.name in {'Bint', 'uBint'}:
+    if spec.name in _INTEGER_TYPES or spec.name in {
+        'Bint', 'uBint', 'usize', 'isize'
+    }:
         return ir.Constant(target_type, int(value.value))
     if spec.name in {'middle', 'float', 'double'}:
         return ir.Constant(target_type, float(value.value))

@@ -54,6 +54,48 @@ class _BitfieldPlace:
 class ExpressionEmitterMixin:
     """LLVM emission for expressions, aggregate places, and calls."""
 
+    def _size_integer_type(self) -> ir.IntType:
+        return ir.IntType(self._pointer_size * 8)
+
+    @staticmethod
+    def _integer_constant_value(value: ir.Value) -> int | None:
+        if not isinstance(value, ir.Constant) or not isinstance(value.type, ir.IntType):
+            return None
+        constant = getattr(value, 'constant', None)
+        return constant if isinstance(constant, int) else None
+
+    @staticmethod
+    def _integer_fits(value: int, target: ir.IntType, unsigned: bool) -> bool:
+        if unsigned:
+            return 0 <= value <= (1 << target.width) - 1
+        return -(1 << (target.width - 1)) <= value <= (1 << (target.width - 1)) - 1
+
+    def _integer_common_type(
+        self,
+        left: ir.Value,
+        right: ir.Value,
+        left_node: object,
+        right_node: object,
+        unsigned: bool,
+    ) -> ir.IntType:
+        if not isinstance(left.type, ir.IntType) or not isinstance(right.type, ir.IntType):
+            raise FunctionEmissionError('Los operandos deben ser enteros en LLVM')
+        left_value = self._integer_constant_value(left)
+        right_value = self._integer_constant_value(right)
+        if left_value is not None and self._integer_fits(
+            left_value,
+            right.type,
+            self._expression_is_unsigned(right_node),
+        ):
+            return right.type
+        if right_value is not None and self._integer_fits(
+            right_value,
+            left.type,
+            self._expression_is_unsigned(left_node),
+        ):
+            return left.type
+        return left.type if left.type.width >= right.type.width else right.type
+
     @staticmethod
     def _is_array_descriptor_type(value_type: ir.Type) -> bool:
         elements = getattr(value_type, 'elements', ())
@@ -490,6 +532,36 @@ class ExpressionEmitterMixin:
             )
         return place.address
 
+    def _is_static_global_chain(
+        self,
+        name: str,
+        value: ir.Value,
+    ) -> bool:
+        """Allow pointer decay only for immutable, compile-time chains."""
+        if not isinstance(value, ir.GlobalVariable):
+            return False
+        if not getattr(value, 'global_constant', False):
+            return False
+
+        pointee = value.type.pointee
+        if not (
+            isinstance(pointee, ir.ArrayType)
+            and isinstance(pointee.element, ir.IntType)
+            and pointee.element.width == 8
+        ):
+            return False
+
+        info = self._global_values.get(name)
+        type_spec = getattr(info, 'type_spec', None)
+        return bool(
+            info is not None
+            and getattr(info, 'is_literal', False)
+            and isinstance(getattr(info, 'value', None), str)
+            and getattr(type_spec, 'name', None) == 'chain'
+            and getattr(type_spec, 'pointer_level', 0) == 0
+            and getattr(type_spec, 'array_depth', 0) == 0
+        )
+
     def _compile_expression(
         self,
         node: object,
@@ -576,10 +648,26 @@ class ExpressionEmitterMixin:
                         builder,
                         signed=not unsigned,
                     )
-                elif isinstance(left.type, ir.IntType):
+                elif isinstance(left.type, ir.IntType) and isinstance(
+                    right.type,
+                    ir.IntType,
+                ):
+                    target_type = self._integer_common_type(
+                        left,
+                        right,
+                        current.left,
+                        current.right,
+                        unsigned,
+                    )
+                    left = self._coerce_int(
+                        left,
+                        target_type,
+                        builder,
+                        signed=not unsigned,
+                    )
                     right = self._coerce_int(
                         right,
-                        left.type,
+                        target_type,
                         builder,
                         signed=not unsigned,
                     )
@@ -683,7 +771,7 @@ class ExpressionEmitterMixin:
                     address = self._compile_address(primary, builder, values)
                     pointee = address.type.pointee
                     if isinstance(pointee, ir.ArrayType):
-                        return ir.Constant(ir.IntType(32), pointee.count)
+                        return ir.Constant(self._size_integer_type(), pointee.count)
                     if self._is_array_descriptor_type(pointee):
                         descriptor = builder.load(address)
                         return builder.extract_value(descriptor, 1)
@@ -758,12 +846,18 @@ class ExpressionEmitterMixin:
                 raise FunctionEmissionError(
                     f'La variable {name} no tiene emision LLVM en esta fase'
                 )
+            active_spec = self._active_specs.get(name)
             chain_pointer = (
-                self._active_specs.get(name) is not None
-                and self._active_specs[name].name == 'chain'
-                and isinstance(expected_type, ir.PointerType)
+                isinstance(expected_type, ir.PointerType)
                 and isinstance(expected_type.pointee, ir.IntType)
                 and expected_type.pointee.width == 8
+                and (
+                    (
+                        active_spec is not None
+                        and active_spec.name == 'chain'
+                    )
+                    or self._is_static_global_chain(name, result)
+                )
             )
             if chain_pointer:
                 if isinstance(result, ir.GlobalVariable):
@@ -916,7 +1010,7 @@ class ExpressionEmitterMixin:
                         )
                     return builder.load(pointer)
             return ir.Constant(
-                ir.IntType(64),
+                self._size_integer_type(),
                 self._compile_chain_length(argument),
             )
         address = self._compile_address(argument, builder, values)
@@ -925,7 +1019,7 @@ class ExpressionEmitterMixin:
             raise FunctionEmissionError(
                 'Len_t requiere un array con tamano conocido en compilacion'
             )
-        return ir.Constant(ir.IntType(64), pointee.count)
+        return ir.Constant(self._size_integer_type(), pointee.count)
 
     @staticmethod
     def _llvm_type_size(value_type: ir.Type, pointer_size: int) -> int:
@@ -948,7 +1042,7 @@ class ExpressionEmitterMixin:
             f'No se puede determinar el tamano LLVM de {value_type}'
         )
 
-    def _compile_array_size(
+    def _compile_array_element_size(
         self,
         argument: object,
         source_type: ir.Type,
@@ -959,11 +1053,11 @@ class ExpressionEmitterMixin:
         pointee = address.type.pointee
         if not isinstance(pointee, ir.ArrayType):
             raise FunctionEmissionError(
-                'Size_t requiere un array con tamano conocido en compilacion'
+                'Size_t requiere un array con tipo de elemento conocido'
             )
         return ir.Constant(
-            ir.IntType(64),
-            self._llvm_type_size(pointee, self._pointer_size),
+            self._size_integer_type(),
+            self._llvm_type_size(pointee.element, self._pointer_size),
         )
 
     def _compile_size_argument(
@@ -978,14 +1072,14 @@ class ExpressionEmitterMixin:
             getattr(source_spec, 'array_depth', 0) > 0
             and not getattr(source_spec, 'pointer_level', 0)
         ):
-            return self._compile_array_size(
+            return self._compile_array_element_size(
                 argument,
                 source_type,
                 builder,
                 values,
             )
         return ir.Constant(
-            ir.IntType(64),
+            self._size_integer_type(),
             self._llvm_type_size(source_type, self._pointer_size),
         )
 
@@ -1128,6 +1222,7 @@ class ExpressionEmitterMixin:
                         ),
                         target_type,
                         builder,
+                        signed=not self._expression_is_unsigned(argument),
                     )
                 )
             argument_index += 1

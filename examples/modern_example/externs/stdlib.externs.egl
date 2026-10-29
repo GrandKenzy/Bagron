@@ -1,5 +1,0 @@
-@header "stdlib.h" ; se pueden añadir varios headers, por ejemplo:
-@header "stdint.h"
-@header "string.h" ; y el file llamarse solo standard.extern.egl
-
-

@@ -105,7 +105,10 @@ def _resolve_base_type(compiler: Compiler, node: gast.ASTRef) -> TypeSpec:
         return TypeSpec('int32')
 
     try:
-        type_spec = resolve_type(type_node)
+        type_spec = resolve_type(
+            type_node,
+            pointer_size=compiler.storage.pointer_size,
+        )
     except TypeResolutionError as error:
         compiler.error(f'El tipo base del enum es invalido: {error}')
         return TypeSpec('int32')

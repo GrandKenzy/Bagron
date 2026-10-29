@@ -14,7 +14,7 @@ extern "kernel32":
     ) int32
 
 @assembler
-func _win32_count(value: uint64) uint32:
+func _win32_count(value: usize) uint32:
     #prep assembler "intel"
         mov rax, {value}
     #end
@@ -23,11 +23,11 @@ func _win32_count(value: uint64) uint32:
 @unsafe
 func _serialize_int_at_raw(
     output: char[],
-    output_len: uint64,
-    position: uint64,
+    output_len: usize,
+    position: usize,
     value: int32,
-    value_size: uint64
-) uint64:
+    value_size: usize
+) usize:
     digits_text: chain = "0123456789"
     if value_size != 4:
         return 0
@@ -35,9 +35,9 @@ func _serialize_int_at_raw(
         return 0
 
     negative: bool = value < 0
-    digits: uint64 = 0
+    digits: usize = 0
     cursor: int32 = value
-    digit: int = 0
+    digit: int32 = 0
     nul: char
     if value == 0:
         digits = 1
@@ -50,11 +50,11 @@ func _serialize_int_at_raw(
             digits += 1
             cursor /= 10
 
-    required: uint64 = digits
+    required: usize = digits
     if negative:
         required += 1
     required += 1
-    end: uint64 = position
+    end: usize = position
     end += required
     if end > output_len:
         return 0
@@ -63,7 +63,7 @@ func _serialize_int_at_raw(
         output[position] = "-"
         position += 1
 
-    write_position: uint64 = position
+    write_position: usize = position
     write_position += digits
     write_position -= 1
     cursor = value
@@ -82,11 +82,11 @@ func _serialize_int_at_raw(
             write_position -= 1
             cursor /= 10
 
-    nul_position: uint64 = position
+    nul_position: usize = position
     nul_position += digits
     output[nul_position] = nul
 
-    written: uint64 = digits
+    written: usize = digits
     if negative:
         written += 1
     return written
@@ -97,8 +97,8 @@ func serialize_int(
     output_len: Len_t,
     value: int32,
     value_size: Size_t
-) uint64:
-    position: uint64 = 0
+) usize:
+    position: usize = 0
     while position < output_len && output[position] != 0:
         position += 1
     return _serialize_int_at_raw(output, output_len, position, value, value_size)
@@ -107,20 +107,21 @@ func serialize_int(
 func serialize_int_at(
     output: char[],
     output_len: Len_t,
-    position: uint64,
+    position: usize,
     value: int32,
     value_size: Size_t
-) uint64:
+) usize:
     return _serialize_int_at_raw(output, output_len, position, value, value_size)
 
 @unsafe
 func printa(buffer: char[], long: Len_t, size: Size_t) void:
     handle *: void = GetStdHandle(4294967285)
-    if long != size:
+    if size == 0:
         return
-    if size > 4294967295:
+    total: usize = long * size
+    if total > 4294967295:
         return
-    WriteFile(handle, $buffer[0], _win32_count(size), Null, Null)
+    WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
     return
 
 @unsafe
@@ -131,15 +132,15 @@ func printb(
     hexadecimal: bool
 ) void:
     handle *: void = GetStdHandle(4294967285)
-    if long != size:
+    if size != 1:
         return
 
     if hexadecimal:
         digits: chain = "0123456789ABCDEF"
-        index: uint64 = 0
+        index: usize = 0
         value: byte = 0
-        high: int = 0
-        low: int = 0
+        high: byte = 0
+        low: byte = 0
         pair: char[3] = "00"
         while index < long:
             value = buffer[index]
@@ -151,16 +152,17 @@ func printb(
             index += 1
         return
 
-    if size > 4294967295:
+    total: usize = long * size
+    if total > 4294967295:
         return
-    if size > 0:
-        WriteFile(handle, $buffer[0], _win32_count(size), Null, Null)
+    if total > 0:
+        WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
     return
 
 @unsafe
 func print(text: chain, length: Len_t) void:
     handle *: void = GetStdHandle(4294967285)
-    count: uint64 = 0
+    count: usize = 0
     if length > 0:
         count = length
         count -= 1

@@ -197,7 +197,7 @@ def _parameter_width(parameter: object) -> int:
         return 64
 
     name = getattr(type_spec, 'name', None)
-    if name in {'Bint', 'uBint'}:
+    if name in {'Bint', 'uBint', 'usize', 'isize'}:
         width = getattr(type_spec, 'bit_width', None)
     else:
         width = {
@@ -208,7 +208,6 @@ def _parameter_width(parameter: object) -> int:
             'uint8': 8,
             'int16': 16,
             'uint16': 16,
-            'int': 32,
             'int32': 32,
             'uint': 32,
             'uint32': 32,
