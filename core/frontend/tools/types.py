@@ -417,13 +417,18 @@ def _validate_expansion_parameters(
 ) -> None:
     """Ensure compiler-supplied lengths and sizes have valid sources."""
 
-    def forwarded_chain_length(source: ValueInfo | None) -> bool:
+    def forwarded_expansion(
+        source: ValueInfo | None,
+        *,
+        is_length: bool,
+    ) -> bool:
         source_name = getattr(source, 'identifier', None)
         signature = getattr(current_function, 'signature', None)
         if not source_name or signature is None:
             return False
         return any(
-            getattr(parameter, 'is_length', False)
+            getattr(parameter, 'is_length', False) == is_length
+            and getattr(parameter, 'is_size', False) == (not is_length)
             and getattr(parameter, 'length_of', None) == source_name
             for parameter in getattr(signature, 'parameters', ())
         )
@@ -445,7 +450,7 @@ def _validate_expansion_parameters(
                 )
                 or (
                     not source.is_literal
-                    and not forwarded_chain_length(source)
+                    and not forwarded_expansion(source, is_length=True)
                 )
             ):
                 raise ValueResolutionError(
@@ -461,7 +466,11 @@ def _validate_expansion_parameters(
             and source_type.array_lengths
             else None
         )
-        if is_length and array_length is None:
+        if (
+            is_length
+            and array_length is None
+            and not forwarded_expansion(source, is_length=True)
+        ):
             raise ValueResolutionError(
                 f'Len_t de {function_name} requiere que {source_name} '
                 'sea un array con longitud conocida en compilacion'
@@ -471,8 +480,12 @@ def _validate_expansion_parameters(
                 f'Size_t de {function_name} no tiene un valor fuente valido'
             )
         if is_size and source_type.array_depth > 0 and not source_type.pointer_level:
-            if not source_type.array_lengths or any(
-                length is None for length in source_type.array_lengths
+            if (
+                (
+                    not source_type.array_lengths
+                    or any(length is None for length in source_type.array_lengths)
+                )
+                and not forwarded_expansion(source, is_length=False)
             ):
                 raise ValueResolutionError(
                     f'Size_t de {function_name} requiere que {source_name} '

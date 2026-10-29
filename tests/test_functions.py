@@ -170,6 +170,35 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return\n'
             )
 
+    def test_array_parameter_requires_size_t_after_len_t(self):
+        with self.assertRaisesRegex(CompilationError, r'Size_t.*tamano'):
+            self.compile_source(
+                'func consume(buffer: char[], long: Len_t) void:\n'
+                '    return\n'
+            )
+
+    def test_fixed_array_parameter_requires_both_metadata_types(self):
+        with self.assertRaisesRegex(CompilationError, r'Len_t.*Size_t'):
+            self.compile_source(
+                'func consume(buffer: char[4]) void:\n'
+                '    return\n'
+            )
+
+    def test_unsafe_array_parameter_also_requires_both_metadata_types(self):
+        with self.assertRaisesRegex(CompilationError, r'Len_t.*Size_t'):
+            self.compile_source(
+                '@unsafe\n'
+                'func consume(buffer: char[]) void:\n'
+                '    return\n'
+            )
+
+    def test_array_metadata_must_be_ordered_len_then_size(self):
+        with self.assertRaisesRegex(CompilationError, r'Len_t antes de Size_t'):
+            self.compile_source(
+                'func consume(buffer: char[], size: Size_t, long: Len_t) void:\n'
+                '    return\n'
+            )
+
     def test_size_t_is_injected_for_a_scalar(self):
         source = (
             'func consume(value: int32, size: Size_t) usize:\n'
@@ -227,7 +256,7 @@ class FunctionSemanticTests(unittest.TestCase):
     def test_len_t_rejects_a_scalar_source(self):
         with self.assertRaisesRegex(CompilationError, r'char\[\]|Len_t'):
             self.compile_source(
-                'func consume(buffer: char[], long: Len_t) void:\n'
+                'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
                 '    return\n'
                 'func bad() int32:\n'
                 '    letter: char = "A"\n'
@@ -235,15 +264,14 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_len_t_rejects_an_array_without_a_compile_time_length(self):
-        with self.assertRaisesRegex(CompilationError, 'Len_t.*longitud'):
-            self.compile_source(
-                'func consume(buffer: char[], long: Len_t) void:\n'
-                '    return\n'
-                'func relay(buffer: char[]) void:\n'
-                '    consume(buffer)\n'
-                '    return\n'
-            )
+    def test_array_metadata_can_be_forwarded_between_strict_parameters(self):
+        self.compile_source(
+            'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
+            '    return\n'
+            'func relay(buffer: char[], long: Len_t, size: Size_t) void:\n'
+            '    consume(buffer)\n'
+            '    return\n'
+        )
 
     def test_void_function_accepts_empty_return(self):
         self.compile_source(

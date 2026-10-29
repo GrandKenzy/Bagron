@@ -43,7 +43,7 @@ class StandardLibraryTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'Hola / DOLLARAdiosHola\x00', result.stdout)
-        self.assertEqual(4, module.count('call i32 @"WriteFile"'))
+        self.assertEqual(5, module.count('call i32 @"WriteFile"'))
         self.assertRegex(module, r'call void @"print"\([^)]*i64 5\)')
         self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 1\)')
 
@@ -180,6 +180,219 @@ class StandardLibraryTests(unittest.TestCase):
             )
         )
         self.assertEqual(expected, result.stdout)
+
+    def test_nested_static_array_metadata_and_print_int(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func check_leaf(\n'
+                '    data: int32[],\n'
+                '    length: Len_t,\n'
+                '    element_size: Size_t\n'
+                ') int32:\n'
+                '    if length != 4:\n'
+                '        return 10\n'
+                '    if element_size != 4:\n'
+                '        return 11\n'
+                '    if data[0] != 11:\n'
+                '        return 12\n'
+                '    if data[3] != -44:\n'
+                '        return 13\n'
+                '    print_int(data[0])\n'
+                '    print(":")\n'
+                '    print_int(data[3])\n'
+                '    print("\\n")\n'
+                '    return 0\n'
+                '@unsafe\n'
+                'func check_middle(\n'
+                '    data: int32[],\n'
+                '    length: Len_t,\n'
+                '    element_size: Size_t\n'
+                ') int32:\n'
+                '    return check_leaf(data)\n'
+                '@unsafe\n'
+                'func check_outer(\n'
+                '    data: int32[],\n'
+                '    length: Len_t,\n'
+                '    element_size: Size_t\n'
+                ') int32:\n'
+                '    return check_middle(data)\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    values: int32[4] = {11, 22, 33, -44}\n'
+                '    return check_outer(values)\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'11:-44\n', result.stdout)
+
+    def test_nested_multiple_arrays_keep_metadata_and_contents_separate(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func check_leaf(\n'
+                '    numbers: int32[],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    raw: byte[],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t\n'
+                ') int32:\n'
+                '    if numbers_length != 4:\n'
+                '        return 10\n'
+                '    if numbers_size != 4:\n'
+                '        return 11\n'
+                '    if raw_length != 3:\n'
+                '        return 12\n'
+                '    if raw_size != 1:\n'
+                '        return 13\n'
+                '    if numbers[0] != 11:\n'
+                '        return 14\n'
+                '    if numbers[3] != -44:\n'
+                '        return 15\n'
+                '    if raw[0] != 65:\n'
+                '        return 16\n'
+                '    if raw[1] != 0:\n'
+                '        return 17\n'
+                '    if raw[2] != 255:\n'
+                '        return 18\n'
+                '    print_int(numbers[0])\n'
+                '    print(":")\n'
+                '    print_int(numbers[3])\n'
+                '    print("\\n")\n'
+                '    printb(raw, false)\n'
+                '    return 0\n'
+                '@unsafe\n'
+                'func check_middle(\n'
+                '    numbers: int32[],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    raw: byte[],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t\n'
+                ') int32:\n'
+                '    return check_leaf(numbers, raw)\n'
+                '@unsafe\n'
+                'func check_outer(\n'
+                '    numbers: int32[],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    raw: byte[],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t\n'
+                ') int32:\n'
+                '    return check_middle(numbers, raw)\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    numbers: int32[4] = {11, 22, 33, -44}\n'
+                '    raw: byte[3] = {65, 0, 255}\n'
+                '    return check_outer(numbers, raw)\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'11:-44\nA\x00\xff', result.stdout)
+
+    def test_recursive_chain_and_char_array_inversion_with_reordered_parameters(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func invert_forward(\n'
+                '    chars: char[],\n'
+                '    chars_length: Len_t,\n'
+                '    chars_size: Size_t,\n'
+                '    source: chain,\n'
+                '    source_length: Len_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if step > 10:\n'
+                '        return 10\n'
+                '    if chars_length != 12:\n'
+                '        return 11\n'
+                '    if chars_size != 1:\n'
+                '        return 12\n'
+                '    if source_length != 12:\n'
+                '        return 13\n'
+                '    expected: char = source[10 - step]\n'
+                '    chars[step] = expected\n'
+                '    if chars[step] != expected:\n'
+                '        return 14\n'
+                '    return invert_reverse(source, chars, step + 1)\n'
+                '@unsafe\n'
+                'func invert_reverse(\n'
+                '    source: chain,\n'
+                '    source_length: Len_t,\n'
+                '    chars: char[],\n'
+                '    chars_length: Len_t,\n'
+                '    chars_size: Size_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if source_length != 12:\n'
+                '        return 20\n'
+                '    if chars_length != 12:\n'
+                '        return 21\n'
+                '    if chars_size != 1:\n'
+                '        return 22\n'
+                '    if source[0] != 65:\n'
+                '        return 23\n'
+                '    if source[10] != 75:\n'
+                '        return 24\n'
+                '    if step > 10:\n'
+                '        print(source)\n'
+                '        print("|")\n'
+                '        printa(chars)\n'
+                '        return 0\n'
+                '    return invert_forward(chars, source, step)\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    chars: char[12] = "ABCDEFGHIJK"\n'
+                '    source: chain = "ABCDEFGHIJK"\n'
+                '    return invert_forward(chars, source, 0)\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'ABCDEFGHIJK|KJIHGFEDCBA\x00', result.stdout)
 
 
 if __name__ == '__main__':

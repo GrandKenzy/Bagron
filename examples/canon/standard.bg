@@ -25,12 +25,15 @@ func _win32_count(value: usize) uint32:
 @unsafe
 func _serialize_int_at_raw(
     output: char[],
-    output_len: usize,
+    output_len: Len_t,
+    output_size: Size_t,
     position: usize,
     value: int32,
-    value_size: usize
+    value_size: Size_t
 ) usize:
     digits_text: chain = "0123456789"
+    if output_size != 1:
+        return 0
     if value_size != 4:
         return 0
     if position >= output_len:
@@ -97,23 +100,41 @@ func _serialize_int_at_raw(
 func serialize_int(
     output: char[],
     output_len: Len_t,
+    output_size: Size_t,
     value: int32,
     value_size: Size_t
 ) usize:
+    if output_size != 1:
+        return 0
     position: usize = 0
     while position < output_len && output[position] != 0:
         position += 1
-    return _serialize_int_at_raw(output, output_len, position, value, value_size)
+    return _serialize_int_at_raw(output, position, value)
 
 @unsafe
 func serialize_int_at(
     output: char[],
     output_len: Len_t,
+    output_size: Size_t,
     position: usize,
     value: int32,
     value_size: Size_t
 ) usize:
-    return _serialize_int_at_raw(output, output_len, position, value, value_size)
+    if output_size != 1:
+        return 0
+    return _serialize_int_at_raw(output, position, value)
+
+@unsafe
+func print_int(value: int32) void:
+    handle *: void = GetStdHandle(4294967285)
+    buffer: char[32]
+    written: usize = serialize_int(buffer, value)
+    if written == 0:
+        return
+    if written > 4294967295:
+        return
+    WriteFile(handle, $buffer[0], _win32_count(written), Null, Null)
+    return
 
 @unsafe
 func printa(buffer: char[], long: Len_t, size: Size_t) void:

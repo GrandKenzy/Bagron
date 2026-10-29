@@ -205,10 +205,10 @@ arrays y con el caso especial de `chain`, que es estático, inmutable y seguro:
 ```bg
 name: char[16] = "Hola"
 
-func foo(data: char[], length: Len_t) void:
+func foo(data: char[], length: Len_t, size: Size_t) void:
     return
 
-foo(name)                 ; Bagron expande Len_t a 16
+foo(name)                 ; Bagron expande Len_t a 16 y Size_t a 1
 ```
 
 `Size_t` representa el tamaño en bytes del tipo asociado:
@@ -231,16 +231,16 @@ qué ser múltiplo de dos.
 ```bg
 values: int32[3] = {1, 2, 3}
 
-func send(data: int32[], bytes: Size_t) void:
+func send(data: int32[], length: Len_t, bytes: Size_t) void:
     return
 
-send(values)              ; Bagron expande Size_t a 4
+send(values)              ; Bagron expande Len_t a 3 y Size_t a 4
 ```
 
 Los metatipos siempre se expanden hacia la derecha del parámetro visible al
-que están asociados. Cada `Len_t` o `Size_t` debe aparecer inmediatamente
-después de su parámetro fuente; se pueden pedir varios mientras se conserve
-ese orden:
+que están asociados. Para cada array, `Len_t` y `Size_t` son obligatorios y
+deben aparecer como un bloque consecutivo en ese orden. Se pueden pedir
+metadatos para varios parámetros mientras cada bloque conserve ese orden:
 
 ```bg
 values: int32[3] = {1, 2, 3}
@@ -248,17 +248,25 @@ other: int32[3] = {4, 5, 6}
 
 func send(
     data: int32[],
+    length: Len_t,
     bytes: Size_t,
     other_data: int32[],
+    other_length: Len_t,
     other_bytes: Size_t
 ) void:
     return
 
-send(values, other)       ; expansión interna: send(values, 4, other, 4)
+send(values, other)       ; expansión interna: send(values, 3, 4, other, 3, 4)
 ```
 
 El llamador solo proporciona los argumentos visibles. No puede insertar,
 reemplazar ni calcular manualmente los argumentos `Len_t` o `Size_t`.
+
+En cualquier firma que reciba un array, `Len_t` y `Size_t` son obligatorios y
+deben aparecer consecutivamente en ese orden, incluso si la función es
+`@unsafe`. `T[]` en una firma no declara almacenamiento dinámico: representa
+un array estático recibido con metadatos que pueden reenviarse. `chain` es la
+excepción y conserva su firma especial con `Len_t`.
 
 ## `Bint<n>` y `uBint<n>`
 

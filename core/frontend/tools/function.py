@@ -220,23 +220,21 @@ def _signature_parameters(
             continue
         parameters.append(parameter)
         last_data_parameter = parameter
-    return tuple(parameters)
+    resolved = tuple(parameters)
+    _validate_array_expansion_parameters(resolved)
+    return resolved
 
 
-def _validate_safe_array_parameters(
-    compiler: Compiler,
-    symbol: FunctionSymbol,
+def _validate_array_expansion_parameters(
+    parameters: tuple[ParameterSpec, ...],
 ) -> None:
-    """Require an explicit compile-time length for arrays crossing safe APIs."""
-    if symbol.is_unsafe:
-        return
+    """Require Len_t and Size_t for every array parameter.
 
-    parameters = symbol.signature.parameters
-    length_sources = {
-        parameter.length_of
-        for parameter in parameters
-        if parameter.is_length
-    }
+    The expansion parameters are compiler-supplied, but they are part of the
+    function ABI.  Requiring both values for every array keeps that ABI
+    explicit and prevents unsafe functions from silently omitting metadata.
+    ``chain`` remains a separate static-string case and only uses ``Len_t``.
+    """
     for parameter in parameters:
         type_spec = parameter.type_spec
         if (
@@ -246,10 +244,33 @@ def _validate_safe_array_parameters(
             or type_spec.array_depth == 0
         ):
             continue
-        if parameter.name not in length_sources:
-            compiler.error(
-                f'La funcion segura {symbol.name} debe declarar Len_t para '
-                f'el array {parameter.name}; la longitud es obligatoria'
+
+        linked = [
+            (index, candidate)
+            for index, candidate in enumerate(parameters)
+            if (
+                (candidate.is_length or candidate.is_size)
+                and candidate.length_of == parameter.name
+            )
+        ]
+        lengths = [
+            (index, candidate)
+            for index, candidate in linked
+            if candidate.is_length
+        ]
+        sizes = [
+            (index, candidate)
+            for index, candidate in linked
+            if candidate.is_size
+        ]
+        if len(lengths) != 1 or len(sizes) != 1:
+            raise TypeResolutionError(
+                f'El array {parameter.name} debe declarar Len_t y Size_t; '
+                'la longitud y el tamano del elemento son obligatorios'
+            )
+        if lengths[0][0] > sizes[0][0]:
+            raise TypeResolutionError(
+                f'El array {parameter.name} debe declarar Len_t antes de Size_t'
             )
 
 
@@ -364,7 +385,6 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         symbol = FunctionSymbol(name, signature, decorators=decorators)
         compiler.storage.define_function(symbol)
         compiler.function_bindings[id(node)] = symbol
-        _validate_safe_array_parameters(compiler, symbol)
         _validate_bit_width(compiler, name, signature.return_type)
         _bind_parameters(compiler, symbol)
 

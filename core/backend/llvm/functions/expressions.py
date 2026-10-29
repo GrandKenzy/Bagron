@@ -983,6 +983,39 @@ class ExpressionEmitterMixin:
                 'Un chain usado por la ABI actual solo puede contener ASCII'
             ) from error
 
+    def _compile_forwarded_expansion(
+        self,
+        argument: object,
+        *,
+        is_length: bool,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value | None:
+        source_name = self._identifier(argument)
+        if self._active_function_symbol is None or not source_name:
+            return None
+        forwarded = next(
+            (
+                parameter
+                for parameter in self._active_function_symbol.signature.parameters
+                if (
+                    parameter.length_of == source_name
+                    and parameter.is_length == is_length
+                    and parameter.is_size == (not is_length)
+                )
+            ),
+            None,
+        )
+        if forwarded is None:
+            return None
+        pointer = values.get(forwarded.name)
+        if pointer is None:
+            raise FunctionEmissionError(
+                f'El metadato expandido {forwarded.name} no tiene '
+                'almacenamiento LLVM'
+            )
+        return builder.load(pointer)
+
     def _compile_length_argument(
         self,
         argument: object,
@@ -991,28 +1024,26 @@ class ExpressionEmitterMixin:
         values: dict[str, ir.Value],
     ) -> ir.Value:
         if getattr(source_spec, 'name', None) == 'chain':
-            source_name = self._identifier(argument)
-            if self._active_function_symbol is not None and source_name:
-                forwarded = next(
-                    (
-                        parameter
-                        for parameter in self._active_function_symbol.signature.parameters
-                        if parameter.is_length
-                        and parameter.length_of == source_name
-                    ),
-                    None,
-                )
-                if forwarded is not None:
-                    pointer = values.get(forwarded.name)
-                    if pointer is None:
-                        raise FunctionEmissionError(
-                            f'El Len_t {forwarded.name} no tiene almacenamiento LLVM'
-                        )
-                    return builder.load(pointer)
+            forwarded = self._compile_forwarded_expansion(
+                argument,
+                is_length=True,
+                builder=builder,
+                values=values,
+            )
+            if forwarded is not None:
+                return forwarded
             return ir.Constant(
                 self._size_integer_type(),
                 self._compile_chain_length(argument),
             )
+        forwarded = self._compile_forwarded_expansion(
+            argument,
+            is_length=True,
+            builder=builder,
+            values=values,
+        )
+        if forwarded is not None:
+            return forwarded
         address = self._compile_address(argument, builder, values)
         pointee = address.type.pointee
         if not isinstance(pointee, ir.ArrayType):
@@ -1072,6 +1103,14 @@ class ExpressionEmitterMixin:
             getattr(source_spec, 'array_depth', 0) > 0
             and not getattr(source_spec, 'pointer_level', 0)
         ):
+            forwarded = self._compile_forwarded_expansion(
+                argument,
+                is_length=False,
+                builder=builder,
+                values=values,
+            )
+            if forwarded is not None:
+                return forwarded
             return self._compile_array_element_size(
                 argument,
                 source_type,
