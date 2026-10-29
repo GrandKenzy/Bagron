@@ -113,7 +113,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    leer: uBint<1> = 1\n'
             '    escribir: uBint<1> = 0\n'
             '    activo: bool = true\n'
-                '    reservado: uBint<5> = 0\n'
+            '    reservado: uBint<5> = 0\n'
             'punto: Punto\n'
             'base: Base\n'
             'permisos: Permisos\n'
@@ -139,7 +139,7 @@ class GlobalBackendTests(unittest.TestCase):
                 'flags Estado uint8:\n'
                 '    listo: uBint<1> = 1\n'
                 '    modo: uBint<2> = 2\n'
-            '    reservado: uBint<5> = 0\n'
+                '    reservado: uBint<5> = 0\n'
                 'func calcular() int32:\n'
                 '    punto: Punto\n'
                 '    punto.x = 4\n'
@@ -201,6 +201,48 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('load volatile i8', module)
         self.assertIn('store volatile i8', module)
         self.assertIn('lshr i8', module)
+
+    def test_emits_volatile_accesses_for_mmio_aggregates_and_pointers(self):
+        module = self.compile_source(
+            'struct Normal:\n'
+            '    value: uint32\n'
+            'volatile struct MMIO:\n'
+            '    value: uint32\n'
+            'volatile mold VistaMMIO:\n'
+            '    value: uint32\n'
+            'volatile flags EstadoMMIO uint8:\n'
+            '    listo: bool = false\n'
+            '    reservado: uBint<7> = 0\n'
+            '@unsafe\n'
+            'func leer_mmio(registros *: MMIO) uint32:\n'
+            '    return (registros).value\n'
+            '@unsafe\n'
+            'func escribir_mmio(registros *: MMIO) void:\n'
+            '    (registros).value = 7\n'
+            '    return\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    normal: Normal\n'
+            '    mmio: MMIO\n'
+            '    vista: VistaMMIO\n'
+            '    estado: EstadoMMIO\n'
+            '    normal.value = 1\n'
+            '    mmio.value = 2\n'
+            '    vista.value = 3\n'
+            '    estado.listo = true\n'
+            '    escribir_mmio($mmio)\n'
+            '    observado: uint32 = normal.value\n'
+            '    lectura: uint32 = leer_mmio($mmio)\n'
+            '    return 0\n',
+            add_main=False,
+        )
+
+        self.assertIn('load volatile i32', module)
+        self.assertIn('store volatile i32', module)
+        self.assertIn('load volatile i8', module)
+        self.assertIn('store volatile i8', module)
+        self.assertIn('load i32', module)
+        self.assertIn('store i32', module)
 
     def test_emits_enum_underlying_width(self):
         module = self.compile_source(
