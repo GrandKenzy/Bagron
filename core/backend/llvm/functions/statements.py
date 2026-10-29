@@ -10,7 +10,11 @@ from core.backend.llvm.types import (
     value_type,
 )
 from core.frontend.objects import FunctionSymbol
-from core.frontend.tools.types import UNSIGNED_INTEGER_TYPES
+from core.frontend.tools.types import (
+    FOR_ITERATOR_TYPES,
+    UNSIGNED_INTEGER_TYPES,
+    target_iteration_limit,
+)
 
 from .errors import FunctionEmissionError
 
@@ -347,16 +351,24 @@ class StatementEmitterMixin:
         name = self._identifier(signature)
         if name is None or symbol.scope is None:
             raise FunctionEmissionError('El for no tiene un iterador valido')
-        iterator_symbol = symbol.scope.resolve(name)
-        type_spec = getattr(iterator_symbol, 'type_spec', None)
+        type_spec = getattr(symbol, 'loop_iterators', {}).get(name)
+        if type_spec is None:
+            iterator_symbol = symbol.scope.resolve(name)
+            type_spec = getattr(iterator_symbol, 'type_spec', None)
         if type_spec is None:
             raise FunctionEmissionError(f'No existe el iterador {name}')
+        if (
+            type_spec.name not in FOR_ITERATOR_TYPES
+            or type_spec.pointer_level
+            or type_spec.array_depth
+        ):
+            raise FunctionEmissionError(
+                f'El iterador {name} debe tener exactamente un tipo '
+                'uint8/uint16/uint32/uint64'
+            )
         iterator_type = scalar_type(type_spec)
         if not isinstance(iterator_type, ir.IntType):
-            raise FunctionEmissionError(f'El iterador {name} no es entero')
-        signed = type_spec.name in {
-            'int8', 'int16', 'int32', 'int64', 'isize', 'Bint'
-        }
+            raise FunctionEmissionError(f'El iterador {name} no es uint*')
 
         range_values = [
             child for child in self._children(signature)
@@ -371,40 +383,77 @@ class StatementEmitterMixin:
             self._compile_expression(range_values[0], builder, values),
             iterator_type,
             builder,
-            signed,
+            signed=False,
         )
         end = self._coerce_int(
             self._compile_expression(range_values[1], builder, values),
             iterator_type,
             builder,
-            signed,
+            signed=False,
         )
         step = self._coerce_int(
             self._compile_expression(range_values[2], builder, values),
             iterator_type,
             builder,
-            signed,
+            signed=False,
         )
 
-        iterator = values.get(name)
-        if iterator is None:
-            iterator = builder.alloca(iterator_type, name=f'{name}.addr')
-            values[name] = iterator
-        builder.store(start, iterator)
+        block_id = len(function.blocks)
+        target_limit = min(
+            target_iteration_limit(self._pointer_size),
+            (1 << iterator_type.width) - 1,
+        )
+        range_limit = ir.Constant(iterator_type, target_limit)
+        step_valid_block = function.append_basic_block(
+            name=f'for.step.valid.{block_id}'
+        )
+        range_invalid_block = function.append_basic_block(
+            name=f'for.range.invalid.{block_id}'
+        )
+        condition_block = function.append_basic_block(
+            name=f'for.cond.{block_id}'
+        )
+        body_block = function.append_basic_block(name=f'for.body.{block_id}')
+        step_block = function.append_basic_block(name=f'for.step.{block_id}')
+        update_block = function.append_basic_block(
+            name=f'for.update.{block_id}'
+        )
+        after_block = function.append_basic_block(name=f'for.end.{block_id}')
 
-        condition_block = function.append_basic_block(name='for.cond')
-        body_block = function.append_basic_block(name='for.body')
-        step_block = function.append_basic_block(name='for.step')
-        after_block = function.append_basic_block(name='for.end')
-        builder.branch(condition_block)
+        values_in_range = builder.and_(
+            builder.icmp_unsigned('<=', start, range_limit),
+            builder.icmp_unsigned('<=', end, range_limit),
+        )
+        values_in_range = builder.and_(
+            values_in_range,
+            builder.icmp_unsigned('<=', step, range_limit),
+        )
+        zero = ir.Constant(iterator_type, 0)
+        nonzero = builder.icmp_unsigned('!=', step, zero)
+        valid_range = builder.and_(values_in_range, nonzero)
+        builder.cbranch(valid_range, step_valid_block, range_invalid_block)
+
+        invalid_builder = ir.IRBuilder(range_invalid_block)
+        trap = self.module.globals.get('llvm.trap')
+        if trap is None:
+            trap = ir.Function(
+                self.module,
+                ir.FunctionType(ir.VoidType(), []),
+                name='llvm.trap',
+            )
+        invalid_builder.call(trap, [])
+        invalid_builder.unreachable()
+
+        valid_builder = ir.IRBuilder(step_valid_block)
+        iterator = valid_builder.alloca(iterator_type, name=f'{name}.addr')
+        if self.type_registry is not None:
+            iterator.align = self.type_registry.abi_alignment(iterator_type)
+        valid_builder.store(start, iterator)
+        valid_builder.branch(condition_block)
 
         condition_builder = ir.IRBuilder(condition_block)
         current = condition_builder.load(iterator)
-        zero = ir.Constant(iterator_type, 0)
-        positive = condition_builder.icmp_signed('>', step, zero)
-        ascending = condition_builder.icmp_signed('<', current, end)
-        descending = condition_builder.icmp_signed('>', current, end)
-        condition = condition_builder.select(positive, ascending, descending)
+        condition = condition_builder.icmp_unsigned('<', current, end)
         condition_builder.cbranch(condition, body_block, after_block)
 
         body_builder = ir.IRBuilder(body_block)
@@ -420,12 +469,24 @@ class StatementEmitterMixin:
 
         step_builder = ir.IRBuilder(step_block)
         current = step_builder.load(iterator)
-        updated = step_builder.add(current, step)
-        step_builder.store(updated, iterator)
-        step_builder.branch(condition_block)
+        # The range is half-open. If the next mathematical value reaches or
+        # exceeds `end`, leave the loop without materialising an overflowing
+        # unsigned value. This also makes ranges ending at UINT_MAX safe.
+        reaches_end = step_builder.icmp_unsigned('>=', step, end)
+        remaining = step_builder.sub(end, step)
+        reaches_end = step_builder.or_(
+            reaches_end,
+            step_builder.icmp_unsigned('>=', current, remaining),
+        )
+        step_builder.cbranch(reaches_end, after_block, update_block)
+
+        update_builder = ir.IRBuilder(update_block)
+        current = update_builder.load(iterator)
+        updated = update_builder.add(current, step)
+        update_builder.store(updated, iterator)
+        update_builder.branch(condition_block)
 
         builder.position_at_end(after_block)
-        values[name] = iterator
 
     @classmethod
     def _branch_children(cls, node: object) -> list[object]:
@@ -612,6 +673,7 @@ class StatementEmitterMixin:
             for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
             if getattr(variable, 'type_spec', None) is not None
         }
+        self._active_specs.update(getattr(symbol, 'loop_iterators', {}))
         self._active_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
@@ -672,6 +734,7 @@ class StatementEmitterMixin:
             for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
             if getattr(variable, 'type_spec', None) is not None
         }
+        self._active_specs.update(getattr(symbol, 'loop_iterators', {}))
         self._active_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())

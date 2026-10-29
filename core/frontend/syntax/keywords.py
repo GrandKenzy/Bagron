@@ -87,7 +87,6 @@ INTRINSIC_TYPES = {
     'int16': '#3B82F6',
     'int32': '#3B82F6',
     'int64': '#3B82F6',
-    'uint': '#3B82F6',
     'uint8': '#3B82F6',
     'byte': '#3B82F6',
     'uint16': '#3B82F6',

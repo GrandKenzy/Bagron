@@ -465,7 +465,7 @@ class ExpressionEmitterMixin:
                             volatile=volatile,
                             unsigned=(
                                 field.type_spec.name.startswith('u')
-                                or field.type_spec.name in {'uint', 'byte'}
+                                or field.type_spec.name == 'byte'
                             ),
                         )
                         continue

@@ -44,6 +44,10 @@ class FunctionSymbol:
     return_asm_node: object | None = None
     external_library: str | None = None
     calling_convention: str | None = None
+    # Numeric `for` iterators are compiler-owned loop-local bindings.  They
+    # are kept here because their lexical scope ends with the loop and they
+    # therefore are not part of `scope.namespace` after semantic collection.
+    loop_iterators: dict[str, TypeSpec] = field(default_factory=dict)
 
     @property
     def is_external(self) -> bool:

@@ -135,7 +135,7 @@ class GlobalBackendTests(unittest.TestCase):
                 '    y: int32\n'
                 'mold Vista:\n'
                 '    entero: int32\n'
-                '    crudo: uint\n'
+                '    crudo: uint32\n'
                 'flags Estado uint8:\n'
                 '    listo: uBint<1> = 1\n'
                 '    modo: uBint<2> = 2\n'
@@ -411,9 +411,9 @@ class GlobalBackendTests(unittest.TestCase):
             path = Path(directory) / '_main.bg'
             path.write_text(
                 'func main() int32:\n'
-                '    for i: int32 ran (1, 4, 1):\n'
+                '    for i: uint32 ran (1, 4, 1):\n'
                 '        pass\n'
-                '    for j: int8 ran (3, 0, -1):\n'
+                '    for j: uint32 ran (3, 6, 1):\n'
                 '        pass\n'
                 '    return 0\n',
                 encoding='utf-8',
@@ -427,6 +427,69 @@ class GlobalBackendTests(unittest.TestCase):
             )
 
         self.assertEqual(0, result.returncode)
+
+    def test_numeric_for_traps_on_runtime_zero_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func main() int32:\n'
+                '    step: uint32 = 0\n'
+                '    for i: uint32 ran (0, 3, step):\n'
+                '        pass\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertNotEqual(0, result.returncode)
+
+    def test_numeric_for_uses_unsigned_comparisons_above_signed_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func main() int32:\n'
+                '    count: int32 = 0\n'
+                '    for i: uint32 ran (2147483648, 2147483651, 1):\n'
+                '        count += 1\n'
+                '    return count\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(3, result.returncode)
+
+    def test_numeric_for_does_not_wrap_when_next_value_reaches_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func main() int32:\n'
+                '    count: int32 = 0\n'
+                '    for i: uint32 ran (4294967294, 4294967295, 2):\n'
+                '        count += 1\n'
+                '    return count\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(1, result.returncode)
 
     def test_builds_and_runs_if_elif_else_while_and_nested_for(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -443,8 +506,8 @@ class GlobalBackendTests(unittest.TestCase):
                 '        else:\n'
                 '            total += 3\n'
                 '        i += 1\n'
-                '    for outer: int32 ran (0, 2, 1):\n'
-                '        for inner: int8 ran (0, 2, 1):\n'
+                '    for outer: uint32 ran (0, 2, 1):\n'
+                '        for inner: uint32 ran (0, 2, 1):\n'
                 '            total += 1\n'
                 '    return total\n',
                 encoding='utf-8',
@@ -465,7 +528,7 @@ class GlobalBackendTests(unittest.TestCase):
             path.write_text(
                 'func main() int32:\n'
                 '    total: int32 = 0\n'
-                '    for i: int32 ran (0, 3, 1):\n'
+                '    for i: uint32 ran (0, 3, 1):\n'
                 '        j: int32 = 0\n'
                 '        while j < 2:\n'
                 '            if i == 1:\n'
@@ -492,7 +555,7 @@ class GlobalBackendTests(unittest.TestCase):
             path.write_text(
                 'func main() int32:\n'
                 '    total: int32 = 0\n'
-                '    for i: int32 ran (0, 5, 1):\n'
+                '    for i: uint32 ran (0, 5, 1):\n'
                 '        if i == 1:\n'
                 '            continue\n'
                 '        if i == 4:\n'

@@ -67,7 +67,7 @@ class ELSE_SIGNATURE(cmb.RuleItem):
         cmb.MatchToken('COLON')
     )
     
-# for i: int8 ran (inicio, limite, paso):
+# for i: uint32 ran (inicio, limite, paso):
 class FOR_SIGNATURE(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(

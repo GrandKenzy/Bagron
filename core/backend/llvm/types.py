@@ -392,7 +392,6 @@ _INTEGER_TYPES = {
     'int16': 16,
     'int32': 32,
     'int64': 64,
-    'uint': 32,
     'uint8': 8,
     'uint16': 16,
     'uint32': 32,

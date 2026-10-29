@@ -9,6 +9,7 @@ from core.frontend.objects import (
     TypeSpec,
 )
 from core.frontend.tools.types import (
+    FOR_ITERATOR_TYPES,
     INTEGER_TYPES,
     TypeResolutionError,
     UnsupportedExpressionError,
@@ -19,6 +20,7 @@ from core.frontend.tools.types import (
     is_condition_type,
     is_compatible,
     resolve_type,
+    target_iteration_limit,
     _type_is_const,
     _type_name,
 )
@@ -455,10 +457,14 @@ def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTR
     symbol.return_node = value_node
 
 
-def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) -> None:
+def _for_binding(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+) -> str | None:
     scope = symbol.scope
     if scope is None:
-        return
+        return None
 
     signature = next(
         (
@@ -468,7 +474,7 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
         None,
     )
     if signature is None:
-        return
+        return None
 
     children = _children(signature)
     name = ''
@@ -482,7 +488,7 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
             break
 
     if not name or type_node is None:
-        return
+        return None
 
     try:
         type_spec = resolve_type(
@@ -491,17 +497,17 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
         )
     except TypeResolutionError as error:
         compiler.error(f'{name}: {error}')
-        return
+        return None
 
     if (
-        type_spec.name not in INTEGER_TYPES
+        type_spec.name not in FOR_ITERATOR_TYPES
         or type_spec.pointer_level
         or type_spec.array_depth
     ):
         compiler.error(
-            f'El iterador {name} debe tener un tipo entero escalar especificado'
+            f'El iterador {name} debe tener exactamente un tipo uint8/uint16/uint32/uint64'
         )
-        return
+        return None
 
     range_values = [
         child for child in children
@@ -509,7 +515,7 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
     ]
     if len(range_values) != 3:
         compiler.error(f'El rango de {name} debe tener start, end y step')
-        return
+        return None
 
     for index, value_node in enumerate(range_values):
         try:
@@ -527,6 +533,16 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
                 f'El valor {index + 1} del rango de {name} no coincide con '
                 f'{type_spec.canonical_name}'
             )
+        if (
+            value_info.is_literal
+            and isinstance(value_info.value, int)
+            and value_info.value > target_iteration_limit(compiler.storage.pointer_size)
+        ):
+            compiler.error(
+                f'El valor {index + 1} del rango de {name} excede '
+                'el limite maximo de iteracion del target '
+                f'({target_iteration_limit(compiler.storage.pointer_size)})'
+            )
         if index == 2 and value_info.is_literal and value_info.value == 0:
             compiler.error(f'El step de {name} no puede ser cero')
 
@@ -534,9 +550,13 @@ def _for_binding(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) 
         compiler.error(
             f'La variable {name} ya fue declarada en el scope {scope.scope_name}'
         )
-        return
+        return None
 
-    scope.add(name, build_symbol(scope, name, type_spec, kind='local'))
+    iterator = build_symbol(scope, name, type_spec, kind='local')
+    iterator.is_for_iterator = True
+    scope.add(name, iterator)
+    symbol.loop_iterators[name] = type_spec
+    return name
 
 
 def _condition_value(node: object) -> object | None:
@@ -714,6 +734,9 @@ def _validate_assignment(
         )
     ):
         compiler.error(f'La variable constante no puede asignarse: {name}')
+        return
+    if variable is not None and getattr(variable, 'is_for_iterator', False):
+        compiler.error(f'El iterador {name} es de solo lectura dentro del for')
         return
     if target_info.type_spec.value_is_const:
         compiler.error(
@@ -932,8 +955,9 @@ def _process_body_node(
         _validate_return_asm(compiler, symbol, node)
         returns[0] += 1
         return
+    loop_name = None
     if node.name == 'FOR':
-        _for_binding(compiler, symbol, node)
+        loop_name = _for_binding(compiler, symbol, node)
 
     if node.name == 'CALL':
         try:
@@ -955,6 +979,13 @@ def _process_body_node(
     child_loop_depth = loop_depth + (node.name in {'FOR', 'WHILE'})
     for child in _children(node):
         _process_body_node(compiler, symbol, child, returns, child_loop_depth)
+
+    if node.name == 'FOR' and loop_name is not None and symbol.scope is not None:
+        iterator = symbol.scope.namespace.get(loop_name)
+        if getattr(iterator, 'is_for_iterator', False):
+            # The iterator is visible only while this FOR body is being
+            # checked. Backend emission keeps its own hidden storage.
+            del symbol.scope.namespace[loop_name]
 
 
 def process(compiler: Compiler, node: gast.ASTRef) -> None:

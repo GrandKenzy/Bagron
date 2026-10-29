@@ -9,7 +9,6 @@ tipos cuyo ancho está fijado explícitamente.
 | Entero con signo | `int16` | 16 bits | `-32 768` a `32 767`; entero con signo de rango corto. |
 | Entero con signo | `int32` | 32 bits | `-2 147 483 648` a `2 147 483 647`; entero general con signo. |
 | Entero con signo | `int64` | 64 bits | `-9 223 372 036 854 775 808` a `9 223 372 036 854 775 807`; entero amplio con signo. |
-| Entero sin signo | `uint` | 32 bits | `0` a `4 294 967 295`; entero sin signo de 32 bits. |
 | Entero sin signo | `uint8` | 8 bits | `0` a `255`; entero compacto sin signo. |
 | Entero sin signo | `uint16` | 16 bits | `0` a `65 535`; entero sin signo de rango corto. |
 | Entero sin signo | `uint32` | 32 bits | `0` a `4 294 967 295`; entero general sin signo. |
@@ -45,12 +44,13 @@ No existe conversión implícita entre `char`, `byte` y `uint8`. El mismo ancho 
 almacenamiento no elimina la diferencia semántica ni permite escalar `byte`
 como si fuera un entero numérico.
 
-## ¿Por qué `int` no está soportado?
+## ¿Por qué `int` y `uint` no están soportados?
 
-`int` no está soportado porque su ancho puede cambiar según el target y hacer
-que el mismo código tenga rangos, conversiones y representaciones diferentes.
+`int` y `uint` no están soportados porque sus nombres no expresan un ancho
+exacto y podrían ocultar diferencias de representación entre contextos.
 Bagron exige que cada entero tenga un ancho explícito y trazable: usa `int8`,
-`int16`, `int32` o `int64` según el rango requerido.
+`int16`, `int32`, `int64`, `uint8`, `uint16`, `uint32` o `uint64` según el
+contrato requerido.
 
 ## Formas y reglas de conversión
 
@@ -64,7 +64,7 @@ trazable. La regla general es:
 
 El mismo tipo siempre es válido, pero no constituye una conversión. Dos tipos
 con el mismo ancho tampoco se convierten automáticamente si tienen nombres
-distintos: `byte` y `uint8`, o `uint` y `uint32`, siguen siendo tipos distintos.
+distintos: `byte` y `uint8` siguen siendo tipos distintos.
 
 ### Enteros con signo
 
@@ -91,17 +91,15 @@ small: int8 = wide        ; error: 16 bits -> 8 bits
 
 ### Enteros sin signo
 
-Los enteros numéricos sin signo siguen la misma regla. `uint` es un tipo
-distinto de 32 bits:
+Los enteros numéricos sin signo siguen la misma regla:
 
 ```text
 uint8 -> uint16 -> uint32 -> uint64
 ```
 
-Además, `uint8`, `uint16`, `uint32` y `uint` pueden escalar a `uint64` cuando
-su ancho de origen es menor. `uint` no se intercambia automáticamente con
-`uint32`, porque ambos tienen 32 bits pero no son el mismo tipo. `byte` queda
-fuera de esta cadena: es un tipo de datos crudos y no se escala.
+`uint8`, `uint16` y `uint32` pueden escalar a `uint64` cuando su ancho de
+origen es menor. `byte` queda fuera de esta cadena: es un tipo de datos crudos y
+no se escala.
 
 ```bg
 octet: byte = 255
@@ -115,7 +113,7 @@ same_width: uint32 = count ; error: 64 bits -> 32 bits
 representan conceptos diferentes. Un `byte` solo puede permanecer como
 `byte`; los cálculos numéricos deben usar un tipo entero sin signo. Aunque su
 representación tenga 8 bits y sus valores sean no signados, `byte` no pertenece
-a la familia `uint`.
+a la familia `uint*`.
 
 ### Punto flotante
 
@@ -213,7 +211,8 @@ foo(name)                 ; Bagron expande Len_t a 16 y Size_t a 1
 
 `Size_t` representa el tamaño en bytes del tipo asociado:
 
-- en un array, usa el tamaño en bytes de un solo elemento;
+- en un array, usa el ancho en bytes de una unidad exterior; en una matriz,
+  esa unidad incluye sus dimensiones interiores;
 - en un escalar, usa el tamaño en bytes del tipo;
 - en un puntero, usa el tamaño del puntero del target.
 
@@ -225,8 +224,9 @@ tamaño total = Len_t * Size_t
 
 Por ejemplo, `int32[3]` produce `Len_t = 3` y `Size_t = 4`, por lo que ocupa
 `12` bytes. `char[5]` produce `Len_t = 5` y `Size_t = 1`, por lo que ocupa
-`5` bytes. `Size_t` no representa una longitud de elementos y no tiene por
-qué ser múltiplo de dos.
+`5` bytes. Para `int32[2][3]`, `Len_t = 2` y `Size_t = 12`, porque una unidad
+exterior es una fila completa. `Size_t` no representa una longitud de elementos
+y no tiene por qué ser múltiplo de dos.
 
 ```bg
 values: int32[3] = {1, 2, 3}

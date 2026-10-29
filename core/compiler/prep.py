@@ -209,7 +209,6 @@ def _parameter_width(parameter: object) -> int:
             'int16': 16,
             'uint16': 16,
             'int32': 32,
-            'uint': 32,
             'uint32': 32,
             'int64': 64,
             'uint64': 64,

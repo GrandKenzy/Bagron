@@ -26,15 +26,15 @@ class FunctionSemanticTests(unittest.TestCase):
             '    total: int32 = a\n'
             '    if true:\n'
             '        nested: int32 = base\n'
-            '    for index: int32 ran (0, 3, 1):\n'
-            '        loop_value: int32 = index\n'
+            '    for index: uint32 ran (0, 3, 1):\n'
+            '        loop_value: uint32 = index\n'
             '    return total\n'
         )
 
         function = compiler.storage.functions['suma']
         self.assertIsNotNone(function.scope)
         self.assertEqual(
-            {'a', 'b', 'total', 'nested', 'index', 'loop_value'},
+            {'a', 'b', 'total', 'nested', 'loop_value'},
             set(function.scope.namespace),  # type: ignore[union-attr]
         )
         self.assertIs(function.scope.resolve('base'), compiler.storage.namespace['base'])
@@ -211,6 +211,27 @@ class FunctionSemanticTests(unittest.TestCase):
                         'row_size: Size_t) void:\n'
                         '    return\n'
                     )
+
+    def test_unsafe_cannot_bypass_fixed_matrix_shapes(self):
+        for matrix_type in ('int32[][]', 'int32[][3]', 'int32[2][]'):
+            with self.subTest(matrix_type=matrix_type):
+                with self.assertRaisesRegex(
+                    CompilationError,
+                    'debe declarar todas sus dimensiones',
+                ):
+                    self.compile_source(
+                        f'@unsafe\nfunc consume(data: {matrix_type}, '
+                        'rows: Len_t, row_size: Size_t) void:\n'
+                        '    return\n'
+                    )
+
+        with self.assertRaisesRegex(CompilationError, 'debe declarar todas sus dimensiones'):
+            self.compile_source(
+                '@unsafe\n'
+                'func local_matrix() int32:\n'
+                '    data: int32[2][] = {{1, 2}, {3, 4}}\n'
+                '    return 0\n'
+            )
 
     def test_matrices_are_limited_to_three_dimensions(self):
         with self.assertRaisesRegex(CompilationError, 'hasta tres dimensiones'):
@@ -496,19 +517,96 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_numeric_for_requires_integer_iterator_and_nonzero_step(self):
-        with self.assertRaisesRegex(CompilationError, 'tipo entero escalar'):
+    def test_numeric_for_requires_uint_iterator_and_nonzero_step(self):
+        for iterator_type in ('bool', 'int32', 'int64', 'usize', 'byte'):
+            with self.subTest(iterator_type=iterator_type):
+                with self.assertRaisesRegex(
+                    CompilationError,
+                    'exactamente un tipo uint8/uint16/uint32/uint64',
+                ):
+                    self.compile_source(
+                        f'func bad() int32:\n'
+                        f'    for i: {iterator_type} ran (1, 3, 1):\n'
+                        f'        pass\n'
+                        f'    return 0\n'
+                    )
+
+        with self.assertRaisesRegex(CompilationError, 'tipo uint fue eliminado'):
             self.compile_source(
                 'func bad() int32:\n'
-                '    for i: bool ran (1, 3, 1):\n'
+                '    for i: uint ran (1, 3, 1):\n'
                 '        pass\n'
                 '    return 0\n'
             )
 
+    def test_numeric_for_accepts_only_fixed_unsigned_widths(self):
+        self.compile_source(
+            'func good() int32:\n'
+            '    for a: uint8 ran (0, 2, 1):\n'
+            '        pass\n'
+            '    for b: uint16 ran (0, 2, 1):\n'
+            '        pass\n'
+            '    for c: uint32 ran (0, 2, 1):\n'
+            '        pass\n'
+            '    for d: uint64 ran (0, 2, 1):\n'
+            '        pass\n'
+            '    return 0\n'
+        )
+
+    def test_numeric_for_rejects_literal_zero_step(self):
         with self.assertRaisesRegex(CompilationError, 'step.*cero'):
             self.compile_source(
                 'func bad() int32:\n'
-                '    for i: int32 ran (1, 3, 0):\n'
+                '    for i: uint32 ran (1, 3, 0):\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+    def test_numeric_for_rejects_negative_step_for_uint(self):
+        with self.assertRaisesRegex(CompilationError, 'no coincide con uint32'):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    for i: uint32 ran (3, 0, -1):\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+    def test_numeric_for_iterator_is_local_and_read_only(self):
+        with self.assertRaisesRegex(CompilationError, 'iterador.*solo lectura'):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    for i: uint32 ran (1, 3, 1):\n'
+                '        i = 2\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'no existe'):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    for i: uint32 ran (1, 3, 1):\n'
+                '        pass\n'
+                '    return i\n'
+            )
+
+    def test_numeric_for_rejects_non_uint_step_expression(self):
+        with self.assertRaisesRegex(CompilationError, 'no coincide con uint32'):
+            self.compile_source(
+                'func bad(step: int32) int32:\n'
+                '    for i: uint32 ran (1, 3, step):\n'
+                '        pass\n'
+                '    return 0\n'
+            )
+
+    def test_numeric_for_uses_the_target_signed_ceiling(self):
+        with self.assertRaisesRegex(
+            CompilationError,
+            'limite maximo de iteracion del target',
+        ):
+            self.compile_source(
+                "clause Arch 'x86'\n"
+                'func bad() int32:\n'
+                '    for i: uint64 ran (0, 2147483648, 1):\n'
                 '        pass\n'
                 '    return 0\n'
             )

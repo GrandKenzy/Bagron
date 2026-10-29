@@ -35,6 +35,13 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+        with self.assertRaisesRegex(CompilationError, 'tipo uint fue eliminado'):
+            self.compile_source(
+                'value: uint = 1\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
         compiler = self.compile_source(
             "clause Arch 'x86'\n"
             'value: usize = 1\n'

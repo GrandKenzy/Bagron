@@ -20,3 +20,4 @@ class Variable:
         self.initialized = value is not None
         self.privacy = 'public'
         self.scope_kind = 'global'
+        self.is_for_iterator = False

@@ -23,9 +23,10 @@ SIGNED_INTEGER_TYPES = {
     'int8', 'int16', 'int32', 'int64', 'isize', 'Bint',
 }
 UNSIGNED_INTEGER_TYPES = {
-    'uint', 'uint8', 'uint16', 'uint32', 'uint64', 'usize', 'byte', 'uBint',
+    'uint8', 'uint16', 'uint32', 'uint64', 'usize', 'byte', 'uBint',
 }
 INTEGER_TYPES = SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES
+FOR_ITERATOR_TYPES = {'uint8', 'uint16', 'uint32', 'uint64'}
 FLOAT_TYPES = {'middle', 'float', 'double'}
 COMPARISON_OPERATORS = {
     'EQUAL',
@@ -223,6 +224,10 @@ def resolve_type(
     if base_name == 'int':
         raise TypeResolutionError(
             'El tipo int fue eliminado; usa int8, int16, int32 o int64'
+        )
+    if base_name == 'uint':
+        raise TypeResolutionError(
+            'El tipo uint fue eliminado; usa uint8, uint16, uint32 o uint64'
         )
     if base_name == 'wsize':
         raise TypeResolutionError(
@@ -1468,9 +1473,7 @@ def _integer_bounds(type_spec: TypeSpec) -> tuple[int, int] | None:
 
     width = INTEGER_WIDTHS.get(type_spec.name)
     if width is None:
-        if type_spec.name == 'uint':
-            width = 32
-        elif type_spec.name in {'uBint', 'usize', 'isize'} and type_spec.bit_width is not None:
+        if type_spec.name in {'uBint', 'usize', 'isize'} and type_spec.bit_width is not None:
             width = type_spec.bit_width
         else:
             return None
@@ -1533,9 +1536,16 @@ def _same_shape(left: TypeSpec, right: TypeSpec) -> bool:
 def _integer_width(type_spec: TypeSpec) -> int | None:
     if type_spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
         return type_spec.bit_width
-    if type_spec.name == 'uint':
-        return 32
     return INTEGER_WIDTHS.get(type_spec.name)
+
+
+def target_iteration_limit(pointer_size: int) -> int:
+    """Return the signed index/range ceiling for the selected target."""
+    if pointer_size not in {4, 8}:
+        raise TypeResolutionError(
+            f'El tamano de puntero del target no es valido: {pointer_size} bytes'
+        )
+    return (1 << (pointer_size * 8 - 1)) - 1
 
 
 def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
