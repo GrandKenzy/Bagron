@@ -535,6 +535,7 @@ class StatementEmitterMixin:
             raise FunctionEmissionError('El if no tiene ninguna rama')
 
         merge_block = function.append_basic_block(name='if.end')
+        merge_reachable = False
         current_builder = builder
 
         for signature, body in branches:
@@ -549,6 +550,7 @@ class StatementEmitterMixin:
             self._emit_body(body, body_builder, dict(values), function, symbol)
             if body_builder.block.terminator is None:
                 body_builder.branch(merge_block)
+                merge_reachable = True
 
             current_builder = ir.IRBuilder(next_block)
 
@@ -559,10 +561,14 @@ class StatementEmitterMixin:
             self._emit_body(else_body, else_builder, dict(values), function, symbol)
             if else_builder.block.terminator is None:
                 else_builder.branch(merge_block)
+                merge_reachable = True
         else:
             current_builder.branch(merge_block)
+            merge_reachable = True
 
         builder.position_at_end(merge_block)
+        if not merge_reachable:
+            builder.unreachable()
 
     def _emit_while(
         self,
@@ -589,7 +595,12 @@ class StatementEmitterMixin:
         builder.branch(condition_block)
 
         condition_builder = ir.IRBuilder(condition_block)
-        condition = self._compile_condition(signature, condition_builder, values)
+        condition = self._compile_condition(
+            signature,
+            condition_builder,
+            values,
+            require_bool=True,
+        )
         condition_builder.cbranch(condition, body_block, after_block)
 
         body_builder = ir.IRBuilder(body_block)

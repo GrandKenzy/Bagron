@@ -315,6 +315,8 @@ class FunctionEmitterBase:
         node: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
+        *,
+        require_bool: bool = False,
     ) -> ir.Value:
         value_node = self._condition_value(node)
         if value_node is None:
@@ -323,10 +325,18 @@ class FunctionEmitterBase:
         if isinstance(result.type, ir.IntType):
             if result.type.width == 1:
                 return result
+            if require_bool:
+                raise FunctionEmissionError(
+                    'La condicion de while debe producir bool'
+                )
             return builder.icmp_unsigned(
                 '!=',
                 result,
                 ir.Constant(result.type, 0),
+            )
+        if require_bool:
+            raise FunctionEmissionError(
+                'La condicion de while debe producir bool'
             )
         raise FunctionEmissionError(
             'La condicion debe producir bool o un entero escalar'

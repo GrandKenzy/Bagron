@@ -549,6 +549,56 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertEqual(8, result.returncode)
 
+    def test_builds_and_runs_bool_while_with_break_and_continue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func main() int32:\n'
+                '    total: int32 = 0\n'
+                '    running: bool = true\n'
+                '    i: int32 = 0\n'
+                '    while running:\n'
+                '        i += 1\n'
+                '        if i == 2:\n'
+                '            continue\n'
+                '        if i == 4:\n'
+                '            break\n'
+                '        total += 1\n'
+                '    return total\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(2, result.returncode)
+
+    def test_builds_and_runs_zero_iteration_bool_while(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(
+                'func main() int32:\n'
+                '    entered: bool = false\n'
+                '    count: int32 = 0\n'
+                '    while entered:\n'
+                '        count += 100\n'
+                '    return count\n',
+                encoding='utf-8',
+            )
+            artifacts = Compiler().compile(path)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+
     def test_builds_and_runs_break_and_continue_in_nested_control_flow(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'

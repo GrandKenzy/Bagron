@@ -195,6 +195,15 @@ def is_condition_type(type_spec: TypeSpec) -> bool:
     )
 
 
+def is_bool_scalar(type_spec: TypeSpec) -> bool:
+    """Return whether a value is exactly a scalar ``bool``."""
+    return (
+        type_spec.name == 'bool'
+        and type_spec.pointer_level == 0
+        and type_spec.array_depth == 0
+    )
+
+
 def _is_float_scalar(type_spec: TypeSpec) -> bool:
     return (
         type_spec.pointer_level == 0

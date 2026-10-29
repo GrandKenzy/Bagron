@@ -81,6 +81,23 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    pass\n'
             )
 
+    def test_return_only_inside_while_does_not_satisfy_function_return(self):
+        with self.assertRaisesRegex(CompilationError, 'no tiene return'):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    while false:\n'
+                '        return 1\n'
+            )
+
+    def test_if_with_else_satisfies_return_analysis(self):
+        self.compile_source(
+            'func choose(flag: bool) int32:\n'
+            '    if flag:\n'
+            '        return 1\n'
+            '    else:\n'
+            '        return 0\n'
+        )
+
     def test_rejects_default_parameter(self):
         with self.assertRaisesRegex(CompilationError, 'valor por defecto'):
             self.compile_source(
@@ -553,6 +570,28 @@ class FunctionSemanticTests(unittest.TestCase):
             '    return 0\n'
         )
 
+    def test_nested_for_rejects_repeated_iterator(self):
+        with self.assertRaisesRegex(
+            CompilationError,
+            'La variable i ya fue declarada en el scope',
+        ):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    for i: uint32 ran (0, 2, 1):\n'
+                '        for i: uint32 ran (0, 2, 1):\n'
+                '            pass\n'
+                '    return 0\n'
+            )
+
+    def test_nested_for_allows_distinct_iterators(self):
+        self.compile_source(
+            'func good() int32:\n'
+            '    for outer: uint32 ran (0, 2, 1):\n'
+            '        for inner: uint32 ran (0, 2, 1):\n'
+            '            pass\n'
+            '    return 0\n'
+        )
+
     def test_numeric_for_rejects_literal_zero_step(self):
         with self.assertRaisesRegex(CompilationError, 'step.*cero'):
             self.compile_source(
@@ -620,6 +659,36 @@ class FunctionSemanticTests(unittest.TestCase):
                 '        return 1\n'
                 '    return 0\n'
             )
+
+    def test_while_requires_a_bool_condition(self):
+        with self.assertRaisesRegex(
+            CompilationError,
+            'condicion de while.*debe ser bool',
+        ):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    while 1:\n'
+                '        break\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(
+            CompilationError,
+            'condicion de while.*debe ser bool',
+        ):
+            self.compile_source(
+                'func bad(value: int32) int32:\n'
+                '    while value:\n'
+                '        break\n'
+                '    return 0\n'
+            )
+
+        self.compile_source(
+            'func good(value: int32) int32:\n'
+            '    while value != 0:\n'
+            '        return 1\n'
+            '    return 0\n'
+        )
 
     def test_class_methods_are_deferred(self):
         compiler = self.compile_source(

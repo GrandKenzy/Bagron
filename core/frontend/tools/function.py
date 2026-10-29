@@ -17,6 +17,7 @@ from core.frontend.tools.types import (
     infer_call,
     infer_lvalue,
     infer_value,
+    is_bool_scalar,
     is_condition_type,
     is_compatible,
     resolve_type,
@@ -603,6 +604,13 @@ def _validate_condition(
         compiler.error(f'La condicion de {symbol.name} es invalida: {error}')
         return
 
+    if node.name == 'WHILE_SIGNATURE':
+        if not is_bool_scalar(value_info.type_spec):
+            compiler.error(
+                f'La condicion de while en {symbol.name} debe ser bool'
+            )
+        return
+
     if not is_condition_type(value_info.type_spec):
         compiler.error(
             f'La condicion de {symbol.name} debe ser bool o entero escalar'
@@ -913,6 +921,74 @@ def _validate_return_asm(
     symbol.return_asm_node = node
 
 
+def _statement_body_guarantees_return(body: object) -> bool:
+    return _statement_sequence_guarantees_return(_children(body))
+
+
+def _statement_sequence_guarantees_return(nodes: list[object]) -> bool:
+    """Return whether one sequential path must terminate in ``return``.
+
+    Loops are deliberately not considered guaranteed returns: a ``while`` may
+    execute zero times and a ``for`` may have an empty range.  This keeps a
+    return nested only inside a loop from masking a missing fall-through path.
+    """
+    for node in nodes:
+        if isinstance(node, list):
+            if _statement_sequence_guarantees_return(node):
+                return True
+            continue
+        if _statement_guarantees_return(node):
+            return True
+    return False
+
+
+def _if_guarantees_return(node: gast.ASTRef) -> bool:
+    branches: list[object] = []
+    else_body = None
+    awaiting_if_body = False
+
+    for child in _children(node):
+        name = getattr(child, 'name', None)
+        if name == 'IF_SIGNATURE':
+            awaiting_if_body = True
+        elif name == 'STATEMENT_BODY' and awaiting_if_body:
+            branches.append(child)
+            awaiting_if_body = False
+        elif name in {'ELIF', 'ELSE'}:
+            body = next(
+                (
+                    item for item in _children(child)
+                    if getattr(item, 'name', None) == 'STATEMENT_BODY'
+                ),
+                None,
+            )
+            if name == 'ELIF':
+                if body is None:
+                    return False
+                branches.append(body)
+            else:
+                else_body = body
+
+    if else_body is None or not branches:
+        return False
+    return all(
+        _statement_body_guarantees_return(branch)
+        for branch in (*branches, else_body)
+    )
+
+
+def _statement_guarantees_return(node: object) -> bool:
+    if not isinstance(node, gast.ASTRef):
+        return False
+    if node.name in {'RETURN', 'RETURN_ASM'}:
+        return True
+    if node.name in {'FUNCTION_BODY', 'STATEMENT_BODY'}:
+        return _statement_body_guarantees_return(node)
+    if node.name == 'IF':
+        return _if_guarantees_return(node)
+    return False
+
+
 def _process_body_node(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -1008,7 +1084,7 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
         _process_body_node(compiler, symbol, child, returns)
 
     return_type = symbol.signature.return_type
-    if returns[0] == 0:
+    if not _statement_body_guarantees_return(body):
         if return_type.name == 'void' and return_type.pointer_level == 0:
             compiler.error(
                 f'La funcion void {symbol.name} debe terminar con return'
