@@ -199,6 +199,199 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return\n'
             )
 
+    def test_matrix_parameters_require_all_dimensions(self):
+        for matrix_type in ('int32[][]', 'int32[][3]', 'int32[2][]'):
+            with self.subTest(matrix_type=matrix_type):
+                with self.assertRaisesRegex(
+                    CompilationError,
+                    'debe declarar todas sus dimensiones',
+                ):
+                    self.compile_source(
+                        f'func consume(data: {matrix_type}, rows: Len_t, '
+                        'row_size: Size_t) void:\n'
+                        '    return\n'
+                    )
+
+    def test_matrices_are_limited_to_three_dimensions(self):
+        with self.assertRaisesRegex(CompilationError, 'hasta tres dimensiones'):
+            self.compile_source(
+                'func consume(data: int32[2][3][4][5], depth: Len_t, '
+                'block_size: Size_t) void:\n'
+                '    return\n'
+            )
+
+    def test_fixed_matrix_parameter_is_a_reference_with_full_shape(self):
+        source = (
+            'func mutate(data: int32[2][3], rows: Len_t, row_size: Size_t) void:\n'
+            '    data[0][0] = 99\n'
+            '    return\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    matrix: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+            + '    mutate(matrix)\n'
+            + '    return matrix[0][0]\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertIn(
+            'define void @"mutate"([2 x [3 x i32]]*',
+            module,
+        )
+        self.assertRegex(
+            module,
+            r'call void @"mutate"\([^)]*i\d+ 2, i\d+ 12\)',
+        )
+
+    def test_fixed_one_dimensional_array_parameter_is_a_reference(self):
+        source = (
+            'func mutate(data: int32[3], length: Len_t, size: Size_t) void:\n'
+            '    data[1] = 77\n'
+            '    return\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    values: int32[3] = {1, 2, 3}\n'
+            + '    mutate(values)\n'
+            + '    return values[1]\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertIn('define void @"mutate"([3 x i32]*', module)
+
+    def test_three_dimensional_matrix_size_is_the_outer_element_size(self):
+        source = (
+            'func inspect(data: int16[2][3][4], depth: Len_t, size: Size_t) usize:\n'
+            '    return size\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    values: int16[2][3][4]\n'
+            + '    result: usize = inspect(values)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        self.assertIn(
+            'define i64 @"inspect"([2 x [3 x [4 x i16]]]*',
+            module,
+        )
+        self.assertRegex(
+            module,
+            r'call i64 @"inspect"\([^)]*i\d+ 2, i\d+ 24\)',
+        )
+
+    def test_three_dimensional_shape_and_metadata_survive_forwarding(self):
+        source = (
+            'func sink(data: int32[2][3][4], depth: Len_t, block_size: Size_t) usize:\n'
+            '    if depth != 2:\n'
+            '        return 100\n'
+            '    return block_size\n'
+            'func forward(data: int32[2][3][4], depth: Len_t, block_size: Size_t) usize:\n'
+            '    return sink(data)\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    values: int32[2][3][4]\n'
+            + '    result: usize = forward(values)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+        signature = '[2 x [3 x [4 x i32]]]*'
+        self.assertIn(f'define i64 @"sink"({signature}', module)
+        self.assertIn(f'define i64 @"forward"({signature}', module)
+        self.assertRegex(
+            module,
+            r'call i64 @"sink"\([^)]*i64 %"[^\"]+", i64 %"[^\"]+"\)',
+        )
+        self.assertRegex(
+            module,
+            r'call i64 @"forward"\([^)]*i\d+ 2, i\d+ 48\)',
+        )
+
+    def test_matrix_argument_requires_the_exact_shape(self):
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                'func consume(data: int32[2][3], rows: Len_t, '
+                'row_size: Size_t) void:\n'
+                '    return\n'
+                'func bad() int32:\n'
+                '    matrix: int32[2][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}}\n'
+                '    consume(matrix)\n'
+                '    return 0\n'
+            )
+
+    def test_array_reference_rejects_literal_arguments(self):
+        with self.assertRaisesRegex(CompilationError, 'almacenamiento propio'):
+            self.compile_source(
+                'func consume(data: int32[3], rows: Len_t, '
+                'row_size: Size_t) void:\n'
+                '    return\n'
+                'func bad() int32:\n'
+                '    consume({1, 2, 3})\n'
+                '    return 0\n'
+            )
+
+    def test_matrix_constness_is_strict_at_call_boundaries(self):
+        self.compile_source(
+            'func read(data: const int32[2][3], rows: Len_t, '
+            'row_size: Size_t) int32:\n'
+            '    return data[0][0]\n'
+            'func use() int32:\n'
+            '    matrix: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+            '    return read(matrix)\n'
+        )
+
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                'func write(data: int32[2][3], rows: Len_t, '
+                'row_size: Size_t) void:\n'
+                '    return\n'
+                'func bad() int32:\n'
+                '    matrix: const int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+                '    write(matrix)\n'
+                '    return 0\n'
+            )
+
+    def test_matrix_literals_must_be_rectangular_and_complete(self):
+        for initializer in (
+            '{{1, 2}, {3, 4, 5}}',
+            '{{1, 2, 3}, {4, 5}}',
+            '{{1, 2}, {3}}',
+        ):
+            with self.subTest(initializer=initializer):
+                with self.assertRaisesRegex(CompilationError, 'no coincide'):
+                    self.compile_source(
+                        'func bad() int32:\n'
+                        f'    matrix: int32[2][3] = {initializer}\n'
+                        '    return 0\n'
+                    )
+
     def test_size_t_is_injected_for_a_scalar(self):
         source = (
             'func consume(value: int32, size: Size_t) usize:\n'

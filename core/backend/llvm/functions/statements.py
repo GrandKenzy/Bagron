@@ -206,9 +206,23 @@ class StatementEmitterMixin:
             for parameter in symbol.signature.parameters
             if parameter.type_spec.name == 'chain'
         }
+        array_parameters = {
+            parameter.name
+            for parameter in symbol.signature.parameters
+            if (
+                parameter.type_spec.array_depth
+                and not parameter.is_length
+                and not parameter.is_size
+            )
+        }
         for name, variable in scope.namespace.items():
             try:
-                if name in chain_parameters:
+                if name in array_parameters:
+                    # Arrays are passed by reference.  Keep only the pointer
+                    # slot here so indexing and assignments reach the caller's
+                    # complete array storage without making a copy.
+                    local_type = self._function_parameter_type(variable.type_spec)
+                elif name in chain_parameters:
                     # A chain parameter is passed as a pointer to its static
                     # NUL-terminated storage.  Locals/globals remain arrays.
                     local_type = ir.IntType(8).as_pointer()
@@ -228,7 +242,7 @@ class StatementEmitterMixin:
             values[name] = pointer
             initial_value = (
                 ir.Constant(local_type, None)
-                if name in chain_parameters
+                if name in chain_parameters or name in array_parameters
                 else default_value(
                     variable.type_spec,
                     getattr(variable, 'value_info', None),

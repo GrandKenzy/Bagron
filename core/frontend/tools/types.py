@@ -243,6 +243,16 @@ def resolve_type(
                 f'El tamano de un array debe ser mayor que cero: {length}'
             )
     array_depth = len(array_lengths)
+    if array_depth > 3:
+        raise TypeResolutionError(
+            'Bagron admite matrices de hasta tres dimensiones; '
+            f'{text} excede la profundidad maxima'
+        )
+    if array_depth > 1 and any(length is None for length in array_lengths):
+        raise TypeResolutionError(
+            'La matriz debe declarar todas sus dimensiones; '
+            f'{text} no es un tipo de matriz valido'
+        )
     if base_name == 'chain' and _type_is_const(type_node):
         raise TypeResolutionError(
             'chain ya es constante; no puede declararse const chain'
@@ -407,6 +417,20 @@ def _visible_parameters(parameters: object) -> list[object]:
             or getattr(parameter, 'is_size', False)
         )
     ]
+
+
+def _validate_array_argument_storage(
+    function_name: str,
+    parameter: object,
+    argument: ValueInfo,
+) -> None:
+    """Require addressable storage for arrays passed by reference."""
+    type_spec = getattr(parameter, 'type_spec', TypeSpec('void'))
+    if type_spec.array_depth and not argument.is_lvalue:
+        raise ValueResolutionError(
+            f'El argumento de {function_name} para {getattr(parameter, "name", "<array>")} '
+            'debe ser una variable de array con almacenamiento propio'
+        )
 
 
 def _validate_expansion_parameters(
@@ -625,6 +649,7 @@ def _infer_postfix(
                 current_function=current_function,
             )
             argument_infos[parameter.name] = argument_info
+            _validate_array_argument_storage(name, parameter, argument_info)
             if not is_compatible(parameter.type_spec, argument_info):
                 raise ValueResolutionError(
                     f'El argumento de {name} no coincide con '
@@ -869,6 +894,7 @@ def infer_call(
             current_function=current_function,
         )
         argument_infos[parameter.name] = argument_info
+        _validate_array_argument_storage(name, parameter, argument_info)
         if not is_compatible(parameter.type_spec, argument_info):
             raise ValueResolutionError(
                 f'El argumento de {name} no coincide con '
@@ -1469,6 +1495,25 @@ def _target_array_length(type_spec: TypeSpec, dimension: int) -> int | None:
     return type_spec.array_lengths[dimension]
 
 
+def _literal_array_shape(value: ValueInfo) -> tuple[int, ...] | None:
+    """Return a rectangular shape for an array literal, if it has one."""
+    if value.type_spec.array_depth == 0:
+        return ()
+    if not value.items:
+        return (0,)
+
+    child_shapes = [
+        _literal_array_shape(item)
+        for item in value.items
+    ]
+    if any(shape is None for shape in child_shapes):
+        return None
+    first_shape = child_shapes[0]
+    if any(shape != first_shape for shape in child_shapes[1:]):
+        return None
+    return (len(value.items), *first_shape)
+
+
 def _same_shape(left: TypeSpec, right: TypeSpec) -> bool:
     return (
         left.name == right.name
@@ -1536,6 +1581,23 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         return False
 
     if target.array_depth > 0:
+        if source_type.value_is_const and not target.value_is_const:
+            return False
+
+        if target.array_depth > 1 and source.is_literal:
+            literal_shape = _literal_array_shape(source)
+            if (
+                literal_shape is None
+                or len(literal_shape) != target.array_depth
+            ):
+                return False
+            for dimension, target_length in enumerate(target.array_lengths):
+                if (
+                    target_length is not None
+                    and literal_shape[dimension] != target_length
+                ):
+                    return False
+
         if (
             target.array_depth == 1
             and source.is_literal
@@ -1582,9 +1644,12 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             if target_length is None:
                 continue
             if source.is_literal:
-                if source_length is not None and source_length > target_length:
+                if target.array_depth > 1:
+                    if source_length is None or source_length != target_length:
+                        return False
+                elif source_length is not None and source_length > target_length:
                     return False
-            elif source_length is not None and source_length != target_length:
+            elif source_length is None or source_length != target_length:
                 return False
 
         if source.is_literal and not source.items:

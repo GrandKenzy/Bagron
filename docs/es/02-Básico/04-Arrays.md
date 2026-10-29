@@ -37,10 +37,11 @@ letters: char[] = "Hola"   ; se convierte en char[5]
 Un array sin tamaño explícito necesita un inicializador. El compilador no puede
 reservar `int32[]` sin saber cuántos elementos debe contener.
 
-### Inicializadores parciales
+### Inicializadores parciales de arrays simples
 
-Un inicializador puede proporcionar menos elementos que el tamaño declarado.
-Los elementos restantes se rellenan con cero:
+En un array simple de una dimensión, un inicializador puede proporcionar menos
+elementos que el tamaño declarado. Los elementos restantes se rellenan con
+cero:
 
 ```bg
 values: int32[5] = {10, 20} ; {10, 20, 0, 0, 0}
@@ -63,6 +64,77 @@ matrix: int32[2][3] = {
 Este tipo contiene dos filas y cada fila contiene tres valores `int32`. La
 primera dimensión es la cantidad de elementos exteriores; la última dimensión
 describe el elemento más interno.
+
+Una matriz de Bagron es rectangular y estática: todas sus dimensiones forman
+parte del tipo. No se permiten dimensiones abiertas o parcialmente conocidas.
+Bagron admite como máximo tres dimensiones (`1D`, `2D` y `3D`).
+En una firma de función, por tanto, estas formas son inválidas como
+parámetros:
+
+```bg
+func bad_a(data: int32[][], rows: Len_t, row_size: Size_t) void:
+    return
+
+func bad_b(data: int32[][3], rows: Len_t, row_size: Size_t) void:
+    return
+
+func bad_c(data: int32[2][], rows: Len_t, row_size: Size_t) void:
+    return
+```
+
+La forma válida declara todas las filas y profundidades:
+
+```bg
+func process(
+    data: int32[2][3],
+    rows: Len_t,
+    row_size: Size_t
+) void:
+    return
+```
+
+Una matriz `T[R][C]` solo acepta otra matriz con exactamente `R` filas y `C`
+columnas. La regla se aplica a cada profundidad: `int32[2][3]` no acepta
+`int32[2][4]`, `int32[3][3]` ni una matriz abierta. No existen conversiones
+entre matrices con formas distintas.
+
+### Paso por referencia
+
+Todos los arrays de parámetros se pasan por referencia, tanto los abiertos
+unidimensionales como los de tamaño fijo y las matrices. El almacenamiento
+local conserva el tipo completo, mientras que el parámetro recibe una
+dirección a ese almacenamiento:
+
+```text
+int32[3]       -> [3 x i32]*
+int32[2][3]    -> [2 x [3 x i32]]*
+int32[2][3][4] -> [2 x [3 x [4 x i32]]]*
+```
+
+Una escritura dentro de la función modifica la variable original. No se crean
+copias silenciosas. Por esa razón, el argumento debe ser una variable de array
+con almacenamiento propio; los literales y temporales no pueden pasarse a un
+parámetro de array.
+
+La forma también se valida en cada llamada y los metadatos ocultos permanecen
+asociados a su array aunque los arrays cambien de posición en firmas
+anidadas.
+
+### Inicialización rectangular de matrices
+
+El inicializador de una matriz debe tener exactamente la forma declarada. Cada
+fila, submatriz y profundidad debe estar completa y tener la misma longitud:
+
+```bg
+matrix: int32[2][3] = {
+    {1, 2, 3},
+    {4, 5, 6}
+}
+```
+
+Se rechazan filas cortas, filas largas, filas de longitudes diferentes y
+profundidades incompletas. El relleno implícito con cero solo está disponible
+para arrays simples de una dimensión; no se aplica a matrices.
 
 ## Acceso y seguridad
 
@@ -100,6 +172,10 @@ func read_at(
 Un índice literal fuera de rango siempre es un error. `chain` tiene una regla
 aún más estricta: indexarlo también requiere `@unsafe`, porque es una cadena
 estática y constante, no un buffer mutable ordinario.
+
+El acceso a una matriz sigue la misma regla en cada profundidad. Los índices
+literales se comprueban contra todas las dimensiones conocidas; un índice
+dinámico en cualquier profundidad requiere `@unsafe`.
 
 Para obtener la dirección de un elemento se usa `$` sobre el acceso:
 
@@ -193,6 +269,15 @@ text: chain = "Hola"
 No se puede escribir `const chain`: `chain` ya es inmutable y declarar la
 constancia otra vez es redundante e inválido.
 
+En parámetros, `const` es estrictamente covariante:
+
+- un array mutable puede pasarse a un parámetro `const`;
+- un array `const` puede pasarse a un parámetro `const`;
+- un array `const` no puede pasarse a un parámetro mutable.
+
+La forma y la constancia se comprueban juntas; `const` no permite convertir una
+matriz en otra forma ni elimina la comprobación de sus dimensiones.
+
 ## Expansión de `Len_t` y `Size_t`
 
 `Len_t` y `Size_t` son metatipos expansivos de compilación. El usuario los
@@ -269,20 +354,58 @@ En un array multidimensional, `Len_t` representa la dimensión exterior:
 ```bg
 matrix: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}
 
-func send_rows(data: int32[][], rows: Len_t, row_size: Size_t) void:
+func send_rows(data: int32[2][3], rows: Len_t, row_size: Size_t) void:
     return
 
 send_rows(matrix) ; expansión interna: send_rows(matrix, 2, 12)
 ```
+
+En una matriz 3D solo se expande la dimensión exterior. Las dimensiones
+interiores permanecen codificadas en el tipo:
+
+```bg
+values: int32[2][3][4]
+
+func send_blocks(
+    data: int32[2][3][4],
+    blocks: Len_t,
+    block_size: Size_t
+) void:
+    return
+
+send_blocks(values) ; expansión interna: send_blocks(values, 2, 48)
+```
+
+No se añade un metadato por cada profundidad. La profundidad completa, sus
+filas y sus columnas se verifican mediante el tipo estático.
+
+Al reenviar una matriz entre funciones, el compilador conserva ese tipo
+completo y pasa un puntero al mismo array completo. `Len_t` y `Size_t` solo
+aportan los valores numéricos ocultos; no se usan para reconstruir la forma.
+Por eso una función que recibe `int32[2][3][4]` no puede reenviarlo a una
+función que espere otra profundidad o una fila distinta.
 
 `Len_t` requiere que el tamaño relevante sea conocido en compilación. En una
 llamada, el array concreto debe tener una longitud demostrable; un parámetro
 `T[]` puede reenviar el `Len_t` que recibió de otra función. No puede obtenerse
 de un puntero crudo.
 
-### `Size_t`: tamaño en bytes del elemento o tipo
+### `Size_t`: ancho exterior en bytes
 
-`Size_t` no cuenta elementos. Indica cuántos bytes ocupa el tipo asociado:
+`Size_t` no cuenta elementos ni profundidades. Indica el ancho en bytes de una
+unidad exterior del dato: el tipo que queda dentro de la primera pareja de
+corchetes. Esta regla es única para cualquier profundidad:
+
+```text
+Size_t(T[N1])          = sizeof(T)
+Size_t(T[N1][N2])      = sizeof(T[N2])
+Size_t(T[N1][N2][N3])  = sizeof(T[N2][N3])
+```
+
+Por eso, en una matriz `int32[2][3]`, una unidad exterior es una fila de tres
+`int32` y mide `12` bytes. En `int32[2][3][4]`, una unidad exterior es un
+bloque `int32[3][4]` y mide `48` bytes. `Size_t` no cambia de significado:
+siempre es el ancho de la unidad exterior.
 
 | Fuente | `Len_t` | `Size_t` | Tamaño total |
 |:---|---:|---:|---:|
@@ -290,10 +413,12 @@ de un puntero crudo.
 | `char[5]` | `5` | `1` | `5` |
 | `byte[3]` | `3` | `1` | `3` |
 | `int32[2][3]` | `2` | `12` | `24` |
+| `int32[2][3][4]` | `2` | `48` | `96` |
 
-Para un array, `Size_t` es el tamaño de un solo elemento de la primera
-dimensión. Por eso, en `int32[2][3]`, cada elemento exterior es una fila de
-tres `int32` y ocupa `12` bytes.
+El tamaño del elemento base se conserva en el tipo, pero no sustituye al
+ancho exterior de una matriz. Las filas, bloques y profundidades interiores
+no se envían como metadatos independientes porque ya están fijados por el
+tipo estático.
 
 El tamaño total se obtiene multiplicando ambos metadatos:
 
@@ -301,10 +426,10 @@ El tamaño total se obtiene multiplicando ambos metadatos:
 tamaño total del array = Len_t * Size_t
 ```
 
-En un escalar, `Size_t` representa el tamaño completo del escalar. En un
-puntero, representa el tamaño del puntero del target. Para un `chain` estático,
-su almacenamiento está compuesto por caracteres de un byte e incluye el
-`NUL` final.
+En un escalar, la unidad exterior es el propio escalar, así que `Size_t`
+representa su tamaño completo. En un puntero, representa el tamaño del
+puntero del target. Para un `chain` estático, su almacenamiento está compuesto
+por caracteres de un byte e incluye el `NUL` final.
 
 ### Varios metatipos en una firma
 

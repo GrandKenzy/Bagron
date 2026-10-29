@@ -371,8 +371,20 @@ class ExpressionEmitterMixin:
                             self._load_place(place, builder),
                             builder,
                         )
+                        if isinstance(address.type.pointee, ir.ArrayType):
+                            address = builder.gep(
+                                address,
+                                [ir.Constant(ir.IntType(32), 0), index],
+                                inbounds=False,
+                            )
+                        else:
+                            address = builder.gep(
+                                address,
+                                [index],
+                                inbounds=False,
+                            )
                         place = self._memory_place(
-                            builder.gep(address, [index], inbounds=False),
+                            address,
                             alignment=1,
                         )
                     elif isinstance(pointee, ir.ArrayType):
@@ -926,9 +938,10 @@ class ExpressionEmitterMixin:
             )
         address = self._compile_address(argument, builder, values)
         pointee = address.type.pointee
+        target_is_complete_array = isinstance(target_type.pointee, ir.ArrayType)
         if isinstance(pointee, ir.PointerType):
             pointer = builder.load(address)
-        elif isinstance(pointee, ir.ArrayType):
+        elif isinstance(pointee, ir.ArrayType) and not target_is_complete_array:
             pointer = builder.gep(
                 address,
                 [
@@ -937,6 +950,8 @@ class ExpressionEmitterMixin:
                 ],
                 inbounds=True,
             )
+        elif isinstance(pointee, ir.ArrayType) and target_is_complete_array:
+            pointer = address
         else:
             raise FunctionEmissionError(
                 'El argumento no es un array compatible'
@@ -1239,9 +1254,7 @@ class ExpressionEmitterMixin:
                 )
             argument = argument_items[argument_index]
             target_type = callee.args[llvm_index].type
-            if parameter.type_spec.array_depth and any(
-                length is None for length in parameter.type_spec.array_lengths
-            ):
+            if parameter.type_spec.array_depth:
                 compiled.append(
                     self._compile_array_argument(
                         argument,

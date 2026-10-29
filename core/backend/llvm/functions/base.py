@@ -129,9 +129,8 @@ class FunctionEmitterBase:
                 return False
 
             for parameter in symbol.signature.parameters:
-                parameter_type = llvm_type(
+                parameter_type = self._function_parameter_type(
                     parameter.type_spec,
-                    type_registry=self.type_registry,
                 )
                 if isinstance(parameter_type, ir.VoidType) or not self._supports_runtime_type(
                     parameter_type
@@ -191,10 +190,25 @@ class FunctionEmitterBase:
             'LiteralStructType',
         }
 
+    def _function_parameter_type(self, type_spec: TypeSpec) -> ir.Type:
+        """Return the ABI type used for one function parameter.
+
+        Arrays are references to their complete storage.  Unsized one-
+        dimensional arrays already resolve to element pointers; fixed arrays
+        need one pointer layer added around their complete LLVM array type.
+        """
+        parameter_type = llvm_type(
+            type_spec,
+            type_registry=self.type_registry,
+        )
+        if type_spec.array_depth and not isinstance(parameter_type, ir.PointerType):
+            return parameter_type.as_pointer()
+        return parameter_type
+
     def _function_type(self, symbol: FunctionSymbol) -> ir.FunctionType:
         try:
             parameters = [
-                llvm_type(parameter.type_spec, type_registry=self.type_registry)
+                self._function_parameter_type(parameter.type_spec)
                 for parameter in symbol.signature.parameters
             ]
             return_type = llvm_type(

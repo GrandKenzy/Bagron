@@ -394,6 +394,179 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'ABCDEFGHIJK|KJIHGFEDCBA\x00', result.stdout)
 
+    def test_recursive_multiple_fixed_matrices_keep_shape_and_reference(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func walk_forward(\n'
+                '    numbers: int32[2][3],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    raw: byte[2][2],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if numbers_length != 2:\n'
+                '        return 10\n'
+                '    if numbers_size != 12:\n'
+                '        return 11\n'
+                '    if raw_length != 2:\n'
+                '        return 12\n'
+                '    if raw_size != 2:\n'
+                '        return 13\n'
+                '    if numbers[0][0] != 11:\n'
+                '        return 14\n'
+                '    if raw[1][1] != 44:\n'
+                '        return 15\n'
+                '    if step == 10:\n'
+                '        numbers[1][2] = 99\n'
+                '        raw[0][1] = 7\n'
+                '        if raw[0][1] != 7:\n'
+                '            return 16\n'
+                '        print_int(numbers[1][2])\n'
+                '        return 0\n'
+                '    return walk_reverse(raw, numbers, step + 1)\n'
+                '@unsafe\n'
+                'func walk_reverse(\n'
+                '    raw: byte[2][2],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t,\n'
+                '    numbers: int32[2][3],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if raw_length != 2:\n'
+                '        return 20\n'
+                '    if raw_size != 2:\n'
+                '        return 21\n'
+                '    if numbers_length != 2:\n'
+                '        return 22\n'
+                '    if numbers_size != 12:\n'
+                '        return 23\n'
+                '    if numbers[1][0] != 44:\n'
+                '        return 24\n'
+                '    if step == 10:\n'
+                '        return walk_forward(numbers, raw, step)\n'
+                '    return walk_forward(numbers, raw, step)\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    numbers: int32[2][3] = {{11, 22, 33}, {44, 55, 66}}\n'
+                '    raw: byte[2][2] = {{1, 2}, {3, 44}}\n'
+                '    result: int32 = walk_forward(numbers, raw, 0)\n'
+                '    if result == 0:\n'
+                '        if numbers[1][2] != 99:\n'
+                '            result = 30\n'
+                '    if result == 0:\n'
+                '        if raw[0][1] != 7:\n'
+                '            result = 31\n'
+                '    return result\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'99', result.stdout)
+
+    def test_recursive_three_dimensional_matrices_preserve_outer_width(self):
+        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copyfile(project_source, root / 'standard.bg')
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func walk_forward(\n'
+                '    numbers: int16[2][3][4],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    raw3d: byte[3][2][2],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if numbers_length != 2:\n'
+                '        return 10\n'
+                '    if numbers_size != 24:\n'
+                '        return 11\n'
+                '    if raw_length != 3:\n'
+                '        return 12\n'
+                '    if raw_size != 4:\n'
+                '        return 13\n'
+                '    if numbers[1][2][3] != 123:\n'
+                '        return 14\n'
+                '    if raw3d[2][1][1] != 77:\n'
+                '        return 15\n'
+                '    if step == 10:\n'
+                '        numbers[1][2][3] = 321\n'
+                '        raw3d[2][1][1] = 88\n'
+                '        print_int(numbers[1][2][3])\n'
+                '        return 0\n'
+                '    return walk_reverse(raw3d, numbers, step + 1)\n'
+                '@unsafe\n'
+                'func walk_reverse(\n'
+                '    raw3d: byte[3][2][2],\n'
+                '    raw_length: Len_t,\n'
+                '    raw_size: Size_t,\n'
+                '    numbers: int16[2][3][4],\n'
+                '    numbers_length: Len_t,\n'
+                '    numbers_size: Size_t,\n'
+                '    step: int32\n'
+                ') int32:\n'
+                '    if raw_length != 3:\n'
+                '        return 20\n'
+                '    if raw_size != 4:\n'
+                '        return 21\n'
+                '    if numbers_length != 2:\n'
+                '        return 22\n'
+                '    if numbers_size != 24:\n'
+                '        return 23\n'
+                '    if raw3d[0][1][0] != 55:\n'
+                '        return 24\n'
+                '    return walk_forward(numbers, raw3d, step)\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    numbers: int16[2][3][4]\n'
+                '    raw3d: byte[3][2][2]\n'
+                '    numbers[1][2][3] = 123\n'
+                '    raw3d[0][1][0] = 55\n'
+                '    raw3d[2][1][1] = 77\n'
+                '    result: int32 = walk_forward(numbers, raw3d, 0)\n'
+                '    if result == 0:\n'
+                '        if numbers[1][2][3] != 321:\n'
+                '            result = 30\n'
+                '    if result == 0:\n'
+                '        if raw3d[2][1][1] != 88:\n'
+                '            result = 31\n'
+                '    return result\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(b'321', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

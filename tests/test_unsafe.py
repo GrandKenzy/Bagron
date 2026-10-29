@@ -129,6 +129,47 @@ class UnsafeBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(2, result.returncode)
 
+    def test_safe_matrix_index_checks_every_dimension(self):
+        artifacts = self._compile(
+            'func main() int32:\n'
+            '    data: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+            '    return data[1][2]\n'
+        )
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(6, result.returncode)
+
+    def test_safe_matrix_index_rejects_dynamic_inner_dimension(self):
+        with self.assertRaisesRegex(CompilationError, 'indice conocido'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+                '    index: int32 = 1\n'
+                '    return data[0][index]\n',
+                executable=False,
+            )
+
+    def test_unsafe_matrix_index_can_be_dynamic_at_each_dimension(self):
+        artifacts = self._compile(
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    data: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
+            '    row: int32 = 1\n'
+            '    column: int32 = 2\n'
+            '    return data[row][column]\n'
+        )
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(6, result.returncode)
+
     def test_safe_raw_pointer_index_requires_unsafe(self):
         with self.assertRaisesRegex(CompilationError, 'punteros crudos'):
             self._compile(
