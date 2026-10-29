@@ -148,7 +148,10 @@ class FunctionEmitterBase:
                 for parameter in symbol.signature.parameters
                 if parameter.type_spec.name == 'chain'
             }
-            for variable in symbol.scope.namespace.values():
+            variables = getattr(symbol, 'local_variables', None)
+            if variables is None:
+                variables = symbol.scope.namespace
+            for variable in variables.values():
                 if (
                     getattr(variable, 'name', None) in chain_parameters
                     and variable.type_spec.name == 'chain'
@@ -317,6 +320,7 @@ class FunctionEmitterBase:
         values: dict[str, ir.Value],
         *,
         require_bool: bool = False,
+        condition_kind: str = 'control',
     ) -> ir.Value:
         value_node = self._condition_value(node)
         if value_node is None:
@@ -327,7 +331,7 @@ class FunctionEmitterBase:
                 return result
             if require_bool:
                 raise FunctionEmissionError(
-                    'La condicion de while debe producir bool'
+                    f'La condicion de {condition_kind} debe producir bool'
                 )
             return builder.icmp_unsigned(
                 '!=',
@@ -336,7 +340,7 @@ class FunctionEmitterBase:
             )
         if require_bool:
             raise FunctionEmissionError(
-                'La condicion de while debe producir bool'
+                f'La condicion de {condition_kind} debe producir bool'
             )
         raise FunctionEmissionError(
             'La condicion debe producir bool o un entero escalar'

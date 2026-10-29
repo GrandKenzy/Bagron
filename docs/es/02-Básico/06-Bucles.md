@@ -381,6 +381,63 @@ La condición puede depender de variables mutables, pero su tipo sigue siendo
 estático. Un valor `int32`, `uint32`, `byte`, un puntero, un array o una matriz
 no puede usarse directamente como condición de `while`.
 
+## Operadores lógicos
+
+Bagron usa símbolos para las operaciones lógicas binarias:
+
+| Operador | Significado |
+|---|---|
+| `&&` | conjunción lógica; ambos operandos deben ser `bool`. |
+| `||` | disyunción lógica; ambos operandos deben ser `bool`. |
+| `not` | negación lógica unaria; su operando debe ser `bool`. |
+
+`and` y `or` no son palabras del lenguaje. Escribirlas como operadores produce
+un error de sintaxis; deben escribirse siempre como `&&` y `||`.
+
+```bg
+ready: bool = true
+blocked: bool = false
+
+if ready && not blocked:
+    pass
+
+if ready || blocked:
+    pass
+```
+
+No existe conversión implícita de enteros, punteros o arrays a `bool`. La
+restricción también se aplica dentro de `&&`, `||` y `not`, incluso en una
+función marcada como `@unsafe`.
+
+## Alcance de las variables en bloques
+
+Los cuerpos de `if`, `elif`, `else`, `while` y `for` tienen alcance léxico.
+Declarar una variable dentro de uno de ellos es válido y no crea memoria
+dinámica: el compilador reserva su almacenamiento estático al entrar a la
+función.
+
+- Un escalar local debe incluir su inicializador en la declaración.
+- Los arrays de tamaño fijo y los agregados reciben almacenamiento estático
+  determinista y pueden poblarse después elemento por elemento.
+- Una variable del bloque solo puede usarse dentro de ese bloque y sus bloques
+  hijos.
+- No se permite ocultar ni reutilizar el nombre de una variable local en otra
+  declaración de la misma función.
+- El iterador de `for` sigue siendo una excepción controlada: solo vive durante
+  ese bucle, es de solo lectura y puede volver a usarse cuando el `for` termina.
+
+```bg
+func example(enabled: bool) int32:
+    result: int32 = 0
+    if enabled:
+        contribution: int32 = 7
+        result = contribution
+    return result
+```
+
+`contribution` no existe después del `if`; `result` sí, porque fue declarado
+en el alcance exterior de la función.
+
 ## Resumen
 
 Las reglas del `for` son:

@@ -14,13 +14,16 @@ from core.frontend.syntax.items.imports import IMPORT
 from core.frontend.syntax.items.statements import FOR, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.typealias_decl import TYPEALIAS
-from core.frontend.syntax.items.value import POSTFIX_EXPR, VALUE
+from core.frontend.syntax.items.value import LOGICAL_NOT, POSTFIX_EXPR, VALUE
 from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
 
 class DUEXPR(cmb.RuleItem):
     nodeable = False
-    entrypoint = cmb.DualExpr(cmb.Ref(POSTFIX_EXPR))
+    entrypoint = cmb.DualExpr(
+        cmb.Ref(LOGICAL_NOT),
+        cmb.Ref(POSTFIX_EXPR),
+    )
 
 
 # `$value` is Bagron's explicit address-of operator.  It is registered in

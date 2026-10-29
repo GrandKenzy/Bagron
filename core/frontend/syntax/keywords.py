@@ -31,8 +31,6 @@ KEYWORDS = {
     'elif': '#7D5DF0',
     'else': '#7D5DF0',
     'not': '#C0392B',
-    'and': '#7D5DF0',
-    'or': '#7D5DF0',
 
     # Bucles e iteradores
     'for': '#D16969',
@@ -135,8 +133,6 @@ KEYWORDS_BY_GROUP = {
         'elif',
         'else',
         'not',
-        'and',
-        'or',
     ],
     'loops': [
         'for',

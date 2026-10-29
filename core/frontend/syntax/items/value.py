@@ -241,6 +241,21 @@ class POSTFIX_EXPR(cmb.RuleItem):
     nodeable = True
 
 
+class LOGICAL_NOT(cmb.RuleItem):
+    """Word-form logical negation for the Bagron `not` keyword."""
+
+    nodeable = True
+
+
+LOGICAL_NOT.entrypoint = cmb.Seq(
+    cmb.MatchKeyword('not'),
+    cmb.Alt(
+        cmb.Ref(LOGICAL_NOT),
+        cmb.Ref(POSTFIX_EXPR),
+    ),
+)
+
+
 class RETURN(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchKeyword('return'),
@@ -268,6 +283,7 @@ __all__ = [
     'DEREF_ASSIGN_TARGET',
     'DEREF_TARGET',
     'INDEX_ACCESS',
+    'LOGICAL_NOT',
     'MEMBER_ACCESS',
     'PARAMETERS',
     'PAIR_PARAM',

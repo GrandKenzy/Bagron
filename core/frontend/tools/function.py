@@ -26,7 +26,10 @@ from core.frontend.tools.types import (
     _type_name,
 )
 from core.frontend.tools.variable import build_symbol, collect_local
+from core.frontend.handles.variables import handle_variable
 from gram import ast as gast
+
+from core.storage import Storage
 
 if TYPE_CHECKING:
     from core.compiler import Compiler
@@ -360,6 +363,7 @@ def _bind_parameters(compiler: Compiler, symbol: FunctionSymbol) -> None:
             kind='parameter',
         )
         scope.add(parameter.name, variable)
+        symbol.local_variables[parameter.name] = variable
 
 
 def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
@@ -402,8 +406,36 @@ def _return_value(node: gast.ASTRef) -> object | None:
     )
 
 
-def _validate_return(compiler: Compiler, symbol: FunctionSymbol, node: gast.ASTRef) -> None:
-    scope = symbol.scope
+def _resolve_function_local(
+    symbol: FunctionSymbol,
+    scope: Storage | None,
+    name: str,
+) -> object | None:
+    """Resolve only bindings in the function's lexical scope chain.
+
+    A block may assign an outer local, but this helper deliberately stops at
+    the function scope so a module global is not mistaken for a local target.
+    Normal expression lookup still uses ``scope.resolve`` and can see globals.
+    """
+    root = symbol.scope
+    current = scope
+    while current is not None:
+        value = current.namespace.get(name)
+        if value is not None:
+            return value
+        if current is root:
+            break
+        current = current.parent
+    return None
+
+
+def _validate_return(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+    scope: Storage | None = None,
+) -> None:
+    scope = scope or symbol.scope
     if scope is None:
         return
 
@@ -462,8 +494,9 @@ def _for_binding(
     compiler: Compiler,
     symbol: FunctionSymbol,
     node: gast.ASTRef,
+    scope: Storage | None = None,
 ) -> str | None:
-    scope = symbol.scope
+    scope = scope or symbol.scope
     if scope is None:
         return None
 
@@ -547,7 +580,10 @@ def _for_binding(
         if index == 2 and value_info.is_literal and value_info.value == 0:
             compiler.error(f'El step de {name} no puede ser cero')
 
-    if scope.contains_local(name):
+    if (
+        name in symbol.local_variables
+        or _resolve_function_local(symbol, scope, name) is not None
+    ):
         compiler.error(
             f'La variable {name} ya fue declarada en el scope {scope.scope_name}'
         )
@@ -583,8 +619,9 @@ def _validate_condition(
     compiler: Compiler,
     symbol: FunctionSymbol,
     node: object,
+    scope: Storage | None = None,
 ) -> None:
-    scope = symbol.scope
+    scope = scope or symbol.scope
     if scope is None:
         return
 
@@ -604,10 +641,15 @@ def _validate_condition(
         compiler.error(f'La condicion de {symbol.name} es invalida: {error}')
         return
 
-    if node.name == 'WHILE_SIGNATURE':
+    condition_kind = {
+        'IF_SIGNATURE': 'if',
+        'ELIF_SIGNATURE': 'elif',
+        'WHILE_SIGNATURE': 'while',
+    }.get(node.name)
+    if condition_kind is not None:
         if not is_bool_scalar(value_info.type_spec):
             compiler.error(
-                f'La condicion de while en {symbol.name} debe ser bool'
+                f'La condicion de {condition_kind} en {symbol.name} debe ser bool'
             )
         return
 
@@ -709,14 +751,15 @@ def _validate_assignment(
     compiler: Compiler,
     symbol: FunctionSymbol,
     node: gast.ASTRef,
+    scope: Storage | None = None,
 ) -> None:
-    scope = symbol.scope
+    scope = scope or symbol.scope
     if scope is None:
         return
 
     target, operator, value_node = _assignment_parts(node)
     name = _identifier(target) if target is not None else None
-    variable = scope.namespace.get(name or '')
+    variable = _resolve_function_local(symbol, scope, name or '')
     try:
         target_info = infer_lvalue(
             target,
@@ -989,13 +1032,28 @@ def _statement_guarantees_return(node: object) -> bool:
     return False
 
 
+def _new_block_scope(parent: Storage, symbol: FunctionSymbol) -> Storage:
+    """Create a lexical block scope without changing runtime storage rules."""
+    root = symbol.scope.root if symbol.scope is not None else parent.root
+    return Storage(
+        root,
+        parent=parent,
+        scope_name=f'{parent.scope_name}:block',
+    )
+
+
 def _process_body_node(
     compiler: Compiler,
     symbol: FunctionSymbol,
     node: object,
     returns: list[int],
+    scope: Storage | None = None,
     loop_depth: int = 0,
 ) -> None:
+    scope = scope or symbol.scope
+    if scope is None:
+        return
+
     if isinstance(node, gast.ASTKeyword):
         if _token_value(node) in {'break', 'continue'} and loop_depth == 0:
             compiler.error(
@@ -1004,27 +1062,57 @@ def _process_body_node(
         return
     if isinstance(node, list):
         for child in node:
-            _process_body_node(compiler, symbol, child, returns, loop_depth)
+            _process_body_node(
+                compiler,
+                symbol,
+                child,
+                returns,
+                scope,
+                loop_depth,
+            )
         return
     if not isinstance(node, gast.ASTRef):
+        return
+
+    if node.name == 'STATEMENT_BODY':
+        block_scope = _new_block_scope(scope, symbol)
+        for child in _children(node):
+            _process_body_node(
+                compiler,
+                symbol,
+                child,
+                returns,
+                block_scope,
+                loop_depth,
+            )
         return
 
     if node.name in _DEFINITION_NODES:
         return
     if node.name == 'VAR':
-        if symbol.scope is not None:
-            collect_local(
-                compiler,
-                symbol.scope,
-                node,
-                current_function=symbol,
+        handle = handle_variable(node)
+        if handle is None:
+            return
+        if handle.name in symbol.local_variables:
+            compiler.error(
+                f'La variable {handle.name} ya fue declarada en la funcion '
+                f'{symbol.name}; no se permite shadowing ni reutilizacion'
             )
+            return
+        variable = collect_local(
+            compiler,
+            scope,
+            node,
+            current_function=symbol,
+        )
+        if variable is not None:
+            symbol.local_variables[handle.name] = variable
         return
     if node.name == 'VAR_ASSIGNATION':
-        _validate_assignment(compiler, symbol, node)
+        _validate_assignment(compiler, symbol, node, scope)
         return
     if node.name == 'RETURN':
-        _validate_return(compiler, symbol, node)
+        _validate_return(compiler, symbol, node, scope)
         returns[0] += 1
         return
     if node.name == 'RETURN_ASM':
@@ -1033,13 +1121,13 @@ def _process_body_node(
         return
     loop_name = None
     if node.name == 'FOR':
-        loop_name = _for_binding(compiler, symbol, node)
+        loop_name = _for_binding(compiler, symbol, node, scope)
 
     if node.name == 'CALL':
         try:
             infer_call(
                 node,
-                symbol.scope.resolve if symbol.scope is not None else {},
+                scope.resolve,
                 compiler.storage.functions,
                 current_function=symbol,
             )
@@ -1047,21 +1135,28 @@ def _process_body_node(
             compiler.error(f'{symbol.name}: {error}')
 
     if node.name in {'IF_SIGNATURE', 'ELIF_SIGNATURE', 'WHILE_SIGNATURE'}:
-        _validate_condition(compiler, symbol, node)
+        _validate_condition(compiler, symbol, node, scope)
 
     if node.name in {'CALL', 'IF', 'WHILE'}:
         symbol.body_supported_for_entrypoint = False
 
     child_loop_depth = loop_depth + (node.name in {'FOR', 'WHILE'})
     for child in _children(node):
-        _process_body_node(compiler, symbol, child, returns, child_loop_depth)
+        _process_body_node(
+            compiler,
+            symbol,
+            child,
+            returns,
+            scope,
+            child_loop_depth,
+        )
 
-    if node.name == 'FOR' and loop_name is not None and symbol.scope is not None:
-        iterator = symbol.scope.namespace.get(loop_name)
+    if node.name == 'FOR' and loop_name is not None:
+        iterator = scope.namespace.get(loop_name)
         if getattr(iterator, 'is_for_iterator', False):
             # The iterator is visible only while this FOR body is being
             # checked. Backend emission keeps its own hidden storage.
-            del symbol.scope.namespace[loop_name]
+            del scope.namespace[loop_name]
 
 
 def process(compiler: Compiler, node: gast.ASTRef) -> None:
@@ -1080,8 +1175,9 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     _validate_assembler_body(compiler, symbol, body)
 
     returns = [0]
-    for child in _children(body):
-        _process_body_node(compiler, symbol, child, returns)
+    if symbol.scope is not None:
+        for child in _children(body):
+            _process_body_node(compiler, symbol, child, returns, symbol.scope)
 
     return_type = symbol.signature.return_type
     if not _statement_body_guarantees_return(body):

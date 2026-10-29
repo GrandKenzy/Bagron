@@ -386,7 +386,7 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertEqual(5, result.returncode)
 
-    def test_builds_and_runs_assignment_without_initializer(self):
+    def test_rejects_scalar_assignment_without_initializer(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
@@ -396,15 +396,11 @@ class GlobalBackendTests(unittest.TestCase):
                 '    return result\n',
                 encoding='utf-8',
             )
-            artifacts = Compiler().compile(path)
-            result = subprocess.run(
-                [str(artifacts.executable)],
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-
-        self.assertEqual(7, result.returncode)
+            with self.assertRaisesRegex(
+                CompilationError,
+                'debe tener un inicializador',
+            ):
+                Compiler().compile(path)
 
     def test_builds_and_runs_numeric_for(self):
         with tempfile.TemporaryDirectory() as directory:

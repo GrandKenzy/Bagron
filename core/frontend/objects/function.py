@@ -48,6 +48,10 @@ class FunctionSymbol:
     # are kept here because their lexical scope ends with the loop and they
     # therefore are not part of `scope.namespace` after semantic collection.
     loop_iterators: dict[str, TypeSpec] = field(default_factory=dict)
+    # Ordinary locals keep lexical visibility in their Storage scopes, while
+    # this manifest lets LLVM reserve static storage for every local at
+    # function entry, including locals declared in nested control blocks.
+    local_variables: dict[str, object] = field(default_factory=dict)
 
     @property
     def is_external(self) -> bool:

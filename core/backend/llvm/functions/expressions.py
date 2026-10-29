@@ -583,6 +583,26 @@ class ExpressionEmitterMixin:
     ) -> ir.Value:
         current = self._unwrap(node)
 
+        if getattr(current, 'name', None) == 'LOGICAL_NOT':
+            operand_node = next(
+                (
+                    child for child in self._children(current)
+                    if getattr(child, 'name', None) is not None
+                ),
+                None,
+            )
+            if operand_node is None:
+                raise FunctionEmissionError(
+                    'La negacion logica requiere un operando'
+                )
+            operand = self._compile_expression(
+                operand_node,
+                builder,
+                values,
+            )
+            operand = self._coerce_condition_value(operand, builder)
+            return builder.xor(operand, ir.Constant(ir.IntType(1), 1))
+
         if type(current).__name__ == 'ASTUnaryOp':
             operator = getattr(
                 getattr(current.operator, 'token', None),

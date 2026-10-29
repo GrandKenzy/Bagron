@@ -186,15 +186,6 @@ def _identifier_from_node(node: object) -> str | None:
     return None
 
 
-def is_condition_type(type_spec: TypeSpec) -> bool:
-    """Return whether a value can be used as a control-flow condition."""
-    return (
-        type_spec.pointer_level == 0
-        and type_spec.array_depth == 0
-        and (type_spec.name == 'bool' or type_spec.name in INTEGER_TYPES)
-    )
-
-
 def is_bool_scalar(type_spec: TypeSpec) -> bool:
     """Return whether a value is exactly a scalar ``bool``."""
     return (
@@ -202,6 +193,11 @@ def is_bool_scalar(type_spec: TypeSpec) -> bool:
         and type_spec.pointer_level == 0
         and type_spec.array_depth == 0
     )
+
+
+def is_condition_type(type_spec: TypeSpec) -> bool:
+    """Return whether a value can be used as a control-flow condition."""
+    return is_bool_scalar(type_spec)
 
 
 def _is_float_scalar(type_spec: TypeSpec) -> bool:
@@ -1074,6 +1070,36 @@ def infer_value(
 ) -> ValueInfo:
     current = _unwrap_value(node)
 
+    if isinstance(current, gast.ASTRef) and current.name == 'LOGICAL_NOT':
+        operand_node = next(
+            (
+                child for child in _children(current)
+                if isinstance(child, gast.ASTRef)
+            ),
+            None,
+        )
+        if operand_node is None:
+            raise ValueResolutionError(
+                'la negacion logica requiere un operando'
+            )
+        operand = infer_value(
+            operand_node,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if not is_condition_type(operand.type_spec):
+            raise ValueResolutionError(
+                'el operando de una negacion logica debe ser bool'
+            )
+        if operand.is_literal:
+            return ValueInfo(
+                TypeSpec('bool'),
+                is_literal=True,
+                value=not bool(operand.value),
+            )
+        return ValueInfo(TypeSpec('bool'))
+
     if type(current).__name__ == 'ASTUnaryOp':
         operator = getattr(getattr(current.operator, 'token', None), 'name', None)
         operand = infer_value(
@@ -1100,7 +1126,7 @@ def infer_value(
         if operator in LOGICAL_NOT_OPERATORS:
             if not is_condition_type(operand.type_spec):
                 raise ValueResolutionError(
-                    'el operando de una negacion logica debe ser bool o entero escalar'
+                    'el operando de una negacion logica debe ser bool'
                 )
             if operand.is_literal:
                 return ValueInfo(
@@ -1239,7 +1265,7 @@ def infer_value(
                 right.type_spec
             ):
                 raise ValueResolutionError(
-                    'los operandos logicos deben ser bool o enteros escalares'
+                    'los operandos logicos deben ser bool'
                 )
             if left.is_literal and right.is_literal:
                 if operator in {'AND_LOGIC', 'LOGIC_AND'}:

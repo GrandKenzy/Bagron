@@ -231,6 +231,19 @@ def collect_in_scope(
         kind=kind,
         privacy=handle.privacy,
     )
+    # Scalars must make their initialization point explicit. Fixed-size
+    # arrays and named aggregates already receive deterministic static
+    # zero/storage initialization, so declarations such as a matrix that is
+    # populated element by element remain valid without a synthetic literal.
+    implicit_zero_storage = (
+        type_spec.array_depth > 0
+        or storage.resolve_type(type_spec.name) is not None
+    )
+    if kind == 'local' and handle.value_node is None and not implicit_zero_storage:
+        compiler.error(
+            f'La variable local {handle.name} debe tener un inicializador; '
+            'las variables locales se inicializan al declararse'
+        )
     if (
         type_spec.array_depth
         and handle.value_node is None

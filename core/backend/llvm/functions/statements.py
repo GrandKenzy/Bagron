@@ -169,8 +169,7 @@ class StatementEmitterMixin:
             left = self._load_place(place, builder)
             unsigned = bool(getattr(place, 'unsigned', False))
             if symbol.scope is not None and name is not None:
-                variable = symbol.scope.resolve(name)
-                type_spec = getattr(variable, 'type_spec', None)
+                type_spec = self._active_specs.get(name)
                 unsigned = unsigned or (
                     getattr(type_spec, 'name', None) in UNSIGNED_INTEGER_TYPES
                 )
@@ -219,7 +218,10 @@ class StatementEmitterMixin:
                 and not parameter.is_size
             )
         }
-        for name, variable in scope.namespace.items():
+        variables = getattr(symbol, 'local_variables', None)
+        if variables is None:
+            variables = scope.namespace
+        for name, variable in variables.items():
             try:
                 if name in array_parameters:
                     # Arrays are passed by reference.  Keep only the pointer
@@ -543,7 +545,13 @@ class StatementEmitterMixin:
                 raise FunctionEmissionError('El if no tiene cuerpo')
             true_block = function.append_basic_block(name='if.body')
             next_block = function.append_basic_block(name='if.next')
-            condition = self._compile_condition(signature, current_builder, values)
+            condition = self._compile_condition(
+                signature,
+                current_builder,
+                values,
+                require_bool=True,
+                condition_kind='if',
+            )
             current_builder.cbranch(condition, true_block, next_block)
 
             body_builder = ir.IRBuilder(true_block)
@@ -600,6 +608,7 @@ class StatementEmitterMixin:
             condition_builder,
             values,
             require_bool=True,
+            condition_kind='while',
         )
         condition_builder.cbranch(condition, body_block, after_block)
 
@@ -679,15 +688,18 @@ class StatementEmitterMixin:
             )
         block = function.append_basic_block(name='entry')
         builder = ir.IRBuilder(block)
+        variables = getattr(symbol, 'local_variables', None)
+        if variables is None:
+            variables = symbol.scope.namespace if symbol.scope else {}
         self._active_specs = {
             name: variable.type_spec
-            for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
+            for name, variable in variables.items()
             if getattr(variable, 'type_spec', None) is not None
         }
         self._active_specs.update(getattr(symbol, 'loop_iterators', {}))
         self._active_values = {
             name: getattr(variable, 'value_info', None)
-            for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
+            for name, variable in variables.items()
             if getattr(variable, 'value_info', None) is not None
         }
         self._loop_targets.clear()
@@ -740,15 +752,18 @@ class StatementEmitterMixin:
         source_function.linkage = 'internal'
         source_block = source_function.append_basic_block(name='entry')
         source_builder = ir.IRBuilder(source_block)
+        variables = getattr(symbol, 'local_variables', None)
+        if variables is None:
+            variables = symbol.scope.namespace if symbol.scope else {}
         self._active_specs = {
             name: variable.type_spec
-            for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
+            for name, variable in variables.items()
             if getattr(variable, 'type_spec', None) is not None
         }
         self._active_specs.update(getattr(symbol, 'loop_iterators', {}))
         self._active_values = {
             name: getattr(variable, 'value_info', None)
-            for name, variable in (symbol.scope.namespace.items() if symbol.scope else ())
+            for name, variable in variables.items()
             if getattr(variable, 'value_info', None) is not None
         }
         self._loop_targets.clear()

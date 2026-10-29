@@ -43,7 +43,7 @@ func _serialize_int_at_raw(
     digits: usize = 0
     cursor: int32 = value
     digit: int32 = 0
-    nul: char
+    nul: char = "\0"
     if value == 0:
         digits = 1
     elif negative:

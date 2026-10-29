@@ -19,7 +19,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler.compile(path, executable=False)
         return compiler
 
-    def test_function_scope_contains_parameters_and_nested_locals(self):
+    def test_function_scope_keeps_lexical_bindings_and_storage_manifest(self):
         compiler = self.compile_source(
             'base: const int32 = 3\n'
             'func suma(a: int32, b: int8) int32:\n'
@@ -34,9 +34,14 @@ class FunctionSemanticTests(unittest.TestCase):
         function = compiler.storage.functions['suma']
         self.assertIsNotNone(function.scope)
         self.assertEqual(
-            {'a', 'b', 'total', 'nested', 'loop_value'},
+            {'a', 'b', 'total'},
             set(function.scope.namespace),  # type: ignore[union-attr]
         )
+        self.assertEqual(
+            {'a', 'b', 'total', 'nested', 'loop_value'},
+            set(function.local_variables),
+        )
+        self.assertIsNone(function.scope.resolve('nested'))  # type: ignore[union-attr]
         self.assertIs(function.scope.resolve('base'), compiler.storage.namespace['base'])
 
     def test_rejects_local_type_mismatch(self):
@@ -650,13 +655,82 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_conditions_require_bool_or_integer_scalars(self):
-        with self.assertRaisesRegex(CompilationError, 'debe ser bool o entero escalar'):
+    def test_if_conditions_require_bool_scalars(self):
+        with self.assertRaisesRegex(
+            CompilationError,
+            'condicion de if.*debe ser bool',
+        ):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    value: int32 = 1\n'
+                '    if value:\n'
+                '        return 1\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(
+            CompilationError,
+            'condicion de if.*debe ser bool',
+        ):
             self.compile_source(
                 'func bad() int32:\n'
                 '    value: double = 1.0\n'
                 '    if value:\n'
                 '        return 1\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(
+            CompilationError,
+            'operandos logicos.*deben ser bool',
+        ):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    if 1 && true:\n'
+                '        return 1\n'
+                '    return 0\n'
+            )
+
+    def test_logical_not_is_a_keyword_and_word_and_or_are_not(self):
+        self.compile_source(
+            'func check(flag: bool) bool:\n'
+            '    if not not flag:\n'
+            '        return true\n'
+            '    return false\n'
+        )
+
+        with self.assertRaises(SystemExit):
+            self.compile_source(
+                'func invalid(flag: bool) bool:\n'
+                '    if flag and true:\n'
+                '        return true\n'
+                '    return false\n'
+            )
+
+        with self.assertRaises(SystemExit):
+            self.compile_source(
+                'func invalid(flag: bool) bool:\n'
+                '    if flag or true:\n'
+                '        return true\n'
+                '    return false\n'
+            )
+
+    def test_nested_locals_are_not_visible_outside_their_block(self):
+        with self.assertRaisesRegex(CompilationError, 'variable global no existe'):
+            self.compile_source(
+                'func invalid() int32:\n'
+                '    if true:\n'
+                '        hidden: int32 = 7\n'
+                '    return hidden\n'
+            )
+
+    def test_nested_scalar_locals_require_an_initializer(self):
+        with self.assertRaisesRegex(CompilationError, 'debe tener un inicializador'):
+            self.compile_source(
+                'func invalid() int32:\n'
+                '    if true:\n'
+                '        hidden: int32\n'
+                '        return 0\n'
                 '    return 0\n'
             )
 
