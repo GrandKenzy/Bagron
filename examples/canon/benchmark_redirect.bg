@@ -1,0 +1,208 @@
+; Benchmark de redireccion sin consola: construye registros en memoria y en archivo.
+; Cada registro combina un chain, un char[] y un entero int64.
+
+clause System 'windows'
+clause Arch 'amd'
+
+import standard
+import time
+
+extern "kernel32":
+    CreateFileA(
+        lpFileName *: const char,
+        dwDesiredAccess: uint32,
+        dwShareMode: uint32,
+        lpSecurityAttributes *: void,
+        dwCreationDisposition: uint32,
+        dwFlagsAndAttributes: uint32,
+        hTemplateFile *: void
+    ) *: void
+    CloseHandle(hObject *: void) int32
+
+@assembler
+private func _redirect_count(value: usize) uint32:
+    #prep assembler "intel"
+        mov rax, {value}
+    #end
+    return asm
+
+; Serializa una linea fija para que buffer y archivo midan el mismo trabajo.
+@unsafe
+func build_record(
+    output: char[64],
+    output_length: Len_t,
+    output_size: Size_t,
+    value: int64
+) usize:
+    prefix: chain = "value="
+    digits: char[32]
+    prefix_index: usize = 0
+    digit_index: usize = 0
+    position: usize = 0
+    written: usize = 0
+
+    while prefix[prefix_index] != 0:
+        output[position] = prefix[prefix_index]
+        prefix_index += 1
+        position += 1
+
+    written = serialize_int64(digits, value)
+    while digits[digit_index] != 0:
+        output[position] = digits[digit_index]
+        digit_index += 1
+        position += 1
+    output[position] = "\n"
+    position += 1
+    output[position] = "\0"
+    return position
+
+@unsafe
+func measure_empty_loop(iterations: uint32) int64:
+    start: int64 = 0
+    total: int64 = 0
+
+    for warmup: uint32 ran (0, 5, 1):
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            pass
+        time_ticks()
+
+    for sample: uint32 ran (0, 10, 1):
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            pass
+        total += time_us(start, time_ticks())
+    return total / 10
+
+@unsafe
+func measure_buffer(
+    iterations: uint32,
+    loop_cost: int64,
+    minimum *: int64
+) int64:
+    output: char[32768]
+    record: char[64]
+    value: int64 = 123456789
+    start: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
+    output_position: usize = 0
+    written: usize = 0
+    copy_index: usize = 0
+
+    for warmup: uint32 ran (0, 5, 1):
+        output_position = 0
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            written = build_record(record, value)
+            copy_index = 0
+            while copy_index < written:
+                output[output_position] = record[copy_index]
+                output_position += 1
+                copy_index += 1
+        time_ticks()
+
+    for sample: uint32 ran (0, 10, 1):
+        output_position = 0
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            written = build_record(record, value)
+            copy_index = 0
+            while copy_index < written:
+                output[output_position] = record[copy_index]
+                output_position += 1
+                copy_index += 1
+        elapsed = time_us(start, time_ticks())
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
+
+    (minimum) = best
+    return total / 10
+
+@unsafe
+func measure_file(
+    iterations: uint32,
+    loop_cost: int64,
+    minimum *: int64
+) int64:
+    path: chain = "benchmark_redirect.bg.out"
+    record: char[64]
+    value: int64 = 123456789
+    handle *: void = Null
+    start: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
+    written: usize = 0
+
+    for warmup: uint32 ran (0, 5, 1):
+        handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            written = build_record(record, value)
+            WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
+        time_ticks()
+        CloseHandle(handle)
+
+    for sample: uint32 ran (0, 10, 1):
+        handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
+        start = time_ticks()
+        for index: uint32 ran (0, iterations, 1):
+            written = build_record(record, value)
+            WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
+        elapsed = time_us(start, time_ticks())
+        CloseHandle(handle)
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
+
+    (minimum) = best
+    return total / 10
+
+@unsafe
+func report(
+    label: chain,
+    label_length: Len_t,
+    minimum: int64,
+    average: int64,
+    iterations: int64
+) void:
+    print(label)
+    print(" min_us=")
+    printint(minimum)
+    print(" avg_us=")
+    printint(average)
+    print(" per_call_us=")
+    printint(average / iterations)
+    print("\n")
+    return
+
+@unsafe
+func main() int32:
+    iterations: uint32 = 1000
+    loop_cost: int64 = measure_empty_loop(iterations)
+    buffer_min: int64 = 0
+    buffer_avg: int64 = measure_buffer(iterations, loop_cost, $buffer_min)
+    file_min: int64 = 0
+    file_avg: int64 = measure_file(iterations, loop_cost, $file_min)
+
+    print("empty_loop_avg_us=")
+    printint(loop_cost)
+    print("\n")
+    report("buffer", buffer_min, buffer_avg, 1000)
+    report("file", file_min, file_avg, 1000)
+    return 0

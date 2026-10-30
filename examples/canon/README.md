@@ -64,3 +64,14 @@ clang -std=c11 -O2 examples/canon/benchmark.c -o examples/canon/build/benchmark_
 
 `benchmark.c` conserva el mismo número de rondas y llamadas, y escribe sus
 métricas en `stderr` para separar la salida de prueba de los resultados.
+
+Benchmark de redirección a memoria y archivo:
+
+```text
+vnma run main.py examples/canon/benchmark_redirect.bg
+clang -std=c11 -O0 examples/canon/benchmark_redirect.c -o examples/canon/build/benchmark_redirect_c_O0.exe
+clang -std=c11 -O2 examples/canon/benchmark_redirect.c -o examples/canon/build/benchmark_redirect_c_O2.exe
+```
+
+Esta variante construye registros `value=<int64>` con `chain` y `char[]`,
+primero acumulándolos en un buffer y después escribiéndolos con `WriteFile`.

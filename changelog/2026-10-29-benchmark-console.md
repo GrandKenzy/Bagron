@@ -56,3 +56,23 @@ la planificación del proceso dominan estas muestras pequeñas.
 Estos números sirven como referencia de protocolo y no como umbral fijo:
 `benchmark.c` usa llamadas Win32 directas y no reproduce la semántica completa
 de validación de los módulos Bagron.
+
+## Redirección a buffer y archivo
+
+Se añadieron `benchmark_redirect.bg` y `benchmark_redirect.c`. Ambos
+construyen 1000 registros `value=<int64>` usando texto y buffers de caracteres;
+una medición conserva el resultado en memoria y otra lo escribe con
+`WriteFile` a un archivo creado para cada muestra.
+
+Una ejecución de referencia produjo:
+
+| Caso | Bagron | C `-O0` | C `-O2` |
+| --- | ---: | ---: | ---: |
+| Buffer, promedio (us) | 131 | 299 | 10 |
+| Archivo, promedio (us) | 39951 | 41274 | 38354 |
+
+La ruta de archivo queda prácticamente limitada por el sistema de archivos y
+`WriteFile`. La ruta de buffer sí separa el efecto del optimizador: el backend
+actual de Bagron queda cerca de C sin optimización, mientras que C `-O2`
+reduce mucho la serialización y la copia. Estas cifras son una muestra de
+diagnóstico, no un umbral de aceptación.
