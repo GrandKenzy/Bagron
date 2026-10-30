@@ -220,9 +220,9 @@ def _type_base_and_suffixes(type_node: object) -> tuple[str, list[object]]:
 
 
 def _constant_dimension_value(suffix: object) -> int | None:
+    """Resolve one type dimension, returning ``None`` for ``[]``."""
     from .values import infer_value
 
-    """Resolve one type dimension, returning ``None`` for ``[]``."""
     expression = next(
         (
             child for child in suffix
@@ -317,18 +317,6 @@ def resolve_type(
     if not base_name:
         raise TypeResolutionError(f'Tipo invalido: {text or "<vacio>"}')
 
-    if base_name == 'int':
-        raise TypeResolutionError(
-            'El tipo int fue eliminado; usa int8, int16, int32 o int64'
-        )
-    if base_name == 'uint':
-        raise TypeResolutionError(
-            'El tipo uint fue eliminado; usa uint8, uint16, uint32 o uint64'
-        )
-    if base_name == 'wsize':
-        raise TypeResolutionError(
-            'El tipo wsize fue eliminado; usa usize o isize segun el signo'
-        )
     if base_name in {'Len_t', 'Size_t'}:
         raise TypeResolutionError(
             'Len_t y Size_t solo pueden aparecer como parametros especiales '

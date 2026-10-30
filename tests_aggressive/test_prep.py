@@ -3,9 +3,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 import subprocess
+from unittest.mock import patch
 from pathlib import Path
 
 from core.compiler import CompilationError, Compiler
+from core.backend.llvm.module import LLVMBackend
 
 
 class PrepTests(unittest.TestCase):
@@ -40,6 +42,150 @@ class PrepTests(unittest.TestCase):
             '    ret\n',
             asm_path.read_text(encoding='utf-8'),
         )
+
+    def test_extracts_module_assembler_without_function_wrapper(self):
+        ir_path = self._compile(
+            '#prep assembler module "gas-intel"\n'
+            '    .section .rodata,"a"\n'
+            '    module_value:\n'
+            '        .long 42\n'
+            '    .text\n'
+            '    module_code:\n'
+            '        nop\n'
+            '        ret\n'
+            '#end\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+
+        asm_path = ir_path.parent / 'prep' / '_main' / 'module__prep_0.asm'
+        self.assertEqual(
+            '.intel_syntax noprefix\n'
+            '.section .rodata,"a"\n'
+            'module_value:\n'
+            '    .long 42\n'
+            '.text\n'
+            'module_code:\n'
+            '    nop\n'
+            '    ret\n',
+            asm_path.read_text(encoding='utf-8'),
+        )
+
+    def test_module_assembler_builds_as_one_native_unit(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '#prep assembler module "gas-intel"\n'
+            '    .text\n'
+            '    .globl module_helper\n'
+            '    module_helper:\n'
+            '        ret\n'
+            '#end\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        artifacts = Compiler().compile(path)
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(1, len(artifacts.prep_sources))
+        self.assertEqual('module__prep_0.asm', artifacts.prep_sources[0].name)
+
+    def test_baremetal_module_links_to_flat_binary(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            'clause System "baremetal"\n'
+            'clause Arch "amd"\n'
+            'clause Boot "multiboot2"\n'
+            '#prep assembler module "gas-intel"\n'
+            '    .section .multiboot2,"a"\n'
+            '    .long 0xE85250D6\n'
+            '    .text\n'
+            '    .globl _start\n'
+            '    _start:\n'
+            '        nop\n'
+            '#end\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        with patch.object(
+            LLVMBackend,
+            '_build_baremetal_iso',
+            side_effect=lambda binary, _build_dir: binary,
+        ):
+            artifacts = Compiler().compile(path)
+        binary = artifacts.raw_image.read_bytes()
+
+        self.assertEqual('.bin', artifacts.executable.suffix)
+        self.assertEqual(bytes((0xD6, 0x50, 0x52, 0xE8)), binary[:4])
+        self.assertTrue((path.parent / 'build' / '_main.ld').exists())
+
+    def test_baremetal_none_skips_boot_image_creation(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            'clause System "baremetal"\n'
+            'clause Arch "amd"\n'
+            'clause Boot "none"\n'
+            '#prep assembler module "gas-intel"\n'
+            '    .text\n'
+            '    .globl _start\n'
+            '    _start:\n'
+            '        nop\n'
+            '#end\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        with patch.object(LLVMBackend, '_build_baremetal_iso') as build_iso:
+            artifacts = Compiler().compile(path)
+
+        build_iso.assert_not_called()
+        self.assertEqual('.bin', artifacts.executable.suffix)
+        self.assertIsNone(artifacts.boot_image)
+        self.assertTrue(artifacts.raw_image.exists())
+
+    def test_baremetal_reports_missing_grub_tools(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            'clause System "baremetal"\n'
+            'clause Arch "amd"\n'
+            'clause Boot "multiboot2"\n'
+            '#prep assembler module "gas-intel"\n'
+            '    .section .multiboot2,"a"\n'
+            '    .long 0xE85250D6\n'
+            '    .text\n'
+            '    .globl _start\n'
+            '    _start:\n'
+            '        nop\n'
+            '#end\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        with patch.object(LLVMBackend, '_find_baremetal_tools', return_value=None):
+            with self.assertRaisesRegex(
+                CompilationError,
+                'grub-mkrescue y xorriso',
+            ):
+                Compiler().compile(path)
 
     def test_rejects_multiple_prep_blocks_in_assembler_function(self):
         with self.assertRaisesRegex(CompilationError, 'solo puede contener un bloque'):
@@ -92,6 +238,55 @@ class PrepTests(unittest.TestCase):
         )
         self.assertTrue(ir_path.exists())
 
+    def test_void_assembler_function_does_not_require_return_asm(self):
+        ir_path = self._compile(
+            '@assembler\n'
+            'func helper() void:\n'
+            '    #prep assembler "intel"\n'
+            '        nop\n'
+            '    #end\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+
+        asm_path = ir_path.parent / 'prep' / '_main' / 'helper__prep_0.asm'
+        self.assertEqual(
+            '.intel_syntax noprefix\n'
+            '.text\n'
+            '.globl helper\n'
+            'helper:\n'
+            '    nop\n'
+            '    ret\n',
+            asm_path.read_text(encoding='utf-8'),
+        )
+
+    def test_runs_void_assembler_function_without_return_asm(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func helper() void:\n'
+            '    #prep assembler "intel"\n'
+            '        nop\n'
+            '    #end\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    helper()\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        artifacts = Compiler().compile(path)
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+
+        self.assertEqual(0, result.returncode)
+
     def test_builds_and_runs_assembler_function_with_status(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -141,6 +336,19 @@ class PrepTests(unittest.TestCase):
         self.assertIn('.att_syntax prefix', asm_text)
         self.assertIn('movl $1, %eax', asm_text)
         self.assertIn('xorl %eax, %eax', asm_text)
+
+    def test_accepts_explicit_gas_intel_dialect(self):
+        ir_path = self._compile(
+            '@assembler\n'
+            'func main() int32:\n'
+            '    #prep assembler "gas-intel"\n'
+            '        xor eax, eax\n'
+            '    #end\n'
+            '    return asm\n'
+        )
+
+        asm_path = ir_path.parent / 'prep' / '_main' / 'main__prep_0.asm'
+        self.assertIn('.intel_syntax noprefix', asm_path.read_text(encoding='utf-8'))
 
     def test_infers_register_aliases_from_parameter_width(self):
         ir_path = self._compile(
@@ -229,7 +437,7 @@ class PrepTests(unittest.TestCase):
             )
 
     def test_rejects_unsupported_assembler_dialect(self):
-        with self.assertRaisesRegex(CompilationError, 'usa "intel" o "att"'):
+        with self.assertRaisesRegex(CompilationError, 'dialecto NASM'):
             self._compile(
                 '@assembler\n'
                 'func bad() int32:\n'

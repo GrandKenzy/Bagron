@@ -573,7 +573,7 @@ class FunctionSemanticTests(unittest.TestCase):
             )
 
     def test_numeric_for_requires_uint_iterator_and_nonzero_step(self):
-        for iterator_type in ('bool', 'int32', 'int64', 'usize', 'byte'):
+        for iterator_type in ('bool', 'int32', 'int64', 'usize', 'byte', 'uint'):
             with self.subTest(iterator_type=iterator_type):
                 with self.assertRaisesRegex(
                     CompilationError,
@@ -585,14 +585,6 @@ class FunctionSemanticTests(unittest.TestCase):
                         f'        pass\n'
                         f'    return 0\n'
                     )
-
-        with self.assertRaisesRegex(CompilationError, 'tipo uint fue eliminado'):
-            self.compile_source(
-                'func bad() int32:\n'
-                '    for i: uint ran (1, 3, 1):\n'
-                '        pass\n'
-                '    return 0\n'
-            )
 
     def test_numeric_for_accepts_only_fixed_unsigned_widths(self):
         self.compile_source(
