@@ -294,6 +294,39 @@ send(values, other)       ; expansión interna: send(values, 3, 4, other, 3, 4)
 El llamador solo proporciona los argumentos visibles. No puede insertar,
 reemplazar ni calcular manualmente los argumentos `Len_t` o `Size_t`.
 
+### Regiones exclusivas: `unique` y `Region_t`
+
+Los arrays y buffers normales pueden aliasar el mismo almacenamiento. Cuando
+una función necesita una región exclusiva puede marcar el parámetro de datos
+con `unique` y declarar `Region_t` después de sus expansiones ordinarias:
+
+```bg
+func copy_rows(
+    destination: unique byte[],
+    destination_len: Len_t,
+    destination_size: Size_t,
+    destination_region: Region_t,
+    source: unique byte[],
+    source_len: Len_t,
+    source_size: Size_t,
+    source_region: Region_t
+) void:
+    return
+```
+
+`Region_t` es inmutable y lo suministra el compilador; no se escribe en la
+llamada. En código seguro, Bagron solo acepta una llamada cuando puede
+demostrar que cada región proviene de almacenamiento distinto o de un
+parámetro `unique` que está siendo reenviado. Si la procedencia es desconocida
+o dos argumentos podrían representar la misma variable, la compilación falla.
+
+El aliasing ordinario no cambia: dos parámetros sin `unique` pueden recibir la
+misma variable. La prueba es conservadora y trata una matriz o un campo de una
+misma raíz como una sola región; no intenta adivinar que dos subrangos son
+disjuntos. El backend emite `noalias` para arrays `unique` demostrados. Los
+buffers conservan su descriptor por valor, por lo que su contrato se valida
+semánticamente sin alterar esa ABI en esta fase.
+
 En cualquier firma que reciba un array, `Len_t` y `Size_t` son obligatorios y
 deben aparecer consecutivamente en ese orden, incluso si la función es
 `@unsafe`. `T[]` en una firma no declara almacenamiento dinámico: representa

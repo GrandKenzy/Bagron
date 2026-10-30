@@ -290,10 +290,15 @@ def _initializer_fields(
             )
             continue
         seen_parameters.add(name)
-        if getattr(parameter, 'is_length', False) or getattr(parameter, 'is_size', False):
+        if (
+            getattr(parameter, 'is_length', False)
+            or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_region', False)
+            or getattr(parameter, 'is_unique', False)
+        ):
             compiler.error(
                 f'El {initializer_name} de {class_name} no admite parametros '
-                'Len_t/Size_t en esta fase'
+                'Len_t/Size_t/Region_t ni unique en esta fase'
             )
             continue
         parameter_scope.add(
@@ -514,6 +519,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_region', False)
             )
         ]
         if len(visible_parameters) != 1 or len(visible_parameters) != len(
@@ -558,7 +564,11 @@ def _initializer_parameter_scope(
         function_scope=True,
     )
     for parameter in symbol.constructor_parameters or ():
-        if getattr(parameter, 'is_length', False) or getattr(parameter, 'is_size', False):
+        if (
+            getattr(parameter, 'is_length', False)
+            or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_region', False)
+        ):
             continue
         name = getattr(parameter, 'name', '')
         if name:
@@ -613,6 +623,7 @@ def _validate_parent_initializer_call(
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_region', False)
         )
     ]
     arguments = child.parent_initializer_arguments

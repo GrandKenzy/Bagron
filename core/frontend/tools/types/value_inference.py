@@ -475,6 +475,28 @@ def infer_value(
             elif pointer_origin is None:
                 pointer_origin = 'unknown'
 
+        parameter_region = None
+        is_borrowed_parameter = False
+        signature = getattr(current_function, 'signature', None)
+        for parameter in getattr(signature, 'parameters', ()):
+            if parameter.name != str(value):
+                continue
+            if parameter.type_spec.array_depth or is_buffer_type(parameter.type_spec):
+                is_borrowed_parameter = True
+            if getattr(parameter, 'is_unique', False):
+                parameter_region = (
+                    f'parameter:{getattr(current_function, "name", "<function>")}:'
+                    f'{parameter.name}'
+                )
+                break
+        region_origin = parameter_region
+        if region_origin is None and not is_borrowed_parameter and (
+            symbol.type_spec.array_depth or is_buffer_type(symbol.type_spec)
+        ):
+            # ``id(symbol)`` is stable for this compilation and distinguishes
+            # two locals that otherwise share the same ``scope_kind``.
+            region_origin = f'symbol:{id(symbol)}'
+
         return ValueInfo(
             type_spec=symbol.type_spec,
             identifier=str(value),
@@ -496,6 +518,7 @@ def infer_value(
             known_index_source=getattr(symbol, 'for_array_source', None),
             known_index_path=getattr(symbol, 'for_array_path', ()),
             known_index_length=getattr(symbol, 'for_array_length', None),
+            region_origin=region_origin,
         )
 
     if kind == 'BOOL' or isinstance(value, bool):

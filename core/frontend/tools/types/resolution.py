@@ -147,6 +147,7 @@ def _buffer_index_value(value: ValueInfo, index: ValueInfo) -> ValueInfo:
         identifier=value.identifier,
         address_path=(*value.address_path, ('index', index)),
         member_owner=value.member_owner,
+        region_origin=value.region_origin,
     )
 
 
@@ -159,7 +160,7 @@ def _type_name(node: object) -> str:
 
     value = _token_value(node)
     if value is not None:
-        return '' if value == 'const' else str(value)
+        return '' if value in {'const', 'unique'} else str(value)
 
     return str(getattr(node, 'value', ''))
 
@@ -170,6 +171,15 @@ def _type_is_const(node: object) -> bool:
     if isinstance(node, gast.ASTRef):
         return _type_is_const(node.nodes)
     return _token_value(node) == 'const'
+
+
+def _type_is_unique(node: object) -> bool:
+    """Return whether a parsed type carries the parameter-only unique flag."""
+    if isinstance(node, list):
+        return any(_type_is_unique(item) for item in node)
+    if isinstance(node, gast.ASTRef):
+        return _type_is_unique(node.nodes)
+    return _token_value(node) == 'unique'
 
 
 def _is_array_suffix_node(node: object) -> bool:
@@ -209,7 +219,7 @@ def _type_base_and_suffixes(type_node: object) -> tuple[str, list[object]]:
                 visit(child)
             return
         value = _token_value(node)
-        if value is None or value == 'const':
+        if value is None or value in {'const', 'unique'}:
             return
         token_kind = _token_kind(node)
         if token_kind not in {'LBRACKET', 'RBRACKET'}:
@@ -311,15 +321,21 @@ def resolve_type(
     pointer_is_const: bool = False,
     pointer_size: int = 8,
     allow_bit_types: bool = False,
+    allow_unique: bool = False,
 ) -> TypeSpec:
     base_name, suffixes = _type_base_and_suffixes(type_node)
     text = _type_name(type_node)
+    unique = _type_is_unique(type_node)
+    if unique and not allow_unique:
+        raise TypeResolutionError(
+            'unique solo puede usarse en parametros de funcion'
+        )
     if not base_name:
         raise TypeResolutionError(f'Tipo invalido: {text or "<vacio>"}')
 
-    if base_name in {'Len_t', 'Size_t'}:
+    if base_name in {'Len_t', 'Size_t', 'Region_t'}:
         raise TypeResolutionError(
-            'Len_t y Size_t solo pueden aparecer como parametros especiales '
+            'Len_t, Size_t y Region_t solo pueden aparecer como parametros especiales '
             'de una funcion'
         )
     array_lengths = tuple(_constant_dimension_value(suffix) for suffix in suffixes)
@@ -352,6 +368,7 @@ def resolve_type(
             value_is_const=_type_is_const(type_node),
             pointer_is_const=pointer_is_const,
             array_lengths=array_lengths,
+            is_unique=unique,
         )
 
     array_depth = len(array_lengths)
@@ -412,6 +429,7 @@ def resolve_type(
         value_is_const=_type_is_const(type_node),
         pointer_is_const=pointer_is_const,
         array_lengths=array_lengths,
+        is_unique=unique,
     )
 
 

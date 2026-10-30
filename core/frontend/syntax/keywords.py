@@ -69,6 +69,7 @@ KEYWORDS = {
     'false': '#4E0097',
     'as': '#FFFFFF',
     'const': '#FFFFFF',
+    'unique': '#FFFFFF',
     'asm': '#AD0997',
 
     # preprocesadores
@@ -102,6 +103,7 @@ INTRINSIC_TYPES = {
     'Never': '#3B82F6',
     'Len_t': '#3B82F6', # hidden compile-time array length parameter
     'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
+    'Region_t': '#3B82F6', # hidden immutable provenance parameter
     'callptr': '#3B82F6',
     'Bint': '#3B82F6',
     'uBint': '#3B82F6',

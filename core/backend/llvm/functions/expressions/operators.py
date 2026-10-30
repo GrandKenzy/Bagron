@@ -89,6 +89,8 @@ class OperatorExpressionMixin:
         arguments: list[ir.Value] = []
         llvm_index = 0
         for parameter in method.signature.parameters:
+            if parameter.is_region:
+                continue
             if llvm_index >= len(callee.args):
                 raise FunctionEmissionError(
                     f'La firma de {method.name} no coincide con su ABI LLVM'
@@ -335,6 +337,7 @@ class OperatorExpressionMixin:
                 parameter.is_receiver
                 or parameter.is_length
                 or parameter.is_size
+                or parameter.is_region
             )
         ]
         if len(visible_parameters) != len(argument_nodes):
@@ -347,6 +350,8 @@ class OperatorExpressionMixin:
         argument_index = 0
         llvm_index = 0
         for parameter in parameters:
+            if parameter.is_region:
+                continue
             target_type = callee.args[llvm_index].type
             if parameter.is_receiver:
                 argument = self._coerce_value(

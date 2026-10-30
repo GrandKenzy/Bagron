@@ -229,11 +229,11 @@ def _collect_function(
             if isinstance(pair, gast.ASTRef) and pair.name == 'PAIR_PARAM'
         )
         if any(
-            parameter.is_length or parameter.is_size
+            parameter.is_length or parameter.is_size or parameter.is_region
             for parameter in parameters
         ):
             raise TypeResolutionError(
-                f'El extern {name} no puede usar Len_t ni Size_t: la ABI externa '
+                f'El extern {name} no puede usar Len_t, Size_t ni Region_t: la ABI externa '
                 'requiere argumentos explicitos'
             )
         return_type = _return_spec(

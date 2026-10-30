@@ -161,7 +161,9 @@ def _infer_magic_operator(
         len(visible_parameters) != expected_count
         or len(explicit_parameters) != expected_count
         or any(
-            parameter.is_length or parameter.is_size
+            parameter.is_length
+            or parameter.is_size
+            or parameter.is_region
             for parameter in explicit_parameters
         )
     ):
@@ -255,6 +257,7 @@ def _infer_constructor_call(
         argument_infos,
         current_function=current_function,
     )
+    _validate_unique_arguments(name, parameters, argument_infos)
     return ValueInfo(TypeSpec(aggregate.name))
 
 
@@ -278,6 +281,7 @@ def _visible_parameters(parameters: object) -> list[object]:
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_region', False)
             or getattr(parameter, 'is_receiver', False)
         )
     ]
@@ -296,6 +300,62 @@ def _validate_array_argument_storage(
             f'El argumento de {function_name} para {getattr(parameter, "name", "<array>")} '
             'debe ser una variable con almacenamiento propio'
         )
+
+
+def _validate_unique_arguments(
+    function_name: str,
+    parameters: object,
+    argument_infos: Mapping[str, ValueInfo],
+) -> None:
+    """Prove the non-overlap contract before allowing a ``unique`` call.
+
+    Ordinary arrays and buffers retain Bagron's aliasing semantics. A call
+    with ``unique`` must instead provide a known symbolic storage origin for
+    every array/buffer argument that could overlap the exclusive region.
+    """
+    parameters = list(parameters)
+    unique_parameters = [
+        parameter for parameter in parameters
+        if getattr(parameter, 'is_unique', False)
+    ]
+    if not unique_parameters:
+        return
+
+    data_parameters = [
+        parameter for parameter in _visible_parameters(parameters)
+        if (
+            getattr(parameter.type_spec, 'array_depth', 0)
+            or is_buffer_type(parameter.type_spec)
+        )
+    ]
+    unique_origins: dict[str, str] = {}
+    for parameter in data_parameters:
+        argument = argument_infos.get(parameter.name)
+        origin = getattr(argument, 'region_origin', None)
+        if origin is None:
+            raise ValueResolutionError(
+                f'La llamada a {function_name} no puede demostrar la Region_t '
+                f'de {parameter.name}; el origen debe ser almacenamiento local '
+                'o un parametro unique'
+            )
+        if parameter.is_unique:
+            previous = unique_origins.get(origin)
+            if previous is not None:
+                raise ValueResolutionError(
+                    f'La llamada a {function_name} solapa las regiones unique '
+                    f'{previous} y {parameter.name}'
+                )
+            unique_origins[origin] = parameter.name
+
+    for parameter in data_parameters:
+        if parameter.is_unique:
+            continue
+        origin = argument_infos[parameter.name].region_origin
+        if origin in unique_origins:
+            raise ValueResolutionError(
+                f'La llamada a {function_name} pasa {parameter.name} dentro de '
+                f'la Region_t unique de {unique_origins[origin]}'
+            )
 
 
 def _validate_expansion_parameters(
@@ -520,6 +580,7 @@ def infer_call(
         argument_infos,
         current_function=current_function,
     )
+    _validate_unique_arguments(name, parameters, argument_infos)
 
     return_type = getattr(signature, 'return_type', TypeSpec('void'))
     return ValueInfo(

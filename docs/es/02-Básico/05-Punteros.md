@@ -282,6 +282,10 @@ second *: int32 = $value
 result: int32 = (second) ; 7
 ```
 
+`unique` no modifica esta regla de punteros crudos. Solo aplica a parámetros de
+array y `buffer`, y requiere una `Region_t` demostrable; una dirección obtenida
+de un puntero no puede proporcionar por sí sola ese contrato seguro.
+
 ## Indexación de punteros
 
 Un puntero crudo no lleva longitud ni límites. Por eso incluso un índice

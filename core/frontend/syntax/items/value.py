@@ -76,6 +76,7 @@ class BITINT_TYPE(cmb.RuleItem):
 class TYPE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchKeyword('const')),
+        cmb.Opt(cmb.MatchKeyword('unique')),
         cmb.Alt(
             cmb.Ref(BITINT_TYPE),
             cmb.MatchGroup('types'),

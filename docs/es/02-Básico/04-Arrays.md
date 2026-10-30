@@ -489,3 +489,26 @@ send(values, other)
 El llamador solo escribe los argumentos visibles. No puede insertar, sustituir
 ni calcular manualmente `Len_t` o `Size_t`.
 
+### Contrato opcional `unique`
+
+El comportamiento por defecto conserva el aliasing: una función con dos
+parámetros de array ordinarios puede recibir dos veces el mismo array. Para
+pedir una región exclusiva, el parámetro se declara como `unique` y añade el
+metadato inmutable `Region_t` después de `Len_t` y `Size_t`:
+
+```bg
+func transform(
+    input: unique int32[],
+    input_len: Len_t,
+    input_size: Size_t,
+    input_region: Region_t
+) void:
+    return
+```
+
+La llamada sigue usando solo `transform(values)`. El compilador prueba la
+procedencia del almacenamiento y rechaza aliasing potencial o procedencia
+desconocida. Un parámetro `unique` puede reenviarse a otra función `unique` y
+conserva su región. La prueba no separa subrangos por aritmética: si no puede
+probar que son distintos, conserva el rechazo seguro.
+

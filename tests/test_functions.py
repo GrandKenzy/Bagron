@@ -45,6 +45,93 @@ class FunctionSemanticTests(unittest.TestCase):
         self.assertIsNone(function.scope.resolve('nested'))  # type: ignore[union-attr]
         self.assertIs(function.scope.resolve('base'), compiler.storage.namespace['base'])
 
+    def test_unique_requires_region_and_emits_noalias_for_arrays(self):
+        source = (
+            'func consume(left: unique int32[], left_len: Len_t, '
+            'left_size: Size_t, left_region: Region_t, '
+            'right: unique int32[], right_len: Len_t, '
+            'right_size: Size_t, right_region: Region_t) void:\n'
+            '    return\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    left: int32[2] = {1, 2}\n'
+            + '    right: int32[2] = {3, 4}\n'
+            + '    consume(left, right)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+        parameters = compiler.storage.functions['consume'].signature.parameters
+        self.assertTrue(parameters[0].is_unique)
+        self.assertTrue(parameters[3].is_region)
+        self.assertIn('noalias', Path(ir_path).read_text(encoding='utf-8'))
+
+    def test_unique_rejects_same_storage_and_missing_region(self):
+        with self.assertRaisesRegex(CompilationError, 'debe declarar Region_t'):
+            self.compile_source(
+                'func bad(data: unique int32[], length: Len_t, size: Size_t) void:\n'
+                '    return\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'solapa las regiones unique'):
+            self.compile_source(
+                'func bad(left: unique int32[], left_len: Len_t, '
+                'left_size: Size_t, left_region: Region_t, '
+                'right: unique int32[], right_len: Len_t, '
+                'right_size: Size_t, right_region: Region_t) void:\n'
+                '    return\n'
+                '\n'
+                'func caller() int32:\n'
+                '    values: int32[2] = {1, 2}\n'
+                '    bad(values, values)\n'
+                '    return 0\n'
+            )
+
+    def test_unique_parameter_can_forward_its_region(self):
+        compiler = self.compile_source(
+            'func inner(data: unique int32[], length: Len_t, size: Size_t, '
+            'region: Region_t) void:\n'
+            '    return\n'
+            '\n'
+            'func outer(data: unique int32[], length: Len_t, size: Size_t, '
+            'region: Region_t) void:\n'
+            '    inner(data)\n'
+            '    return\n'
+        )
+        self.assertTrue(
+            compiler.storage.functions['outer'].signature.parameters[0].is_unique
+        )
+
+    def test_ordinary_array_aliasing_remains_legal(self):
+        self.compile_source(
+            'func consume(left: int32[], left_len: Len_t, left_size: Size_t, '
+            'right: int32[], right_len: Len_t, right_size: Size_t) void:\n'
+            '    return\n'
+            '\n'
+            'func caller() int32:\n'
+            '    values: int32[2] = {1, 2}\n'
+            '    consume(values, values)\n'
+            '    return 0\n'
+        )
+
+    def test_unique_rejects_unknown_provenance_from_ordinary_parameter(self):
+        with self.assertRaisesRegex(CompilationError, 'no puede demostrar la Region_t'):
+            self.compile_source(
+                'func inner(data: unique int32[], length: Len_t, size: Size_t, '
+                'region: Region_t) void:\n'
+                '    return\n'
+                '\n'
+                'func outer(data: int32[], length: Len_t, size: Size_t) void:\n'
+                '    inner(data)\n'
+                '    return\n'
+            )
+
     def test_rejects_local_type_mismatch(self):
         with self.assertRaisesRegex(CompilationError, 'valor inicial de result'):
             self.compile_source(

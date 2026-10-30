@@ -93,6 +93,7 @@ def _member_value(
             aggregate.kind == 'mold' and field.type_spec.pointer_level > 0
         ),
         member_owner=aggregate.name,
+        region_origin=value.region_origin,
     )
 
 

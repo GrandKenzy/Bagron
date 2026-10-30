@@ -15,12 +15,17 @@ class TypeSpec:
     value_is_const: bool = False
     pointer_is_const: bool = False
     array_lengths: tuple[int | None, ...] = ()
+    # ``unique`` is parsed as a type qualifier and consumed while building a
+    # function parameter. It never becomes part of the runtime value type.
+    is_unique: bool = False
 
     @property
     def canonical_name(self) -> str:
         name = self.name
         if self.name in {'Bint', 'uBint'} and self.bit_width is not None:
             name = f'{name}<{self.bit_width}>'
+        if self.is_unique:
+            name = f'unique {name}'
         if self.array_lengths:
             suffix = ''.join(
                 f'[{length}]' if length is not None else '[]'
@@ -145,3 +150,6 @@ class ValueInfo:
     known_index_source: str | None = None
     known_index_path: tuple[tuple[str, object], ...] = ()
     known_index_length: int | None = None
+    # Safe ``unique`` calls require a compiler-proven storage identity. The
+    # value is intentionally symbolic; no runtime ownership object is made.
+    region_origin: str | None = None

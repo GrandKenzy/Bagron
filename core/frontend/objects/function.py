@@ -14,15 +14,24 @@ class ParameterSpec:
     name: str
     type_spec: TypeSpec
     has_default: bool = False
-    # ``Len_t``/``Size_t`` are named parameters whose values are supplied by
-    # the compiler from the data parameter immediately before them.
+    # ``Len_t``/``Size_t``/``Region_t`` are named parameters whose metadata is
+    # supplied by the compiler from the data parameter immediately before them.
     is_length: bool = False
     is_size: bool = False
     length_of: str | None = None
+    # ``Region_t`` is an immutable compiler-supplied provenance expansion.
+    is_region: bool = False
+    region_of: str | None = None
+    # A unique parameter promises exclusive non-overlapping storage.
+    is_unique: bool = False
     # Instance methods receive the class object through an implicit first
     # parameter.  It is part of the generated ABI but hidden from source
     # calls.
     is_receiver: bool = False
+
+    @property
+    def is_compiler_supplied(self) -> bool:
+        return self.is_length or self.is_size or self.is_region
 
 
 @dataclass(frozen=True)

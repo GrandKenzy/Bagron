@@ -321,6 +321,7 @@ class CallExpressionMixin:
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_region', False)
                 or getattr(parameter, 'is_receiver', False)
             )
         ]
@@ -654,6 +655,7 @@ class CallExpressionMixin:
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_region', False)
                 or getattr(parameter, 'is_receiver', False)
             )
         ]
@@ -672,13 +674,17 @@ class CallExpressionMixin:
             for parameter in visible_parameters
         }
         source_llvm_indices: dict[str, int] = {}
+        source_llvm_index = 0
         for index, parameter in enumerate(parameters):
+            if getattr(parameter, 'is_region', False):
+                continue
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
                 or getattr(parameter, 'is_receiver', False)
             ):
-                source_llvm_indices[parameter.name] = index
+                source_llvm_indices[parameter.name] = source_llvm_index
+            source_llvm_index += 1
         argument_index = 0
         llvm_index = 0
         for parameter in parameters:
@@ -728,6 +734,12 @@ class CallExpressionMixin:
                         )
                     )
                 llvm_index += 1
+                continue
+
+            if getattr(parameter, 'is_region', False):
+                # Region_t is immutable provenance metadata, not a runtime
+                # argument. Its source slot is materialized as a local zero
+                # only when the function body refers to the marker.
                 continue
 
             if argument_index >= len(argument_items):

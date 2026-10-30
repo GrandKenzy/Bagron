@@ -121,6 +121,19 @@ cualquier capacidad conocida en tiempo de ejecución. El parámetro conserva el
 descriptor por valor, pero la memoria sigue perteneciendo al llamador: la
 función receptora no puede ejecutar `Del` sobre él.
 
+También puede declararse un préstamo exclusivo:
+
+```bg
+func consume(data: unique buffer[], length: Len_t, region: Region_t) usize:
+    return length
+```
+
+`Region_t` es inmutable, oculto en la llamada y solo se acepta cuando el
+compilador demuestra una procedencia de almacenamiento concreta. La función
+no puede recibir dos argumentos que representen la misma región `unique`.
+Los buffers mantienen su descriptor por valor; por eso esta comprobación no
+cambia todavía la ABI ni añade `noalias` al descriptor.
+
 Todavía no se permite copiar buffers ni retornarlos desde una función. La
 transferencia de propiedad se definirá después con el ABI correspondiente;
 esto evita aliasing y dobles liberaciones mientras esa regla no exista.

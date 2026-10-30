@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.objects import (
@@ -26,6 +27,7 @@ from core.frontend.tools.types import (
     target_iteration_limit,
     _integer_bounds,
     _type_is_const,
+    _type_is_unique,
     _type_name,
 )
 from core.frontend.tools.variable import build_symbol, collect_local
@@ -283,6 +285,7 @@ def validate_magic_method_signature(
         if not (
             parameter.is_length
             or parameter.is_size
+            or parameter.is_region
             or parameter.is_receiver
         )
     ]
@@ -380,12 +383,25 @@ def _parameter_items(parameters: gast.ASTRef) -> list[object]:
     return _children(parameters.nodes[0])
 
 
-def _parameter_spec(pair: gast.ASTRef, *, pointer_size: int = 8) -> ParameterSpec:
+def _parameter_spec(
+    pair: gast.ASTRef,
+    *,
+    pointer_size: int = 8,
+    allow_unique: bool = False,
+) -> ParameterSpec:
     declarator = pair.nodes[0]
     type_node = pair.nodes[2]
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
     special_type = _type_name(type_node)
-    if special_type in {'Len_t', 'Size_t'}:
+    if special_type in {'Len_t', 'Size_t', 'Region_t'}:
+        if special_type == 'Region_t' and not allow_unique:
+            raise TypeResolutionError(
+                'Region_t solo puede usarse en firmas internas de Bagron'
+            )
+        if _type_is_unique(type_node):
+            raise TypeResolutionError(
+                f'{special_type} no puede declararse unique'
+            )
         if _type_is_const(type_node):
             raise TypeResolutionError(
                 f'{special_type} ya es inmutable; no puede declararse const'
@@ -404,13 +420,22 @@ def _parameter_spec(pair: gast.ASTRef, *, pointer_size: int = 8) -> ParameterSpe
             ),
             is_length=special_type == 'Len_t',
             is_size=special_type == 'Size_t',
+            is_region=special_type == 'Region_t',
         )
     type_spec = resolve_type(
         type_node,
         pointer_level=pointer_level,
         pointer_is_const=pointer_is_const,
         pointer_size=pointer_size,
+        allow_unique=allow_unique,
     )
+    is_unique = type_spec.is_unique
+    if is_unique:
+        if not (type_spec.array_depth or type_spec.name == 'buffer'):
+            raise TypeResolutionError(
+                f'unique solo puede aplicarse a arrays o buffer; no a {type_spec.canonical_name}'
+            )
+        type_spec = replace(type_spec, is_unique=False)
     if type_spec.name == 'Never':
         raise TypeResolutionError(
             f'El parametro {name} no puede usar Never'
@@ -423,6 +448,7 @@ def _parameter_spec(pair: gast.ASTRef, *, pointer_size: int = 8) -> ParameterSpe
         name=name,
         type_spec=type_spec,
         has_default=len(pair.nodes) > 3,
+        is_unique=is_unique,
     )
 
 
@@ -437,7 +463,31 @@ def _signature_parameters(
     for item in _parameter_items(parameters_node):
         if not isinstance(item, gast.ASTRef) or item.name != 'PAIR_PARAM':
             continue
-        parameter = _parameter_spec(item, pointer_size=pointer_size)
+        parameter = _parameter_spec(
+            item,
+            pointer_size=pointer_size,
+            allow_unique=True,
+        )
+        if parameter.is_region:
+            if last_data_parameter is None:
+                raise TypeResolutionError(
+                    'Region_t debe seguir a un parametro unique'
+                )
+            if not last_data_parameter.is_unique:
+                raise TypeResolutionError(
+                    f'Region_t solo puede asociarse al parametro unique '
+                    f'{last_data_parameter.name}'
+                )
+            parameters.append(
+                ParameterSpec(
+                    name=parameter.name,
+                    type_spec=parameter.type_spec,
+                    has_default=parameter.has_default,
+                    is_region=True,
+                    region_of=last_data_parameter.name,
+                )
+            )
+            continue
         if parameter.is_length or parameter.is_size:
             if last_data_parameter is None:
                 raise TypeResolutionError(
@@ -499,17 +549,32 @@ def _validate_array_expansion_parameters(
     """
     for parameter in parameters:
         type_spec = parameter.type_spec
+        if parameter.is_region:
+            continue
         if is_buffer_type(type_spec):
             linked = [
                 candidate
                 for candidate in parameters
                 if (
-                    (candidate.is_length or candidate.is_size)
-                    and candidate.length_of == parameter.name
+                    (
+                        candidate.is_length
+                        or candidate.is_size
+                        or candidate.is_region
+                    )
+                    and (
+                        candidate.length_of
+                        if not candidate.is_region
+                        else candidate.region_of
+                    ) == parameter.name
                 )
             ]
             lengths = [candidate for candidate in linked if candidate.is_length]
             sizes = [candidate for candidate in linked if candidate.is_size]
+            regions = [
+                (index, candidate)
+                for index, candidate in enumerate(parameters)
+                if candidate.is_region and candidate.region_of == parameter.name
+            ]
             if sizes:
                 raise TypeResolutionError(
                     f'El buffer {parameter.name} solo puede declarar Len_t; '
@@ -519,6 +584,18 @@ def _validate_array_expansion_parameters(
                 raise TypeResolutionError(
                     f'El buffer {parameter.name} debe declarar Len_t para '
                     'exponer su longitud en bytes'
+                )
+            if parameter.is_unique and len(regions) != 1:
+                raise TypeResolutionError(
+                    f'El buffer unique {parameter.name} debe declarar Region_t'
+                )
+            if regions and parameters.index(lengths[0]) > regions[0][0]:
+                raise TypeResolutionError(
+                    f'El buffer {parameter.name} debe declarar Region_t despues de Len_t'
+                )
+            if not parameter.is_unique and regions:
+                raise TypeResolutionError(
+                    f'Region_t solo puede asociarse al buffer unique {parameter.name}'
                 )
             continue
         if (
@@ -533,8 +610,16 @@ def _validate_array_expansion_parameters(
             (index, candidate)
             for index, candidate in enumerate(parameters)
             if (
-                (candidate.is_length or candidate.is_size)
-                and candidate.length_of == parameter.name
+                (
+                    candidate.is_length
+                    or candidate.is_size
+                    or candidate.is_region
+                )
+                and (
+                    candidate.length_of
+                    if not candidate.is_region
+                    else candidate.region_of
+                ) == parameter.name
             )
         ]
         lengths = [
@@ -547,6 +632,11 @@ def _validate_array_expansion_parameters(
             for index, candidate in linked
             if candidate.is_size
         ]
+        regions = [
+            (index, candidate)
+            for index, candidate in linked
+            if candidate.is_region
+        ]
         if len(lengths) != 1 or len(sizes) != 1:
             raise TypeResolutionError(
                 f'El array {parameter.name} debe declarar Len_t y Size_t; '
@@ -555,6 +645,18 @@ def _validate_array_expansion_parameters(
         if lengths[0][0] > sizes[0][0]:
             raise TypeResolutionError(
                 f'El array {parameter.name} debe declarar Len_t antes de Size_t'
+            )
+        if parameter.is_unique and len(regions) != 1:
+            raise TypeResolutionError(
+                f'El array unique {parameter.name} debe declarar Region_t'
+            )
+        if regions and regions[0][0] < sizes[0][0]:
+            raise TypeResolutionError(
+                f'El array {parameter.name} debe declarar Region_t despues de Size_t'
+            )
+        if not parameter.is_unique and regions:
+            raise TypeResolutionError(
+                f'Region_t solo puede asociarse al array unique {parameter.name}'
             )
 
 

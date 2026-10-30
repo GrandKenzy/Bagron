@@ -20,6 +20,7 @@ from .compatibility import _is_integer_scalar, is_compatible
 from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
     _validate_array_argument_storage, _validate_expansion_parameters,
+    _validate_unique_arguments,
     _visible_parameters,
 )
 
@@ -85,6 +86,7 @@ def _deref_value(value: ValueInfo) -> ValueInfo:
         is_lvalue=True,
         address_origin=origin,
         storage_origin=origin,
+        region_origin=value.region_origin,
         pointer_provenance_unknown=value.pointer_provenance_unknown,
         member_owner=value.member_owner,
     )
@@ -204,6 +206,7 @@ def _infer_postfix(
             argument_infos,
             current_function=current_function,
         )
+        _validate_unique_arguments(name, parameters, argument_infos)
         return_type = getattr(signature, 'return_type', TypeSpec('void'))
         if (
             return_type.name == 'void'
@@ -266,6 +269,7 @@ def _infer_postfix(
                         identifier=result.identifier,
                         address_path=(*result.address_path, ('index', index)),
                         member_owner=result.member_owner,
+                        region_origin=result.region_origin,
                     )
                 elif is_buffer_type(result.type_spec):
                     result = _buffer_index_value(result, index)
@@ -282,6 +286,7 @@ def _infer_postfix(
                         identifier=result.identifier,
                         address_path=(*result.address_path, ('index', index)),
                         member_owner=result.member_owner,
+                        region_origin=result.region_origin,
                     )
                 elif result.type_spec.pointer_level:
                     if not _unsafe_context(current_function):
@@ -338,6 +343,7 @@ def _infer_postfix(
                     identifier=result.identifier,
                     address_path=(*result.address_path, ('index', index)),
                     member_owner=result.member_owner,
+                    region_origin=result.region_origin,
                 )
             elif is_buffer_type(result.type_spec):
                 result = _buffer_index_value(result, index)

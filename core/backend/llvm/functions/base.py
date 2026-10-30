@@ -227,6 +227,8 @@ class FunctionEmitterBase:
                 return False
 
             for parameter in symbol.signature.parameters:
+                if getattr(parameter, 'is_region', False):
+                    continue
                 parameter_type = self._function_parameter_type(
                     parameter.type_spec,
                 )
@@ -311,6 +313,7 @@ class FunctionEmitterBase:
             parameters = [
                 self._function_parameter_type(parameter.type_spec)
                 for parameter in symbol.signature.parameters
+                if not getattr(parameter, 'is_region', False)
             ]
             return_type = llvm_type(
                 symbol.signature.return_type,
@@ -329,6 +332,20 @@ class FunctionEmitterBase:
             # ``inlinehint`` is a request to LLVM, not a mandatory inlining
             # directive. This matches Bagron's ``inline`` contract.
             function.attributes.add('inlinehint')
+        # ``noalias`` is emitted only for statically proven unique array
+        # parameters. Buffers use a descriptor-by-value ABI, so their data
+        # pointer cannot safely receive a parameter attribute here.
+        llvm_index = 0
+        for parameter in symbol.signature.parameters:
+            if getattr(parameter, 'is_region', False):
+                continue
+            if (
+                getattr(parameter, 'is_unique', False)
+                and getattr(parameter.type_spec, 'array_depth', 0)
+                and isinstance(function.args[llvm_index].type, ir.PointerType)
+            ):
+                function.args[llvm_index].add_attribute('noalias')
+            llvm_index += 1
 
     @staticmethod
     def _children(node: object) -> list[object]:

@@ -150,6 +150,7 @@ def _frontend_initializer_value(
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_region', False)
         )
     ]
     if initializer_name != '__frontend__' or len(visible_parameters) != 1:
@@ -200,6 +201,7 @@ def _frontend_initializer_value(
                 if not (
                     getattr(parameter, 'is_length', False)
                     or getattr(parameter, 'is_size', False)
+                    or getattr(parameter, 'is_region', False)
                     or getattr(parameter, 'is_receiver', False)
                 )
             ]

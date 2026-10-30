@@ -113,6 +113,24 @@ class BufferTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_unique_buffer_requires_region_but_keeps_descriptor_abi(self):
+        module_path = self._compile(
+            'func consume(data: unique buffer[], length: Len_t, '
+            'region: Region_t) void:\n'
+            '    return\n'
+            'func main() int32:\n'
+            '    data: buffer[4] = 0\n'
+            '    consume(data)\n'
+            '    Del data\n'
+            '    return 0\n'
+        )
+        module = Path(module_path).read_text(encoding='utf-8')
+        self.assertIn(
+            'define void @"consume"(%"__bagron_buffer" %"data", i64 %"length")',
+            module,
+        )
+        self.assertNotIn('noalias', module.split('define void @"consume"', 1)[1].split('{', 1)[0])
+
 
 if __name__ == '__main__':
     unittest.main()

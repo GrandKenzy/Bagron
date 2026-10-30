@@ -499,7 +499,13 @@ class StatementEmitterMixin:
                 parameter.type_spec.array_depth
                 and not parameter.is_length
                 and not parameter.is_size
+                and not parameter.is_region
             )
+        }
+        region_parameters = {
+            parameter.name
+            for parameter in symbol.signature.parameters
+            if parameter.is_region
         }
         variables = getattr(symbol, 'local_variables', None)
         if variables is None:
@@ -530,7 +536,9 @@ class StatementEmitterMixin:
                 pointer.align = self.type_registry.abi_alignment(local_type)
             values[name] = pointer
             initial_value = (
-                ir.Constant(local_type, None)
+                ir.Constant(local_type, 0)
+                if name in region_parameters
+                else ir.Constant(local_type, None)
                 if name in chain_parameters or name in array_parameters
                 else default_value(
                     variable.type_spec,
@@ -546,7 +554,12 @@ class StatementEmitterMixin:
                 volatile=self._aggregate_volatile(local_type),
             )
 
-        for parameter, argument in zip(symbol.signature.parameters, arguments):
+        runtime_parameters = [
+            parameter
+            for parameter in symbol.signature.parameters
+            if not parameter.is_region
+        ]
+        for parameter, argument in zip(runtime_parameters, arguments):
             pointer = values.get(parameter.name)
             if pointer is None:
                 raise FunctionEmissionError(
