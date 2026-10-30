@@ -130,6 +130,27 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('i.addr', module)
         self.assertIn('KeepIterator', module)
 
+    def test_optimized_large_buffer_promotes_scalars(self):
+        module = self.compile_source(
+            'func consume(data: char[2048], length: Len_t, '
+            'size: Size_t) usize:\n'
+            '    return length + size\n'
+            'func fill(input: char[2048], input_length: Len_t, '
+            'input_size: Size_t) usize:\n'
+            '    output: char[2048]\n'
+            '    output[0] = "A"\n'
+            '    return consume(output) + input_length + input_size\n',
+            optimization_profile='prod',
+        )
+
+        # The byte aggregate remains addressable, while scalar metadata is
+        # promoted to SSA even in the same function.
+        self.assertIn('[2048 x i8]', module)
+        self.assertNotIn('length.addr', module)
+        self.assertNotIn('size.addr', module)
+        self.assertNotIn('input_length.addr', module)
+        self.assertNotIn('input_size.addr', module)
+
     def test_optimized_volatile_accesses_survive_ir_pipeline(self):
         module = self.compile_source(
             'volatile struct MMIO:\n'

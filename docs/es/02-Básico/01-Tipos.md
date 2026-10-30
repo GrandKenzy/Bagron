@@ -294,6 +294,11 @@ send(values, other)       ; expansión interna: send(values, 3, 4, other, 3, 4)
 El llamador solo proporciona los argumentos visibles. No puede insertar,
 reemplazar ni calcular manualmente los argumentos `Len_t` o `Size_t`.
 
+En el backend, estos metadatos son inmutables y se representan directamente
+como argumentos escalares del ABI; en perfiles optimizados no necesitan una
+variable temporal en memoria, por lo que LLVM puede mantenerlos en registros.
+Esto no cambia la firma visible ni la expansión automática.
+
 ### Regiones exclusivas: `unique` y `Region_t`
 
 Los arrays y buffers normales pueden aliasar el mismo almacenamiento. Cuando

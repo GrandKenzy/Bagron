@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
-import re
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +41,7 @@ class LLVMBackend:
 
     @staticmethod
     def _has_large_stack_aggregate(function) -> bool:
-        """Avoid scalarising stack arrays that would explode the IR."""
+        """Identify functions whose byte storage must remain opaque."""
         for block in function.blocks:
             for instruction in block.instructions:
                 if instruction.opcode != 'alloca':
@@ -76,20 +76,6 @@ class LLVMBackend:
         inline_passes.add_always_inliner_pass()
         inline_passes.run(module, pass_builder)
 
-        scalar_passes = llvm.create_new_function_pass_manager()
-        scalar_passes.add_sroa_pass()
-        scalar_passes.add_instruction_combine_pass()
-        scalar_passes.add_sccp_pass()
-        scalar_passes.add_simplify_cfg_pass()
-        scalar_passes.add_aggressive_dce_pass()
-        for function in module.functions:
-            if (
-                function.is_declaration
-                or LLVMBackend._has_large_stack_aggregate(function)
-            ):
-                continue
-            scalar_passes.run(function, pass_builder)
-
         pass_manager = llvm.create_new_module_pass_manager()
         pass_manager.add_instruction_combine_pass()
         pass_manager.add_sccp_pass()
@@ -99,6 +85,31 @@ class LLVMBackend:
             pass_manager.add_aggressive_instcombine_pass()
             pass_manager.add_simplify_cfg_pass()
         pass_manager.run(module, pass_builder)
+
+        scalar_passes = llvm.create_new_function_pass_manager()
+        scalar_passes.add_sroa_pass()
+        scalar_passes.add_instruction_combine_pass()
+        scalar_passes.add_sccp_pass()
+        scalar_passes.add_simplify_cfg_pass()
+        scalar_passes.add_aggressive_dce_pass()
+        large_scalar_passes = llvm.create_new_function_pass_manager()
+        large_scalar_passes.add_sroa_pass()
+
+        # A large byte aggregate must stay addressable, but that does not
+        # justify keeping every scalar local in memory. SROA's own aggregate
+        # handling promotes scalar slots; avoid the later function passes for
+        # these functions because they can repeatedly walk thousands of byte
+        # stores introduced by an inline serializer.
+        for function in module.functions:
+            if function.is_declaration:
+                continue
+            if LLVMBackend._has_large_stack_aggregate(function):
+                large_scalar_passes.run(function, pass_builder)
+            else:
+                scalar_passes.run(function, pass_builder)
+
+        # The module pipeline ran before the large-function SROA pass. Do not
+        # send its expanded byte stores through another whole-module walk.
 
     def _emit_verified(self, storage):
         try:

@@ -9,9 +9,13 @@ clause Optimizations 'high' ; optimización local más intensa
 ```
 
 `prod` y `high` verifican y optimizan el IR antes de publicar el `.ll` y
-generar el objeto. La secuencia evita la expansión desproporcionada de módulos
-con buffers grandes: los agregados de más de 1024 elementos no pasan por SROA,
-mientras que las demás funciones sí pueden promover escalares locales.
+generar el objeto. Los agregados grandes conservan su almacenamiento, pero sus
+escalares vecinos sí pasan por la promoción segura de SROA. La inicialización
+cero de arrays grandes se emite como `memset` para no expandirla en miles de
+stores durante esa promoción.
+
+`Len_t` y `Size_t` son inmutables y se emiten directamente desde sus argumentos
+del ABI, de modo que no necesitan `alloca` ni cargas repetidas.
 
 Los iteradores de `for` que no usan `$iterador` se emiten como `phi` SSA en
 los perfiles optimizados. Si se toma su dirección, Bagron conserva el

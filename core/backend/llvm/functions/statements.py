@@ -154,6 +154,58 @@ class StatementEmitterMixin:
             1,
         )
 
+    @staticmethod
+    def _aggregate_byte_size(value_type: ir.Type) -> int | None:
+        """Return the byte size for the array shapes handled by this emitter."""
+        if isinstance(value_type, ir.ArrayType):
+            element_size = StatementEmitterMixin._aggregate_byte_size(
+                value_type.element,
+            )
+            return None if element_size is None else value_type.count * element_size
+        if isinstance(value_type, ir.IntType):
+            return max(1, (value_type.width + 7) // 8)
+        if isinstance(value_type, ir.HalfType):
+            return 2
+        if isinstance(value_type, ir.FloatType):
+            return 4
+        if isinstance(value_type, ir.DoubleType):
+            return 8
+        return None
+
+    def _emit_large_zero_initialization(
+        self,
+        pointer: ir.Value,
+        value_type: ir.Type,
+        builder: ir.IRBuilder,
+    ) -> bool:
+        """Zero large arrays without materialising an aggregate store.
+
+        Keeping the initialization as ``memset`` lets SROA promote nearby
+        scalar locals without expanding a large byte array into one IR store
+        per element.
+        """
+        if self._aggregate_volatile(value_type):
+            return False
+        byte_size = self._aggregate_byte_size(value_type)
+        if byte_size is None or byte_size <= 1024:
+            return False
+        byte_pointer = builder.bitcast(pointer, ir.IntType(8).as_pointer())
+        size_type = self._size_integer_type()
+        memset = self._runtime_function(
+            'memset',
+            ir.IntType(8).as_pointer(),
+            [ir.IntType(8).as_pointer(), ir.IntType(32), size_type],
+        )
+        builder.call(
+            memset,
+            [
+                byte_pointer,
+                ir.Constant(ir.IntType(32), 0),
+                ir.Constant(size_type, byte_size),
+            ],
+        )
+        return True
+
     def _buffer_literal_items(self, value_node: object) -> list[object]:
         current = self._unwrap_buffer_value(value_node)
         if getattr(current, 'name', None) != 'ARRAY_VALUE':
@@ -537,7 +589,19 @@ class StatementEmitterMixin:
         variables = getattr(symbol, 'local_variables', None)
         if variables is None:
             variables = scope.namespace
+        direct_parameters = {
+            parameter.name
+            for parameter in symbol.signature.parameters
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and (parameter.is_length or parameter.is_size)
+            )
+        }
         for name, variable in variables.items():
+            if name in direct_parameters:
+                # Len_t and Size_t are compiler-supplied immutable metadata;
+                # their ABI arguments are already SSA values and need no slot.
+                continue
             try:
                 if name in array_parameters:
                     # Arrays are passed by reference.  Keep only the pointer
@@ -573,13 +637,18 @@ class StatementEmitterMixin:
                     self.type_registry,
                 )
             )
-            self._store_address(
-                initial_value,
+            if not self._emit_large_zero_initialization(
                 pointer,
+                local_type,
                 builder,
-                alignment=pointer.align,
-                volatile=self._aggregate_volatile(local_type),
-            )
+            ):
+                self._store_address(
+                    initial_value,
+                    pointer,
+                    builder,
+                    alignment=pointer.align,
+                    volatile=self._aggregate_volatile(local_type),
+                )
 
         runtime_parameters = [
             parameter
@@ -587,6 +656,12 @@ class StatementEmitterMixin:
             if not parameter.is_region
         ]
         for parameter, argument in zip(runtime_parameters, arguments):
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and (parameter.is_length or parameter.is_size)
+            ):
+                values[parameter.name] = argument
+                continue
             pointer = values.get(parameter.name)
             if pointer is None:
                 raise FunctionEmissionError(

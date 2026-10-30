@@ -194,7 +194,11 @@ class CallExpressionMixin:
                 f'El metadato expandido {forwarded.name} no tiene '
                 'almacenamiento LLVM'
             )
-        return builder.load(pointer)
+        # Len_t/Size_t parameters are emitted directly as immutable SSA
+        # arguments; older storage-backed values still use their alloca.
+        if getattr(pointer, 'opname', None) == 'alloca':
+            return builder.load(pointer)
+        return pointer
 
     def _compile_length_argument(
         self,
