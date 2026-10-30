@@ -9,3 +9,7 @@ Ahora expone cadenas para:
 - identificadores, signos, marcadores `xX` y símbolos de operadores.
 
 Todas las constantes son `chain` públicas y no añaden coste de ejecución.
+
+`formatting.bg` reutiliza `NumericString` y `console.bg` reutiliza
+`HexadecimalUpperString`, evitando duplicar tablas de caracteres en los
+módulos consumidores.

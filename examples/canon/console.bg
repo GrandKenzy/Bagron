@@ -3,6 +3,8 @@
 clause System 'windows'
 clause Arch 'amd'
 
+import alphabet
+
 extern "kernel32":
     GetStdHandle(nStdHandle: uint32) *: void
     WriteFile(
@@ -48,11 +50,11 @@ public func printb(
     hexadecimal: bool
 ) void:
     handle *: void = GetStdHandle(4294967285)
+    global HexadecimalUpperString
     if size != 1:
         return
 
     if hexadecimal:
-        digits: chain = "0123456789ABCDEF"
         index: usize = 0
         value: byte = 0
         high: byte = 0
@@ -62,8 +64,8 @@ public func printb(
             value = buffer[index]
             high = value / 16
             low = value % 16
-            pair[0] = digits[high]
-            pair[1] = digits[low]
+            pair[0] = HexadecimalUpperString[high]
+            pair[1] = HexadecimalUpperString[low]
             WriteFile(handle, $pair[0], 2, Null, Null)
             index += 1
         return
