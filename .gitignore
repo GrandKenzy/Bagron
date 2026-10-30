@@ -6,7 +6,6 @@ __pycache__/
 
 # Entornos virtuales y dependencias privadas
 .vscode/
-.egl/
 .venv/
 venv/
 
@@ -31,7 +30,6 @@ dist/
 *.a
 *.lib
 *.vsix
-*.lib.egl
 
 # Cachés y temporales
 .cache/
@@ -47,13 +45,6 @@ log/
 *SDL3*.lib
 **/cmake/
 **/pkgconfig/
-
-# Carpetas de trabajo temporal y librerías generadas en EGLLibs
-EGLLibs/.cache/
-EGLLibs/.temp/
-EGLLibs/**/bin/
-EGLLibs/**/lib/
-EGLLibs/**/includes/
 
 # --- VNMA (Vendor Manager) ---
 /vendor/

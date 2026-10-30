@@ -25,10 +25,6 @@ class ParameterSpec:
     is_receiver: bool = False
 
 
-# Kept as a type alias while the semantic model migrates to TypeSpec.
-TypeInfo = TypeSpec
-
-
 @dataclass(frozen=True)
 class FunctionSignature:
     parameters: tuple[ParameterSpec, ...]
