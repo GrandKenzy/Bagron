@@ -35,6 +35,13 @@ En una ejecución local, la mediana del buffer fue de aproximadamente 320 ticks
 en Bagron `prod`, 279 en C `-O2` y 314 en Rust `-O3`. Son cifras orientativas,
 no umbrales: `WriteFile` y el planificador introducen variación.
 
+La capa reutilizable del backend también quedó incorporada: `prod` y `high`
+expanden `inline` de Bagron antes del pipeline LLVM, promueven iteradores y
+metadatos escalares cuando no escapan, internan `const char[N]` literal en
+rodata, y reutilizan una condición `while index < Len_t` para el acceso a un
+`buffer[]`. Los atributos `nonnull` y `dereferenceable` describen el contrato
+de arrays fijos; `noalias` sigue siendo exclusivo de `unique`.
+
 ## Orden de revisión
 
 ### 1. Benchmark y referencias
@@ -57,6 +64,8 @@ Revisar primero:
   dirección.
 - `_emit_local_declaration`: evitar temporales cuando el valor no escapa.
 - `_emit_for`: conservar iteradores SSA y sus límites exclusivos.
+- `_emit_while`: reutilizar solo pruebas de rango dominantes para `buffer[]`;
+  retirar el hecho si el descriptor se reasigna o escapa.
 - `_emit_large_zero_initialization`: mantener arrays grandes direccionables sin
   expandir su inicialización en stores individuales.
 

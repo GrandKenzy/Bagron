@@ -351,6 +351,10 @@ class LLVMTypeRegistry:
     def abi_alignment(self, value_type: ir.Type) -> int:
         return self._abi_alignment(value_type)
 
+    def abi_size(self, value_type: ir.Type) -> int:
+        """Return the target ABI size for backend parameter attributes."""
+        return self._abi_size(value_type)
+
     def alignment_for_spec(self, spec: TypeSpec) -> int:
         return self._abi_alignment(self.resolve(spec))
 

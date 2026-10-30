@@ -387,6 +387,22 @@ class MemoryExpressionMixin:
         self._emit_trap(invalid_builder)
         builder.position_at_end(valid_block)
 
+    def _buffer_index_is_proven(
+        self,
+        index_node: object,
+        source_name: str | None,
+    ) -> bool:
+        """Return whether a loop fact proves this exact buffer access safe."""
+        if self._optimization_profile not in {'prod', 'high'}:
+            return False
+        index_name = self._identifier(index_node)
+        if index_name is None or source_name is None:
+            return False
+        return any(
+            iterator_name == index_name and buffer_name == source_name
+            for iterator_name, buffer_name in self._active_buffer_range_facts
+        )
+
     def _emit_buffer_concat(
         self,
         left: ir.Value,
@@ -525,6 +541,7 @@ class MemoryExpressionMixin:
             if primary is None:
                 raise FunctionEmissionError('El acceso no tiene una base')
 
+            primary_name = self._identifier(primary)
             place = self._compile_place(primary, builder, values)
             for suffix_index, suffix in enumerate(suffixes):
                 if isinstance(place, _BitfieldPlace):
@@ -572,7 +589,11 @@ class MemoryExpressionMixin:
                             descriptor,
                             builder,
                         )
-                        self._emit_buffer_bounds_check(index, length, builder)
+                        if not self._buffer_index_is_proven(
+                            index_node,
+                            primary_name,
+                        ):
+                            self._emit_buffer_bounds_check(index, length, builder)
                         place = self._memory_place(
                             builder.gep(data, [index], inbounds=False),
                             alignment=1,
@@ -743,7 +764,9 @@ class MemoryExpressionMixin:
                         alignment=alignment,
                         volatile=volatile,
                         read_only=(
-                            place.read_only or field.type_spec.name == 'chain'
+                            place.read_only
+                            or field.type_spec.name == 'chain'
+                            or field.type_spec.value_is_const
                         ),
                         after_hooks=after_hooks,
                     )
@@ -760,7 +783,11 @@ class MemoryExpressionMixin:
                     address,
                     alignment=getattr(address, 'align', None),
                     read_only=bool(
-                        type_spec is not None and type_spec.name == 'chain'
+                        type_spec is not None
+                        and (
+                            type_spec.name == 'chain'
+                            or type_spec.value_is_const
+                        )
                     ),
                 )
             if name == 'self':
@@ -774,7 +801,11 @@ class MemoryExpressionMixin:
                     global_value,
                     alignment=getattr(global_value, 'align', None),
                     read_only=bool(
-                        type_spec is not None and type_spec.name == 'chain'
+                        type_spec is not None
+                        and (
+                            type_spec.name == 'chain'
+                            or type_spec.value_is_const
+                        )
                     ),
                 )
             raise FunctionEmissionError(

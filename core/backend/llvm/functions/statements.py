@@ -26,6 +26,139 @@ from .errors import FunctionEmissionError
 class StatementEmitterMixin:
     """LLVM emission for declarations, control flow, and function bodies."""
 
+    def _body_writes_identifier(self, node: object, name: str) -> bool:
+        """Conservatively detect assignments that invalidate a range fact."""
+        if getattr(node, 'name', None) == 'VAR_ASSIGNATION':
+            target = next(
+                (
+                    child for child in self._children(node)
+                    if getattr(child, 'name', None) == 'ASSIGN_TARGET'
+                ),
+                None,
+            )
+            if target is not None and self._identifier(target) == name:
+                return True
+        return any(
+            self._body_writes_identifier(child, name)
+            for child in self._children(node)
+        )
+
+    def _body_has_final_index_update(
+        self,
+        body: object,
+        index_name: str,
+    ) -> bool:
+        """Prove that an index update happens only after body accesses.
+
+        The loop condition proves the index at entry.  A fact that remains
+        active after an arbitrary assignment to that index would be unsound,
+        so the conservative fast path accepts only one direct, final update.
+        A skipped update or a ``break`` still rechecks the while condition
+        before another iteration.
+        """
+        statements = []
+        for child in self._children(body):
+            if isinstance(child, list):
+                statements.extend(child)
+            elif getattr(child, 'name', None) is not None:
+                statements.append(child)
+        if (
+            not statements
+            or getattr(statements[-1], 'name', None) != 'VAR_ASSIGNATION'
+        ):
+            return False
+        final_target = next(
+            (
+                child for child in self._children(statements[-1])
+                if getattr(child, 'name', None) == 'ASSIGN_TARGET'
+            ),
+            None,
+        )
+        if final_target is None or self._identifier(final_target) != index_name:
+            return False
+
+        index_assignments = []
+
+        def collect(node: object) -> None:
+            if getattr(node, 'name', None) == 'VAR_ASSIGNATION':
+                target = next(
+                    (
+                        child for child in self._children(node)
+                        if getattr(child, 'name', None) == 'ASSIGN_TARGET'
+                    ),
+                    None,
+                )
+                if target is not None and self._identifier(target) == index_name:
+                    index_assignments.append(node)
+            for child in self._children(node):
+                collect(child)
+
+        collect(body)
+        return len(index_assignments) == 1
+
+    def _while_buffer_range_fact(
+        self,
+        signature: object,
+        body: object,
+        symbol: FunctionSymbol,
+    ) -> tuple[str, str] | None:
+        """Recognize ``while index < buffer_length`` for a buffer parameter."""
+        condition = next(
+            (
+                child for child in self._children(signature)
+                if getattr(child, 'name', None) == 'CONDITION'
+            ),
+            None,
+        )
+        expression = next(
+            iter(self._children(condition)) if condition is not None else iter(()),
+            None,
+        )
+        expression = self._unwrap(expression)
+        if type(expression).__name__ != 'ASTBinaryOp':
+            return None
+        operator = getattr(
+            getattr(getattr(expression, 'operator', None), 'token', None),
+            'name',
+            None,
+        )
+        if operator != 'LESS':
+            return None
+        index_name = self._identifier(expression.left)
+        length_name = self._identifier(expression.right)
+        if index_name is None or length_name is None:
+            return None
+        index_spec = self._active_type_spec(index_name)
+        if index_spec is None or index_spec.name not in UNSIGNED_INTEGER_TYPES:
+            return None
+        length_parameter = next(
+            (
+                parameter for parameter in symbol.signature.parameters
+                if (
+                    parameter.name == length_name
+                    and parameter.is_length
+                    and parameter.length_of
+                    and is_buffer_type(
+                        self._active_type_spec(parameter.length_of)
+                        or TypeSpec('void')
+                    )
+                )
+            ),
+            None,
+        )
+        if length_parameter is None:
+            return None
+        source_name = length_parameter.length_of
+        if (
+            not self._body_has_final_index_update(body, index_name)
+            or self._body_writes_identifier(body, source_name)
+            or self._body_writes_identifier(body, length_name)
+            or self._iterator_address_is_taken(body, source_name)
+            or self._iterator_address_is_taken(body, index_name)
+        ):
+            return None
+        return index_name, source_name
+
     def _iterator_address_is_taken(self, node: object, name: str) -> bool:
         """Return whether ``$name`` needs a real address inside this body.
 
@@ -187,7 +320,11 @@ class StatementEmitterMixin:
         if self._aggregate_volatile(value_type):
             return False
         byte_size = self._aggregate_byte_size(value_type)
-        if byte_size is None or byte_size <= 1024:
+        # Arrays used as scratch storage (for example printb's 512-byte hex
+        # batch) are safe to clear with one intrinsic call.  Keeping the
+        # threshold above small aggregates avoids replacing cheap scalar
+        # stores with a runtime boundary.
+        if byte_size is None or byte_size <= 128:
             return False
         byte_pointer = builder.bitcast(pointer, ir.IntType(8).as_pointer())
         size_type = self._size_integer_type()
@@ -319,8 +456,8 @@ class StatementEmitterMixin:
                 f'La variable local {name or "<anonima>"} no tiene almacenamiento LLVM'
             )
 
-        if name in self._active_direct_chains:
-            # Optimized chain locals already point into module rodata.
+        if name in self._active_direct_chains or name in self._active_direct_arrays:
+            # Optimized immutable locals already point into module rodata.
             return
 
         value_node = next(
@@ -567,6 +704,8 @@ class StatementEmitterMixin:
     ) -> dict[str, ir.Value]:
         values: dict[str, ir.Value] = {}
         self._active_direct_chains = set()
+        self._active_direct_arrays = set()
+        self._active_buffer_range_facts.clear()
         scope = symbol.scope
         if scope is None:
             return values
@@ -610,6 +749,26 @@ class StatementEmitterMixin:
             if name in direct_parameters:
                 # Len_t/Size_t metadata and optimized chain parameters are
                 # already SSA values; neither needs a local storage slot.
+                continue
+            value_info = getattr(variable, 'value_info', None)
+            array_lengths = getattr(variable.type_spec, 'array_lengths', ())
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and variable.type_spec.name == 'char'
+                and variable.type_spec.array_depth == 1
+                and variable.type_spec.value_is_const
+                and len(array_lengths) == 1
+                and isinstance(array_lengths[0], int)
+                and array_lengths[0] > 0
+                and value_info is not None
+                and getattr(value_info, 'is_literal', False)
+                and isinstance(getattr(value_info, 'value', None), str)
+            ):
+                self._active_direct_arrays.add(name)
+                values[name] = self._constant_array_pointer(
+                    value_info.value,
+                    array_lengths[0],
+                )
                 continue
             if (
                 self._optimization_profile in {'prod', 'high'}
@@ -967,9 +1126,44 @@ class StatementEmitterMixin:
         body_values = dict(values)
         body_values[name] = current if use_ssa_iterator else iterator
         self._loop_targets.append((after_block, step_block))
+        range_fact = None
+        if (
+            use_ssa_iterator
+            and self._optimization_profile in {'prod', 'high'}
+        ):
+            source_name = self._identifier(array_node) if array_form else None
+            if not array_form:
+                end_name = self._identifier(range_values[1])
+                length_parameter = next(
+                    (
+                        parameter for parameter in symbol.signature.parameters
+                        if (
+                            parameter.name == end_name
+                            and parameter.is_length
+                            and parameter.length_of
+                            and is_buffer_type(
+                                self._active_type_spec(parameter.length_of)
+                                or TypeSpec('void')
+                            )
+                        )
+                    ),
+                    None,
+                )
+                if length_parameter is not None:
+                    source_name = length_parameter.length_of
+            if (
+                source_name is not None
+                and not self._body_writes_identifier(body, source_name)
+                and not self._iterator_address_is_taken(body, source_name)
+                and not self._body_writes_identifier(body, name)
+            ):
+                range_fact = (name, source_name)
+                self._active_buffer_range_facts.append(range_fact)
         try:
             self._emit_body(body, body_builder, body_values, function, symbol)
         finally:
+            if range_fact is not None:
+                self._active_buffer_range_facts.pop()
             self._loop_targets.pop()
         if body_builder.block.terminator is None:
             body_builder.branch(step_block)
@@ -1124,9 +1318,16 @@ class StatementEmitterMixin:
 
         body_builder = ir.IRBuilder(body_block)
         self._loop_targets.append((after_block, condition_block))
+        range_fact = None
+        if self._optimization_profile in {'prod', 'high'}:
+            range_fact = self._while_buffer_range_fact(signature, body, symbol)
+            if range_fact is not None:
+                self._active_buffer_range_facts.append(range_fact)
         try:
             self._emit_body(body, body_builder, dict(values), function, symbol)
         finally:
+            if range_fact is not None:
+                self._active_buffer_range_facts.pop()
             self._loop_targets.pop()
         if body_builder.block.terminator is None:
             body_builder.branch(condition_block)
@@ -1272,6 +1473,7 @@ class StatementEmitterMixin:
             source_function,
             symbol,
             self._optimization_profile,
+            self.type_registry,
         )
         if symbol.return_asm_node is not None:
             native_type = ir.FunctionType(int_type, [])

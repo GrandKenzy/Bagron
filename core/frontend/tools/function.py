@@ -26,6 +26,7 @@ from core.frontend.tools.types import (
     resolve_type,
     target_iteration_limit,
     _integer_bounds,
+    _integer_width,
     _type_is_const,
     _type_is_unique,
     _type_name,
@@ -1549,6 +1550,53 @@ def _validate_assembler_body(
         compiler.error(
             f'La funcion @assembler {symbol.name} requiere un unico return'
         )
+
+    # A raw helper whose complete body is ``mov rax, {parameter}`` is a
+    # checked integer narrowing primitive. Preserve its native definition
+    # for external callers, but let LLVM replace internal calls with a real
+    # truncation so the helper does not cost another call.
+    blocks = [
+        block for block in getattr(compiler, 'prep_blocks', ())
+        if block.function_name == symbol.name
+    ]
+    if len(blocks) != 1 or len(symbol.signature.parameters) != 1:
+        return
+    instruction_lines = [
+        line.strip()
+        for line in blocks[0].body.splitlines()
+        if line.strip() and not line.strip().startswith((';', '#'))
+    ]
+    if len(instruction_lines) != 1:
+        return
+    instruction = instruction_lines[0]
+    mnemonic, separator, operands = instruction.partition(' ')
+    if not separator or mnemonic.lower() != 'mov':
+        return
+    destination, separator, source = operands.partition(',')
+    if (
+        not separator
+        or destination.strip().lower() != 'rax'
+        or not source.strip().startswith('{')
+        or not source.strip().endswith('}')
+    ):
+        return
+    source_name = source.strip()[1:-1].strip()
+    parameter = symbol.signature.parameters[0]
+    if source_name != parameter.name:
+        return
+    source_width = _integer_width(parameter.type_spec)
+    return_width = _integer_width(symbol.signature.return_type)
+    if (
+        source_width is None
+        or return_width is None
+        or source_width <= return_width
+        or parameter.type_spec.pointer_level
+        or parameter.type_spec.array_depth
+        or symbol.signature.return_type.pointer_level
+        or symbol.signature.return_type.array_depth
+    ):
+        return
+    symbol.assembler_intrinsic = 'truncate'
 
 
 def _validate_return_asm(

@@ -57,6 +57,9 @@ class FunctionSymbol:
     decorators: tuple[str, ...] = ()
     is_inline: bool = False
     return_asm_node: object | None = None
+    # A one-instruction assembler helper can be represented directly in LLVM
+    # when its body only moves a wider integer into the return register.
+    assembler_intrinsic: str | None = None
     # A raw ``#prep`` body is emitted as a native function and must not also
     # receive an LLVM function body.  This is separate from
     # ``return_asm_node`` because void assembler functions do not need

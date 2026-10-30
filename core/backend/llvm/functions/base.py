@@ -47,6 +47,10 @@ class FunctionEmitterBase:
         self._pointer_size = 8
         self._optimization_profile = optimization_profile
         self._active_direct_chains: set[str] = set()
+        self._active_direct_arrays: set[str] = set()
+        # (iterator name, source buffer name) pairs proven by an enclosing
+        # bounded ``while`` or ``for`` loop.
+        self._active_buffer_range_facts: list[tuple[str, str]] = []
 
     def _string_pointer(
         self,
@@ -54,6 +58,13 @@ class FunctionEmitterBase:
         builder: ir.IRBuilder,
     ) -> ir.Value:
         return self._string_pool.pointer(value, builder)
+
+    def _constant_array_pointer(
+        self,
+        value: str,
+        length: int,
+    ) -> ir.Value:
+        return self._string_pool.array_pointer(value, length)
 
     def _runtime_function(
         self,
@@ -141,6 +152,7 @@ class FunctionEmitterBase:
                     function,
                     symbol,
                     self._optimization_profile,
+                    self.type_registry,
                 )
                 if symbol.calling_convention:
                     function.calling_convention = symbol.calling_convention
@@ -313,6 +325,7 @@ class FunctionEmitterBase:
         function: ir.Function,
         symbol: FunctionSymbol,
         optimization_profile: str = 'dev',
+        type_registry: LLVMTypeRegistry | None = None,
     ) -> None:
         is_llvm_body = not (
             getattr(symbol, 'is_external', False)
@@ -342,6 +355,32 @@ class FunctionEmitterBase:
                 and isinstance(function.args[llvm_index].type, ir.PointerType)
             ):
                 function.args[llvm_index].add_attribute('noalias')
+            if (
+                getattr(parameter.type_spec, 'array_depth', 0)
+                and isinstance(function.args[llvm_index].type, ir.PointerType)
+            ):
+                # Arrays are never nullable in the language ABI. A fixed
+                # array also has a statically known byte extent, which lets
+                # LLVM remove redundant memory guards without weakening the
+                # source-level bounds rules.
+                function.args[llvm_index].add_attribute('nonnull')
+                if type_registry is not None:
+                    parameter_type = llvm_type(
+                        parameter.type_spec,
+                        type_registry=type_registry,
+                    )
+                    if (
+                        isinstance(parameter_type, ir.ArrayType)
+                        and all(
+                            isinstance(length, int)
+                            for length in parameter.type_spec.array_lengths
+                        )
+                    ):
+                        # llvmlite exposes this parameter attribute through a
+                        # typed property rather than ``add_attribute``.
+                        function.args[llvm_index].attributes.dereferenceable = (
+                            type_registry.abi_size(parameter_type)
+                        )
             if (
                 optimization_profile in {'prod', 'high'}
                 and getattr(parameter.type_spec, 'name', None) == 'chain'

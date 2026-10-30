@@ -9,19 +9,19 @@ import formatting
 
 ; Conserva la API de alto nivel y oculta el nombre de la primitiva Windows.
 @unsafe
-public func print(text: chain, length: Len_t) void:
+public inline func print(text: chain, length: Len_t) void:
     write_text(text)
     return
 
 ; La API histórica de 32 bits conserva el nombre existente y escala a int64.
 @unsafe
-public func print_int(value: int32) void:
+public inline func print_int(value: int32) void:
     printint(value)
     return
 
 ; Imprime el rango completo de int64 sin asignacion dinamica.
 @unsafe
-public func printint(value: int64) void:
+public inline func printint(value: int64) void:
     buffer: char[32]
     written: usize = serialize_int64(buffer, value)
     if written > 0:

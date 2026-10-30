@@ -234,6 +234,82 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertEqual(1, module.count('@__bagron_rodata_'))
         self.assertIn('@__bagron_rodata_0 = private unnamed_addr constant', module)
 
+    def test_prod_const_char_array_uses_direct_rodata(self):
+        module = self.compile_source(
+            '@unsafe\n'
+            'func read_const() char:\n'
+            '    text: const char[4] = "A"\n'
+            '    return text[0]\n',
+            optimization_profile='prod',
+        )
+
+        self.assertIn('@__bagron_rodata_0 = private unnamed_addr constant [4 x i8]', module)
+        self.assertNotIn('text.addr', module)
+        self.assertIn('ret i8 65', module)
+
+    def test_fixed_array_parameters_publish_memory_contract(self):
+        module = self.compile_source(
+            'func inspect(data: char[4], length: Len_t, size: Size_t) char:\n'
+            '    return data[0]\n',
+            optimization_profile='prod',
+        )
+
+        signature = module.split('define i8 @inspect', 1)[1].split('{', 1)[0]
+        self.assertIn('ptr nonnull dereferenceable(4) %data', signature)
+        self.assertNotIn('noalias', signature)
+
+    def test_assembler_integer_narrowing_is_lowered_to_trunc(self):
+        source = (
+            "clause System 'windows'\n"
+            "clause Arch 'amd'\n"
+            '@assembler\n'
+            'func narrow(value: usize) uint32:\n'
+            '    #prep assembler "intel"\n'
+            '        mov rax, {value}\n'
+            '    #end\n'
+            '    return asm\n'
+            '@unsafe\n'
+            'func use(value: usize) uint32:\n'
+            '    return narrow(value)\n'
+        )
+        module = self.compile_source(source, optimization_profile='prod')
+        development = self.compile_source(source, optimization_profile='dev')
+
+        self.assertNotIn('call i32 @narrow', module)
+        self.assertIn('trunc i64 %value to i32', module)
+        self.assertIn('call i32 @"narrow"', development)
+
+    def test_prod_for_buffer_uses_one_loop_range_proof(self):
+        source = (
+            'func sum(data: buffer[], length: Len_t) byte:\n'
+            '    total: byte = 0\n'
+            '    index: usize = 0\n'
+            '    while index < length:\n'
+            '        total += data[index]\n'
+            '        index += 1\n'
+            '    return total\n'
+        )
+        development = self.compile_source(source, optimization_profile='dev')
+        production = self.compile_source(source, optimization_profile='prod')
+
+        self.assertIn('buffer.index.valid.', development)
+        self.assertNotIn('buffer.index.valid.', production)
+
+    def test_prod_for_buffer_keeps_check_after_index_reassignment(self):
+        module = self.compile_source(
+            '@unsafe\n'
+            'func unsafe_sum(data: buffer[], length: Len_t) byte:\n'
+            '    total: byte = 0\n'
+            '    index: usize = 0\n'
+            '    while index < length:\n'
+            '        index = length + 1\n'
+            '        total += data[index]\n'
+            '    return total\n',
+            optimization_profile='prod',
+        )
+
+        self.assertIn('buffer.index.valid.', module)
+
     def test_builds_and_runs_local_char_and_byte(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'

@@ -332,6 +332,36 @@ una función segura requiere una prueba estática adicional; si no puede
 demostrarse, la función debe marcarse `@unsafe`. `@unsafe` no relaja la forma
 del `for`, la regla de solo lectura ni el límite máximo del target.
 
+## Prueba de rango para `buffer`
+
+En `prod` y `high`, el backend reconoce la forma exacta `while indice <
+longitud` cuando `longitud` es el `Len_t` oculto del mismo parámetro
+`buffer[]`. Si el cuerpo no reasigna el descriptor ni toma su dirección, esa
+comparación domina los accesos `buffer[indice]` de la iteración y no se emite
+una comprobación de rango completa por cada elemento. La validación del límite
+del descriptor y la semántica de la función permanecen intactas; solo se
+reutiliza una prueba que el código ya expresa.
+Para conservar la prueba después de cada iteración, el patrón optimizado exige
+una única actualización directa del índice al final del cuerpo.
+
+```bg
+@unsafe
+func sum(data: buffer[], length: Len_t) byte:
+    total: byte = 0
+    index: usize = 0
+    while index < length:
+        total += data[index]
+        index += 1
+    return total
+```
+
+Si el índice se reasigna antes de un acceso o más de una vez, el descriptor se
+reasigna, se escapa mediante `$`, o la condición usa otro límite, el compilador
+conserva la comprobación por acceso.
+`dev` también conserva siempre esa ruta para que el IR sea más fácil de
+auditar. `break` y `continue` siguen dirigiéndose al bloque del bucle y no
+desactivan las reglas de seguridad.
+
 ## `while`
 
 `while` repite un bloque mientras una condición sea verdadera. A diferencia de

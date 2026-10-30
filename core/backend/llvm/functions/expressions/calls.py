@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from llvmlite import ir
 
+from core.backend.llvm.types import llvm_type
 from core.frontend.objects import TypeSpec
 from core.frontend.tools.types import (
     MAGIC_BINARY_OPERATORS,
@@ -11,7 +12,6 @@ from core.frontend.tools.types import (
 )
 
 from ..errors import FunctionEmissionError
-
 
 
 class CallExpressionMixin:
@@ -654,6 +654,31 @@ class CallExpressionMixin:
             argument_items = self._children(container)
         symbol = self._symbols.get(name or '')
         parameters = list(getattr(symbol.signature, 'parameters', ())) if symbol else []
+        if (
+            self._optimization_profile in {'prod', 'high'}
+            and symbol is not None
+            and getattr(symbol, 'assembler_intrinsic', None) == 'truncate'
+            and len(argument_items) == 1
+            and len(parameters) == 1
+        ):
+            # The frontend has validated the exact ``mov rax, {value}``
+            # assembler body. Lower the internal call to LLVM truncation so
+            # the helper does not add a native call/return sequence.
+            source = self._compile_expression(
+                argument_items[0],
+                builder,
+                values,
+            )
+            target_type = llvm_type(
+                symbol.signature.return_type,
+                type_registry=self.type_registry,
+            )
+            if (
+                isinstance(source.type, ir.IntType)
+                and isinstance(target_type, ir.IntType)
+                and source.type.width > target_type.width
+            ):
+                return builder.trunc(source, target_type)
         visible_parameters = [
             parameter for parameter in parameters
             if not (

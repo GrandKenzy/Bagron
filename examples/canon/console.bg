@@ -29,7 +29,7 @@ private func _win32_count(value: usize) uint32:
 
 ; Punto unico de validacion y escritura para las rutas de texto y bytes.
 @unsafe
-private func _write_stdout(buffer *: const void, count: usize) void:
+private inline func _write_stdout(buffer *: const void, count: usize) void:
     global stdout_handle
     global stdout_initialized
     if not stdout_initialized:
@@ -43,7 +43,7 @@ private func _write_stdout(buffer *: const void, count: usize) void:
 
 ; Escribe una cantidad explicita sin leer mas alla del array recibido.
 @unsafe
-public func write_chars(
+public inline func write_chars(
     buffer: char[],
     length: Len_t,
     size: Size_t,
@@ -78,8 +78,10 @@ public func printb(
         low: byte = 0
         while index < length:
             value = buffer[index]
-            high = value / 16
-            low = value % 16
+            ; El byte ya esta acotado a ocho bits: el nibble alto y bajo
+            ; pueden extraerse sin division ni modulo.
+            high = value >> 4
+            low = value & 15
             hex_buffer[write_position] = HexadecimalUpperString[high]
             write_position += 1
             hex_buffer[write_position] = HexadecimalUpperString[low]
@@ -98,7 +100,7 @@ public func printb(
 
 ; chain incluye un terminador; Windows recibe solo los caracteres visibles.
 @unsafe
-public func write_text(text: chain, length: Len_t) void:
+public inline func write_text(text: chain, length: Len_t) void:
     count: usize = 0
     if length > 0:
         count = length

@@ -223,6 +223,24 @@ En `prod` y `high`, un `chain` constante se conserva como una referencia SSA a
 rodata privado del módulo. No se copia a la pila y los literales repetidos se
 deduplican; estas optimizaciones no cambian el ABI ni la longitud expandida.
 
+Un array fijo `const char[N]` inicializado con un literal ASCII puede recibir la
+misma representación directa en `prod` y `high`: el backend lo coloca una vez
+en rodata privado y usa un puntero SSA en lugar de reservar `N` bytes en la
+pila. El array conserva su longitud declarada, su terminador y su
+inmutabilidad; no se convierte en `chain` ni obtiene permisos de escritura.
+`dev` conserva la reserva local para facilitar la inspección del IR.
+
+```bg
+@unsafe
+func first() char:
+    text: const char[8] = "Hola"
+    return text[0]
+```
+
+Esta optimización solo se aplica cuando el valor completo es un literal y el
+tamaño es conocido. Un array mutable, un tamaño dinámico o una dirección que
+deba escribirse conserva el almacenamiento normal.
+
 ```bg
 name: char[16] = "Hola"
 
@@ -302,6 +320,12 @@ En el backend, estos metadatos son inmutables y se representan directamente
 como argumentos escalares del ABI; en perfiles optimizados no necesitan una
 variable temporal en memoria, por lo que LLVM puede mantenerlos en registros.
 Esto no cambia la firma visible ni la expansión automática.
+
+Los parámetros de arrays se marcan como no nulos en el ABI LLVM porque la
+sintaxis no representa una vista nula. Cuando la primera dimensión es fija,
+el backend añade también su tamaño ABI como `dereferenceable`; la garantía
+solo describe el almacenamiento obligatorio que ya exige el tipo y no añade
+`noalias`. `noalias` continúa reservado para parámetros declarados `unique`.
 
 ### Regiones exclusivas: `unique` y `Region_t`
 

@@ -27,7 +27,8 @@ Responsabilidades de los módulos:
 
 - `model.bg`: enum, estructuras, mold, flags y comprobaciones de layout;
 - `math.bg`: operaciones numericas y recorridos de arrays;
-- `console.bg`: ABI de `kernel32` y escritura de buffers;
+- `console.bg`: ABI de `kernel32`, wrappers `inline` y escritura agrupada de
+  buffers; `printb` convierte nibbles con operaciones de bits;
 - `formatting.bg`: serializacion de enteros sin asignacion dinamica;
 - `standard.bg`: fachada publica para utilidades numericas;
 - `time.bg` y `alphabet.bg`: reloj y constantes independientes;
