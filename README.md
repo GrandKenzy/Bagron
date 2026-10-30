@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.0-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -25,9 +25,18 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 ---
 
+## Estado actual
+
+Bagron se encuentra en la versión **1.0.0** y en estado activo. El flujo
+principal de análisis estático, emisión de LLVM IR y generación de artefactos
+nativos para los targets soportados está implementado. La documentación
+práctica y los ejemplos ampliados se desarrollarán en `docs/`.
+
+---
+
 ## Características Principales
 
-* **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y futura generación de código nativo.
+* **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y generación de código nativo.
 
 * **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida, salvo que el flujo termine mediante una llamada `Never`. Los métodos de clase no cuentan como entrypoint.
 
@@ -118,14 +127,6 @@ El compilador se apoya en dos herramientas del mismo ecosistema:
   * Instalación: `pip install vnma`.
 
 ---
-
-## Instalación y Uso Rápido
-
-* NOTA: La instalación, uso rápido y ejemplos está en discusión.
-
-## Documentación
-
-* NOTA: Por definir
 
 ---
 
