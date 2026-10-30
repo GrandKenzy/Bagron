@@ -11,7 +11,7 @@ from core.compiler import CompilationError, Compiler
 
 class StandardLibraryTests(unittest.TestCase):
     def test_print_writes_chain_using_windows_abi(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -48,7 +48,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertRegex(module, r'call void @"printa"\([^)]*i64 5, i64 1\)')
 
     def test_print_writes_immutable_global_chains(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -90,7 +90,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertIn('getelementptr inbounds [53 x i8]', module)
 
     def test_printa_rejects_scalar_char(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -109,7 +109,7 @@ class StandardLibraryTests(unittest.TestCase):
                 Compiler().compile(main, executable=False)
 
     def test_printb_writes_raw_or_hex_bytes(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -138,7 +138,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'A\x00\xff00FF', result.stdout)
 
     def test_serialize_int_appends_decimal_text(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -184,7 +184,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(expected, result.stdout)
 
     def test_nested_static_array_metadata_and_print_int(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -243,7 +243,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'11:-44\n', result.stdout)
 
     def test_nested_multiple_arrays_keep_metadata_and_contents_separate(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -323,7 +323,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'11:-44\nA\x00\xff', result.stdout)
 
     def test_recursive_chain_and_char_array_inversion_with_reordered_parameters(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -397,7 +397,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'ABCDEFGHIJK|KJIHGFEDCBA\x00', result.stdout)
 
     def test_recursive_multiple_fixed_matrices_keep_shape_and_reference(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
@@ -484,7 +484,7 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(b'99', result.stdout)
 
     def test_recursive_three_dimensional_matrices_preserve_outer_width(self):
-        project_source = Path(__file__).resolve().parents[1] / 'standard.bg'
+        project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copyfile(project_source, root / 'standard.bg')
