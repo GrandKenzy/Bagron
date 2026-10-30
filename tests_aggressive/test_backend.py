@@ -77,6 +77,22 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('define i32 @"helper"', module)
         self.assertIn('inlinehint', module)
 
+    def test_prod_expands_bagron_inline_calls_before_codegen(self):
+        module = self.compile_source(
+            'inline func helper(value: int32) int32:\n'
+            '    return value + 1\n'
+            'func caller(value: int32) int32:\n'
+            '    return helper(value)\n'
+            'func main() int32:\n'
+            '    return caller(1)\n',
+            add_main=False,
+            optimization_profile='prod',
+        )
+
+        self.assertIn('alwaysinline', module)
+        self.assertNotIn('call i32 @"helper"', module)
+        self.assertIn('add i32', module)
+
     def test_optimization_profiles_publish_the_selected_ir(self):
         source = (
             'func sum_to(limit: uint32) uint32:\n'

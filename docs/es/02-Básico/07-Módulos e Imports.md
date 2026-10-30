@@ -121,8 +121,8 @@ clause Optimizations 'prod'
 | Perfil | Uso | Emisión de IR |
 | --- | --- | --- |
 | `dev` | Diagnóstico y comparaciones estructurales | Conserva el IR emitido por Bagron, tras verificarlo. |
-| `prod` | Predeterminado | Ejecuta simplificación, propagación de constantes, eliminación de código muerto y promoción escalar segura. |
-| `high` | Medición y código de cómputo intensivo | Añade combinaciones locales más agresivas y usa nivel 3 en el generador de código. |
+| `prod` | Predeterminado | Expande `inline` explícitos y ejecuta simplificación, propagación de constantes, eliminación de código muerto y promoción escalar segura. |
+| `high` | Medición y código de cómputo intensivo | Expande `inline` explícitos, añade combinaciones locales más agresivas y usa nivel 3 en el generador de código. |
 
 El archivo `.ll` contiene exactamente el módulo que se entrega al generador de
 objetos. Los módulos importados no pueden cambiar el perfil elegido por el

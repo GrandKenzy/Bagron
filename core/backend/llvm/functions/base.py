@@ -158,7 +158,11 @@ class FunctionEmitterBase:
                     self._function_type(symbol),
                     name=symbol.name,
                 )
-                self._apply_function_attributes(function, symbol)
+                self._apply_function_attributes(
+                    function,
+                    symbol,
+                    self._optimization_profile,
+                )
                 if symbol.calling_convention:
                     function.calling_convention = symbol.calling_convention
                 self._functions[symbol.name] = function
@@ -329,11 +333,23 @@ class FunctionEmitterBase:
     def _apply_function_attributes(
         function: ir.Function,
         symbol: FunctionSymbol,
+        optimization_profile: str = 'dev',
     ) -> None:
-        if symbol.is_inline:
-            # ``inlinehint`` is a request to LLVM, not a mandatory inlining
-            # directive. This matches Bagron's ``inline`` contract.
-            function.attributes.add('inlinehint')
+        is_llvm_body = not (
+            getattr(symbol, 'is_external', False)
+            or getattr(symbol, 'return_asm_node', None) is not None
+            or getattr(symbol, 'has_asm_body', False)
+        )
+        if symbol.is_inline and is_llvm_body:
+            if optimization_profile in {'prod', 'high'}:
+                # The Bagron qualifier is explicit in optimised builds.  The
+                # module AlwaysInliner pass consumes this attribute before
+                # scalar optimisation, so code generation is not left to
+                # LLVM's cost model alone.
+                function.attributes.add('alwaysinline')
+            else:
+                # Development IR keeps the historical hint for inspection.
+                function.attributes.add('inlinehint')
         # ``noalias`` is emitted only for statically proven unique array
         # parameters. Buffers use a descriptor-by-value ABI, so their data
         # pointer cannot safely receive a parameter attribute here.

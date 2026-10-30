@@ -81,13 +81,16 @@ inline func sumar(a: int32, b: int32) int32:
 ```
 
 Una llamada normal salta a otra dirección y vuelve después de ejecutar la
-función. `inline` emite una sugerencia `inlinehint` para LLVM: permite que el
-compilador inserte el cuerpo de una función pequeña directamente en el lugar
-de la llamada cuando lo considere apropiado.
+función. En `prod` y `high`, Bagron emite `alwaysinline` y ejecuta su pasada
+`AlwaysInliner` antes de las demás optimizaciones: la expansión solicitada por
+`inline` ocurre desde el backend de Bagron, no queda a criterio exclusivo del
+modelo de costes de LLVM. En `dev` se conserva `inlinehint` para inspeccionar
+el IR histórico sin expandirlo.
 
-`inline` es una petición, no una obligación: el compilador puede ignorarla si
-la expansión aumenta demasiado el código o no es conveniente. No cambia la
-firma, el tipo de retorno ni las reglas de seguridad de la función.
+`inline` puede aumentar el tamaño del código y debe reservarse para funciones
+pequeñas o rutas calientes. No cambia la firma, el tipo de retorno ni las
+reglas de seguridad de la función; las declaraciones externas y los cuerpos
+ASM no se expanden.
 
 ## Acceso explícito a datos globales
 

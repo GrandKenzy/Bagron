@@ -1161,7 +1161,11 @@ class StatementEmitterMixin:
             source_type,
             name='__bagron_main',
         )
-        self._apply_function_attributes(source_function, symbol)
+        self._apply_function_attributes(
+            source_function,
+            symbol,
+            self._optimization_profile,
+        )
         if symbol.return_asm_node is not None:
             native_type = ir.FunctionType(int_type, [])
             native_function = ir.Function(self.module, native_type, name='main')

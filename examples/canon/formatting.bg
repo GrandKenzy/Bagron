@@ -113,7 +113,7 @@ public func serialize_int_at(
 
 ; Serializa un entero int64 al final del texto existente.
 @unsafe
-public func serialize_int64(
+public inline func serialize_int64(
     output: char[],
     output_len: Len_t,
     output_size: Size_t,

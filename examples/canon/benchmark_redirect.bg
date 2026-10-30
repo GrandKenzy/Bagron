@@ -33,7 +33,7 @@ private func _redirect_count(value: usize) uint32:
 
 ; Serializa una linea variable para impedir que el compilador pliegue el trabajo.
 @unsafe
-func build_record(
+inline func build_record(
     output: unique char[64],
     output_length: Len_t,
     output_size: Size_t,

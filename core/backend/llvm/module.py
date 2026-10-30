@@ -69,6 +69,13 @@ class LLVMBackend:
         # imported library code through those guards pathologically.  Keep a
         # bounded, reusable sequence of local O2 transformations instead.
         pass_builder = llvm.create_pass_builder(target_machine, tuning)
+        inline_passes = llvm.create_new_module_pass_manager()
+        # ``inline`` is a Bagron contract in optimised profiles, not merely a
+        # cost-model hint.  Only functions explicitly marked by Bagron carry
+        # ``alwaysinline``; declarations and ASM entry points are untouched.
+        inline_passes.add_always_inliner_pass()
+        inline_passes.run(module, pass_builder)
+
         scalar_passes = llvm.create_new_function_pass_manager()
         scalar_passes.add_sroa_pass()
         scalar_passes.add_instruction_combine_pass()
