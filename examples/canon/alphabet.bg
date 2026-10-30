@@ -1,4 +1,30 @@
-; Constantes publicas de texto; el modulo no depende del target nativo.
+; Conjuntos de caracteres publicos para escaneo, validacion y serializacion.
+; Cada cadena funciona como un alfabeto: el orden es intencional y no hay
+; logica runtime escondida en este modulo.
 
+; Bases numericas. HexadecimalString combina ambas mayusculas por comodidad.
+public BinaryString: chain = "01"
+public OctalString: chain = "01234567"
 public NumericString: chain = "0123456789"
+public HexadecimalUpperString: chain = "0123456789ABCDEF"
+public HexadecimalLowerString: chain = "0123456789abcdef"
+public HexadecimalString: chain = "0123456789ABCDEFabcdef"
+
+; Variantes alfabeticas y combinaciones frecuentes.
+public UppercaseAlphabetString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+public LowercaseAlphabetString: chain = "abcdefghijklmnopqrstuvwxyz"
 public AlphabetString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+public AlphanumericString: chain = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+public Base36String: chain = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+; Alfabetos de codificaciones comunes. El orden coincide con sus tablas usuales.
+public Base64String: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+public Base64UrlString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+public UrlSafeString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+; Casos especiales para analizadores lexicos y generadores de identificadores.
+public IdentifierStartString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+public IdentifierPartString: chain = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_"
+public SignString: chain = "+-"
+public HexadecimalMarkerString: chain = "xX"
+public SymbolString: chain = "+-*/%<>=!&|^~"
