@@ -73,13 +73,18 @@ clang -std=c11 -O0 examples/canon/benchmark_redirect.c -o examples/canon/build/b
 clang -std=c11 -O2 examples/canon/benchmark_redirect.c -o examples/canon/build/benchmark_redirect_c_O2.exe
 ```
 
-Esta variante construye registros `value=<int64>` con `chain` y `char[]`,
-primero acumulándolos en un buffer y después escribiéndolos con `WriteFile`.
-`build_record` usa `unique char[64]` y `Region_t`; el llamador sigue
-escribiendo solo `build_record(record, value)` y el IR conserva la firma
-runtime sin el parámetro de región. Cada iteración cambia el entero y el
-recorrido del buffer se realiza fuera de la ventana medida, por lo que la
-serialización y la copia no pueden desaparecer durante la optimización.
+Esta variante construye registros `value=<int64>` con `char[]` y los serializa
+directamente en la región destino antes de escribirlos con `WriteFile`.
+`build_record` recibe `unique char[]`, `Len_t`, `Size_t` y `Region_t`; la región
+se comprueba semánticamente y el parámetro oculto no cruza la ABI runtime.
+Cada iteración cambia el entero y el recorrido del buffer se realiza fuera de
+la ventana medida, por lo que la serialización permanece observable sin una
+segunda copia temporal. `serialize_int64_at` y su núcleo interno están
+marcados `inline` para exponer esta ruta al optimizador.
+
+La ruta de lectura usa también un préstamo `unique` durante el consumo posterior
+a la medición. Esto no convierte un array ordinario en `noalias`: solo conserva
+la garantía explícita de que no hay alias durante ese recorrido.
 
 El archivo canónico usa `clause Optimizations 'prod'`. Para comparar los
 perfiles, cambia esa cláusula a `dev` o `high`, recompila y ejecuta de nuevo.

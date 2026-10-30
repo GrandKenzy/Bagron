@@ -1,7 +1,8 @@
 //! Win32 reference for `benchmark_redirect.bg`.
 //!
-//! The protocol intentionally mirrors the Bagron and C versions: the buffer
-//! is consumed after the measured region, while file writes remain inside it.
+//! The protocol intentionally mirrors the Bagron and C versions: serialization
+//! writes directly to the destination region, the buffer is consumed after the
+//! measured region, and file writes remain inside it.
 
 #![allow(unsafe_op_in_unsafe_fn)]
 
@@ -45,44 +46,67 @@ unsafe fn time_ticks() -> i64 {
     value
 }
 
-fn serialize_int64(output: &mut [u8; 32], value: i64) -> usize {
+fn serialize_int64_at(output: &mut [u8], position: usize, value: i64) -> usize {
     let mut magnitude: u64;
     let mut digits = 0;
-    let position;
+
+    if position >= output.len() {
+        return 0;
+    }
 
     if value < 0 {
-        output[0] = b'-';
         magnitude = (-(value + 1)) as u64 + 1;
-        position = 1;
     } else {
         magnitude = value as u64;
-        position = 0;
     }
 
     if magnitude == 0 {
-        output[position] = b'0';
-        return position + 1;
+        digits = 1;
+    } else {
+        while magnitude > 0 {
+            magnitude /= 10;
+            digits += 1;
+        }
     }
 
-    while magnitude > 0 {
-        output[position + digits] = b'0' + (magnitude % 10) as u8;
-        magnitude /= 10;
-        digits += 1;
+    let required = digits + usize::from(value < 0) + 1;
+    if required > output.len() - position {
+        return 0;
     }
-    for left in position..position + digits / 2 {
-        let right = position + digits - 1 - (left - position);
-        output.swap(left, right);
+    let mut write_position = position;
+    if value < 0 {
+        output[write_position] = b'-';
+        write_position += 1;
     }
-    position + digits
+    write_position += digits - 1;
+    magnitude = if value < 0 {
+        (-(value + 1)) as u64 + 1
+    } else {
+        value as u64
+    };
+    if magnitude == 0 {
+        output[write_position] = b'0';
+    } else {
+        while magnitude > 0 {
+            output[write_position] = b'0' + (magnitude % 10) as u8;
+            magnitude /= 10;
+            write_position -= 1;
+        }
+    }
+    output[position + digits + usize::from(value < 0)] = 0;
+    digits + usize::from(value < 0)
 }
 
-fn build_record(output: &mut [u8; 64], value: i64) -> usize {
-    let mut digits = [0u8; 32];
-    let mut position = 0;
-    output[..6].copy_from_slice(b"value=");
-    position += 6;
-    let written = serialize_int64(&mut digits, value);
-    output[position..position + written].copy_from_slice(&digits[..written]);
+fn build_record(output: &mut [u8], position: usize, value: i64) -> usize {
+    if position >= output.len() || output.len() - position < 9 {
+        return 0;
+    }
+    output[position..position + 6].copy_from_slice(b"value=");
+    let mut position = position + 6;
+    let written = serialize_int64_at(output, position, value);
+    if written == 0 {
+        return 0;
+    }
     position += written;
     output[position] = b'\n';
     position += 1;
@@ -137,7 +161,6 @@ unsafe fn measure_control(iterations: u32, minimum: &mut i64) -> i64 {
 
 unsafe fn measure_buffer(iterations: u32, minimum: &mut i64) -> i64 {
     let mut output = [0u8; 32_768];
-    let mut record = [0u8; 64];
     let mut samples = [0i64; SAMPLES];
     let mut best = 0;
 
@@ -146,11 +169,8 @@ unsafe fn measure_buffer(iterations: u32, minimum: &mut i64) -> i64 {
         let mut value = 123_456_789;
         let start = time_ticks();
         for _ in 0..iterations {
-            let written = build_record(&mut record, value);
+            output_position = build_record(&mut output, output_position, value);
             value += 1;
-            output[output_position..output_position + written]
-                .copy_from_slice(&record[..written]);
-            output_position += written;
         }
         let _ = start;
         consume_buffer(&output, output_position);
@@ -160,11 +180,8 @@ unsafe fn measure_buffer(iterations: u32, minimum: &mut i64) -> i64 {
         let mut value = 123_456_789;
         let start = time_ticks();
         for _ in 0..iterations {
-            let written = build_record(&mut record, value);
+            output_position = build_record(&mut output, output_position, value);
             value += 1;
-            output[output_position..output_position + written]
-                .copy_from_slice(&record[..written]);
-            output_position += written;
         }
         *slot = time_ticks() - start;
         consume_buffer(&output, output_position);
@@ -195,7 +212,7 @@ unsafe fn measure_file(iterations: u32, minimum: &mut i64) -> i64 {
         );
         let start = time_ticks();
         for _ in 0..iterations {
-            let written = build_record(&mut record, value);
+            let written = build_record(&mut record, 0, value);
             value += 1;
             WriteFile(
                 handle,
@@ -221,7 +238,7 @@ unsafe fn measure_file(iterations: u32, minimum: &mut i64) -> i64 {
         );
         let start = time_ticks();
         for _ in 0..iterations {
-            let written = build_record(&mut record, value);
+            let written = build_record(&mut record, 0, value);
             value += 1;
             WriteFile(
                 handle,

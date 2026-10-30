@@ -1,6 +1,6 @@
-; Benchmark comparable de redireccion: construye registros en memoria y archivo.
+; Benchmark comparable de redireccion: serializa directamente en la region destino.
 ; El recorrido observable del buffer ocurre fuera de la ventana medida para conservar sus
-; escrituras sin contaminar la medicion de la serializacion y la copia.
+; escrituras sin contaminar la medicion de serializacion ni introducir una copia temporal.
 
 clause System 'windows'
 clause Arch 'amd'
@@ -31,43 +31,58 @@ private func _redirect_count(value: usize) uint32:
     #end
     return asm
 
-; Serializa una linea variable para impedir que el compilador pliegue el trabajo.
+; Serializa una linea directamente en la region destino.
+; `unique` conserva la prueba de exclusividad y permite que LLVM trate la region
+; como una escritura aislada sin exponer una segunda memoria temporal.
 @unsafe
 inline func build_record(
-    output: unique char[64],
+    output: unique char[],
     output_length: Len_t,
     output_size: Size_t,
     output_region: Region_t,
+    position: usize,
     value: int64
 ) usize:
-    prefix: chain = "value="
-    digits: char[32]
-    prefix_index: usize = 0
-    digit_index: usize = 0
-    position: usize = 0
-    written: usize = 0
+    if output_size != 1:
+        return 0
+    if position >= output_length:
+        return 0
+    remaining: usize = output_length - position
+    if remaining < 9:
+        return 0
 
-    while prefix[prefix_index] != 0:
-        output[position] = prefix[prefix_index]
-        prefix_index += 1
-        position += 1
+    output[position] = "v"
+    position += 1
+    output[position] = "a"
+    position += 1
+    output[position] = "l"
+    position += 1
+    output[position] = "u"
+    position += 1
+    output[position] = "e"
+    position += 1
+    output[position] = "="
+    position += 1
 
-    written = serialize_int64(digits, value)
-    while digits[digit_index] != 0:
-        output[position] = digits[digit_index]
-        digit_index += 1
-        position += 1
+    ; El serializador valida el espacio restante y escribe el terminador.
+    ; El terminador se sustituye por salto de linea para conservar el formato.
+    written: usize = serialize_int64_at(output, position, value)
+    if written == 0:
+        return 0
+    position += written
     output[position] = "\n"
     position += 1
     output[position] = "\0"
     return position
 
-; Lee cada byte despues de medir para que la salida en memoria sea observable.
+; Lee la region completa despues de medir. `unique` expresa que no existe un
+; alias concurrente durante el recorrido y deja la frontera segura explicita.
 @unsafe
 func consume_buffer(
-    output: char[32768],
+    output: unique char[32768],
     output_length: Len_t,
     output_size: Size_t,
+    output_region: Region_t,
     length: usize
 ) void:
     global buffer_sink
@@ -133,7 +148,6 @@ func measure_control(iterations: uint32, minimum *: int64) int64:
 @unsafe
 func measure_buffer(iterations: uint32, minimum *: int64) int64:
     output: char[32768]
-    record: char[64]
     samples: int64[10]
     value: int64 = 123456789
     start: int64 = 0
@@ -141,20 +155,15 @@ func measure_buffer(iterations: uint32, minimum *: int64) int64:
     best: int64 = 0
     output_position: usize = 0
     written: usize = 0
-    copy_index: usize = 0
 
     for warmup: uint32 ran (0, 5, 1):
         output_position = 0
         value = 123456789
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            written = build_record(record, value)
+            written = build_record(output, output_position, value)
+            output_position = written
             value += 1
-            copy_index = 0
-            while copy_index < written:
-                output[output_position] = record[copy_index]
-                output_position += 1
-                copy_index += 1
         time_ticks()
         consume_buffer(output, output_position)
 
@@ -163,13 +172,9 @@ func measure_buffer(iterations: uint32, minimum *: int64) int64:
         value = 123456789
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            written = build_record(record, value)
+            written = build_record(output, output_position, value)
+            output_position = written
             value += 1
-            copy_index = 0
-            while copy_index < written:
-                output[output_position] = record[copy_index]
-                output_position += 1
-                copy_index += 1
         elapsed = time_elapsed_ticks(start, time_ticks())
         consume_buffer(output, output_position)
         samples[sample] = elapsed
@@ -198,7 +203,7 @@ func measure_file(iterations: uint32, minimum *: int64) int64:
         handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            written = build_record(record, value)
+            written = build_record(record, 0, value)
             value += 1
             WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
         time_ticks()
@@ -209,7 +214,7 @@ func measure_file(iterations: uint32, minimum *: int64) int64:
         handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            written = build_record(record, value)
+            written = build_record(record, 0, value)
             value += 1
             WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
         elapsed = time_elapsed_ticks(start, time_ticks())

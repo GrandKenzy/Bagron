@@ -1,5 +1,6 @@
 // Referencia C del benchmark comparable de redireccion de Bagron.
-// El recorrido observable se realiza fuera de la ventana medida, igual que en Bagron.
+// La serializacion escribe directamente en la region destino; el recorrido
+// observable se realiza fuera de la ventana medida, igual que en Bagron.
 
 #define WIN32_LEAN_AND_MEAN
 
@@ -19,54 +20,79 @@ static int64_t time_ticks(void) {
     return value.QuadPart;
 }
 
-static size_t serialize_int64(char *output, int64_t value) {
+static size_t serialize_int64_at(
+    char *output,
+    size_t output_length,
+    size_t position,
+    int64_t value
+) {
     uint64_t magnitude;
     size_t digits = 0;
-    size_t position;
+    size_t required;
+
+    if (position >= output_length) {
+        return 0;
+    }
 
     if (value < 0) {
-        output[0] = '-';
         magnitude = (uint64_t)(-(value + 1)) + 1;
-        position = 1;
     } else {
         magnitude = (uint64_t)value;
-        position = 0;
     }
 
     if (magnitude == 0) {
-        output[position++] = '0';
+        digits = 1;
     } else {
         while (magnitude > 0) {
-            output[position + digits] = (char)('0' + magnitude % 10);
             magnitude /= 10;
             digits += 1;
         }
-        for (size_t left = position; left < position + digits / 2; ++left) {
-            size_t right = position + digits - 1 - (left - position);
-            char temporary = output[left];
-            output[left] = output[right];
-            output[right] = temporary;
-        }
-        position += digits;
     }
-    output[position] = '\0';
-    return position;
+
+    required = digits + (value < 0 ? 1 : 0) + 1;
+    if (required > output_length - position) {
+        return 0;
+    }
+    if (value < 0) {
+        output[position++] = '-';
+    }
+
+    size_t write_position = position + digits - 1;
+    magnitude = value < 0
+        ? (uint64_t)(-(value + 1)) + 1
+        : (uint64_t)value;
+    if (magnitude == 0) {
+        output[write_position] = '0';
+    } else {
+        while (magnitude > 0) {
+            output[write_position--] = (char)('0' + magnitude % 10);
+            magnitude /= 10;
+        }
+    }
+    output[position + digits] = '\0';
+    return digits + (value < 0 ? 1 : 0);
 }
 
-static size_t build_record(char *output, int64_t value) {
-    static const char prefix[] = "value=";
-    char digits[32];
-    size_t position = 0;
-    size_t digit_index = 0;
-
-    while (prefix[digit_index] != '\0') {
-        output[position++] = prefix[digit_index++];
+static size_t build_record(
+    char *output,
+    size_t output_length,
+    size_t position,
+    int64_t value
+) {
+    if (position >= output_length || output_length - position < 9) {
+        return 0;
     }
-    serialize_int64(digits, value);
-    digit_index = 0;
-    while (digits[digit_index] != '\0') {
-        output[position++] = digits[digit_index++];
+    output[position++] = 'v';
+    output[position++] = 'a';
+    output[position++] = 'l';
+    output[position++] = 'u';
+    output[position++] = 'e';
+    output[position++] = '=';
+    size_t written = serialize_int64_at(output, output_length, position, value);
+    if (written == 0) {
+        return 0;
     }
+    position += written;
     output[position++] = '\n';
     output[position] = '\0';
     return position;
@@ -119,7 +145,6 @@ static int64_t measure_control(uint32_t iterations, int64_t *minimum) {
 
 static int64_t measure_buffer(uint32_t iterations, int64_t *minimum) {
     char output[32768];
-    char record[64];
     int64_t samples[SAMPLES];
     int64_t best = 0;
 
@@ -128,10 +153,9 @@ static int64_t measure_buffer(uint32_t iterations, int64_t *minimum) {
         int64_t value = 123456789;
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value++);
-            for (size_t copy_index = 0; copy_index < written; ++copy_index) {
-                output[output_position++] = record[copy_index];
-            }
+            output_position = build_record(
+                output, sizeof output, output_position, value++
+            );
         }
         (void)start;
         consume_buffer(output, output_position);
@@ -141,10 +165,9 @@ static int64_t measure_buffer(uint32_t iterations, int64_t *minimum) {
         int64_t value = 123456789;
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value++);
-            for (size_t copy_index = 0; copy_index < written; ++copy_index) {
-                output[output_position++] = record[copy_index];
-            }
+            output_position = build_record(
+                output, sizeof output, output_position, value++
+            );
         }
         samples[sample] = time_ticks() - start;
         consume_buffer(output, output_position);
@@ -170,7 +193,7 @@ static int64_t measure_file(uint32_t iterations, int64_t *minimum) {
         );
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value++);
+            size_t written = build_record(record, sizeof record, 0, value++);
             WriteFile(handle, record, (DWORD)written, NULL, NULL);
         }
         (void)start;
@@ -184,7 +207,7 @@ static int64_t measure_file(uint32_t iterations, int64_t *minimum) {
         );
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value++);
+            size_t written = build_record(record, sizeof record, 0, value++);
             WriteFile(handle, record, (DWORD)written, NULL, NULL);
         }
         samples[sample] = time_ticks() - start;

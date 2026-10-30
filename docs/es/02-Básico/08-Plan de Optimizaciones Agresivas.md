@@ -22,6 +22,19 @@ La optimización debe conservar las comprobaciones de rango, la semántica de
 `unique`, `Region_t`, `Len_t` y `Size_t`, y la observabilidad completa del
 buffer fuera de la ventana medida.
 
+## Estado de la fase básica
+
+La primera fase queda implementada en el benchmark canónico: `build_record`
+escribe el prefijo, el entero y el salto de línea en la región final, y
+`serialize_int64_at` se expande inline junto con su núcleo. La lectura posterior
+declara `unique` para hacer explícita la exclusividad de la región consumida.
+Las referencias C y Rust usan el mismo recorrido directo para que la comparación
+no mida una copia adicional solo en Bagron.
+
+En una ejecución local, la mediana del buffer fue de aproximadamente 320 ticks
+en Bagron `prod`, 279 en C `-O2` y 314 en Rust `-O3`. Son cifras orientativas,
+no umbrales: `WriteFile` y el planificador introducen variación.
+
 ## Orden de revisión
 
 ### 1. Benchmark y referencias

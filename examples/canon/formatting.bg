@@ -7,7 +7,7 @@ import alphabet
 
 ; Escribe un entero sin asignacion dinamica y deja el terminador en el buffer.
 @unsafe
-private func _serialize_int64_at_raw(
+private inline func _serialize_int64_at_raw(
     output: char[],
     output_len: Len_t,
     output_size: Size_t,
@@ -129,7 +129,7 @@ public inline func serialize_int64(
 
 ; Serializa un entero int64 en una posicion concreta.
 @unsafe
-public func serialize_int64_at(
+public inline func serialize_int64_at(
     output: char[],
     output_len: Len_t,
     output_size: Size_t,
