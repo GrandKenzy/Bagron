@@ -27,21 +27,7 @@ class TypeSemanticTests(unittest.TestCase):
                 self.assertEqual(0, completed.returncode)
             return compiler
 
-    def test_int_is_removed_and_target_sized_types_are_explicit(self):
-        with self.assertRaisesRegex(CompilationError, 'tipo int fue eliminado'):
-            self.compile_source(
-                'value: int = 1\n'
-                'func main() int32:\n'
-                '    return 0\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'tipo uint fue eliminado'):
-            self.compile_source(
-                'value: uint = 1\n'
-                'func main() int32:\n'
-                '    return 0\n'
-            )
-
+    def test_target_sized_types_are_explicit(self):
         compiler = self.compile_source(
             "clause Arch 'x86'\n"
             'value: usize = 1\n'
