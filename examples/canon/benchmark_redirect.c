@@ -1,5 +1,5 @@
-// Referencia C del benchmark de redireccion de Bagron.
-// Construye los mismos registros en un buffer y en un archivo Win32.
+// Referencia C del benchmark comparable de redireccion de Bagron.
+// El recorrido observable se realiza fuera de la ventana medida, igual que en Bagron.
 
 #define WIN32_LEAN_AND_MEAN
 
@@ -8,31 +8,15 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static LARGE_INTEGER qpc_frequency;
-static volatile unsigned char buffer_sink;
+enum { SAMPLES = 10 };
 
-static void initialize_clock(void) {
-    QueryPerformanceFrequency(&qpc_frequency);
-}
+static volatile unsigned char buffer_sink;
+static volatile uint32_t control_sink;
 
 static int64_t time_ticks(void) {
     LARGE_INTEGER value;
     QueryPerformanceCounter(&value);
     return value.QuadPart;
-}
-
-static int64_t time_us(int64_t start, int64_t end) {
-    int64_t elapsed = end - start;
-    int64_t seconds;
-    int64_t remainder;
-
-    if (elapsed < 0 || qpc_frequency.QuadPart <= 0) {
-        return 0;
-    }
-    seconds = elapsed / qpc_frequency.QuadPart;
-    remainder = elapsed % qpc_frequency.QuadPart;
-    return seconds * 1000000
-        + (remainder * 1000000) / qpc_frequency.QuadPart;
 }
 
 static size_t serialize_int64(char *output, int64_t value) {
@@ -90,162 +74,155 @@ static size_t build_record(char *output, int64_t value) {
 
 __declspec(noinline)
 static void consume_buffer(const char *buffer, size_t length) {
-    unsigned char checksum = 0;
     for (size_t index = 0; index < length; ++index) {
-        checksum ^= (unsigned char)buffer[index];
+        buffer_sink = (unsigned char)buffer[index];
     }
-    buffer_sink ^= checksum;
 }
 
-static int64_t measure_empty_loop(uint32_t iterations) {
-    volatile uint32_t guard = 0;
-    int64_t total = 0;
+static int64_t median_ticks(int64_t samples[SAMPLES]) {
+    for (size_t left = 0; left < SAMPLES; ++left) {
+        for (size_t right = left + 1; right < SAMPLES; ++right) {
+            if (samples[right] < samples[left]) {
+                int64_t temporary = samples[left];
+                samples[left] = samples[right];
+                samples[right] = temporary;
+            }
+        }
+    }
+    return (samples[4] + samples[5]) / 2;
+}
+
+static int64_t measure_control(uint32_t iterations, int64_t *minimum) {
+    int64_t samples[SAMPLES];
+    int64_t best = 0;
 
     for (uint32_t warmup = 0; warmup < 5; ++warmup) {
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            guard ^= index;
+            control_sink ^= index;
         }
         (void)start;
     }
-    for (uint32_t sample = 0; sample < 10; ++sample) {
+    for (uint32_t sample = 0; sample < SAMPLES; ++sample) {
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            guard ^= index;
+            control_sink ^= index;
         }
-        total += time_us(start, time_ticks());
+        samples[sample] = time_ticks() - start;
+        if (sample == 0 || samples[sample] < best) {
+            best = samples[sample];
+        }
     }
-    return total / 10;
+    *minimum = best;
+    return median_ticks(samples);
 }
 
-static int64_t measure_buffer(
-    uint32_t iterations,
-    int64_t loop_cost,
-    int64_t *minimum
-) {
+static int64_t measure_buffer(uint32_t iterations, int64_t *minimum) {
     char output[32768];
     char record[64];
-    const int64_t value = 123456789;
-    int64_t total = 0;
+    int64_t samples[SAMPLES];
     int64_t best = 0;
 
     for (uint32_t warmup = 0; warmup < 5; ++warmup) {
         size_t output_position = 0;
+        int64_t value = 123456789;
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value);
+            size_t written = build_record(record, value++);
             for (size_t copy_index = 0; copy_index < written; ++copy_index) {
                 output[output_position++] = record[copy_index];
             }
         }
-        consume_buffer(output, output_position);
         (void)start;
+        consume_buffer(output, output_position);
     }
-    for (uint32_t sample = 0; sample < 10; ++sample) {
+    for (uint32_t sample = 0; sample < SAMPLES; ++sample) {
         size_t output_position = 0;
+        int64_t value = 123456789;
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value);
+            size_t written = build_record(record, value++);
             for (size_t copy_index = 0; copy_index < written; ++copy_index) {
                 output[output_position++] = record[copy_index];
             }
         }
-        int64_t elapsed = time_us(start, time_ticks());
+        samples[sample] = time_ticks() - start;
         consume_buffer(output, output_position);
-        elapsed = elapsed > loop_cost ? elapsed - loop_cost : 0;
-        if (sample == 0 || elapsed < best) {
-            best = elapsed;
+        if (sample == 0 || samples[sample] < best) {
+            best = samples[sample];
         }
-        total += elapsed;
     }
     *minimum = best;
-    return total / 10;
+    return median_ticks(samples);
 }
 
-static int64_t measure_file(
-    uint32_t iterations,
-    int64_t loop_cost,
-    int64_t *minimum
-) {
+static int64_t measure_file(uint32_t iterations, int64_t *minimum) {
     static const char path[] = "benchmark_redirect.c.out";
     char record[64];
-    const int64_t value = 123456789;
-    int64_t total = 0;
+    int64_t samples[SAMPLES];
     int64_t best = 0;
 
     for (uint32_t warmup = 0; warmup < 5; ++warmup) {
+        int64_t value = 123456789;
         HANDLE handle = CreateFileA(
-            path,
-            GENERIC_WRITE,
-            0,
-            NULL,
-            CREATE_ALWAYS,
-            FILE_ATTRIBUTE_NORMAL,
-            NULL
+            path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL, NULL
         );
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value);
+            size_t written = build_record(record, value++);
             WriteFile(handle, record, (DWORD)written, NULL, NULL);
         }
         (void)start;
         CloseHandle(handle);
     }
-    for (uint32_t sample = 0; sample < 10; ++sample) {
+    for (uint32_t sample = 0; sample < SAMPLES; ++sample) {
+        int64_t value = 123456789;
         HANDLE handle = CreateFileA(
-            path,
-            GENERIC_WRITE,
-            0,
-            NULL,
-            CREATE_ALWAYS,
-            FILE_ATTRIBUTE_NORMAL,
-            NULL
+            path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL, NULL
         );
         int64_t start = time_ticks();
         for (uint32_t index = 0; index < iterations; ++index) {
-            size_t written = build_record(record, value);
+            size_t written = build_record(record, value++);
             WriteFile(handle, record, (DWORD)written, NULL, NULL);
         }
-        int64_t elapsed = time_us(start, time_ticks());
+        samples[sample] = time_ticks() - start;
         CloseHandle(handle);
-        elapsed = elapsed > loop_cost ? elapsed - loop_cost : 0;
-        if (sample == 0 || elapsed < best) {
-            best = elapsed;
+        if (sample == 0 || samples[sample] < best) {
+            best = samples[sample];
         }
-        total += elapsed;
     }
     *minimum = best;
-    return total / 10;
+    return median_ticks(samples);
 }
 
 static void report(
     const char *label,
     int64_t minimum,
-    int64_t average,
+    int64_t median,
     int64_t iterations
 ) {
     fprintf(
         stderr,
-        "%s min_us=%lld avg_us=%lld per_call_us=%lld\n",
+        "%s min_ticks=%lld median_ticks=%lld per_call_ticks=%lld\n",
         label,
         (long long)minimum,
-        (long long)average,
-        (long long)(average / iterations)
+        (long long)median,
+        (long long)(median / iterations)
     );
 }
 
 int main(void) {
     const uint32_t iterations = 1000;
-    int64_t loop_cost;
     int64_t minimum;
-    int64_t average;
+    int64_t median;
 
-    initialize_clock();
-    loop_cost = measure_empty_loop(iterations);
-    fprintf(stderr, "empty_loop_avg_us=%lld\n", (long long)loop_cost);
-    average = measure_buffer(iterations, loop_cost, &minimum);
-    report("buffer", minimum, average, iterations);
-    average = measure_file(iterations, loop_cost, &minimum);
-    report("file", minimum, average, iterations);
+    median = measure_control(iterations, &minimum);
+    report("control", minimum, median, iterations);
+    median = measure_buffer(iterations, &minimum);
+    report("buffer", minimum, median, iterations);
+    median = measure_file(iterations, &minimum);
+    report("file", minimum, median, iterations);
     return 0;
 }

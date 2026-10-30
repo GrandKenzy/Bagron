@@ -8,7 +8,17 @@ from core.compiler import CompilationError, Compiler
 
 
 class FunctionSemanticTests(unittest.TestCase):
-    def compile_source(self, source: str, add_main: bool = True) -> Compiler:
+    def compile_source(
+        self,
+        source: str,
+        add_main: bool = True,
+        optimization_profile: str | None = 'dev',
+    ) -> Compiler:
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         if add_main:
             source = source.rstrip() + '\n\nfunc main() int32:\n    return 0\n'
         directory = tempfile.TemporaryDirectory()
@@ -232,6 +242,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_len_t_is_injected_for_a_concrete_array(self):
         source = (
+            "clause Optimizations 'dev'\n"
             "clause Arch 'x86'\n"
             'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
             '    return\n'
@@ -257,6 +268,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_len_t_is_injected_for_a_static_chain(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func consume(text: chain, length: Len_t) usize:\n'
             '    return length\n'
         )
@@ -385,6 +397,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_fixed_matrix_parameter_is_a_reference_with_full_shape(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func mutate(data: int32[2][3], rows: Len_t, row_size: Size_t) void:\n'
             '    data[0][0] = 99\n'
             '    return\n'
@@ -414,6 +427,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_fixed_one_dimensional_array_parameter_is_a_reference(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func mutate(data: int32[3], length: Len_t, size: Size_t) void:\n'
             '    data[1] = 77\n'
             '    return\n'
@@ -436,6 +450,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_three_dimensional_matrix_size_is_the_outer_element_size(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func inspect(data: int16[2][3][4], depth: Len_t, size: Size_t) usize:\n'
             '    return size\n'
         )
@@ -464,6 +479,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_three_dimensional_shape_and_metadata_survive_forwarding(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func sink(data: int32[2][3][4], depth: Len_t, block_size: Size_t) usize:\n'
             '    if depth != 2:\n'
             '        return 100\n'
@@ -557,6 +573,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_size_t_is_injected_for_a_scalar(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func consume(value: int32, size: Size_t) usize:\n'
             '    return size\n'
         )
@@ -577,6 +594,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_size_t_is_injected_as_array_element_bytes(self):
         source = (
+            "clause Optimizations 'dev'\n"
             'func consume(values: int32[], long: Len_t, size: Size_t) usize:\n'
             '    return size\n'
         )

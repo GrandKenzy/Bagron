@@ -9,7 +9,18 @@ from core.compiler import CompilationError, Compiler
 
 
 class UnsafeBoundaryTests(unittest.TestCase):
-    def _compile(self, source: str, *, executable: bool = True):
+    def _compile(
+        self,
+        source: str,
+        *,
+        executable: bool = True,
+        optimization_profile: str | None = 'dev',
+    ):
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'
@@ -155,7 +166,8 @@ class UnsafeBoundaryTests(unittest.TestCase):
             '    total: int32 = 0\n'
             '    for i: int32 in data:\n'
             '        total = total + data[i]\n'
-            '    return total\n'
+            '    return total\n',
+            optimization_profile='prod',
         )
         result = subprocess.run(
             [str(artifacts.executable)],

@@ -9,7 +9,18 @@ from core.compiler import CompilationError, Compiler
 
 
 class PointerAndAddressTests(unittest.TestCase):
-    def _compile(self, source: str, *, executable: bool = True):
+    def _compile(
+        self,
+        source: str,
+        *,
+        executable: bool = True,
+        optimization_profile: str | None = 'dev',
+    ):
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'

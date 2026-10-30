@@ -433,6 +433,7 @@ class Compiler(CompilerState):
                 target = resolve_target(
                     self.storage.architecture,
                     self.storage.system,
+                    self.storage.optimizers,
                 )
                 self.storage.prep_sources = write_prep_files(
                     self.prep_blocks,

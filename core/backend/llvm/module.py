@@ -14,7 +14,10 @@ from llvmlite import ir
 from core.backend.llvm.context import LLVMContextHandle
 from core.backend.llvm.functions import FunctionEmitter
 from core.backend.llvm.globals import GlobalEmitter
-from core.backend.llvm.targets import TargetResolutionError
+from core.backend.llvm.targets import (
+    TargetResolutionError,
+    optimization_speed_level,
+)
 from core.backend.llvm.types import LLVMTypeRegistry
 
 
@@ -36,12 +39,67 @@ class BuildArtifacts:
 class LLVMBackend:
     """First-stage LLVM backend for validated global symbols."""
 
+    @staticmethod
+    def _has_large_stack_aggregate(function) -> bool:
+        """Avoid scalarising stack arrays that would explode the IR."""
+        for block in function.blocks:
+            for instruction in block.instructions:
+                if instruction.opcode != 'alloca':
+                    continue
+                dimensions = [
+                    int(size)
+                    for size in re.findall(r'\[(\d+) x', str(instruction))
+                ]
+                element_count = 1
+                for dimension in dimensions:
+                    element_count *= dimension
+                if element_count > 1024:
+                    return True
+        return False
+
+    @staticmethod
+    def _optimise_module(module, target_machine, profile: object) -> None:
+        """Run Bagron's selected whole-module LLVM optimisation pipeline."""
+        speed_level = optimization_speed_level(profile)
+        if speed_level == 0:
+            return
+        tuning = llvm.create_pipeline_tuning_options(speed_level=speed_level)
+        # Bagron's explicit range guards produce several small control-flow
+        # blocks per loop.  The default interprocedural O2 pipeline expands
+        # imported library code through those guards pathologically.  Keep a
+        # bounded, reusable sequence of local O2 transformations instead.
+        pass_builder = llvm.create_pass_builder(target_machine, tuning)
+        scalar_passes = llvm.create_new_function_pass_manager()
+        scalar_passes.add_sroa_pass()
+        scalar_passes.add_instruction_combine_pass()
+        scalar_passes.add_sccp_pass()
+        scalar_passes.add_simplify_cfg_pass()
+        scalar_passes.add_aggressive_dce_pass()
+        for function in module.functions:
+            if (
+                function.is_declaration
+                or LLVMBackend._has_large_stack_aggregate(function)
+            ):
+                continue
+            scalar_passes.run(function, pass_builder)
+
+        pass_manager = llvm.create_new_module_pass_manager()
+        pass_manager.add_instruction_combine_pass()
+        pass_manager.add_sccp_pass()
+        pass_manager.add_simplify_cfg_pass()
+        pass_manager.add_aggressive_dce_pass()
+        if speed_level == 3:
+            pass_manager.add_aggressive_instcombine_pass()
+            pass_manager.add_simplify_cfg_pass()
+        pass_manager.run(module, pass_builder)
+
     def _emit_verified(self, storage):
         try:
             context = LLVMContextHandle.create(
                 name=Path(storage.root).stem,
                 target_request=storage.architecture,
                 system_request=storage.system,
+                optimization_profile=storage.optimizers,
             )
             type_registry = LLVMTypeRegistry(
                 context.module,
@@ -50,10 +108,26 @@ class LLVMBackend:
                 pointer_size=getattr(storage, 'pointer_size', 8),
             )
             GlobalEmitter(context.module, type_registry).emit_storage(storage)
-            FunctionEmitter(context.module, type_registry).emit_storage(storage)
-            module_text = str(context.module)
-            verified = llvm.parse_assembly(module_text)
+            FunctionEmitter(
+                context.module,
+                type_registry,
+                context.target.optimization_profile,
+            ).emit_storage(storage)
+            raw_module_text = str(context.module)
+            verified = llvm.parse_assembly(raw_module_text)
             verified.verify()
+            if context.target.optimization_profile == 'dev':
+                # Development mode keeps the historical textual IR useful for
+                # diagnostics, while still validating the emitted module.
+                module_text = raw_module_text
+            else:
+                self._optimise_module(
+                    verified,
+                    context.target.machine,
+                    context.target.optimization_profile,
+                )
+                verified.verify()
+                module_text = str(verified)
         except (TargetResolutionError, TypeError, ValueError, RuntimeError) as error:
             raise BackendError(str(error)) from error
 

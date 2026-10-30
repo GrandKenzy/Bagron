@@ -83,7 +83,9 @@ class Storage(diagnostic.Diagnostics):
         
         # clauses
         self.privacy: str = 'public'
-        self.optimizers = 'dev'
+        # ``prod`` is the normal compilation profile.  ``dev`` remains
+        # available when inspecting Bagron's unoptimised emitted IR.
+        self.optimizers = 'prod'
         self.stacklimit = -1
         self.boot = 'none'
         if parent is None:

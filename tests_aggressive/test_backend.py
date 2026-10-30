@@ -9,7 +9,17 @@ from core.compiler import CompilationError, Compiler
 
 
 class GlobalBackendTests(unittest.TestCase):
-    def compile_source(self, source: str, add_main: bool = True) -> str:
+    def compile_source(
+        self,
+        source: str,
+        add_main: bool = True,
+        optimization_profile: str | None = 'dev',
+    ) -> str:
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         if add_main:
             source = source.rstrip() + '\n\nfunc main() int32:\n    return 0\n'
         with tempfile.TemporaryDirectory() as directory:
@@ -66,6 +76,63 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertIn('define i32 @"helper"', module)
         self.assertIn('inlinehint', module)
+
+    def test_optimization_profiles_publish_the_selected_ir(self):
+        source = (
+            'func sum_to(limit: uint32) uint32:\n'
+            '    total: uint32 = 0\n'
+            '    for i: uint32 ran (0, limit, 1):\n'
+            '        total += i\n'
+            '    return total\n'
+        )
+
+        development = self.compile_source(source, optimization_profile='dev')
+        production = self.compile_source(source, optimization_profile='prod')
+        high = self.compile_source(source, optimization_profile='high')
+        default = self.compile_source(source, optimization_profile=None)
+
+        self.assertIn('i.addr', development)
+        self.assertNotIn('i.addr', production)
+        self.assertNotIn('i.addr', high)
+        self.assertNotIn('i.addr', default)
+        self.assertIn('phi i32', production)
+
+    def test_optimized_for_keeps_addressable_iterator_storage(self):
+        module = self.compile_source(
+            'extern "kernel32":\n'
+            '    KeepIterator(value *: uint32) void\n'
+            '@unsafe\n'
+            'func walk(limit: uint32) uint32:\n'
+            '    total: uint32 = 0\n'
+            '    for i: uint32 ran (0, limit, 1):\n'
+            '        KeepIterator($i)\n'
+            '        total += i\n'
+            '    return total\n',
+            optimization_profile='prod',
+        )
+
+        self.assertIn('i.addr', module)
+        self.assertIn('KeepIterator', module)
+
+    def test_optimized_volatile_accesses_survive_ir_pipeline(self):
+        module = self.compile_source(
+            'volatile struct MMIO:\n'
+            '    value: uint32\n'
+            '@unsafe\n'
+            'func touch(registers *: MMIO) uint32:\n'
+            '    (registers).value = 7\n'
+            '    return (registers).value\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    registers: MMIO\n'
+            '    observed: uint32 = touch($registers)\n'
+            '    return 0\n',
+            add_main=False,
+            optimization_profile='prod',
+        )
+
+        self.assertIn('store volatile i32', module)
+        self.assertIn('load volatile i32', module)
 
     def test_emits_char_byte_arrays_and_static_chain(self):
         module = self.compile_source(
@@ -330,6 +397,7 @@ class GlobalBackendTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
+                "clause Optimizations 'dev'\n"
                 'func touch(value: int32) void:\n'
                 '    copy: int32 = value\n'
                 '    return\n'

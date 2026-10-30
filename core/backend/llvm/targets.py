@@ -24,12 +24,23 @@ _ARCH_ALIASES = {
 }
 
 
+_OPTIMIZATION_PROFILES = {
+    # ``dev`` preserves Bagron's historical code generation: LLVM still
+    # performs its target-machine lowering, but no IR optimisation pipeline
+    # rewrites the module before the object is emitted.
+    'dev': (2, 0),
+    'prod': (2, 2),
+    'high': (3, 3),
+}
+
+
 @dataclass(frozen=True)
 class TargetHandle:
     request: str
     triple: str
     target: object
     machine: object
+    optimization_profile: str
 
     @property
     def pointer_size(self) -> int:
@@ -50,6 +61,22 @@ def initialize_llvm() -> None:
     llvm.initialize_native_target()
     llvm.initialize_native_asmprinter()
     initialize_llvm._done = True  # type: ignore[attr-defined]
+
+
+def normalize_optimization_profile(value: object | None) -> str:
+    """Return one canonical profile shared by target and IR generation."""
+    profile = str(value or 'prod').strip().lower()
+    if profile not in _OPTIMIZATION_PROFILES:
+        raise TargetResolutionError(
+            f"Perfil de optimizacion invalido: {profile!r}. "
+            "Use 'dev', 'prod' o 'high'."
+        )
+    return profile
+
+
+def optimization_speed_level(profile: object | None) -> int:
+    """Return the IR pipeline speed level for a validated profile."""
+    return _OPTIMIZATION_PROFILES[normalize_optimization_profile(profile)][1]
 
 
 def _triple_for_request(
@@ -83,15 +110,21 @@ def _triple_for_request(
 def resolve_target(
     request: str | None = None,
     system_request: str | None = None,
+    optimization_profile: object | None = None,
 ) -> TargetHandle:
     initialize_llvm()
     normalized = str(request or 'auto').strip().lower()
+    profile = normalize_optimization_profile(optimization_profile)
     host_triple = llvm.get_default_triple()
     triple = _triple_for_request(normalized, host_triple, system_request)
 
     try:
         target = llvm.Target.from_triple(triple)
-        machine = target.create_target_machine(codemodel='small')
+        target_opt = _OPTIMIZATION_PROFILES[profile][0]
+        machine = target.create_target_machine(
+            codemodel='small',
+            opt=target_opt,
+        )
     except (RuntimeError, ValueError) as error:
         raise TargetResolutionError(
             f'No se pudo resolver el target LLVM {triple!r}: {error}'
@@ -102,4 +135,5 @@ def resolve_target(
         triple=triple,
         target=target,
         machine=machine,
+        optimization_profile=profile,
     )

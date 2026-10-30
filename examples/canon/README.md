@@ -75,6 +75,14 @@ clang -std=c11 -O2 examples/canon/benchmark_redirect.c -o examples/canon/build/b
 
 Esta variante construye registros `value=<int64>` con `chain` y `char[]`,
 primero acumulándolos en un buffer y después escribiéndolos con `WriteFile`.
-En la variante actual, `build_record` usa `unique char[64]` y `Region_t`; el
-llamador sigue escribiendo solo `build_record(record, value)` y el IR conserva
-la firma runtime sin el parámetro de región.
+`build_record` usa `unique char[64]` y `Region_t`; el llamador sigue
+escribiendo solo `build_record(record, value)` y el IR conserva la firma
+runtime sin el parámetro de región. Cada iteración cambia el entero y el
+recorrido del buffer se realiza fuera de la ventana medida, por lo que la
+serialización y la copia no pueden desaparecer durante la optimización.
+
+El archivo canónico usa `clause Optimizations 'prod'`. Para comparar los
+perfiles, cambia esa cláusula a `dev` o `high`, recompila y ejecuta de nuevo.
+Cada variante informa mínimo, mediana y ticks por llamada para el control, el
+buffer y el archivo; el control se muestra por separado y no se resta. Ejecuta
+los dos binarios C después de compilarlos para completar la comparación.

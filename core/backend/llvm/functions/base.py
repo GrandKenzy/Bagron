@@ -26,6 +26,7 @@ class FunctionEmitterBase:
         self,
         module: ir.Module,
         type_registry: LLVMTypeRegistry | None = None,
+        optimization_profile: str = 'prod',
     ):
         self.module = module
         self.type_registry = type_registry
@@ -42,6 +43,7 @@ class FunctionEmitterBase:
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
         self._string_literals: dict[str, ir.GlobalVariable] = {}
         self._pointer_size = 8
+        self._optimization_profile = optimization_profile
 
     def _string_pointer(
         self,

@@ -9,7 +9,18 @@ from core.compiler import CompilationError, Compiler
 
 
 class ExternTests(unittest.TestCase):
-    def compile_source(self, source: str, *, executable: bool = False):
+    def compile_source(
+        self,
+        source: str,
+        *,
+        executable: bool = False,
+        optimization_profile: str | None = 'dev',
+    ):
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         directory = tempfile.TemporaryDirectory()
         path = Path(directory.name) / '_main.bg'
         path.write_text(source, encoding='utf-8')
@@ -147,6 +158,7 @@ class ExternTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import native as n\n'
                 '@unsafe\n'
                 'func main() int32:\n'

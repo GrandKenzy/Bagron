@@ -11,7 +11,18 @@ from core.compiler import CompilationError, Compiler
 class ClassAndNeverTests(unittest.TestCase):
     """Dedicated stress coverage for class semantics and the Never type."""
 
-    def compile_source(self, source: str, *, executable: bool = False):
+    def compile_source(
+        self,
+        source: str,
+        *,
+        executable: bool = False,
+        optimization_profile: str | None = 'dev',
+    ):
+        if (
+            optimization_profile is not None
+            and 'clause Optimizations' not in source
+        ):
+            source = f"clause Optimizations '{optimization_profile}'\n" + source
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'
@@ -23,6 +34,8 @@ class ClassAndNeverTests(unittest.TestCase):
         return Path(output).read_text(encoding='utf-8')
 
     def compile_compiler(self, source: str) -> Compiler:
+        if 'clause Optimizations' not in source:
+            source = "clause Optimizations 'dev'\n" + source
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'

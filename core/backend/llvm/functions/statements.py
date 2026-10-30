@@ -26,6 +26,33 @@ from .errors import FunctionEmissionError
 class StatementEmitterMixin:
     """LLVM emission for declarations, control flow, and function bodies."""
 
+    def _iterator_address_is_taken(self, node: object, name: str) -> bool:
+        """Return whether ``$name`` needs a real address inside this body.
+
+        Optimised loops use a phi value only while the iterator remains a
+        value.  Taking its address keeps the historical addressable alloca,
+        which is required for calls and pointer dereferences in the body.
+        """
+        current = self._unwrap(node)
+        if type(current).__name__ == 'ASTUnaryOp':
+            operator = getattr(
+                getattr(current, 'operator', None),
+                'token',
+                None,
+            )
+            if getattr(operator, 'name', None) == 'DOLLAR':
+                operand = getattr(current, 'operand', None)
+                if self._identifier(operand) == name:
+                    return True
+            return self._iterator_address_is_taken(
+                getattr(current, 'operand', None),
+                name,
+            )
+        return any(
+            self._iterator_address_is_taken(child, name)
+            for child in self._children(current)
+        )
+
     def _unwrap_buffer_value(self, node: object) -> object:
         current = self._unwrap(node)
         while getattr(current, 'name', None) == 'PAREN_VALUE':
@@ -807,21 +834,31 @@ class StatementEmitterMixin:
         invalid_builder.call(trap, [])
         invalid_builder.unreachable()
 
+        use_ssa_iterator = (
+            self._optimization_profile in {'prod', 'high'}
+            and not self._iterator_address_is_taken(body, name)
+        )
         valid_builder = ir.IRBuilder(step_valid_block)
-        iterator = valid_builder.alloca(iterator_type, name=f'{name}.addr')
-        if self.type_registry is not None:
-            iterator.align = self.type_registry.abi_alignment(iterator_type)
-        valid_builder.store(start, iterator)
+        iterator = None
+        if not use_ssa_iterator:
+            iterator = valid_builder.alloca(iterator_type, name=f'{name}.addr')
+            if self.type_registry is not None:
+                iterator.align = self.type_registry.abi_alignment(iterator_type)
+            valid_builder.store(start, iterator)
         valid_builder.branch(condition_block)
 
         condition_builder = ir.IRBuilder(condition_block)
-        current = condition_builder.load(iterator)
+        if use_ssa_iterator:
+            current = condition_builder.phi(iterator_type, name=name)
+            current.add_incoming(start, step_valid_block)
+        else:
+            current = condition_builder.load(iterator)
         condition = condition_builder.icmp_unsigned('<', current, end)
         condition_builder.cbranch(condition, body_block, after_block)
 
         body_builder = ir.IRBuilder(body_block)
         body_values = dict(values)
-        body_values[name] = iterator
+        body_values[name] = current if use_ssa_iterator else iterator
         self._loop_targets.append((after_block, step_block))
         try:
             self._emit_body(body, body_builder, body_values, function, symbol)
@@ -831,7 +868,8 @@ class StatementEmitterMixin:
             body_builder.branch(step_block)
 
         step_builder = ir.IRBuilder(step_block)
-        current = step_builder.load(iterator)
+        if not use_ssa_iterator:
+            current = step_builder.load(iterator)
         # The range is half-open. If the next mathematical value reaches or
         # exceeds `end`, leave the loop without materialising an overflowing
         # unsigned value. This also makes ranges ending at UINT_MAX safe.
@@ -844,9 +882,13 @@ class StatementEmitterMixin:
         step_builder.cbranch(reaches_end, after_block, update_block)
 
         update_builder = ir.IRBuilder(update_block)
-        current = update_builder.load(iterator)
+        if not use_ssa_iterator:
+            current = update_builder.load(iterator)
         updated = update_builder.add(current, step)
-        update_builder.store(updated, iterator)
+        if use_ssa_iterator:
+            current.add_incoming(updated, update_block)
+        else:
+            update_builder.store(updated, iterator)
         update_builder.branch(condition_block)
 
         builder.position_at_end(after_block)

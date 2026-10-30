@@ -1,8 +1,10 @@
-; Benchmark de redireccion sin consola: construye registros en memoria y en archivo.
-; Cada registro combina un chain, un char[] y un entero int64.
+; Benchmark comparable de redireccion: construye registros en memoria y archivo.
+; El recorrido observable del buffer ocurre fuera de la ventana medida para conservar sus
+; escrituras sin contaminar la medicion de la serializacion y la copia.
 
 clause System 'windows'
 clause Arch 'amd'
+clause Optimizations 'prod'
 
 import standard
 import time
@@ -19,6 +21,9 @@ extern "kernel32":
     ) *: void
     CloseHandle(hObject *: void) int32
 
+buffer_sink: char = "\0"
+control_sink: uint32 = 0
+
 @assembler
 private func _redirect_count(value: usize) uint32:
     #prep assembler "intel"
@@ -26,7 +31,7 @@ private func _redirect_count(value: usize) uint32:
     #end
     return asm
 
-; Serializa una linea fija para que buffer y archivo midan el mismo trabajo.
+; Serializa una linea variable para impedir que el compilador pliegue el trabajo.
 @unsafe
 func build_record(
     output: unique char[64],
@@ -57,36 +62,82 @@ func build_record(
     output[position] = "\0"
     return position
 
+; Lee cada byte despues de medir para que la salida en memoria sea observable.
 @unsafe
-func measure_empty_loop(iterations: uint32) int64:
-    start: int64 = 0
-    total: int64 = 0
+func consume_buffer(
+    output: char[32768],
+    output_length: Len_t,
+    output_size: Size_t,
+    length: usize
+) void:
+    global buffer_sink
+    index: usize = 0
 
+    while index < length:
+        buffer_sink = output[index]
+        index += 1
+    return
+
+; Ordena solo diez muestras y devuelve la media central como mediana.
+@unsafe
+func median_ticks(
+    samples: int64[10],
+    samples_length: Len_t,
+    samples_size: Size_t
+) int64:
+    left: uint32 = 0
+    right: uint32 = 0
+    temporary: int64 = 0
+
+    while left < 10:
+        right = left
+        right += 1
+        while right < 10:
+            if samples[right] < samples[left]:
+                temporary = samples[left]
+                samples[left] = samples[right]
+                samples[right] = temporary
+            right += 1
+        left += 1
+    return (samples[4] + samples[5]) / 2
+
+; Mide control de iteracion sin restarlo de las otras rutas.
+@unsafe
+func measure_control(iterations: uint32, minimum *: int64) int64:
+    samples: int64[10]
+    start: int64 = 0
+    elapsed: int64 = 0
+    best: int64 = 0
+
+    global control_sink
     for warmup: uint32 ran (0, 5, 1):
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            pass
+            control_sink ^= index
         time_ticks()
 
     for sample: uint32 ran (0, 10, 1):
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
-            pass
-        total += time_us(start, time_ticks())
-    return total / 10
+            control_sink ^= index
+        elapsed = time_elapsed_ticks(start, time_ticks())
+        samples[sample] = elapsed
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+
+    (minimum) = best
+    return median_ticks(samples)
 
 @unsafe
-func measure_buffer(
-    iterations: uint32,
-    loop_cost: int64,
-    minimum *: int64
-) int64:
+func measure_buffer(iterations: uint32, minimum *: int64) int64:
     output: char[32768]
     record: char[64]
+    samples: int64[10]
     value: int64 = 123456789
     start: int64 = 0
     elapsed: int64 = 0
-    total: int64 = 0
     best: int64 = 0
     output_position: usize = 0
     written: usize = 0
@@ -94,116 +145,113 @@ func measure_buffer(
 
     for warmup: uint32 ran (0, 5, 1):
         output_position = 0
+        value = 123456789
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(record, value)
+            value += 1
             copy_index = 0
             while copy_index < written:
                 output[output_position] = record[copy_index]
                 output_position += 1
                 copy_index += 1
         time_ticks()
+        consume_buffer(output, output_position)
 
     for sample: uint32 ran (0, 10, 1):
         output_position = 0
+        value = 123456789
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(record, value)
+            value += 1
             copy_index = 0
             while copy_index < written:
                 output[output_position] = record[copy_index]
                 output_position += 1
                 copy_index += 1
-        elapsed = time_us(start, time_ticks())
-        if elapsed > loop_cost:
-            elapsed -= loop_cost
-        else:
-            elapsed = 0
+        elapsed = time_elapsed_ticks(start, time_ticks())
+        consume_buffer(output, output_position)
+        samples[sample] = elapsed
         if sample == 0:
             best = elapsed
         elif elapsed < best:
             best = elapsed
-        total += elapsed
 
     (minimum) = best
-    return total / 10
+    return median_ticks(samples)
 
 @unsafe
-func measure_file(
-    iterations: uint32,
-    loop_cost: int64,
-    minimum *: int64
-) int64:
+func measure_file(iterations: uint32, minimum *: int64) int64:
     path: chain = "benchmark_redirect.bg.out"
     record: char[64]
+    samples: int64[10]
     value: int64 = 123456789
     handle *: void = Null
     start: int64 = 0
     elapsed: int64 = 0
-    total: int64 = 0
     best: int64 = 0
     written: usize = 0
 
     for warmup: uint32 ran (0, 5, 1):
+        value = 123456789
         handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(record, value)
+            value += 1
             WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
         time_ticks()
         CloseHandle(handle)
 
     for sample: uint32 ran (0, 10, 1):
+        value = 123456789
         handle = CreateFileA(path, 1073741824, 0, Null, 2, 128, Null)
         start = time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(record, value)
+            value += 1
             WriteFile(handle, $record[0], _redirect_count(written), Null, Null)
-        elapsed = time_us(start, time_ticks())
+        elapsed = time_elapsed_ticks(start, time_ticks())
         CloseHandle(handle)
-        if elapsed > loop_cost:
-            elapsed -= loop_cost
-        else:
-            elapsed = 0
+        samples[sample] = elapsed
         if sample == 0:
             best = elapsed
         elif elapsed < best:
             best = elapsed
-        total += elapsed
 
     (minimum) = best
-    return total / 10
+    return median_ticks(samples)
 
 @unsafe
 func report(
     label: chain,
     label_length: Len_t,
     minimum: int64,
-    average: int64,
+    median: int64,
     iterations: int64
 ) void:
     print(label)
-    print(" min_us=")
+    print(" min_ticks=")
     printint(minimum)
-    print(" avg_us=")
-    printint(average)
-    print(" per_call_us=")
-    printint(average / iterations)
+    print(" median_ticks=")
+    printint(median)
+    print(" per_call_ticks=")
+    printint(median / iterations)
     print("\n")
     return
 
 @unsafe
 func main() int32:
     iterations: uint32 = 1000
-    loop_cost: int64 = measure_empty_loop(iterations)
+    control_min: int64 = 0
+    control_median: int64 = measure_control(iterations, $control_min)
     buffer_min: int64 = 0
-    buffer_avg: int64 = measure_buffer(iterations, loop_cost, $buffer_min)
+    buffer_median: int64 = measure_buffer(iterations, $buffer_min)
     file_min: int64 = 0
-    file_avg: int64 = measure_file(iterations, loop_cost, $file_min)
+    file_median: int64 = measure_file(iterations, $file_min)
 
-    print("empty_loop_avg_us=")
-    printint(loop_cost)
-    print("\n")
-    report("buffer", buffer_min, buffer_avg, 1000)
-    report("file", file_min, file_avg, 1000)
+    report("control", control_min, control_median, 1000)
+    report("buffer", buffer_min, buffer_median, 1000)
+    report("file", file_min, file_median, 1000)
     return 0

@@ -9,6 +9,32 @@ from core.frontend.tools.imports import resolve_module_path
 
 
 class ModuleTests(unittest.TestCase):
+    def test_entry_module_selects_the_optimization_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'library.bg').write_text(
+                "clause Optimizations 'high'\n"
+                'public func value() uint32:\n'
+                '    return 3\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                "clause Optimizations 'dev'\n"
+                'import library\n'
+                'func main() int32:\n'
+                '    for i: uint32 ran (0, value(), 1):\n'
+                '        pass\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            module = Path(Compiler().compile(main, executable=False)).read_text(
+                encoding='utf-8'
+            )
+
+        self.assertIn('i.addr', module)
+
     def test_import_loads_bagron_module_before_main(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -19,6 +45,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import math\n'
                 'func main() int32:\n'
                 '    return doble(3)\n',
@@ -56,6 +83,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import math as m\n'
                 'func main() int32:\n'
                 '    return m.doble(3)\n',
@@ -77,6 +105,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import { doble as twice } from math\n'
                 'func main() int32:\n'
                 '    return twice(3)\n',
@@ -101,6 +130,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import { doble as n, triple as t } from math\n'
                 'func main() int32:\n'
                 '    return n(2) + t(2)\n',
@@ -144,6 +174,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import arrays as a\n'
                 'func main() int32:\n'
                 '    values: int32[3] = {1, 2, 3}\n'
@@ -465,6 +496,7 @@ class ModuleTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
+                "clause Optimizations 'dev'\n"
                 'import left\n'
                 'import right\n'
                 'func main() int32:\n'

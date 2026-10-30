@@ -18,8 +18,13 @@ class LLVMContextHandle:
         name: str,
         target_request: str | None = None,
         system_request: str | None = None,
+        optimization_profile: object | None = None,
     ):
-        target = resolve_target(target_request, system_request)
+        target = resolve_target(
+            target_request,
+            system_request,
+            optimization_profile,
+        )
         module = ir.Module(name=name, context=ir.Context())
         module.triple = target.triple
         module.data_layout = str(target.machine.target_data)
