@@ -7,13 +7,37 @@ from core.frontend.objects import (
     AggregateSymbol,
     EnumSymbol,
     FunctionSymbol,
-    NativeInclude,
     Variable,
 )
 
 from platform import system, architecture
 
 SemanticObject = Variable
+
+
+class FunctionLookup:
+    """Context-aware view of the flattened function namespace."""
+
+    def __init__(self, storage: 'Storage'):
+        self.storage = storage
+
+    def resolve_for(
+        self,
+        name: str,
+        current_function: object | None = None,
+    ) -> FunctionSymbol | None:
+        function = self.storage.functions.get(name)
+        if function is None or getattr(function, 'privacy', 'public') != 'private':
+            return function
+        origin = getattr(function, 'module_path', None)
+        active = getattr(current_function, 'module_path', None)
+        if active is None:
+            active = self.storage.active_module_path
+        return function if origin is None or origin == active else None
+
+    def get(self, name: str, default=None):
+        function = self.resolve_for(name)
+        return function if function is not None else default
 
 
 class Storage(diagnostic.Diagnostics):
@@ -46,6 +70,12 @@ class Storage(diagnostic.Diagnostics):
                 else set()
             )
         )
+        # The compiler changes this value while validating one module.  All
+        # lexical child scopes consult the module root so private declarations
+        # from another imported module cannot leak through the flattened AST.
+        self.active_module_path = (
+            parent.active_module_path if parent is not None else None
+        )
         
         if not Storage.Main:
             self.main, Storage.Main = True, self
@@ -55,6 +85,7 @@ class Storage(diagnostic.Diagnostics):
         self.privacy: str = 'public'
         self.optimizers = 'dev'
         self.stacklimit = -1
+        self.boot = 'none'
         if parent is None:
             self.system = system().lower()
             host_architecture = architecture()
@@ -71,13 +102,13 @@ class Storage(diagnostic.Diagnostics):
             self.privacy = parent.privacy
             self.optimizers = parent.optimizers
             self.stacklimit = parent.stacklimit
+            self.boot = parent.boot
         
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
         self.methods: dict[tuple[str, str], FunctionSymbol] = {}
         self.function_scopes: dict[str, Storage] = {}
         self.types: dict[str, EnumSymbol | AggregateSymbol] = {}
-        self.native_includes: list[NativeInclude] = []
         self.native_links: list[str] = []
         self.loaded_modules: list[str] = []
         self.function_aliases: dict[str, str] = {}
@@ -85,29 +116,48 @@ class Storage(diagnostic.Diagnostics):
         self.type_aliases: dict[str, str] = {}
         self.prep_sources: list[Path] = []
         self.prep_objects: list[Path] = []
+        # Generated ASM path -> source metadata used to improve Clang errors.
+        self.prep_metadata: dict[Path, tuple[Path, str, str, int]] = {}
         
     def define_clause(self, name: str, value: int | str | bool):
-        if      name == 'Visibility': self.privacy = str(value)
+        if      name == 'Privacy': self.privacy = str(value)
         elif    name in ('Optimizations', 'Optimizers'): self.optimizers = value
         elif    name == 'System'    : self.system = value
+        elif    name == 'Boot'      : self.boot = str(value).strip().lower()
         elif    name == 'Arch'      :
             self.architecture = str(value).lower()
             if self.architecture == 'auto':
                 self.pointer_size = self._host_pointer_size
             else:
                 target_architecture = self.architecture.split('-', 1)[0]
-                self.pointer_size = 4 if target_architecture in ('x86', 'i386', 'i686') else 8
+                self.pointer_size = 4 if target_architecture in (
+                    'x86', 'i386', 'i686', 'arm', 'armv6', 'armv7',
+                    'thumb', 'riscv32',
+                ) else 8
         elif    name == 'StackLimit': self.stacklimit = value 
         
     def contains_local(self, name: str) -> bool:
         return name in self.namespace
 
+    def _module_root(self) -> 'Storage':
+        current = self
+        while current.parent is not None:
+            current = current.parent
+        return current
+
+    def _is_visible(self, symbol: object | None) -> bool:
+        if symbol is None or getattr(symbol, 'privacy', 'public') != 'private':
+            return symbol is not None
+        origin = getattr(symbol, 'module_path', None)
+        active = self._module_root().active_module_path
+        return origin is None or origin == active
+
     def resolve(self, name: str) -> SemanticObject | None:
         symbol = self.namespace.get(name)
-        if symbol is not None:
+        if symbol is not None and self._is_visible(symbol):
             return symbol
         symbol = self.variable_aliases.get(name)
-        if symbol is not None:
+        if symbol is not None and self._is_visible(symbol):
             return symbol
         if self.parent is not None:
             if self._function_root is self and name not in self.global_names:
@@ -163,7 +213,7 @@ class Storage(diagnostic.Diagnostics):
         while current and current not in visited:
             visited.add(current)
             symbol = self.methods.get((current, name))
-            if symbol is not None:
+            if self._is_visible(symbol):
                 return symbol
             aggregate = self.resolve_type(current)
             current = getattr(aggregate, 'parent_type', None)
@@ -200,8 +250,20 @@ class Storage(diagnostic.Diagnostics):
 
     def resolve_type(self, name: str) -> EnumSymbol | AggregateSymbol | None:
         symbol = self.types.get(name)
-        if symbol is not None:
+        if symbol is not None and self._is_visible(symbol):
             return symbol
+        alias = self.type_aliases.get(name)
+        if alias is not None:
+            symbol = self.types.get(alias)
+            if symbol is not None and self._is_visible(symbol):
+                return symbol
         if self.parent is not None:
             return self.parent.resolve_type(name)
         return None
+
+    def resolve_module_value(self, name: str) -> SemanticObject | None:
+        """Resolve an explicit ``global`` binding with module visibility."""
+        symbol = self.namespace.get(name)
+        if symbol is None:
+            symbol = self.variable_aliases.get(name)
+        return symbol if self._is_visible(symbol) else None

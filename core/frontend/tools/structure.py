@@ -297,6 +297,7 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         is_volatile=volatile,
         alignment=alignment,
         bit_order=bit_order,
+        module_path=compiler.module_for_node(node),
     )
     if not compiler.storage.define_type(symbol):
         compiler.error(f'El tipo ya fue declarado: {name}')

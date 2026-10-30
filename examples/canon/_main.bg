@@ -12,8 +12,8 @@ import alphabet
 ; Globales estaticos y literales soportados por LLVM.
 limite: const int32 = 10
 factor: const double = 3.141516
-mascara: uBint<5> = 31
-valores: uBint<5>[] = {1, 2, 3}
+mascara: uint8 = 31
+valores: uint8[] = {1, 2, 3}
 puntero *: int32 = Null
 nombre: char[10] = "Hola"
 bytes: byte[6] = "x0x0xb"
@@ -27,7 +27,7 @@ enum Estado int8:
 
 struct Punto:
     x: int32
-    y: Bint<16>
+    y: int16
     estado: Estado
 
 mold PuntoBase:
@@ -50,7 +50,7 @@ struct Paquete:
 ; El molde comparte un unico bloque de memoria entre todas sus vistas.
 volatile mold Registro:
     entero: int32
-    crudo: uint
+    crudo: uint32
 
 ; El contenedor de flags es uint8. @order_msb asigna el primer campo desde
 ; el bit mas significativo; sin decorador, el orden es LSB.
@@ -71,6 +71,14 @@ func sumar(a: int32, b: int32) int32:
     puntero_local *: int32 = $resultado
     (puntero_local) += b
     return (puntero_local)
+
+; La forma `in` inserta la longitud exacta de la primera dimension y permite
+; demostrar el acceso al mismo array en una funcion segura.
+func sumar_array(values: int32[3], length: Len_t, element_size: Size_t) int32:
+    total: int32 = 0
+    for i: int32 in values:
+        total += values[i]
+    return total
 
 ; Struct, mold y flags se inicializan de forma determinista. Los campos de
 ; mold son vistas del mismo almacenamiento y los de flags se leen/escriben
@@ -109,7 +117,11 @@ func asm_status() int32:
 @unsafe
 func main() int32:
 
+    global NumericString
+    global AlphabetString
+
     print(NumericString)
     print(AlphabetString)
 
-    return 0
+    valores_locales: int32[3] = {10, 20, 30}
+    return sumar_array(valores_locales)

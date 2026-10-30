@@ -74,6 +74,43 @@ class FunctionEmitterBase:
             inbounds=True,
         )
 
+    def _runtime_function(
+        self,
+        name: str,
+        return_type: ir.Type,
+        argument_types: list[ir.Type],
+    ) -> ir.Function:
+        """Declare or reuse one small C-runtime boundary function."""
+        existing = self.module.globals.get(name)
+        if existing is not None:
+            if not isinstance(existing, ir.Function):
+                raise FunctionEmissionError(
+                    f'El simbolo runtime {name} no es una funcion'
+                )
+            return existing
+        return ir.Function(
+            self.module,
+            ir.FunctionType(return_type, argument_types),
+            name=name,
+        )
+
+    def _is_buffer_descriptor_type(self, value_type: ir.Type) -> bool:
+        return bool(
+            self.type_registry is not None
+            and self.type_registry.is_buffer_type(value_type)
+        )
+
+    def _emit_trap(self, builder: ir.IRBuilder) -> None:
+        trap = self.module.globals.get('llvm.trap')
+        if trap is None:
+            trap = ir.Function(
+                self.module,
+                ir.FunctionType(ir.VoidType(), []),
+                name='llvm.trap',
+            )
+        builder.call(trap, [])
+        builder.unreachable()
+
     def emit_storage(self, storage: Storage) -> None:
         self._pointer_size = getattr(storage, 'pointer_size', 8)
         method_symbols = list(getattr(storage, 'methods', {}).values())
@@ -132,7 +169,7 @@ class FunctionEmitterBase:
                 and symbol.name not in emitted
                 and not symbol.is_external
             ):
-                if symbol.return_asm_node is None:
+                if symbol.return_asm_node is None and not symbol.has_asm_body:
                     self._emit_function(symbol, self._functions[symbol.name])
                 emitted.add(symbol.name)
 

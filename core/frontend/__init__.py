@@ -9,11 +9,9 @@ from core.frontend.syntax.items.clauses import CLAUSE
 from core.frontend.syntax.items.enum_decl import ENUM
 from core.frontend.syntax.items.externs import EXTERN
 from core.frontend.syntax.items.func_decl import FUNCTION
-from core.frontend.syntax.items.includes import INCLUDE
 from core.frontend.syntax.items.imports import IMPORT
 from core.frontend.syntax.items.statements import FOR, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
-from core.frontend.syntax.items.typealias_decl import TYPEALIAS
 from core.frontend.syntax.items.value import LOGICAL_NOT, POSTFIX_EXPR, VALUE
 from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
@@ -45,16 +43,13 @@ class ENTRYPOINT(cmb.RuleItem):
     entrypoint = cmb.Alt(
         cmb.Ref(VAR_ASSIGNATION),
         cmb.Ref(IMPORT),
-        cmb.Ref(INCLUDE),
         cmb.Ref(EXTERN),
-        # cmb.Ref(OBJECT),
         cmb.Ref(CLAUSE),
         cmb.Ref(FUNCTION),
         cmb.Ref(CLASS),
         cmb.Ref(STRUCT),
         cmb.Ref(MOLD),
         cmb.Ref(FLAGS),
-        cmb.Ref(TYPEALIAS),
         cmb.Ref(ENUM),
         cmb.Ref(WHILE),
         cmb.Ref(FOR),

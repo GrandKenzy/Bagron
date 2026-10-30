@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -27,6 +29,8 @@ class BuildArtifacts:
     executable: Path
     prep_sources: tuple[Path, ...] = ()
     prep_objects: tuple[Path, ...] = ()
+    raw_image: Path | None = None
+    boot_image: Path | None = None
 
 
 class LLVMBackend:
@@ -37,11 +41,13 @@ class LLVMBackend:
             context = LLVMContextHandle.create(
                 name=Path(storage.root).stem,
                 target_request=storage.architecture,
+                system_request=storage.system,
             )
             type_registry = LLVMTypeRegistry(
                 context.module,
                 storage.types,
                 context.target.machine.target_data,
+                pointer_size=getattr(storage, 'pointer_size', 8),
             )
             GlobalEmitter(context.module, type_registry).emit_storage(storage)
             FunctionEmitter(context.module, type_registry).emit_storage(storage)
@@ -71,8 +77,13 @@ class LLVMBackend:
 
         stem = root.stem
         ir_path = build_dir / f'{stem}.ll'
-        object_path = build_dir / f'{stem}.obj'
-        executable_path = build_dir / f'{stem}.exe'
+        baremetal = str(getattr(storage, 'system', '')).lower() == 'baremetal'
+        boot = str(getattr(storage, 'boot', 'none')).lower()
+        object_suffix = '.o' if baremetal else '.obj'
+        object_path = build_dir / f'{stem}{object_suffix}'
+        executable_path = build_dir / (
+            f'{stem}.bin' if baremetal else f'{stem}.exe'
+        )
 
         ir_path.write_text(module_text, encoding='utf-8')
         try:
@@ -84,29 +95,54 @@ class LLVMBackend:
             prep_objects = self._assemble_prep_sources(
                 storage.prep_sources,
                 context.target.triple,
+                getattr(storage, 'prep_metadata', None),
             )
         except BackendError:
             raise
 
         storage.prep_objects = prep_objects
-        self._link_object(
-            [object_path, *prep_objects],
-            executable_path,
-            context.target.triple,
-            storage.native_links,
-        )
+        objects = [object_path, *prep_objects]
+        raw_image = None
+        boot_image = None
+        if baremetal:
+            if boot not in {'none', 'multiboot2'}:
+                raise BackendError(
+                    f'El perfil Boot {boot!r} esta reconocido, pero aun no '
+                    'esta implementado por el backend bare-metal'
+                )
+            linker_script = build_dir / f'{stem}.ld'
+            raw_image = build_dir / f'{stem}.bin'
+            self._link_baremetal(
+                objects,
+                raw_image,
+                context.target.triple,
+                linker_script,
+            )
+            if boot == 'multiboot2':
+                boot_image = self._build_baremetal_iso(raw_image, build_dir)
+                executable_path = boot_image
+        else:
+            self._link_object(
+                objects,
+                executable_path,
+                context.target.triple,
+                storage.native_links,
+            )
         return BuildArtifacts(
             ir=ir_path,
             object_file=object_path,
             executable=executable_path,
             prep_sources=tuple(storage.prep_sources),
             prep_objects=tuple(prep_objects),
+            raw_image=raw_image,
+            boot_image=boot_image,
         )
 
     @staticmethod
     def _assemble_prep_sources(
         sources: Sequence[Path],
         triple: str,
+        metadata: dict[Path, tuple[Path, str, str, int]] | None = None,
     ) -> list[Path]:
         if not sources:
             return []
@@ -120,7 +156,8 @@ class LLVMBackend:
         objects: list[Path] = []
         for source in sources:
             source = Path(source)
-            object_path = source.with_suffix('.obj')
+            object_suffix = '.obj' if 'windows' in triple.lower() else '.o'
+            object_path = source.with_suffix(object_suffix)
             command = [
                 clang,
                 f'--target={triple}',
@@ -150,12 +187,309 @@ class LLVMBackend:
 
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout).strip()
+                detail = LLVMBackend._format_assembler_diagnostic(
+                    source,
+                    detail,
+                    metadata.get(source) if metadata else None,
+                )
                 raise BackendError(
-                    f'Clang no pudo ensamblar {source} '
-                    f'(codigo {result.returncode}): {detail}'
+                    f'Error de ensamblador en {source}: {detail}'
                 )
             objects.append(object_path)
         return objects
+
+    @staticmethod
+    def _link_baremetal(
+        object_paths: Sequence[Path],
+        output_path: Path,
+        triple: str,
+        linker_script: Path,
+    ) -> None:
+        """Link ELF objects into a flat bare-metal binary."""
+        ld = shutil.which('ld.lld')
+        if ld is None:
+            raise BackendError(
+                'No se encontro ld.lld para enlazar el binario bare-metal'
+            )
+
+        architecture = triple.split('-', 1)[0].lower()
+        emulations = {
+            'i386': 'elf_i386',
+            'i686': 'elf_i386',
+            'x86': 'elf_i386',
+            'x86_64': 'elf_x86_64',
+            'amd64': 'elf_x86_64',
+            'aarch64': 'aarch64elf',
+            'arm': 'armelf',
+            'armv6': 'armelf',
+            'armv7': 'armelf',
+            'riscv32': 'elf32lriscv',
+            'riscv64': 'elf64lriscv',
+        }
+        emulation = emulations.get(architecture)
+        if emulation is None:
+            raise BackendError(
+                f'No hay una emulacion ld.lld configurada para Arch {architecture!r}'
+            )
+        linker_script.write_text(
+            '''ENTRY(_start)
+SECTIONS
+{
+    . = 1M;
+
+    .multiboot2 ALIGN(8) :
+    {
+        KEEP(*(.multiboot2))
+    }
+
+    .text ALIGN(16) :
+    {
+        *(.text*)
+    }
+
+    .rodata ALIGN(8) :
+    {
+        *(.rodata*)
+    }
+
+    .data ALIGN(8) :
+    {
+        *(.data*)
+    }
+
+    .bss ALIGN(16) :
+    {
+        *(COMMON)
+        *(.bss*)
+    }
+}
+''',
+            encoding='utf-8',
+        )
+
+        command = [
+            ld,
+            '-m',
+            emulation,
+            '-T',
+            str(linker_script),
+            '--oformat=binary',
+            '-o',
+            str(output_path),
+            *(str(path) for path in object_paths),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise BackendError(
+                'El enlace bare-metal con ld.lld excedio el limite de 60 segundos'
+            ) from error
+        except OSError as error:
+            raise BackendError(
+                f'No se pudo ejecutar ld.lld para el binario bare-metal: {error}'
+            ) from error
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError(
+                f'ld.lld no pudo enlazar el binario bare-metal '
+                f'(codigo {result.returncode}): {detail}'
+            )
+
+    @staticmethod
+    def _find_baremetal_tools() -> tuple[str, str, str | None] | None:
+        """Return native or WSL GRUB tooling available on this machine."""
+        grub = shutil.which('grub-mkrescue')
+        xorriso = shutil.which('xorriso')
+        if grub and xorriso:
+            return grub, xorriso, None
+
+        wsl = shutil.which('wsl.exe') or shutil.which('wsl')
+        if wsl is None:
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    wsl,
+                    '-e',
+                    'sh',
+                    '-lc',
+                    'command -v grub-mkrescue && command -v xorriso',
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+        if result.returncode != 0:
+            return None
+        return wsl, wsl, wsl
+
+    @staticmethod
+    def _wsl_path(wsl: str, path: Path) -> str:
+        try:
+            result = subprocess.run(
+                [wsl, '-e', 'wslpath', '-a', str(path)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise BackendError(
+                f'No se pudo convertir la ruta para WSL: {path}'
+            ) from error
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError(
+                f'WSL no pudo convertir la ruta {path}: {detail}'
+            )
+        return result.stdout.strip()
+
+    @staticmethod
+    def _build_baremetal_iso(binary: Path, build_dir: Path) -> Path:
+        tools = LLVMBackend._find_baremetal_tools()
+        if tools is None:
+            raise BackendError(
+                'No se encontraron las herramientas para crear la ISO bare-metal: '
+                'se requieren grub-mkrescue y xorriso. '
+                'Instalalos en PATH o en WSL (Ubuntu: '
+                'sudo apt install grub-pc-bin grub-common xorriso).'
+            )
+
+        data = binary.read_bytes()
+        valid_header = False
+        for offset in range(0, min(len(data), 32768), 8):
+            if offset + 16 > len(data):
+                break
+            magic, architecture, length, checksum = struct.unpack_from(
+                '<IIII', data, offset
+            )
+            if (
+                magic == 0xE85250D6
+                and architecture == 0
+                and length >= 16
+                and offset + length <= len(data)
+                and (magic + architecture + length + checksum) & 0xFFFFFFFF == 0
+            ):
+                valid_header = True
+                break
+        if not valid_header:
+            raise BackendError(
+                f'El binario bare-metal {binary} no contiene una cabecera '
+                'Multiboot2 alineada dentro de los primeros 32 KiB'
+            )
+
+        iso_root = build_dir / 'iso'
+        boot_dir = iso_root / 'boot'
+        grub_dir = boot_dir / 'grub'
+        grub_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(binary, boot_dir / binary.name)
+        (grub_dir / 'grub.cfg').write_text(
+            'set timeout=0\n'
+            'set default=0\n'
+            '\n'
+            'menuentry "Bagron bare-metal" {\n'
+            f'    multiboot2 /boot/{binary.name}\n'
+            '    boot\n'
+            '}\n',
+            encoding='utf-8',
+        )
+
+        iso_path = build_dir / f'{binary.stem}.iso'
+        tool, _, wsl = tools
+        if wsl is None:
+            command = [tool, '-o', str(iso_path), str(iso_root)]
+        else:
+            wsl_root = LLVMBackend._wsl_path(wsl, iso_root)
+            wsl_iso = LLVMBackend._wsl_path(wsl, iso_path)
+            command = [
+                wsl,
+                '-e',
+                'grub-mkrescue',
+                '-o',
+                wsl_iso,
+                wsl_root,
+            ]
+
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise BackendError(
+                'La creacion de la ISO bare-metal excedio el limite de 60 segundos'
+            ) from error
+        except OSError as error:
+            raise BackendError(
+                f'No se pudo ejecutar grub-mkrescue: {error}'
+            ) from error
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise BackendError(
+                f'grub-mkrescue no pudo crear {iso_path} '
+                f'(codigo {result.returncode}): {detail}'
+            )
+        return iso_path
+
+    @staticmethod
+    def _format_assembler_diagnostic(
+        generated_source: Path,
+        detail: str,
+        metadata: tuple[Path, str, str, int] | None,
+    ) -> str:
+        """Map Clang's generated-file location back to the Bagron source."""
+        if metadata is None:
+            return f'Clang: {detail}'
+
+        source, function_name, dialect, prep_line = metadata
+        normalized = dialect.strip().lower()
+        if normalized == 'intel':
+            normalized = 'gas-intel'
+
+        first_line, *rest = detail.splitlines()
+        match = re.search(r':(?P<line>\d+):(?P<column>\d+):\s*', first_line)
+        if match is None:
+            return (
+                f'{source}:{prep_line}: en la funcion @assembler '
+                f'{function_name} (dialecto {normalized}): {detail}'
+            )
+
+        generated_line = int(match.group('line'))
+        # Generated header: syntax, .text, .globl, symbol, optional status.
+        try:
+            generated_lines = generated_source.read_text(encoding='utf-8').splitlines()
+        except OSError:
+            generated_lines = []
+        header_lines = 5 if (
+            len(generated_lines) > 4
+            and generated_lines[4].strip() in {'mov eax, 1', 'movl $1, %eax'}
+        ) else 4
+        source_line = prep_line + max(generated_line - header_lines, 0)
+        message = first_line[match.end():].strip()
+        formatted = (
+            f'{source}:{source_line}: en la funcion @assembler {function_name} '
+            f'(dialecto {normalized}, generado desde {generated_source}): '
+            f'{message}'
+        )
+        if rest:
+            formatted += '\n' + '\n'.join(rest)
+        return formatted
 
     @staticmethod
     def _link_object(

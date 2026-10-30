@@ -38,13 +38,11 @@ KEYWORDS = {
     'for': '#D16969',
     'while': '#D16969',
     'ran': '#D16969',
+    'in': '#D16969',
 
     # Módulos, imports y cláusulas
     'import': '#E5C07B',
-    'include': '#E5C07B',
     'extern': '#E5C07B',
-    'link': '#E5C07B',
-    'object': '#E5C07B',
     'from': '#E5C07B',
     'clause': '#F5D15D',
 
@@ -58,15 +56,12 @@ KEYWORDS = {
     'enum': '#17A2B8',
     'mold': '#17A2B8',
     'flags': '#17A2B8',
-    'TypeAlias': '#007535',
 
     # Modificadores de bajo nivel
     'inline': '#E2B93D',
     'packed': '#E2B93D',
     'align': '#E2B93D',
     'volatile': '#E2B93D',
-    '__instfron__': '#E2B93D',
-    '__fref__': "#E2B93D",
 
     # Literales y utilidades del sistema
     'Null': '#F50000',
@@ -75,10 +70,9 @@ KEYWORDS = {
     'as': '#FFFFFF',
     'const': '#FFFFFF',
     'asm': '#AD0997',
-    
+
     # preprocesadores
-    "prep": "#AD0997",
-    "macro": "#AD0997"
+    "prep": "#AD0997"
 }
 
 INTRINSIC_TYPES = {
@@ -120,10 +114,7 @@ TYPES = list(INTRINSIC_TYPES.keys())
 KEYWORDS_BY_GROUP = {
     'imports': [
         'import',
-        'include',
         'extern',
-        'link',
-        'object',
         'from',
     ],
     'clauses': CLAUSES,
@@ -141,6 +132,7 @@ KEYWORDS_BY_GROUP = {
         'for',
         'while',
         'ran',
+        'in',
     ],
     'skipers': [
         'continue',
@@ -158,13 +150,11 @@ KEYWORDS_BY_GROUP = {
         'packed',
         'align',
         'volatile',
-        'TypeAlias',
         'struct',
         'enum',
         'mold',
         'flags',
         'class',
-        'sizeof',
         'const',
         'Null',
         'true',
@@ -172,8 +162,7 @@ KEYWORDS_BY_GROUP = {
         'asm',
     ],
     'preprocessors': [
-        'prep',
-        'macro'
+        'prep'
     ]
 }
 

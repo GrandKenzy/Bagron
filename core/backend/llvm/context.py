@@ -13,8 +13,13 @@ class LLVMContextHandle:
     target: TargetHandle
 
     @classmethod
-    def create(cls, name: str, target_request: str | None = None):
-        target = resolve_target(target_request)
+    def create(
+        cls,
+        name: str,
+        target_request: str | None = None,
+        system_request: str | None = None,
+    ):
+        target = resolve_target(target_request, system_request)
         module = ir.Module(name=name, context=ir.Context())
         module.triple = target.triple
         module.data_layout = str(target.machine.target_data)

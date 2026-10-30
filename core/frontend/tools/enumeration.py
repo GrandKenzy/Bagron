@@ -139,6 +139,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             name=name,
             base_type=_resolve_base_type(compiler, node),
             privacy=_privacy(node),
+            module_path=compiler.module_for_node(node),
         )
         if not compiler.storage.define_type(symbol):
             compiler.error(f'El tipo ya fue declarado: {name}')

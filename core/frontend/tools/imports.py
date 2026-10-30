@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Iterable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,6 +15,7 @@ class ImportRequest:
     alias: str | None = None
     selected: tuple[tuple[str, str], ...] = ()
     target: Path | None = None
+    source: Path | None = None
 from gram import ast as gast
 
 
@@ -66,7 +68,11 @@ def module_name(node: gast.ASTRef) -> str | None:
     return None
 
 
-def parse_request(node: gast.ASTRef, target: Path | None = None) -> ImportRequest | None:
+def parse_request(
+    node: gast.ASTRef,
+    target: Path | None = None,
+    source: Path | None = None,
+) -> ImportRequest | None:
     tokens = list(_tokens(node))
     name = module_name(node)
     if name is None:
@@ -85,8 +91,8 @@ def parse_request(node: gast.ASTRef, target: Path | None = None) -> ImportReques
             if _token_kind(token) != 'IDENT':
                 index += 1
                 continue
-            source = str(_token_value(token))
-            local = source
+            source_name = str(_token_value(token))
+            local = source_name
             if (
                 index + 2 < from_index
                 and _token_value(tokens[index + 1]) == 'as'
@@ -96,8 +102,13 @@ def parse_request(node: gast.ASTRef, target: Path | None = None) -> ImportReques
                 index += 3
             else:
                 index += 1
-            selected.append((source, local))
-        return ImportRequest(name, selected=tuple(selected), target=target)
+            selected.append((source_name, local))
+        return ImportRequest(
+            name,
+            selected=tuple(selected),
+            target=target,
+            source=source,
+        )
 
     import_index = next(
         (index for index, token in enumerate(tokens)
@@ -105,7 +116,7 @@ def parse_request(node: gast.ASTRef, target: Path | None = None) -> ImportReques
         None,
     )
     if import_index is None:
-        return ImportRequest(name, target=target)
+        return ImportRequest(name, target=target, source=source)
 
     alias = None
     for index in range(import_index + 1, len(tokens) - 1):
@@ -115,7 +126,7 @@ def parse_request(node: gast.ASTRef, target: Path | None = None) -> ImportReques
         ):
             alias = str(_token_value(tokens[index + 1]))
             break
-    return ImportRequest(name, alias=alias, target=target)
+    return ImportRequest(name, alias=alias, target=target, source=source)
 
 
 def _first_identifier(node: object) -> str | None:
@@ -126,6 +137,52 @@ def _first_identifier(node: object) -> str | None:
         if found is not None:
             return found
     return None
+
+
+def _last_identifier(node: object) -> str | None:
+    found: str | None = None
+    if _token_kind(node) == 'IDENT':
+        found = str(_token_value(node))
+    for child in _children(node):
+        candidate = _last_identifier(child)
+        if candidate is not None:
+            found = candidate
+    return found
+
+
+def _definition_name(node: gast.ASTRef) -> str | None:
+    """Return the declared name, excluding decorators and type identifiers."""
+    if node.name == 'FUNCTION':
+        signature = next(
+            (
+                child for child in _children(node)
+                if getattr(child, 'name', None) == 'FUNCTION_SIGNATURE'
+            ),
+            None,
+        )
+        return _first_identifier(signature) if signature is not None else None
+    if node.name in {'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM'}:
+        signature = next(
+            (
+                child for child in _children(node)
+                if getattr(child, 'name', None) == f'{node.name}_SIGNATURE'
+            ),
+            None,
+        )
+        if signature is not None:
+            return _first_identifier(signature)
+        return _first_identifier(node)
+    if node.name == 'VAR':
+        declaration = next(
+            (
+                child for child in _children(node)
+                if getattr(child, 'name', None)
+                in {'VAR_DECLARATION', 'VAR_INITIALIZATION'}
+            ),
+            None,
+        )
+        return _first_identifier(declaration) if declaration is not None else None
+    return _first_identifier(node)
 
 
 def _is_public(node: object) -> bool:
@@ -150,18 +207,17 @@ def _is_public(node: object) -> bool:
 def public_definition_names(nodes: list[gast.ASTRef]) -> set[str]:
     definitions = {
         'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM',
-        'TYPEALIAS',
     }
     names = {
         name
         for node in nodes
         if node.name in definitions and _is_public(node)
-        if (name := _first_identifier(node)) is not None
+        if (name := _definition_name(node)) is not None
     }
 
     def extern_names(node: object) -> set[str]:
         if getattr(node, 'name', None) == 'EXTERN_FUNCTION':
-            name = _first_identifier(node)
+            name = _definition_name(node)
             return {name} if name is not None else set()
         names: set[str] = set()
         for child in _children(node):
@@ -188,7 +244,15 @@ def bind_aliases(compiler: Compiler) -> None:
         else:
             bindings = tuple((name, name) for name in exports)
 
+        seen_local: set[str] = set()
         for source_name, local_name in bindings:
+            if local_name in seen_local:
+                compiler.error(
+                    f'El alias importado se repite en {request.module}: '
+                    f'{local_name}'
+                )
+                continue
+            seen_local.add(local_name)
             if source_name not in exports:
                 compiler.error(
                     f'El simbolo {source_name} no es publico en el modulo '
@@ -198,30 +262,54 @@ def bind_aliases(compiler: Compiler) -> None:
             symbol = compiler.storage.functions.get(source_name)
             if symbol is not None:
                 existing = compiler.storage.functions.get(local_name)
-                if existing is not None and existing is not symbol:
+                existing_alias = compiler.storage.function_aliases.get(local_name)
+                if (
+                    (existing is not None and existing is not symbol)
+                    or (
+                        existing_alias is not None
+                        and existing_alias != source_name
+                    )
+                ):
                     compiler.error(f'El simbolo importado ya existe: {local_name}')
                     continue
-                compiler.storage.functions[local_name] = symbol
+                if existing is None:
+                    compiler.storage.functions[local_name] = symbol
                 if local_name != source_name:
                     compiler.storage.function_aliases[local_name] = source_name
                 continue
 
             variable = compiler.storage.namespace.get(source_name)
-            if variable is not None and local_name != source_name:
-                compiler.storage.variable_aliases[local_name] = variable
+            if variable is not None:
+                existing = compiler.storage.variable_aliases.get(local_name)
+                if existing is not None and existing is not variable:
+                    compiler.error(f'El simbolo importado ya existe: {local_name}')
+                    continue
+                if local_name != source_name:
+                    compiler.storage.variable_aliases[local_name] = variable
                 continue
 
             type_symbol = compiler.storage.types.get(source_name)
-            if type_symbol is not None and local_name != source_name:
-                compiler.storage.type_aliases[local_name] = source_name
+            if type_symbol is not None:
+                existing = compiler.storage.type_aliases.get(local_name)
+                if existing is not None and existing != source_name:
+                    compiler.error(f'El simbolo importado ya existe: {local_name}')
+                    continue
+                if local_name != source_name:
+                    compiler.storage.type_aliases[local_name] = source_name
+                continue
+
+            compiler.error(
+                f'El simbolo publico {source_name} no pudo resolverse en el '
+                f'modulo {request.module}'
+            )
 
 
 def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[Path]:
-    relative = Path(name)
-    if relative.suffix and relative.suffix != '.bg':
+    if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
 
-    filename = relative if relative.suffix == '.bg' else relative.with_suffix('.bg')
+    relative = Path(name)
+    filename = relative.with_suffix('.bg')
     roots = [
         current_file.parent,
         project_root,
@@ -229,10 +317,22 @@ def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[
         project_root / 'libs',
     ]
     candidates: list[Path] = []
+    seen: set[Path] = set()
     for root in roots:
-        candidates.append(root / filename)
-        candidates.append(root / relative / 'main.bg')
+        for candidate in (root / filename, root / relative / 'main.bg'):
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                candidates.append(resolved)
     return candidates
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def resolve_module_path(
@@ -243,10 +343,30 @@ def resolve_module_path(
     project_root = compiler.project_root
     if project_root is None:
         project_root = current_file.parent
+    project_root = project_root.resolve()
+    current_file = current_file.resolve()
+
+    if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
+        compiler.error(
+            f'El nombre de modulo {name!r} no es valido; usa un identificador '
+            'simple sin rutas ni extensiones'
+        )
+        return None
+    if not _is_within(current_file, project_root):
+        compiler.error(
+            f'El modulo importador esta fuera de la raiz del proyecto: '
+            f'{current_file}'
+        )
+        return None
 
     for candidate in _candidate_paths(name, current_file, project_root):
-        if candidate.is_file() and candidate.suffix == '.bg':
-            return candidate.resolve()
+        candidate = candidate.resolve()
+        if (
+            candidate.suffix == '.bg'
+            and _is_within(candidate, project_root)
+            and candidate.is_file()
+        ):
+            return candidate
 
     compiler.error(
         f'No se encontro el modulo Bagron {name!r} desde {current_file}'

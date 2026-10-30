@@ -210,10 +210,12 @@ metatipos expansivos que aparecen en firmas de funciones y cuyo argumento se
 genera automáticamente durante la compilación. Internamente usan el ancho de
 `usize` del target.
 
-`Len_t` representa la longitud exacta del dato asociado. Solo funciona con
-arrays y con el caso especial de `chain`, que es estático, inmutable y seguro:
+`Len_t` representa la longitud exacta del dato asociado. Funciona con arrays,
+con `buffer` y con el caso especial de `chain`, que es estático, inmutable y
+seguro:
 
 - en un array, usa la cantidad declarada de elementos;
+- en un `buffer`, usa la cantidad de bytes de su descriptor;
 - en un `chain` estático, incluye el terminador `NUL`;
 - conserva los elementos reservados aunque el texto inicial sea más corto.
 
@@ -254,6 +256,19 @@ func send(data: int32[], length: Len_t, bytes: Size_t) void:
 send(values)              ; Bagron expande Len_t a 3 y Size_t a 4
 ```
 
+Un `buffer` es distinto de un array: su descriptor ya contiene la capacidad
+en bytes, por lo que solo puede declarar `Len_t`; `Size_t` no aplica porque
+cada elemento del buffer es un byte:
+
+```bg
+raw: buffer[32] = 0
+
+func inspect(data: buffer[], length: Len_t) usize:
+    return length
+
+inspect(raw)              ; Bagron extrae la longitud del descriptor
+```
+
 Los metatipos siempre se expanden hacia la derecha del parámetro visible al
 que están asociados. Para cada array, `Len_t` y `Size_t` son obligatorios y
 deben aparecer como un bloque consecutivo en ese orden. Se pueden pedir
@@ -283,7 +298,8 @@ En cualquier firma que reciba un array, `Len_t` y `Size_t` son obligatorios y
 deben aparecer consecutivamente en ese orden, incluso si la función es
 `@unsafe`. `T[]` en una firma no declara almacenamiento dinámico: representa
 un array estático recibido con metadatos que pueden reenviarse. `chain` es la
-excepción y conserva su firma especial con `Len_t`.
+excepción y conserva su firma especial con `Len_t`. `buffer` tiene otra regla
+específica: requiere `Len_t` y rechaza `Size_t`.
 
 ## `Bint<n>` y `uBint<n>`
 

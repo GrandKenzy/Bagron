@@ -20,7 +20,7 @@ en un ejecutable nativo:
   archivo `.asm` y un objeto nativo;
 - una función `sumar` y una comprobación de agregados emitidas en LLVM y
   llamadas desde `main`;
-- `for` numéricos con iteradores `int32` e `int8`, rangos ascendente y descendente, y paso;
+- `for` numéricos con `ran` y recorrido de arrays con `for i: int32 in values:`;
 - `func main() int32` como entrypoint LLVM y código de salida.
 
 Ejecutar desde la raíz del repositorio:

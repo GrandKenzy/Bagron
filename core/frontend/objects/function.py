@@ -52,6 +52,11 @@ class FunctionSymbol:
     decorators: tuple[str, ...] = ()
     is_inline: bool = False
     return_asm_node: object | None = None
+    # A raw ``#prep`` body is emitted as a native function and must not also
+    # receive an LLVM function body.  This is separate from
+    # ``return_asm_node`` because void assembler functions do not need
+    # ``return asm``.
+    has_asm_body: bool = False
     external_library: str | None = None
     calling_convention: str | None = None
     # Numeric `for` iterators are compiler-owned loop-local bindings.  They
@@ -73,6 +78,11 @@ class FunctionSymbol:
     is_method: bool = False
     is_static: bool = False
     receiver_name: str | None = None
+    # Origin and visibility are retained after modules are flattened into the
+    # compiler storage.  They let semantic lookup enforce module boundaries
+    # without changing the emitted ABI name for public functions.
+    module_path: object | None = None
+    privacy: str = 'public'
 
     @property
     def is_external(self) -> bool:

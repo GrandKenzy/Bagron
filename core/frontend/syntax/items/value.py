@@ -30,10 +30,30 @@ class VALUE(cmb.RuleItem):
     nodeable = True
 
 
+class _OPTIONAL_ARRAY_DIMENSION(cmb.Combinator):
+    """Parse a dimension only when the suffix is not ``[]``.
+
+    ``Opt(Ref(VALUE))`` cannot be used here because the expression parser
+    stages a deep failure when its first token is ``]``.  A small lookahead
+    keeps the long-standing inferred-array syntax intact while still allowing
+    dimensions such as ``[8 * 100]``.
+    """
+
+    def parse(self, analyzer):
+        parser = analyzer.parser
+        token = parser.peek() if not parser.empty() else None
+        if getattr(getattr(token, 'token', None), 'name', None) == 'RBRACKET':
+            return []
+        return analyzer.visitor(cmb.Ref(VALUE))
+
+
 class ARRAY_SUFFIX(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('LBRACKET'),
-        cmb.Opt(cmb.MatchToken('NUMBER')),
+        # Fixed dimensions may be constant arithmetic expressions.  Keeping
+        # the expression in the AST lets the semantic pass distinguish a
+        # compile-time capacity from an inferred dimension.
+        _OPTIONAL_ARRAY_DIMENSION(),
         cmb.MatchToken('RBRACKET'),
     )
     nodeable = False

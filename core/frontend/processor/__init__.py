@@ -15,9 +15,20 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     # Las clausulas deben resolverse antes de variables para fijar target,
     # visibilidad y demas opciones independientemente del orden del archivo.
     for node in nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         if node.name == 'CLAUSE':
             try:
-                compiler.storage.define_clause(*tools.clauses.validate(node))
+                clause_name, clause_value = tools.clauses.validate(node)
+                module_path = compiler.module_for_node(node)
+                if (
+                    clause_name in ('System', 'Arch', 'Boot')
+                    and module_path != compiler.main_module_path
+                ):
+                    # Imported modules are checked against the entry-module
+                    # target before this pass.  Their target clauses must not
+                    # overwrite the single backend target selected by main.
+                    continue
+                compiler.storage.define_clause(clause_name, clause_value)
             except ValueError as error:
                 compiler.error(str(error))
 
@@ -25,6 +36,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     tools.enumeration.collect(compiler, nodes)
     tools.function.collect(compiler, nodes)
     for node in nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         if node.name == 'EXTERN':
             tools.externs.collect(compiler, node)
 
@@ -33,6 +45,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     # struct field table during semantic inference, even when the declaration
     # appears before the type's source body is visited in the normal pass.
     for node in nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         if node.name == 'CLASS':
             tools.classes.validate(compiler, node)
         elif node.name in ('STRUCT', 'MOLD', 'FLAGS'):
@@ -51,11 +64,13 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
 
     global_nodes = [node for node in nodes if node.name == 'VAR']
     for node in global_nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         # Register every global first so address initializers can refer to a
         # declaration that appears later in the file.
         tools.variable.collect_global(compiler, node, validate=False)
 
     for node in global_nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         handle = tools.variable.handle_variable(node)
         if handle is None:
             continue
@@ -71,6 +86,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     tools.imports.bind_aliases(compiler)
 
     for node in nodes:
+        compiler.activate_module(compiler.module_for_node(node))
         name: str = node.name
         if name == 'CLAUSE':
             continue
@@ -90,14 +106,8 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             # initializers can resolve their fields.
             continue
 
-        elif name == 'TYPEALIAS':
-            tools.typealias.validate(compiler, node)
-
         elif name == 'IMPORT':
             tools.imports.validate(compiler, node)
-
-        elif name == 'INCLUDE':
-            tools.includes.validate(compiler, node)
 
         elif name == 'EXTERN':
             continue
@@ -113,3 +123,4 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     # Methods live inside CLASS nodes rather than in the top-level function
     # list, but use the same body validator and local-variable collector.
     tools.classes.process_methods(compiler, nodes)
+    compiler.activate_module(None)

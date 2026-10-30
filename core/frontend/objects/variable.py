@@ -19,6 +19,7 @@ class Variable:
         self.value_info = None
         self.initialized = value is not None
         self.privacy = 'public'
+        self.module_path = None
         self.scope_kind = 'global'
         self.is_for_iterator = False
         self.is_receiver = False

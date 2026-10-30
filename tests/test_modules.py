@@ -3,12 +3,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-import subprocess
 
 from core.compiler import CompilationError, Compiler
+from core.frontend.tools.imports import resolve_module_path
 
 
-class ModuleAndNativeIncludeTests(unittest.TestCase):
+class ModuleTests(unittest.TestCase):
     def test_import_loads_bagron_module_before_main(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -88,29 +88,267 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
 
         self.assertIn('call i32 @"doble"(i32 3)', module)
 
-    def test_include_resolves_header_and_link(self):
+    def test_imported_alias_preserves_array_expansion_signature(self):
         with tempfile.TemporaryDirectory() as directory:
-            main = Path(directory) / '_main.bg'
+            root = Path(directory)
+            (root / 'arrays.bg').write_text(
+                'func total(values: int32[], length: Len_t, size: Size_t) int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
             main.write_text(
-                'include "windows" link "kernel32"\n'
+                'import arrays as a\n'
+                'func main() int32:\n'
+                '    values: int32[3] = {1, 2, 3}\n'
+                '    return a.total(values)\n',
+                encoding='utf-8',
+            )
+
+            module_path = Compiler().compile(main, executable=False)
+            module = Path(module_path).read_text(encoding='utf-8')
+
+        self.assertIn('define i32 @"total"', module)
+        self.assertRegex(module, r'call i32 @"total"\([^)]*i64 3, i64 4\)')
+
+    def test_private_function_is_not_visible_through_flattened_import_storage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'hidden.bg').write_text(
+                'private func secret() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import hidden\n'
+                'func main() int32:\n'
+                '    return secret()\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'funcion no existe'):
+                Compiler().compile(main, executable=False)
+
+    def test_private_global_is_not_accepted_by_global_declaration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'hidden.bg').write_text(
+                'private secret: int32 = 7\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import hidden\n'
+                'func main() int32:\n'
+                '    global secret\n'
+                '    return secret\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'solo puede referirse'):
+                Compiler().compile(main, executable=False)
+
+    def test_private_class_is_not_constructible_from_importer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'hidden.bg').write_text(
+                'private class Hidden:\n'
+                '    func __init__() void:\n'
+                '        return\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import hidden\n'
+                'func main() int32:\n'
+                '    value: Hidden = Hidden()\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'funcion no existe'):
+                Compiler().compile(main, executable=False)
+
+    def test_import_rejects_path_like_module_names_even_when_called_directly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main = root / '_main.bg'
+            main.write_text('func main() int32:\n    return 0\n', encoding='utf-8')
+            compiler = Compiler()
+            compiler.project_root = root.resolve()
+
+            self.assertIsNone(
+                resolve_module_path(compiler, '../outside', main)
+            )
+            self.assertTrue(
+                any('nombre de modulo' in error for error in compiler.semantic_errors)
+            )
+
+    def test_repeated_selective_alias_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'math.bg').write_text(
+                'func doble(value: int32) int32:\n'
+                '    return value + value\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { doble as twice, doble as twice } from math\n'
+                'func main() int32:\n'
+                '    return twice(3)\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'alias importado se repite'):
+                Compiler().compile(main, executable=False)
+
+    def test_import_rejects_incompatible_system_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'linux_only.bg').write_text(
+                "clause System 'linux'\n"
+                'func value() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                "clause System 'windows'\n"
+                'import linux_only\n'
                 'func main() int32:\n'
                 '    return 0\n',
                 encoding='utf-8',
             )
 
-            compiler = Compiler()
-            artifacts = compiler.compile(main, executable=True)
-            result = subprocess.run(
-                [str(artifacts.executable)],
-                capture_output=True,
-                timeout=10,
-                check=False,
+            with self.assertRaisesRegex(CompilationError, 'incompatible con el target'):
+                Compiler().compile(main, executable=False)
+
+    def test_import_rejects_incompatible_architecture_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'x86_only.bg').write_text(
+                "clause Arch 'x86'\n"
+                'func value() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                "clause Arch 'amd'\n"
+                'import x86_only\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
             )
 
-        self.assertEqual(0, result.returncode)
-        self.assertEqual('windows.h', compiler.storage.native_includes[0].header)
-        self.assertEqual('kernel32', compiler.storage.native_includes[0].library)
-        self.assertEqual(['kernel32'], compiler.storage.native_links)
+            with self.assertRaisesRegex(CompilationError, 'incompatible con el target'):
+                Compiler().compile(main, executable=False)
+
+    def test_baremetal_requires_an_explicit_boot_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'requiere una clausula Boot explicita',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_non_baremetal_rejects_boot_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "windows"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "multiboot2"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'no admite un protocolo de arranque bare-metal',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_multiboot2_rejects_non_x86_architecture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "arm"\n'
+                'clause Boot "multiboot2"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'Boot "multiboot2" para Arch .+aarch64',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_import_rejects_incompatible_boot_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'loader.bg').write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'func helper() void:\n'
+                '    pass\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "multiboot2"\n'
+                'import loader\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'declara Boot .+incompatible con el target',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_target_agnostic_import_emits_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'agnostic.bg').write_text(
+                'func value() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                "clause System 'windows'\n"
+                "clause Arch 'amd'\n"
+                'import agnostic\n'
+                'func main() int32:\n'
+                '    return value()\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            compiler.compile(main, executable=False)
+
+        self.assertTrue(any('agnostico' in warning for warning in compiler.warnings))
 
     def test_import_reports_cycles(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -135,20 +373,6 @@ class ModuleAndNativeIncludeTests(unittest.TestCase):
 
             with self.assertRaisesRegex(CompilationError, 'Ciclo de importacion'):
                 Compiler().compile(main, executable=False)
-
-    def test_include_rejects_unknown_header(self):
-        with tempfile.TemporaryDirectory() as directory:
-            main = Path(directory) / '_main.bg'
-            main.write_text(
-                'include "does_not_exist" link "kernel32"\n'
-                'func main() int32:\n'
-                '    return 0\n',
-                encoding='utf-8',
-            )
-
-            with self.assertRaisesRegex(CompilationError, 'header nativo'):
-                Compiler().compile(main, executable=False)
-
 
 if __name__ == '__main__':
     unittest.main()

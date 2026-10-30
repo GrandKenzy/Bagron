@@ -13,6 +13,7 @@ class CompilationError(RuntimeError):
 class CompilerState(Diagnostics):
     def __init__(self):
         self.semantic_errors: list[str] = []
+        self.warnings: list[str] = []
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
@@ -20,6 +21,11 @@ class CompilerState(Diagnostics):
     def error(self, note: str):
         self.semantic_errors.append(note)
         super().error(note)
+
+    def warning(self, note: str):
+        """Register a non-fatal compiler warning in diagnostics and state."""
+        self.warnings.append(note)
+        super().warn(note)
 
     def exit(self):  # NOTE: Función temporal en lo que armamos los errores
         print(self.last_note())

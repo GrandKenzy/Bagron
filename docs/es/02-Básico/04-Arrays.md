@@ -154,6 +154,23 @@ func read(values: int32[3], length: Len_t, element_size: Size_t) int32:
     return values[1]
 ```
 
+Para recorrer un array fijo sin repetir manualmente su tamaño, la forma
+canónica es `for i: int32 in values:`. El compilador inserta la longitud exacta
+de la primera dimensión como límite exclusivo y puede demostrar que
+`values[i]` está dentro del array cuando el acceso usa ese mismo origen:
+
+```bg
+func sum(values: int32[3], length: Len_t, element_size: Size_t) int32:
+    total: int32 = 0
+    for i: int32 in values:
+        total += values[i]
+    return total
+```
+
+La garantía no se transfiere a otro array ni a un puntero. Para un array abierto
+el límite procede de `Len_t`; si el compilador no puede probar estáticamente el
+acceso, se requiere `@unsafe` como en cualquier otro índice dinámico.
+
 Un índice dinámico requiere que la función esté marcada como `@unsafe`, porque
 el compilador ya no puede demostrar en compilación que el acceso está dentro
 del bloque reservado:
@@ -329,13 +346,23 @@ func forward(data: int32[], length: Len_t, element_size: Size_t) void:
 
 `chain` no es un array ordinario y conserva su excepción: puede usar `Len_t`
 para su longitud estática y terminador `NUL`, pero no está obligado a declarar
-`Size_t`.
+`Size_t`. `buffer` tampoco es un array estático: su descriptor incluye la
+capacidad en bytes y sus funciones deben declarar solo `Len_t`:
+
+```bg
+func inspect(data: buffer[], length: Len_t) usize:
+    return length
+
+raw: buffer[32] = 0
+inspect(raw) ; expansión interna: inspect(raw, 32)
+```
 
 ### `Len_t`: cantidad de elementos
 
-`Len_t` funciona con arrays y con `chain` estático:
+`Len_t` funciona con arrays, `buffer` y con `chain` estático:
 
 - en un array, es la cantidad de elementos de la primera dimensión;
+- en un `buffer`, es su longitud en bytes;
 - en un `chain`, incluye el `NUL` final;
 - en un array de `char` inicializado con texto, incluye el espacio del `NUL`;
 - conserva el tamaño declarado aunque el texto inicial sea más corto.
@@ -388,7 +415,8 @@ función que espere otra profundidad o una fila distinta.
 `Len_t` requiere que el tamaño relevante sea conocido en compilación. En una
 llamada, el array concreto debe tener una longitud demostrable; un parámetro
 `T[]` puede reenviar el `Len_t` que recibió de otra función. No puede obtenerse
-de un puntero crudo.
+de un puntero crudo. Un parámetro `buffer[]` puede reenviar el `Len_t` que
+recibió o extraerlo del descriptor del buffer concreto.
 
 ### `Size_t`: ancho exterior en bytes
 
@@ -397,9 +425,9 @@ unidad exterior del dato: el tipo que queda dentro de la primera pareja de
 corchetes. Esta regla es única para cualquier profundidad:
 
 ```text
-Size_t(T[N1])          = sizeof(T)
-Size_t(T[N1][N2])      = sizeof(T[N2])
-Size_t(T[N1][N2][N3])  = sizeof(T[N2][N3])
+Size_t(T[N1])          = tamaño(T)
+Size_t(T[N1][N2])      = tamaño(T[N2])
+Size_t(T[N1][N2][N3])  = tamaño(T[N2][N3])
 ```
 
 Por eso, en una matriz `int32[2][3]`, una unidad exterior es una fila de tres
@@ -429,7 +457,8 @@ tamaño total del array = Len_t * Size_t
 En un escalar, la unidad exterior es el propio escalar, así que `Size_t`
 representa su tamaño completo. En un puntero, representa el tamaño del
 puntero del target. Para un `chain` estático, su almacenamiento está compuesto
-por caracteres de un byte e incluye el `NUL` final.
+por caracteres de un byte e incluye el `NUL` final. `Size_t` no puede
+asociarse a `buffer`, porque siempre sería el valor redundante `1`.
 
 ### Varios metatipos en una firma
 

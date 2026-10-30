@@ -81,6 +81,8 @@ class AggregateSymbol:
     parent_type: str | None = None
     parent_initializer_name: str | None = None
     parent_initializer_arguments: tuple[object, ...] = ()
+    # Module origin used by import visibility checks after type collection.
+    module_path: object | None = None
 
     @property
     def all_fields(self) -> tuple[FieldSpec, ...]:
@@ -102,6 +104,7 @@ class EnumSymbol:
     base_type: TypeSpec
     members: tuple[EnumMember, ...] = ()
     privacy: str = 'public'
+    module_path: object | None = None
 
 
 @dataclass(frozen=True)
@@ -136,3 +139,9 @@ class ValueInfo:
     # Keeping this metadata lets assignment validation enforce @frozen through
     # indexing and known pointer aliases without adding runtime state.
     member_owner: str | None = None
+    # A compiler-proven loop index may safely index the exact static array that
+    # produced it.  These facts are intentionally narrow: they do not grant
+    # bounds to arbitrary expressions or to arrays with runtime-only lengths.
+    known_index_source: str | None = None
+    known_index_path: tuple[tuple[str, object], ...] = ()
+    known_index_length: int | None = None

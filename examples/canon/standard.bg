@@ -59,9 +59,7 @@ func _serialize_int_at_raw(
     if negative:
         required += 1
     required += 1
-    end: usize = position
-    end += required
-    if end > output_len:
+    if required > output_len - position:
         return 0
 
     if negative:
@@ -141,9 +139,9 @@ func printa(buffer: char[], long: Len_t, size: Size_t) void:
     handle *: void = GetStdHandle(4294967285)
     if size == 0:
         return
-    total: usize = long * size
-    if total > 4294967295:
+    if long > 4294967295 / size:
         return
+    total: usize = long * size
     WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
     return
 
@@ -175,9 +173,9 @@ func printb(
             index += 1
         return
 
-    total: usize = long * size
-    if total > 4294967295:
+    if long > 4294967295 / size:
         return
+    total: usize = long * size
     if total > 0:
         WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
     return

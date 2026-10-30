@@ -1,6 +1,6 @@
 # Changelog
 
-Todos los cambios relevantes de EasyC/Bagron se documentan en este archivo.
+Todos los cambios relevantes de Bagron se documentan en este archivo.
 
 ## [Unreleased] - 2026-10-25
 
@@ -25,7 +25,7 @@ Todos los cambios relevantes de EasyC/Bagron se documentan en este archivo.
 - El frontend principal queda organizado como Bagron en `core/frontend`.
 - La sintaxis canónica usa `ran` como iterador numérico único para `for`.
 - `@packed` reemplaza a `__packed__` como decorador.
-- `import` reemplaza a `include` para módulos Bagron.
+- `import` es la sintaxis canónica para módulos Bagron.
 - Las constantes se declaran dentro del tipo, por ejemplo `edad: const int`.
 - `vnma` utiliza la copia local editable de Gram en `~/Desktop/Gram`.
 - `vnma` fija `llvmlite==0.50.0` como dependencia del backend inicial.
@@ -34,7 +34,7 @@ Todos los cambios relevantes de EasyC/Bagron se documentan en este archivo.
 ### Retirado
 
 - Keywords y tipos obsoletos `in`, `iter`, `index`, `ptr`, `cptr` y `array`.
-- Frontends y estructuras antiguas de C, EASYC y headers.
+- Frontends y estructuras antiguas del lenguaje y headers.
 
 ### Verificación
 

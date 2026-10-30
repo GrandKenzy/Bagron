@@ -13,7 +13,6 @@ from core.frontend.objects.type import (
     ValueInfo,
 )
 from core.frontend.objects.variable import Variable
-from core.frontend.objects.native import NativeInclude
 
 __all__ = [
     'FunctionSignature',
@@ -26,6 +25,5 @@ __all__ = [
     'AggregateSymbol',
     'EnumMember',
     'EnumSymbol',
-    'NativeInclude',
     'Variable',
 ]

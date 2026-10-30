@@ -5,7 +5,10 @@
 [dependencies]
 
 # Desde ruta local (Se requiere clonar Gram). Modificaciones en tiempo real.
-gram = { path = "~/Desktop/Gram", editable = true }
+# gram = { path = "~/Desktop/Gram", editable = true }
+# Canon
+gram = {git="https://github.com/GrandKenzy/Gram.git", branch="main"}
+
 llvmlite = "==0.50.0"
 
 [dev-dependencies]

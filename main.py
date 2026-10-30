@@ -15,6 +15,8 @@ def main(*args):
     except CompilationError as error:
         print(f'Compilation failed: {error}', file=sys.stderr)
         return 1
+    for warning in compiler.warnings:
+        print(f'Warning: {warning}', file=sys.stderr)
     print(artifacts.executable)
     return 0
 

@@ -45,6 +45,18 @@ def _token_value(node: object) -> object | None:
     return getattr(token, 'value', None)
 
 
+def _privacy(node: object) -> str:
+    for child in _children(node):
+        value = _token_value(child)
+        if value in ('public', 'private'):
+            return str(value)
+        if isinstance(child, gast.ASTRef):
+            found = _privacy(child)
+            if found != 'public':
+                return found
+    return 'public'
+
+
 def _identifier(node: object) -> str | None:
     if _token_kind(node) == 'IDENT':
         return str(_token_value(node))
@@ -259,6 +271,8 @@ def _collect_function(
         name,
         FunctionSignature(parameters=parameters, return_type=return_type),
         external_library=library,
+        module_path=compiler.active_module_path,
+        privacy=_privacy(node),
     )
     if not compiler.storage.define_function(symbol):
         compiler.error(f'La funcion ya fue declarada: {name}')
@@ -267,6 +281,13 @@ def _collect_function(
 
 
 def collect(compiler: Compiler, node: gast.ASTRef) -> None:
+    if str(compiler.storage.system).lower() == 'baremetal':
+        compiler.error(
+            'System "baremetal" no admite extern de librerias del sistema; '
+            'usa un modulo ASM o una declaracion de objeto'
+        )
+        return
+
     library_value = _string_value(node)
     if library_value is None:
         compiler.error(

@@ -5,11 +5,9 @@ from core.frontend.syntax.items import (
     enum_decl,
     externs,
     func_decl,
-    includes,
     imports,
     statements,
     struct_decl,
-    typealias_decl,
     value,
     var_decl,
 )
@@ -21,11 +19,9 @@ __all__ = [
     *enum_decl.__all__,
     *externs.__all__,
     *func_decl.__all__,
-    *includes.__all__,
     *imports.__all__,
     *statements.__all__,
     *struct_decl.__all__,
-    *typealias_decl.__all__,
     *value.__all__,
     *var_decl.__all__,
 ]

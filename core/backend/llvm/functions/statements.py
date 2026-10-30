@@ -12,7 +12,11 @@ from core.backend.llvm.types import (
 from core.frontend.objects import FunctionSymbol, TypeSpec
 from core.frontend.tools.types import (
     FOR_ITERATOR_TYPES,
+    INTEGER_TYPES,
+    SIGNED_INTEGER_TYPES,
     UNSIGNED_INTEGER_TYPES,
+    buffer_capacity,
+    is_buffer_type,
     target_iteration_limit,
 )
 
@@ -21,6 +25,21 @@ from .errors import FunctionEmissionError
 
 class StatementEmitterMixin:
     """LLVM emission for declarations, control flow, and function bodies."""
+
+    def _unwrap_buffer_value(self, node: object) -> object:
+        current = self._unwrap(node)
+        while getattr(current, 'name', None) == 'PAREN_VALUE':
+            inner = next(
+                (
+                    child for child in self._children(current)
+                    if getattr(child, 'name', None) == 'VALUE'
+                ),
+                None,
+            )
+            if inner is None:
+                break
+            current = self._unwrap(inner)
+        return current
 
     @classmethod
     def _assignment_operator(cls, node: object) -> str | None:
@@ -51,6 +70,151 @@ class StatementEmitterMixin:
                 if getattr(child, 'name', None) == 'VALUE'
             ),
             None,
+        )
+
+    def _emit_buffer_allocation(
+        self,
+        capacity: int,
+        builder: ir.IRBuilder,
+    ) -> ir.Value:
+        if self.type_registry is None:
+            raise FunctionEmissionError(
+                'El buffer requiere un registro de tipos LLVM'
+            )
+        size_type = self._size_integer_type()
+        byte_pointer = ir.IntType(8).as_pointer()
+        malloc = self._runtime_function('malloc', byte_pointer, [size_type])
+        data = builder.call(
+            malloc,
+            [ir.Constant(size_type, capacity)],
+            name='buffer.data',
+        )
+        is_null = builder.icmp_unsigned(
+            '==',
+            data,
+            ir.Constant(byte_pointer, None),
+        )
+        function = builder.function
+        if function is None:
+            raise FunctionEmissionError(
+                'La reserva de buffer requiere una funcion'
+            )
+        block_id = len(function.blocks)
+        ok_block = function.append_basic_block(name=f'buffer.alloc.ok.{block_id}')
+        fail_block = function.append_basic_block(
+            name=f'buffer.alloc.fail.{block_id}'
+        )
+        builder.cbranch(is_null, fail_block, ok_block)
+        fail_builder = ir.IRBuilder(fail_block)
+        self._emit_trap(fail_builder)
+        builder.position_at_end(ok_block)
+
+        memset = self._runtime_function(
+            'memset',
+            byte_pointer,
+            [byte_pointer, ir.IntType(32), size_type],
+        )
+        builder.call(
+            memset,
+            [data, ir.Constant(ir.IntType(32), 0), ir.Constant(size_type, capacity)],
+        )
+        descriptor_type = self.type_registry.buffer_type()
+        descriptor = ir.Constant(descriptor_type, None)
+        descriptor = builder.insert_value(descriptor, data, 0)
+        return builder.insert_value(
+            descriptor,
+            ir.Constant(size_type, capacity),
+            1,
+        )
+
+    def _buffer_literal_items(self, value_node: object) -> list[object]:
+        current = self._unwrap_buffer_value(value_node)
+        if getattr(current, 'name', None) != 'ARRAY_VALUE':
+            return []
+        container = next(
+            (
+                child for child in self._children(current)
+                if isinstance(child, (list, tuple))
+                or hasattr(child, 'items')
+                or hasattr(child, 'nodes')
+            ),
+            None,
+        )
+        return self._children(container) if container is not None else []
+
+    def _emit_buffer_initializer(
+        self,
+        name: str,
+        value_node: object,
+        pointer: ir.Value,
+        semantic_value: object | None,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> None:
+        spec = self._active_specs.get(name)
+        capacity = buffer_capacity(spec) if spec is not None else None
+        if capacity is None:
+            raise FunctionEmissionError(
+                f'El buffer {name} no tiene una capacidad conocida'
+            )
+
+        current = self._unwrap_buffer_value(value_node)
+        if type(current).__name__ == 'ASTBinaryOp':
+            operator = getattr(
+                getattr(current.operator, 'token', None),
+                'name',
+                None,
+            )
+            if operator != 'PLUS':
+                raise FunctionEmissionError(
+                    'La inicializacion de buffer solo admite concatenacion con +'
+                )
+            result = self._compile_expression(
+                value_node,
+                builder,
+                values,
+                expected_type=pointer.type.pointee,
+            )
+            self._store_address(
+                self._coerce_value(result, pointer.type.pointee, builder),
+                pointer,
+                builder,
+                alignment=getattr(pointer, 'align', None),
+            )
+            return
+
+        result = self._emit_buffer_allocation(capacity, builder)
+        if (
+            semantic_value is not None
+            and getattr(semantic_value, 'is_literal', False)
+            and getattr(getattr(semantic_value, 'type_spec', None), 'array_depth', 0)
+        ):
+            data, _ = self._buffer_data_and_length(result, builder)
+            size_type = self._size_integer_type()
+            for index, item in enumerate(self._buffer_literal_items(value_node)):
+                item_value = self._coerce_value(
+                    self._compile_expression(
+                        item,
+                        builder,
+                        values,
+                        expected_type=ir.IntType(8),
+                    ),
+                    ir.IntType(8),
+                    builder,
+                    signed=False,
+                )
+                address = builder.gep(
+                    data,
+                    [ir.Constant(size_type, index)],
+                    inbounds=False,
+                )
+                self._store_address(item_value, address, builder, alignment=1)
+
+        self._store_address(
+            result,
+            pointer,
+            builder,
+            alignment=getattr(pointer, 'align', None),
         )
 
     def _emit_local_declaration(
@@ -92,6 +256,16 @@ class StatementEmitterMixin:
         variable = None
         if self._active_function_symbol is not None:
             variable = self._active_function_symbol.local_variables.get(name)
+        if is_buffer_type(self._active_specs.get(name, TypeSpec('void'))):
+            self._emit_buffer_initializer(
+                name,
+                value_node,
+                pointer,
+                semantic_value,
+                builder,
+                values,
+            )
+            return
         if (
             getattr(variable, 'uses_frontend_initializer', False)
             and self.type_registry is not None
@@ -219,6 +393,43 @@ class StatementEmitterMixin:
                 hook_mode='write',
             )
 
+    def _emit_buffer_deletion(
+        self,
+        value_node: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> bool:
+        """Free a buffer through its addressable descriptor place.
+
+        Resolving the place, instead of deriving an address from an identifier,
+        also covers a buffer stored in an aggregate field.  A future ownership
+        ABI can reuse this exact place resolution for parameters and returns.
+        """
+        try:
+            place = self._compile_place(value_node, builder, values)
+        except FunctionEmissionError:
+            return False
+        value_type = getattr(place, 'value_type', None)
+        if not self._is_buffer_descriptor_type(value_type):
+            return False
+
+        descriptor = self._load_place(place, builder)
+        data, _ = self._buffer_data_and_length(descriptor, builder)
+        free = self._runtime_function(
+            'free',
+            ir.VoidType(),
+            [ir.IntType(8).as_pointer()],
+        )
+        builder.call(free, [data])
+        self._store_address(
+            ir.Constant(descriptor.type, None),
+            place.address,
+            builder,
+            alignment=getattr(place, 'alignment', None),
+            volatile=getattr(place, 'volatile', False),
+        )
+        return True
+
     def _emit_deletion(
         self,
         node: object,
@@ -234,6 +445,9 @@ class StatementEmitterMixin:
         )
         if value_node is None:
             raise FunctionEmissionError('Del no contiene una instancia')
+
+        if self._emit_buffer_deletion(value_node, builder, values):
+            return
 
         type_name = self._class_expression_type_name(value_node)
         if type_name is None:
@@ -438,51 +652,93 @@ class StatementEmitterMixin:
             type_spec = getattr(iterator_symbol, 'type_spec', None)
         if type_spec is None:
             raise FunctionEmissionError(f'No existe el iterador {name}')
+        array_form = any(
+            self._token_value(child) == 'in'
+            for child in self._children(signature)
+        )
+        allowed_types = INTEGER_TYPES if array_form else FOR_ITERATOR_TYPES
         if (
-            type_spec.name not in FOR_ITERATOR_TYPES
+            type_spec.name not in allowed_types
             or type_spec.pointer_level
             or type_spec.array_depth
         ):
             raise FunctionEmissionError(
-                f'El iterador {name} debe tener exactamente un tipo '
-                'uint8/uint16/uint32/uint64'
+                f'El iterador {name} no tiene un tipo entero escalar valido'
             )
         iterator_type = scalar_type(type_spec)
         if not isinstance(iterator_type, ir.IntType):
-            raise FunctionEmissionError(f'El iterador {name} no es uint*')
+            raise FunctionEmissionError(f'El iterador {name} no es entero')
 
         range_values = [
             child for child in self._children(signature)
             if getattr(child, 'name', None) == 'VALUE'
         ]
-        if len(range_values) != 3:
+        if array_form and len(range_values) != 1:
+            raise FunctionEmissionError(
+                f'El for de {name} debe tener exactamente un array fuente'
+            )
+        if not array_form and len(range_values) != 3:
             raise FunctionEmissionError(
                 f'El rango de {name} debe tener start, end y step'
             )
 
-        start = self._coerce_int(
-            self._compile_expression(range_values[0], builder, values),
-            iterator_type,
-            builder,
-            signed=False,
-        )
-        end = self._coerce_int(
-            self._compile_expression(range_values[1], builder, values),
-            iterator_type,
-            builder,
-            signed=False,
-        )
-        step = self._coerce_int(
-            self._compile_expression(range_values[2], builder, values),
-            iterator_type,
-            builder,
-            signed=False,
-        )
+        end_source = None
+        if array_form:
+            array_node = range_values[0]
+            source_spec = self._active_type_spec(
+                self._identifier(array_node) or ''
+            )
+            end_source = self._compile_forwarded_expansion(
+                array_node,
+                is_length=True,
+                builder=builder,
+                values=values,
+            )
+            if end_source is None:
+                end_source = self._compile_length_argument(
+                    array_node,
+                    source_spec,
+                    builder,
+                    values,
+                )
+            start = ir.Constant(iterator_type, 0)
+            end = self._coerce_int(
+                end_source,
+                iterator_type,
+                builder,
+                signed=False,
+            )
+            step = ir.Constant(iterator_type, 1)
+        else:
+            start = self._coerce_int(
+                self._compile_expression(range_values[0], builder, values),
+                iterator_type,
+                builder,
+                signed=False,
+            )
+            end = self._coerce_int(
+                self._compile_expression(range_values[1], builder, values),
+                iterator_type,
+                builder,
+                signed=False,
+            )
+            step = self._coerce_int(
+                self._compile_expression(range_values[2], builder, values),
+                iterator_type,
+                builder,
+                signed=False,
+            )
 
         block_id = len(function.blocks)
+        iterator_is_signed = type_spec.name in SIGNED_INTEGER_TYPES
+        iterator_max = (
+            (1 << (iterator_type.width - 1)) - 1
+            if iterator_is_signed
+            else (1 << iterator_type.width) - 1
+        )
         target_limit = min(
             target_iteration_limit(self._pointer_size),
-            (1 << iterator_type.width) - 1,
+            iterator_max,
         )
         range_limit = ir.Constant(iterator_type, target_limit)
         step_valid_block = function.append_basic_block(
@@ -512,6 +768,19 @@ class StatementEmitterMixin:
         zero = ir.Constant(iterator_type, 0)
         nonzero = builder.icmp_unsigned('!=', step, zero)
         valid_range = builder.and_(values_in_range, nonzero)
+        if array_form:
+            if not isinstance(end_source.type, ir.IntType):
+                raise FunctionEmissionError(
+                    f'El tamano del array de {name} no es entero'
+                )
+            source_max = (1 << end_source.type.width) - 1
+            if target_limit < source_max:
+                array_length_valid = builder.icmp_unsigned(
+                    '<=',
+                    end_source,
+                    ir.Constant(end_source.type, target_limit),
+                )
+                valid_range = builder.and_(valid_range, array_length_valid)
         builder.cbranch(valid_range, step_valid_block, range_invalid_block)
 
         invalid_builder = ir.IRBuilder(range_invalid_block)

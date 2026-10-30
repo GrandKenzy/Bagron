@@ -82,14 +82,13 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
     escrituras directas, compuestas y alias de puntero conocidos. La
     congelación es superficial y se propaga por la herencia.
 
-* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `include
-  "header" link "library"` resuelve headers y bibliotecas del sistema, y
-  `extern "library":` declara firmas ABI que LLVM enlaza directamente.
+* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `extern
+  "library":` declara firmas ABI que LLVM enlaza directamente.
 
 * **Control de Flujo Expresivo:**
   * Condicionales: `if`, `elif`, `else`, `not`.
   * Bucles condicionales: `while condicion:`.
-  * Iteración numérica tipada: `for i: int8 ran (1, 100, 1):`.
+  * Iteración numérica tipada con `ran` y recorrido de arrays con `for i: int32 in values:`.
 
 * **Toolchain Integrada:** Compilador, analizador sintáctico y herramientas para el flujo de trabajo de desarrollo.
 
@@ -99,7 +98,12 @@ En lugar de depender de una máquina virtual pesada o de un runtime complejo con
 
 * **Python:** 3.14 o superior.
 * **llvmlite:** 0.50.0, gestionado mediante vnma.
-* **LLVM/Clang/LLD:** La compilación genera y verifica `.ll`, produce `.obj` y enlaza un `.exe` para el entrypoint mínimo `main`.
+* **LLVM/Clang/LLD:** La compilación genera y verifica `.ll`, produce `.obj` y
+  enlaza un `.exe` para targets de sistema; con `System "baremetal"` genera
+  objetos ELF `.o`, un linker script y un binario plano `.bin`. El perfil
+  `Boot "multiboot2"` añade la ISO `.iso`; requiere `grub-mkrescue` y
+  `xorriso` en `PATH` o instalados dentro de WSL. `Boot "none"` deja la
+  imagen plana sin empaquetarla.
 
 ---
 

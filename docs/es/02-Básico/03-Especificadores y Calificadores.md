@@ -66,8 +66,8 @@ como un módulo o una clase.
 | `public` | `public struct Punto:` | Hace pública la declaración. |
 | `private` | `private func auxiliar() void:` | Restringe la declaración a su ámbito. |
 
-Pueden aplicarse a variables, funciones, `struct`, `mold`, `flags`, `enum`,
-`class` y `TypeAlias`.
+Pueden aplicarse a variables, funciones, `struct`, `mold`, `flags`, `enum` y
+`class`.
 
 Si no se escribe ninguno, la declaración es pública por defecto.
 
@@ -172,8 +172,16 @@ Una función segura no puede llamar a una función `@unsafe` o `@assembler`.
 `@unsafe` debe reservarse para la pequeña frontera que realmente necesita
 operaciones sin garantía automática; el resto del programa puede permanecer
 en contexto seguro. Una función `@assembler` puede tener un único bloque
-`#prep` y debe terminarlo con `return asm`; también puede existir sin bloque
-`#prep`, en cuyo caso solo admite un `return` normal.
+`#prep`; las funciones con retorno distinto de `void` deben terminarlo con
+`return asm`, mientras que una función `void` puede terminar directamente al
+final del bloque ASM. También puede existir sin bloque `#prep`, en cuyo caso
+solo admite un `return` normal.
+
+El dialecto `gas-intel` usa la sintaxis Intel del ensamblador integrado de
+GAS/LLVM; no es sintaxis NASM. `intel` se conserva como alias de compatibilidad.
+El dialecto `att` usa la sintaxis AT&T. Clang valida cada bloque durante la
+compilación y Bagron remite sus diagnósticos al archivo `.bg` y a la función
+`@assembler` que los originó.
 
 ## Decoradores de agregados
 

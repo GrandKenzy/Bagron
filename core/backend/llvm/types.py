@@ -22,6 +22,15 @@ def _is_unsized_array(spec: TypeSpec) -> bool:
     )
 
 
+def _is_buffer_spec(spec: TypeSpec) -> bool:
+    return (
+        spec.name == 'buffer'
+        and spec.pointer_level == 0
+        and spec.array_depth == 0
+        and len(spec.array_lengths) == 1
+    )
+
+
 def _array_parameter_type(
     spec: TypeSpec,
     type_registry: 'LLVMTypeRegistry | None' = None,
@@ -77,12 +86,15 @@ class LLVMTypeRegistry:
         module: Module,
         symbols: dict[str, object],
         target_data: object | None = None,
+        pointer_size: int = 8,
     ):
         self.module = module
         self.target_data = target_data
+        self._pointer_size = pointer_size
         self._types: dict[str, ir.Type] = {}
         self._symbols: dict[str, AggregateSymbol] = {}
         self._layouts: dict[str, AggregateLayout] = {}
+        self._buffer_type: ir.IdentifiedStructType | None = None
 
         aggregates: list[AggregateSymbol] = []
         for name, symbol in symbols.items():
@@ -276,6 +288,22 @@ class LLVMTypeRegistry:
     def layout(self, type_name: str) -> AggregateLayout | None:
         return self._layouts.get(type_name)
 
+    def buffer_type(self) -> ir.IdentifiedStructType:
+        """Return the private runtime descriptor used by ``buffer[N]``."""
+        if self._buffer_type is None:
+            descriptor = self.module.context.get_identified_type(
+                '__bagron_buffer'
+            )
+            descriptor.set_body(
+                ir.IntType(8).as_pointer(),
+                ir.IntType(self._pointer_size * 8),
+            )
+            self._buffer_type = descriptor
+        return self._buffer_type
+
+    def is_buffer_type(self, value_type: ir.Type) -> bool:
+        return value_type is self._buffer_type
+
     def aggregate(self, type_name: str) -> AggregateSymbol | None:
         return self._symbols.get(type_name)
 
@@ -397,6 +425,12 @@ class LLVMTypeRegistry:
         spec: TypeSpec,
         array_lengths: Sequence[int] = (),
     ) -> ir.Type:
+        if _is_buffer_spec(spec):
+            if spec.pointer_level:
+                raise LLVMTypeError(
+                    'buffer no puede declararse como puntero'
+                )
+            return self.buffer_type()
         if spec.name == 'Never':
             if spec.pointer_level or spec.array_depth:
                 raise LLVMTypeError(

@@ -9,8 +9,10 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    buffer_capacity,
     constant_chain_value,
     infer_value,
+    is_buffer_type,
     is_compatible,
     resolve_type,
 )
@@ -33,6 +35,31 @@ def _bare_identifier(node: object) -> str | None:
         return str(getattr(token, 'value', ''))
 
     return None
+
+
+def _is_buffer_concat(node: object) -> bool:
+    current = node
+    while isinstance(current, gast.ASTRef):
+        if current.name in ('VALUE', 'POSTFIX_EXPR', 'PRIMARY') and len(current.nodes) == 1:
+            current = current.nodes[0]
+            continue
+        if current.name == 'PAREN_VALUE':
+            inner = next(
+                (
+                    child for child in current.nodes
+                    if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+                ),
+                None,
+            )
+            if inner is None:
+                return False
+            current = inner
+            continue
+        break
+    if type(current).__name__ != 'ASTBinaryOp':
+        return False
+    operator = getattr(getattr(current.operator, 'token', None), 'name', None)
+    return operator == 'PLUS'
 
 
 def build_symbol(
@@ -84,7 +111,7 @@ def _validate_callptr(
         return
 
     target_name = _bare_identifier(handle.value_node)
-    function = compiler.storage.functions.get(target_name) if target_name else None
+    function = compiler.function_lookup.get(target_name) if target_name else None
     source = compiler.storage.namespace.get(target_name) if target_name else None
 
     if function is not None:
@@ -266,7 +293,7 @@ def _validate_initializer(
                 storage,
                 symbol,
                 handle.value_node,
-                compiler.storage.functions,
+                compiler.function_lookup,
                 current_function=current_function,
             )
             if uses_frontend:
@@ -277,7 +304,7 @@ def _validate_initializer(
         value_info = infer_value(
             handle.value_node,
             storage.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=current_function,
         )
     except UnsupportedExpressionError as error:
@@ -286,6 +313,43 @@ def _validate_initializer(
         return
     except ValueResolutionError as error:
         compiler.error(f'{handle.name}: {error}')
+        return
+
+    if is_buffer_type(symbol.type_spec) and buffer_capacity(symbol.type_spec) is None:
+        inferred_capacity = None
+        if is_buffer_type(value_info.type_spec):
+            inferred_capacity = buffer_capacity(value_info.type_spec)
+        elif (
+            value_info.is_literal
+            and value_info.type_spec.array_depth == 1
+            and value_info.items
+        ):
+            inferred_capacity = len(value_info.items)
+        max_capacity = (1 << (compiler.storage.pointer_size * 8)) - 1
+        if (
+            inferred_capacity is None
+            or inferred_capacity < 1
+            or inferred_capacity > max_capacity
+        ):
+            compiler.error(
+                f'{handle.name}: buffer[] requiere un inicializador con '
+                'capacidad conocida que quepa en usize'
+            )
+            return
+        symbol.type_spec = replace(
+            symbol.type_spec,
+            array_lengths=(inferred_capacity,),
+        )
+        symbol.type = symbol.type_spec.canonical_name
+
+    if (
+        is_buffer_type(value_info.type_spec)
+        and not _is_buffer_concat(handle.value_node)
+    ):
+        compiler.error(
+            f'{handle.name}: la propiedad de buffer entre asignaciones y '
+            'funciones aun no esta definida; usa una concatenacion'
+        )
         return
 
     if not is_compatible(symbol.type_spec, value_info):
@@ -385,6 +449,13 @@ def collect_in_scope(
         )
         return None
 
+    if is_buffer_type(type_spec) and kind == 'global':
+        compiler.error(
+            f'El buffer global {handle.name} aun no tiene inicializacion '
+            'dinamica de modulo; declaralo dentro de una funcion'
+        )
+        return None
+
     if type_spec.name == 'void' and type_spec.pointer_level == 0:
         compiler.error(
             f'La variable {handle.name} no puede usar void como almacenamiento'
@@ -399,6 +470,8 @@ def collect_in_scope(
         kind=kind,
         privacy=handle.privacy,
     )
+    if kind == 'global':
+        symbol.module_path = compiler.module_for_node(node)
     # Scalars must make their initialization point explicit. Fixed-size
     # arrays and named aggregates already receive deterministic static
     # zero/storage initialization, so declarations such as a matrix that is
@@ -437,6 +510,15 @@ def collect_in_scope(
     ):
         compiler.error(
             f'El array {handle.name} requiere un inicializador para inferir su tamano'
+        )
+    if (
+        is_buffer_type(type_spec)
+        and buffer_capacity(type_spec) is None
+        and handle.value_node is None
+    ):
+        compiler.error(
+            f'El buffer {handle.name} requiere un inicializador para inferir '
+            'su capacidad'
         )
     if type_spec.name == 'chain' and handle.value_node is None:
         compiler.error(f'El chain {handle.name} debe tener un inicializador')

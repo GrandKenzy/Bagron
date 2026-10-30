@@ -13,10 +13,11 @@ class PrepBlock:
     """One raw assembler block extracted before Bagron tokenization."""
 
     source: Path
-    function_name: str
+    function_name: str | None
     dialect: str
     body: str
     line: int
+    is_module: bool = False
 
 
 class PrepError(ValueError):
@@ -27,13 +28,18 @@ class PrepError(ValueError):
 class _ActivePrep:
     body: list[str]
     dialect: str
-    function_name: str
+    function_name: str | None
     line: int
     valid: bool
+    is_module: bool = False
 
 
 _PREP_RE = re.compile(
     r'^(?P<indent>[ \t]*)#prep[ \t]+assembler[ \t]+'
+    r'(?P<quote>["\'])(?P<dialect>.*?)\2[ \t]*$'
+)
+_MODULE_PREP_RE = re.compile(
+    r'^(?P<indent>[ \t]*)#prep[ \t]+assembler[ \t]+module[ \t]+'
     r'(?P<quote>["\'])(?P<dialect>.*?)\2[ \t]*$'
 )
 _FUNCTION_RE = re.compile(
@@ -79,6 +85,7 @@ def extract_prep_blocks(
                             dialect=active.dialect,
                             body=body,
                             line=active.line,
+                            is_module=active.is_module,
                         )
                     )
                 transformed.append(_blank_line(line))
@@ -111,6 +118,29 @@ def extract_prep_blocks(
             continue
 
         if stripped.startswith('#prep'):
+            module_match = _MODULE_PREP_RE.match(line.rstrip('\r\n'))
+            if module_match is not None:
+                if function_stack:
+                    errors.append(
+                        f'{source}:{index + 1}: #prep assembler module solo '
+                        'se permite a nivel de modulo'
+                    )
+                    transformed.append(_blank_line(line))
+                    active = _ActivePrep(
+                        [], module_match.group('dialect'), None,
+                        index + 1, False, True,
+                    )
+                    index += 1
+                    continue
+
+                transformed.append(_blank_line(line))
+                active = _ActivePrep(
+                    [], module_match.group('dialect'), None,
+                    index + 1, True, True,
+                )
+                index += 1
+                continue
+
             match = _PREP_RE.match(line.rstrip('\r\n'))
             if match is None:
                 errors.append(
@@ -118,7 +148,7 @@ def extract_prep_blocks(
                     '#prep assembler "dialecto"'
                 )
                 transformed.append(_blank_line(line))
-                active = _ActivePrep([], '', '', index + 1, False)
+                active = _ActivePrep([], '', None, index + 1, False)
                 index += 1
                 continue
 
@@ -128,7 +158,7 @@ def extract_prep_blocks(
                 )
                 transformed.append(_blank_line(line))
                 active = _ActivePrep(
-                    [], match.group('dialect'), '', index + 1, False
+                    [], match.group('dialect'), None, index + 1, False
                 )
                 index += 1
                 continue
@@ -171,13 +201,20 @@ def _windows_x64_registers(target_triple: str) -> tuple[dict[str, str], ...]:
 
 def _normalize_dialect(dialect: str) -> str:
     normalized = dialect.strip().lower()
-    if normalized == 'intel':
-        return 'intel'
+    if normalized in {'gas-intel', 'gas_intel', 'intel-gas', 'intel'}:
+        # ``intel`` remains a compatibility alias. The emitted syntax is
+        # GAS/LLVM Intel syntax, not NASM syntax.
+        return 'gas-intel'
     if normalized in {'att', 'at&t', 'att_syntax'}:
         return 'att'
+    if normalized in {'nasm', 'intel-nasm'}:
+        raise PrepError(
+            'El dialecto NASM no es compatible con el ensamblador integrado de '
+            'Clang; usa "gas-intel" para Intel-GAS o configura un backend NASM'
+        )
     raise PrepError(
         f'Dialecto ASM no soportado en esta fase: {dialect!r}; '
-        'usa "intel" o "att"'
+        'usa "gas-intel" o "att"'
     )
 
 
@@ -235,7 +272,7 @@ def _stack_operand(index: int, dialect: str) -> str:
     # At function entry, Windows x64 places the fifth argument after the
     # return address and the 32-byte shadow space: rsp + 0x28.
     offset = 0x28 + (index - 4) * 8
-    if dialect == 'intel':
+    if dialect == 'gas-intel':
         return f'[rsp + 0x{offset:x}]'
     return f'{offset}(%rsp)'
 
@@ -311,15 +348,24 @@ def _render_assembly(
         )
 
     symbol_name = '__bagron_main' if block.function_name == 'main' else block.function_name
-    syntax = '.intel_syntax noprefix' if dialect == 'intel' else '.att_syntax prefix'
-    status_setup = 'mov eax, 1' if dialect == 'intel' else 'movl $1, %eax'
+    syntax = '.intel_syntax noprefix' if dialect == 'gas-intel' else '.att_syntax prefix'
+    return_type = getattr(getattr(function, 'signature', None), 'return_type', None)
+    is_void = (
+        getattr(return_type, 'name', None) == 'void'
+        and getattr(return_type, 'pointer_level', 0) == 0
+        and getattr(return_type, 'array_depth', 0) == 0
+    )
+    status_setup = None if is_void else (
+        'mov eax, 1' if dialect == 'gas-intel' else 'movl $1, %eax'
+    )
     lines = [
         syntax,
         '.text',
         f'.globl {symbol_name}',
         f'{symbol_name}:',
-        f'    {status_setup}',
     ]
+    if status_setup is not None:
+        lines.append(f'    {status_setup}')
     if body:
         lines.extend(
             f'    {line}' if line else ''
@@ -327,6 +373,24 @@ def _render_assembly(
         )
     lines.extend(('    ret', ''))
     return '\n'.join(lines)
+
+
+def _render_module_assembly(block: PrepBlock) -> str:
+    """Render a module ASM unit without imposing a function ABI."""
+    dialect = _normalize_dialect(block.dialect)
+    if '{' in block.body or '}' in block.body:
+        raise PrepError(
+            'Un bloque ASM de modulo no admite placeholders de parametros; '
+            'usa un bloque dentro de una funcion'
+        )
+
+    syntax = (
+        '.intel_syntax noprefix'
+        if dialect == 'gas-intel'
+        else '.att_syntax prefix'
+    )
+    body = block.body.rstrip('\r\n')
+    return f'{syntax}\n{body}\n' if body else f'{syntax}\n'
 
 
 def write_prep_files(
@@ -368,13 +432,15 @@ def write_prep_files(
                     previous.unlink()
             cleaned_directories.add(module_dir)
 
-        key = (source, block.function_name)
+        key = (source, block.function_name or '__module__')
         block_index = counters[key]
         counters[key] += 1
-        function_name = _safe_component(block.function_name)
+        function_name = _safe_component(block.function_name or 'module')
         destination = module_dir / f'{function_name}__prep_{block_index}.asm'
         function = functions.get(block.function_name) if functions is not None else None
-        if function is not None and target_triple is not None:
+        if block.is_module:
+            content = _render_module_assembly(block)
+        elif function is not None and target_triple is not None:
             content = _render_assembly(block, function, target_triple)
         else:
             content = block.body

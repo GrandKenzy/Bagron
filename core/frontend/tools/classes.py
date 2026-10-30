@@ -366,7 +366,7 @@ def _initializer_fields(
             value_info = infer_value(
                 value_node,
                 parameter_scope.resolve,
-                compiler.storage.functions,
+                compiler.function_lookup,
             )
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(f'{class_name}.{field_name}: {error}')
@@ -629,7 +629,7 @@ def _validate_parent_initializer_call(
             argument_info = infer_value(
                 argument,
                 scope.resolve,
-                compiler.storage.functions,
+                compiler.function_lookup,
             )
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(
@@ -657,6 +657,7 @@ def validate_inheritance(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
 
     parents: dict[str, AggregateSymbol | None] = {}
     for symbol in classes:
+        compiler.activate_module(symbol.module_path)
         parent = (
             compiler.storage.resolve_type(symbol.parent_type)
             if symbol.parent_type
@@ -744,9 +745,11 @@ def validate_inheritance(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         return symbol.all_fields
 
     for symbol in classes:
+        compiler.activate_module(symbol.module_path)
         flatten(symbol)
 
     for symbol in classes:
+        compiler.activate_module(symbol.module_path)
         parent = parents.get(symbol.name)
         if parent is not None:
             _validate_parent_initializer_call(compiler, symbol, parent)
@@ -812,6 +815,8 @@ def collect_methods(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
     for node in nodes:
         if node.name != 'CLASS':
             continue
+
+        compiler.activate_module(compiler.module_for_node(node))
 
         class_symbol = compiler.type_bindings.get(id(node))
         if not isinstance(class_symbol, AggregateSymbol):
@@ -880,6 +885,8 @@ def collect_methods(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
                 is_method=True,
                 is_static=is_static,
                 receiver_name=receiver_name,
+                module_path=compiler.module_for_node(node),
+                privacy=function_tools._privacy(item),
             )
             if not compiler.storage.define_method(symbol):
                 compiler.error(f'El metodo ya fue declarado: {method_name}')

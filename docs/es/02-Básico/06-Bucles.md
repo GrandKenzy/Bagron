@@ -1,11 +1,9 @@
 # Bucles
 
-`for` es el bucle numérico por rango de Bagron. Repite un bloque mientras un
-iterador unsigned avance desde un inicio hasta un límite exclusivo.
-
-No es un `foreach`: no recibe arrays, matrices, `chain` ni otros objetos
-iterables. El rango siempre está escrito explícitamente y el compilador conoce
-el tipo del iterador desde la firma del bucle.
+`for` tiene dos formas canónicas en Bagron. La forma `ran` recorre un rango
+numérico explícito; la forma `in` recorre la primera dimensión de un array y
+obtiene su tamaño exacto desde el tipo o desde el `Len_t` oculto de un
+parámetro.
 
 ## Sintaxis
 
@@ -15,6 +13,23 @@ La forma canónica es:
 for nombre: uint32 ran (inicio, limite, paso):
     ; cuerpo
 ```
+
+Para recorrer un array se puede escribir:
+
+```bg
+for i: int32 in MiArray:
+    ; i toma los valores 0 .. MiArray.len - 1
+```
+
+La forma `in` equivale semánticamente a un rango ascendente desde `0`, con
+límite exclusivo igual al tamaño exacto de la primera dimensión de `MiArray` y
+paso `1`. El compilador inserta ese límite; no se escribe a mano ni se obtiene
+de un valor externo.
+
+`MiArray` debe ser un array direccionable. Se rechazan escalares, punteros
+crudos, literales y temporales. En una matriz, el bucle recorre la primera
+dimensión. Un array de tamaño fijo usa su longitud estática; un parámetro de
+array abierto usa el `Len_t` oculto que acompaña a la firma.
 
 Los tres valores del rango son obligatorios:
 
@@ -67,6 +82,11 @@ iterador:
 
 Estos errores son independientes de `@unsafe`: una función insegura tampoco
 puede cambiar el tipo requerido por el `for`.
+
+La forma `in` es la excepción controlada para arrays: su iterador puede ser
+cualquier entero escalar, por ejemplo `int32`, `int64`, `uint32` o `usize`,
+siempre que el tamaño exacto del array quepa en ese tipo y en el límite del
+target. El iterador sigue siendo local y de solo lectura.
 
 ```bg
 for a: uint32 ran (0, 4, 1):
@@ -287,23 +307,30 @@ bucle más cercano.
 
 ## Arrays y matrices
 
-`for` no convierte automáticamente un array en un iterador ni modifica las
-reglas de arrays estáticos. Un índice calculado con el iterador sigue estando
-sujeto a la comprobación de límites:
+La forma `in` es la forma canónica para recorrer un array:
 
 ```bg
-@unsafe
-func sum(values: int32[3]) int32:
+func sum(values: int32[3], length: Len_t, element_size: Size_t) int32:
     total: int32 = 0
-    for i: uint32 ran (0, 3, 1):
+    for i: int32 in values:
         total += values[i]
     return total
+
+func main() int32:
+    values: int32[3] = {10, 20, 30}
+    return sum(values)
 ```
 
-La forma `@unsafe` del ejemplo solo autoriza el índice dinámico; no permite
-usar un tipo de iterador inválido, repetir nombres activos ni superar el
-límite máximo del target. Las dimensiones de una matriz continúan siendo
-parte del tipo y no se pierden dentro del bucle.
+En un array fijo, el compilador conserva la relación entre `i` y `values`: el
+acceso `values[i]` es seguro en una función normal porque el índice solo puede
+tomar valores dentro de la primera dimensión. Esa garantía no se transfiere a
+otro array, aunque tenga un tamaño parecido, ni a una expresión distinta.
+
+En un parámetro de array abierto, el límite proviene de `Len_t` en tiempo de
+ejecución. La forma `in` sigue siendo válida, pero un acceso dinámico dentro de
+una función segura requiere una prueba estática adicional; si no puede
+demostrarse, la función debe marcarse `@unsafe`. `@unsafe` no relaja la forma
+del `for`, la regla de solo lectura ni el límite máximo del target.
 
 ## `while`
 
@@ -442,7 +469,8 @@ en el alcance exterior de la función.
 
 Las reglas del `for` son:
 
-- el iterador pertenece a la familia unsigned fija: `uint8`, `uint16`, `uint32` o `uint64`;
+- la forma `ran` usa `uint8`, `uint16`, `uint32` o `uint64`;
+- la forma `in` usa un entero escalar y toma el tamaño exacto de un array;
 - `int` y `uint` genéricos no existen;
 - el rango es ascendente y su límite final es exclusivo;
 - el paso debe ser positivo y distinto de cero;

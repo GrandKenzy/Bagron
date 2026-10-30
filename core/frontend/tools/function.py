@@ -19,10 +19,12 @@ from core.frontend.tools.types import (
     infer_lvalue,
     infer_value,
     is_bool_scalar,
+    is_buffer_type,
     is_condition_type,
     is_compatible,
     resolve_type,
     target_iteration_limit,
+    _integer_bounds,
     _type_is_const,
     _type_name,
 )
@@ -82,6 +84,18 @@ def _token_kind(node: object) -> str | None:
 def _token_value(node: object) -> object | None:
     token = _token(node)
     return getattr(token, 'value', None)
+
+
+def _privacy(node: object) -> str:
+    for child in _children(node):
+        value = _token_value(child)
+        if value in ('public', 'private'):
+            return str(value)
+        if isinstance(child, gast.ASTRef):
+            found = _privacy(child)
+            if found != 'public':
+                return found
+    return 'public'
 
 
 def _identifier(node: object) -> str | None:
@@ -146,10 +160,7 @@ def _global_declarations(node: object) -> list[gast.ASTRef]:
 
 
 def _module_variable(compiler: Compiler, name: str) -> object | None:
-    variable = compiler.storage.namespace.get(name)
-    if variable is not None:
-        return variable
-    return compiler.storage.variable_aliases.get(name)
+    return compiler.storage.resolve_module_value(name)
 
 
 def _register_global_declarations(
@@ -442,9 +453,19 @@ def _signature_parameters(
                 source_type.pointer_level == 0
                 and source_type.array_depth > 0
             )
-            if parameter.is_length and not (lengthable_chain or lengthable_array):
+            if parameter.is_size and is_buffer_type(source_type):
                 raise TypeResolutionError(
-                    'Len_t solo puede asociarse a un parametro array o chain'
+                    f'Size_t no puede asociarse al buffer {last_data_parameter.name}; '
+                    'un buffer siempre tiene elementos de un byte'
+                )
+            lengthable_buffer = is_buffer_type(source_type)
+            if parameter.is_length and not (
+                lengthable_chain
+                or lengthable_array
+                or lengthable_buffer
+            ):
+                raise TypeResolutionError(
+                    'Len_t solo puede asociarse a un parametro array, buffer o chain'
                 )
             parameters.append(
                 ParameterSpec(
@@ -467,15 +488,39 @@ def _signature_parameters(
 def _validate_array_expansion_parameters(
     parameters: tuple[ParameterSpec, ...],
 ) -> None:
-    """Require Len_t and Size_t for every array parameter.
+    """Require the appropriate expansion parameters for data parameters.
 
     The expansion parameters are compiler-supplied, but they are part of the
     function ABI.  Requiring both values for every array keeps that ABI
     explicit and prevents unsafe functions from silently omitting metadata.
     ``chain`` remains a separate static-string case and only uses ``Len_t``.
+    A ``buffer`` carries its byte width in its descriptor, so it only accepts
+    ``Len_t``; ``Size_t`` would always be the redundant value ``1``.
     """
     for parameter in parameters:
         type_spec = parameter.type_spec
+        if is_buffer_type(type_spec):
+            linked = [
+                candidate
+                for candidate in parameters
+                if (
+                    (candidate.is_length or candidate.is_size)
+                    and candidate.length_of == parameter.name
+                )
+            ]
+            lengths = [candidate for candidate in linked if candidate.is_length]
+            sizes = [candidate for candidate in linked if candidate.is_size]
+            if sizes:
+                raise TypeResolutionError(
+                    f'El buffer {parameter.name} solo puede declarar Len_t; '
+                    'Size_t no aplica a buffers'
+                )
+            if len(lengths) != 1:
+                raise TypeResolutionError(
+                    f'El buffer {parameter.name} debe declarar Len_t para '
+                    'exponer su longitud en bytes'
+                )
+            continue
         if (
             parameter.is_length
             or parameter.is_size
@@ -550,6 +595,11 @@ def signature_from_node(
         pointer_level=return_pointer,
         pointer_size=pointer_size,
     )
+    if return_type.name == 'buffer':
+        raise TypeResolutionError(
+            f'La funcion {name or "<anonima>"} no puede retornar buffer hasta '
+            'definir su ABI de propiedad entre funciones'
+        )
     if return_type.name == 'Never' and (
         return_type.pointer_level or return_type.array_depth
     ):
@@ -634,6 +684,8 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             signature,
             decorators=decorators,
             is_inline=_is_inline(node),
+            module_path=compiler.module_for_node(node),
+            privacy=_privacy(node),
         )
         compiler.storage.define_function(symbol)
         compiler.function_bindings[id(node)] = symbol
@@ -714,7 +766,7 @@ def _validate_return(
         value_info = infer_value(
             value_node,
             scope.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=symbol,
         )
     except UnsupportedExpressionError:
@@ -800,7 +852,69 @@ def _for_binding(
         compiler.error(f'{name}: {error}')
         return None
 
-    if (
+    array_value = next(
+        (
+            child for child in children
+            if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+        ),
+        None,
+    )
+    array_form = any(_token_value(child) == 'in' for child in children)
+
+    if array_form:
+        if (
+            type_spec.name not in INTEGER_TYPES
+            or type_spec.pointer_level
+            or type_spec.array_depth
+        ):
+            compiler.error(
+                f'El iterador {name} de un array debe tener un tipo entero escalar'
+            )
+            return None
+        if array_value is None:
+            compiler.error(f'El for de {name} necesita un array fuente')
+            return None
+        try:
+            array_info = infer_value(
+                array_value,
+                scope.resolve,
+                compiler.function_lookup,
+                current_function=symbol,
+            )
+        except (UnsupportedExpressionError, ValueResolutionError) as error:
+            compiler.error(f'El array del for de {name} es invalido: {error}')
+            return None
+        if (
+            not array_info.is_lvalue
+            or array_info.type_spec.pointer_level
+            or array_info.type_spec.array_depth == 0
+        ):
+            compiler.error(
+                f'El origen de {name} debe ser un array direccionable, no un valor '
+                'escalar o un puntero'
+            )
+            return None
+        length = (
+            array_info.type_spec.array_lengths[0]
+            if array_info.type_spec.array_lengths
+            else None
+        )
+        if length is not None:
+            bounds = _integer_bounds(type_spec)
+            if bounds is None or length > bounds[1]:
+                compiler.error(
+                    f'El tamano del array del for de {name} no cabe en '
+                    f'{type_spec.canonical_name}'
+                )
+                return None
+            if length > target_iteration_limit(compiler.storage.pointer_size):
+                compiler.error(
+                    f'El tamano del array del for de {name} excede el limite '
+                    'maximo de iteracion del target '
+                    f'({target_iteration_limit(compiler.storage.pointer_size)})'
+                )
+                return None
+    elif (
         type_spec.name not in FOR_ITERATOR_TYPES
         or type_spec.pointer_level
         or type_spec.array_depth
@@ -810,42 +924,42 @@ def _for_binding(
         )
         return None
 
-    range_values = [
-        child for child in children
-        if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
-    ]
-    if len(range_values) != 3:
-        compiler.error(f'El rango de {name} debe tener start, end y step')
-        return None
-
-    for index, value_node in enumerate(range_values):
-        try:
-            value_info = infer_value(
-                value_node,
-                scope.resolve,
-                compiler.storage.functions,
-                current_function=symbol,
-            )
-        except (UnsupportedExpressionError, ValueResolutionError) as error:
-            compiler.error(f'El rango de {name} es invalido: {error}')
-            continue
-        if not is_compatible(type_spec, value_info):
-            compiler.error(
-                f'El valor {index + 1} del rango de {name} no coincide con '
-                f'{type_spec.canonical_name}'
-            )
-        if (
-            value_info.is_literal
-            and isinstance(value_info.value, int)
-            and value_info.value > target_iteration_limit(compiler.storage.pointer_size)
-        ):
-            compiler.error(
-                f'El valor {index + 1} del rango de {name} excede '
-                'el limite maximo de iteracion del target '
-                f'({target_iteration_limit(compiler.storage.pointer_size)})'
-            )
-        if index == 2 and value_info.is_literal and value_info.value == 0:
-            compiler.error(f'El step de {name} no puede ser cero')
+    if not array_form:
+        range_values = [
+            child for child in children
+            if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+        ]
+        if len(range_values) != 3:
+            compiler.error(f'El rango de {name} debe tener start, end y step')
+            return None
+        for index, value_node in enumerate(range_values):
+            try:
+                value_info = infer_value(
+                    value_node,
+                    scope.resolve,
+                    compiler.function_lookup,
+                    current_function=symbol,
+                )
+            except (UnsupportedExpressionError, ValueResolutionError) as error:
+                compiler.error(f'El rango de {name} es invalido: {error}')
+                continue
+            if not is_compatible(type_spec, value_info):
+                compiler.error(
+                    f'El valor {index + 1} del rango de {name} no coincide con '
+                    f'{type_spec.canonical_name}'
+                )
+            if (
+                value_info.is_literal
+                and isinstance(value_info.value, int)
+                and value_info.value > target_iteration_limit(compiler.storage.pointer_size)
+            ):
+                compiler.error(
+                    f'El valor {index + 1} del rango de {name} excede '
+                    'el limite maximo de iteracion del target '
+                    f'({target_iteration_limit(compiler.storage.pointer_size)})'
+                )
+            if index == 2 and value_info.is_literal and value_info.value == 0:
+                compiler.error(f'El step de {name} no puede ser cero')
 
     if (
         name in symbol.local_variables
@@ -859,6 +973,10 @@ def _for_binding(
 
     iterator = build_symbol(scope, name, type_spec, kind='local')
     iterator.is_for_iterator = True
+    if array_form and length is not None:
+        iterator.for_array_source = array_info.identifier
+        iterator.for_array_path = array_info.address_path
+        iterator.for_array_length = length
     scope.add(name, iterator)
     symbol.loop_iterators[name] = type_spec
     return name
@@ -911,11 +1029,29 @@ def _validate_deletion(
         value_info = infer_value(
             value_node,
             scope.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
         compiler.error(f'{symbol.name}: Del es invalido: {error}')
+        return
+
+    if is_buffer_type(value_info.type_spec):
+        owner = (
+            scope.resolve(value_info.identifier)
+            if value_info.identifier is not None
+            else None
+        )
+        if owner is not None and getattr(owner, 'scope_kind', None) == 'parameter':
+            compiler.error(
+                f'Del en {symbol.name} no puede liberar un buffer recibido como '
+                'parametro; la propiedad entre funciones aun no esta definida'
+            )
+            return
+        if not value_info.is_lvalue:
+            compiler.error(
+                f'Del en {symbol.name} requiere una variable propietaria de buffer'
+            )
         return
 
     aggregate = compiler.storage.resolve_type(value_info.type_spec.name)
@@ -949,7 +1085,7 @@ def _validate_condition(
         value_info = infer_value(
             value_node,
             scope.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
@@ -1095,7 +1231,7 @@ def _validate_assignment(
         target_info = infer_lvalue(
             target,
             scope.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
@@ -1167,7 +1303,7 @@ def _validate_assignment(
         value_info = infer_value(
             value_node,
             scope.resolve,
-            compiler.storage.functions,
+            compiler.function_lookup,
             current_function=symbol,
         )
     except (UnsupportedExpressionError, ValueResolutionError) as error:
@@ -1178,6 +1314,13 @@ def _validate_assignment(
         compiler.error(
             f'La asignacion de {name} no coincide con '
             f'{target_info.type_spec.canonical_name}'
+        )
+        return
+
+    if is_buffer_type(target_info.type_spec) or is_buffer_type(value_info.type_spec):
+        compiler.error(
+            f'La asignacion de {name} no puede copiar buffers; la transferencia '
+            'de propiedad aun no esta definida'
         )
         return
 
@@ -1225,6 +1368,7 @@ def _validate_assembler_body(
     body: gast.ASTRef,
 ) -> None:
     prep_count = _prep_count(compiler, symbol)
+    symbol.has_asm_body = bool(prep_count)
     if prep_count and not symbol.is_assembler:
         compiler.error(
             f'La funcion {symbol.name} requiere el decorador @assembler '
@@ -1280,9 +1424,18 @@ def _validate_assembler_body(
                 f'La funcion @assembler {symbol.name} debe usar return asm '
                 'cuando contiene ensamblador'
             )
-        if return_asm_count != 1:
+        is_void = (
+            symbol.signature.return_type.name == 'void'
+            and symbol.signature.return_type.pointer_level == 0
+            and symbol.signature.return_type.array_depth == 0
+        )
+        if not is_void and return_asm_count != 1:
             compiler.error(
                 f'La funcion @assembler {symbol.name} requiere un unico return asm'
+            )
+        if is_void and return_asm_count:
+            compiler.error(
+                f'La funcion void @assembler {symbol.name} no puede usar return asm'
             )
     elif return_asm_count:
         compiler.error(
@@ -1519,7 +1672,7 @@ def _process_body_node(
             call_info = infer_call(
                 node,
                 scope.resolve,
-                compiler.storage.functions,
+                compiler.function_lookup,
                 current_function=symbol,
             )
             if (
@@ -1562,6 +1715,8 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     if symbol is None:
         return
 
+    compiler.activate_module(symbol.module_path)
+
     body = _body_node(node)
     if body is None:
         compiler.error(f'La funcion {symbol.name} no tiene cuerpo')
@@ -1580,6 +1735,13 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
 
     return_type = symbol.signature.return_type
     body_terminates = _statement_body_guarantees_return(body, symbol)
+    if (
+        symbol.has_asm_body
+        and return_type.name == 'void'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+    ):
+        body_terminates = True
     symbol.body_terminates = body_terminates or (
         return_type.name == 'Never'
         and return_type.pointer_level == 0

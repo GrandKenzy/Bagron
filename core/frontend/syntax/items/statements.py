@@ -84,22 +84,34 @@ class GLOBAL(cmb.RuleItem):
     )
     
 # for i: uint32 ran (inicio, limite, paso):
+# for i: int32 in values:
 class FOR_SIGNATURE(cmb.RuleItem):
     nodeable = True
-    entrypoint = cmb.Seq(
-        cmb.MatchKeyword('for'),
-        cmb.MatchToken('IDENT'),
-        cmb.MatchToken('COLON'),
-        cmb.Ref(TYPE),
-        cmb.MatchKeyword('ran'),
-        cmb.MatchToken('LPAREN'),
-        cmb.Ref(VALUE),
-        cmb.MatchToken('COMMA'),
-        cmb.Ref(VALUE),
-        cmb.MatchToken('COMMA'),
-        cmb.Ref(VALUE),
-        cmb.MatchToken('RPAREN'),
-        cmb.MatchToken('COLON'),
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.MatchKeyword('for'),
+            cmb.MatchToken('IDENT'),
+            cmb.MatchToken('COLON'),
+            cmb.Ref(TYPE),
+            cmb.MatchKeyword('ran'),
+            cmb.MatchToken('LPAREN'),
+            cmb.Ref(VALUE),
+            cmb.MatchToken('COMMA'),
+            cmb.Ref(VALUE),
+            cmb.MatchToken('COMMA'),
+            cmb.Ref(VALUE),
+            cmb.MatchToken('RPAREN'),
+            cmb.MatchToken('COLON'),
+        ),
+        cmb.Seq(
+            cmb.MatchKeyword('for'),
+            cmb.MatchToken('IDENT'),
+            cmb.MatchToken('COLON'),
+            cmb.Ref(TYPE),
+            cmb.MatchKeyword('in'),
+            cmb.Ref(VALUE),
+            cmb.MatchToken('COLON'),
+        ),
     )
     
 # CUERPOS
