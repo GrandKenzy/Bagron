@@ -88,6 +88,52 @@ class ModuleTests(unittest.TestCase):
 
         self.assertIn('call i32 @"doble"(i32 3)', module)
 
+    def test_selective_import_calls_multiple_specific_symbols(self):
+        """A selective import binds each requested alias to its source symbol."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'math.bg').write_text(
+                'func doble(value: int32) int32:\n'
+                '    return value + value\n'
+                'func triple(value: int32) int32:\n'
+                '    return value + value + value\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { doble as n, triple as t } from math\n'
+                'func main() int32:\n'
+                '    return n(2) + t(2)\n',
+                encoding='utf-8',
+            )
+
+            module_path = Compiler().compile(main, executable=False)
+            module = Path(module_path).read_text(encoding='utf-8')
+
+        self.assertIn('call i32 @"doble"(i32 2)', module)
+        self.assertIn('call i32 @"triple"(i32 2)', module)
+
+    def test_selective_import_rejects_private_symbol(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'hidden.bg').write_text(
+                'private func secret() int32:\n'
+                '    return 7\n'
+                'public func visible() int32:\n'
+                '    return 9\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { secret as exposed } from hidden\n'
+                'func main() int32:\n'
+                '    return exposed()\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'no es publico'):
+                Compiler().compile(main, executable=False)
+
     def test_imported_alias_preserves_array_expansion_signature(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -373,6 +419,72 @@ class ModuleTests(unittest.TestCase):
 
             with self.assertRaisesRegex(CompilationError, 'Ciclo de importacion'):
                 Compiler().compile(main, executable=False)
+
+    def test_import_reports_three_module_cycle_with_full_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'a.bg').write_text('import b\n', encoding='utf-8')
+            (root / 'b.bg').write_text('import c\n', encoding='utf-8')
+            (root / 'c.bg').write_text('import a\n', encoding='utf-8')
+            main = root / '_main.bg'
+            main.write_text(
+                'import a\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaises(CompilationError) as context:
+                Compiler().compile(main, executable=False)
+
+        message = str(context.exception)
+        self.assertIn('Ciclo de importacion detectado', message)
+        self.assertIn('a.bg', message)
+        self.assertIn('b.bg', message)
+        self.assertIn('c.bg', message)
+
+    def test_diamond_import_loads_shared_module_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'shared.bg').write_text(
+                'func leaf() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            (root / 'left.bg').write_text(
+                'import shared\n'
+                'func from_left() int32:\n'
+                '    return leaf()\n',
+                encoding='utf-8',
+            )
+            (root / 'right.bg').write_text(
+                'import shared\n'
+                'func from_right() int32:\n'
+                '    return leaf()\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import left\n'
+                'import right\n'
+                'func main() int32:\n'
+                '    return from_left() + from_right()\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            module_path = compiler.compile(main, executable=False)
+            module = Path(module_path).read_text(encoding='utf-8')
+            loaded_names = [
+                Path(path).name for path in compiler.storage.loaded_modules
+            ]
+
+        self.assertEqual(4, len(loaded_names))
+        self.assertEqual(4, len(set(loaded_names)))
+        self.assertEqual(1, loaded_names.count('shared.bg'))
+        self.assertEqual(1, module.count('define i32 @"leaf"'))
+        self.assertIn('call i32 @"from_left"()', module)
+        self.assertIn('call i32 @"from_right"()', module)
 
 if __name__ == '__main__':
     unittest.main()
