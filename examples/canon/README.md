@@ -32,6 +32,7 @@ Responsabilidades de los módulos:
 - `standard.bg`: fachada publica para utilidades numericas;
 - `time.bg` y `alphabet.bg`: reloj y constantes independientes;
 - `assembly.bg`: frontera minima de ensamblador;
+- `benchmark.bg`: benchmark puro en Bagron para medir las escrituras de consola;
 - `_main.bg`: target, datos globales y orquestacion.
 
 Ejecutar desde la raíz del repositorio:
@@ -41,3 +42,13 @@ vnma run main.py examples/canon/_main.bg
 ```
 
 El ejecutable y el LLVM IR se generan en `examples/canon/build/`.
+
+Benchmark de consola:
+
+```text
+vnma run main.py examples/canon/benchmark.bg
+```
+
+Mide `write_chars`, `printb` en modo crudo y hexadecimal, y `write_text` con
+1000 iteraciones cada uno. Los tiempos se imprimen en microsegundos mediante
+`time.bg` y `printint(int64)`.

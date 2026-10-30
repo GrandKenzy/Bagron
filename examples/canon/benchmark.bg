@@ -1,0 +1,57 @@
+; Benchmark puro en Bagron para medir las primitivas actuales de consola.
+; Cada bloque escribe el mismo volumen visible y solo mide la llamada probada.
+
+clause System 'windows'
+clause Arch 'amd'
+
+import console
+import standard
+import time
+
+@unsafe
+func main() int32:
+    iterations: uint32 = 1000
+    text: chain = "B"
+    chars: char[2] = "B"
+    bytes: byte[1] = {65}
+    start: int64 = 0
+    finish: int64 = 0
+    write_chars_us: int64 = 0
+    printb_raw_us: int64 = 0
+    printb_hex_us: int64 = 0
+    write_text_us: int64 = 0
+
+    start = time_ticks()
+    for i: uint32 ran (0, iterations, 1):
+        write_chars(chars, 1)
+    finish = time_ticks()
+    write_chars_us = time_us(start, finish)
+
+    start = time_ticks()
+    for i: uint32 ran (0, iterations, 1):
+        printb(bytes, false)
+    finish = time_ticks()
+    printb_raw_us = time_us(start, finish)
+
+    start = time_ticks()
+    for i: uint32 ran (0, iterations, 1):
+        printb(bytes, true)
+    finish = time_ticks()
+    printb_hex_us = time_us(start, finish)
+
+    start = time_ticks()
+    for i: uint32 ran (0, iterations, 1):
+        write_text(text)
+    finish = time_ticks()
+    write_text_us = time_us(start, finish)
+
+    print("write_chars_us=")
+    printint(write_chars_us)
+    print("\nprintb_raw_us=")
+    printint(printb_raw_us)
+    print("\nprintb_hex_us=")
+    printint(printb_hex_us)
+    print("\nwrite_text_us=")
+    printint(write_text_us)
+    print("\n")
+    return 0
