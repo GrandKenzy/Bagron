@@ -1,10 +1,4 @@
-clause Privacy "private"
-
-
-
-
-; exports
+; Constantes publicas de texto; el modulo no depende del target nativo.
 
 public NumericString: chain = "0123456789"
 public AlphabetString: chain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-

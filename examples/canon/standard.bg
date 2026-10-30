@@ -1,194 +1,23 @@
-; Biblioteca estandar minima para Windows x64.
-; Las funciones que cruzan la ABI nativa permanecen en la frontera unsafe.
+; Fachada de utilidades numericas para el ejemplo Windows.
+; La ABI y el algoritmo de serializacion viven en modulos separados.
 
 clause System 'windows'
-; import alphabet
+clause Arch 'amd'
 
+import console
+import formatting
 
-extern "kernel32":
-    GetStdHandle(nStdHandle: uint32) *: void
-    WriteFile(
-        hFile *: void,
-        lpBuffer *: const void,
-        nNumberOfBytesToWrite: uint32,
-        lpNumberOfBytesWritten *: uint32,
-        lpOverlapped *: void
-    ) int32
-
-@assembler
-func _win32_count(value: usize) uint32:
-    #prep assembler "intel"
-        mov rax, {value}
-    #end
-    return asm
-
+; Conserva la API de alto nivel y oculta el nombre de la primitiva Windows.
 @unsafe
-func _serialize_int_at_raw(
-    output: char[],
-    output_len: Len_t,
-    output_size: Size_t,
-    position: usize,
-    value: int32,
-    value_size: Size_t
-) usize:
-    digits_text: chain = "0123456789"
-    if output_size != 1:
-        return 0
-    if value_size != 4:
-        return 0
-    if position >= output_len:
-        return 0
+public func print(text: chain, length: Len_t) void:
+    write_text(text)
+    return
 
-    negative: bool = value < 0
-    digits: usize = 0
-    cursor: int32 = value
-    digit: int32 = 0
-    nul: char = "\0"
-    if value == 0:
-        digits = 1
-    elif negative:
-        while cursor < 0:
-            digits += 1
-            cursor /= 10
-    else:
-        while cursor > 0:
-            digits += 1
-            cursor /= 10
-
-    required: usize = digits
-    if negative:
-        required += 1
-    required += 1
-    if required > output_len - position:
-        return 0
-
-    if negative:
-        output[position] = "-"
-        position += 1
-
-    write_position: usize = position
-    write_position += digits
-    write_position -= 1
-    cursor = value
-    if value == 0:
-        output[write_position] = "0"
-    elif negative:
-        while cursor < 0:
-            digit = 0 - (cursor % 10)
-            output[write_position] = digits_text[digit]
-            write_position -= 1
-            cursor /= 10
-    else:
-        while cursor > 0:
-            digit = cursor % 10
-            output[write_position] = digits_text[digit]
-            write_position -= 1
-            cursor /= 10
-
-    nul_position: usize = position
-    nul_position += digits
-    output[nul_position] = nul
-
-    written: usize = digits
-    if negative:
-        written += 1
-    return written
-
+; Imprime un entero usando el formateador y la salida Windows ya aislados.
 @unsafe
-func serialize_int(
-    output: char[],
-    output_len: Len_t,
-    output_size: Size_t,
-    value: int32,
-    value_size: Size_t
-) usize:
-    if output_size != 1:
-        return 0
-    position: usize = 0
-    while position < output_len && output[position] != 0:
-        position += 1
-    return _serialize_int_at_raw(output, position, value)
-
-@unsafe
-func serialize_int_at(
-    output: char[],
-    output_len: Len_t,
-    output_size: Size_t,
-    position: usize,
-    value: int32,
-    value_size: Size_t
-) usize:
-    if output_size != 1:
-        return 0
-    return _serialize_int_at_raw(output, position, value)
-
-@unsafe
-func print_int(value: int32) void:
-    handle *: void = GetStdHandle(4294967285)
+public func print_int(value: int32) void:
     buffer: char[32]
     written: usize = serialize_int(buffer, value)
-    if written == 0:
-        return
-    if written > 4294967295:
-        return
-    WriteFile(handle, $buffer[0], _win32_count(written), Null, Null)
-    return
-
-@unsafe
-func printa(buffer: char[], long: Len_t, size: Size_t) void:
-    handle *: void = GetStdHandle(4294967285)
-    if size == 0:
-        return
-    if long > 4294967295 / size:
-        return
-    total: usize = long * size
-    WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
-    return
-
-@unsafe
-func printb(
-    buffer: byte[],
-    long: Len_t,
-    size: Size_t,
-    hexadecimal: bool
-) void:
-    handle *: void = GetStdHandle(4294967285)
-    if size != 1:
-        return
-
-    if hexadecimal:
-        digits: chain = "0123456789ABCDEF"
-        index: usize = 0
-        value: byte = 0
-        high: byte = 0
-        low: byte = 0
-        pair: char[3] = "00"
-        while index < long:
-            value = buffer[index]
-            high = value / 16
-            low = value % 16
-            pair[0] = digits[high]
-            pair[1] = digits[low]
-            WriteFile(handle, $pair[0], 2, Null, Null)
-            index += 1
-        return
-
-    if long > 4294967295 / size:
-        return
-    total: usize = long * size
-    if total > 0:
-        WriteFile(handle, $buffer[0], _win32_count(total), Null, Null)
-    return
-
-@unsafe
-func print(text: chain, length: Len_t) void:
-    handle *: void = GetStdHandle(4294967285)
-    count: usize = 0
-    if length > 0:
-        count = length
-        count -= 1
-    if count > 4294967295:
-        return
-    if count > 0:
-        WriteFile(handle, $text[0], _win32_count(count), Null, Null)
+    if written > 0:
+        write_chars(buffer, written)
     return

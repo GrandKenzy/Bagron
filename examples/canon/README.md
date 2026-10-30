@@ -1,6 +1,6 @@
 # Ejemplo canonico
 
-`_main.bg` reúne las construcciones que actualmente se validan y se compilan
+`_main.bg` coordina módulos pequeños que actualmente se validan y se compilan
 en un ejecutable nativo:
 
 - globales constantes, decimales, enteros de ancho fijo, arrays, `char`, `byte`,
@@ -22,6 +22,17 @@ en un ejecutable nativo:
   llamadas desde `main`;
 - `for` numéricos con `ran` y recorrido de arrays con `for i: int32 in values:`;
 - `func main() int32` como entrypoint LLVM y código de salida.
+
+Responsabilidades de los módulos:
+
+- `model.bg`: enum, estructuras, mold, flags y comprobaciones de layout;
+- `math.bg`: operaciones numericas y recorridos de arrays;
+- `console.bg`: ABI de `kernel32` y escritura de buffers;
+- `formatting.bg`: serializacion de enteros sin asignacion dinamica;
+- `standard.bg`: fachada publica para utilidades numericas;
+- `time.bg` y `alphabet.bg`: reloj y constantes independientes;
+- `assembly.bg`: frontera minima de ensamblador;
+- `_main.bg`: target, datos globales y orquestacion.
 
 Ejecutar desde la raíz del repositorio:
 

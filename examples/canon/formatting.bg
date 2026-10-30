@@ -1,0 +1,106 @@
+; Formateo de enteros sobre buffers proporcionados por el llamador.
+
+clause System 'windows'
+clause Arch 'amd'
+
+; Escribe un entero sin asignacion dinamica y deja el terminador en el buffer.
+@unsafe
+private func _serialize_int_at_raw(
+    output: char[],
+    output_len: Len_t,
+    output_size: Size_t,
+    position: usize,
+    value: int32,
+    value_size: Size_t
+) usize:
+    digits_text: chain = "0123456789"
+    if output_size != 1:
+        return 0
+    if value_size != 4:
+        return 0
+    if position >= output_len:
+        return 0
+
+    negative: bool = value < 0
+    digits: usize = 0
+    cursor: int32 = value
+    digit: int32 = 0
+    if value == 0:
+        digits = 1
+    elif negative:
+        while cursor < 0:
+            digits += 1
+            cursor /= 10
+    else:
+        while cursor > 0:
+            digits += 1
+            cursor /= 10
+
+    required: usize = digits
+    if negative:
+        required += 1
+    required += 1
+    if required > output_len - position:
+        return 0
+
+    if negative:
+        output[position] = "-"
+        position += 1
+
+    write_position: usize = position
+    write_position += digits
+    write_position -= 1
+    cursor = value
+    if value == 0:
+        output[write_position] = "0"
+    elif negative:
+        while cursor < 0:
+            digit = 0 - (cursor % 10)
+            output[write_position] = digits_text[digit]
+            write_position -= 1
+            cursor /= 10
+    else:
+        while cursor > 0:
+            digit = cursor % 10
+            output[write_position] = digits_text[digit]
+            write_position -= 1
+            cursor /= 10
+
+    nul_position: usize = position
+    nul_position += digits
+    output[nul_position] = "\0"
+
+    written: usize = digits
+    if negative:
+        written += 1
+    return written
+
+; Serializa al final del texto existente para permitir composicion incremental.
+@unsafe
+public func serialize_int(
+    output: char[],
+    output_len: Len_t,
+    output_size: Size_t,
+    value: int32,
+    value_size: Size_t
+) usize:
+    if output_size != 1:
+        return 0
+    position: usize = 0
+    while position < output_len && output[position] != 0:
+        position += 1
+    return _serialize_int_at_raw(output, position, value)
+
+; Serializa en una posicion concreta, sin buscar el terminador primero.
+@unsafe
+public func serialize_int_at(
+    output: char[],
+    output_len: Len_t,
+    output_size: Size_t,
+    position: usize,
+    value: int32,
+    value_size: Size_t
+) usize:
+    if output_size != 1:
+        return 0
+    return _serialize_int_at_raw(output, position, value)

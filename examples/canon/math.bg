@@ -1,0 +1,16 @@
+; Operaciones numericas reutilizables por el ejemplo canonico.
+
+; El hint permite a LLVM considerar esta suma para expansion en el llamador.
+inline func sumar(a: int32, b: int32) int32:
+    return a + b
+
+; Len_t y Size_t se inyectan automaticamente al pasar el array real.
+public func sumar_array(
+    values: int32[3],
+    length: Len_t,
+    element_size: Size_t
+) int32:
+    total: int32 = 0
+    for i: int32 in values:
+        total += values[i]
+    return total

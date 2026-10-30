@@ -1,0 +1,89 @@
+; Frontera Windows: solo este modulo conoce la ABI de kernel32.
+
+clause System 'windows'
+clause Arch 'amd'
+
+extern "kernel32":
+    GetStdHandle(nStdHandle: uint32) *: void
+    WriteFile(
+        hFile *: void,
+        lpBuffer *: const void,
+        nNumberOfBytesToWrite: uint32,
+        lpNumberOfBytesWritten *: uint32,
+        lpOverlapped *: void
+    ) int32
+
+@assembler
+private func _win32_count(value: usize) uint32:
+    #prep assembler "intel"
+        mov rax, {value}
+    #end
+    return asm
+
+; Escribe una cantidad explicita sin leer mas alla del array recibido.
+@unsafe
+public func write_chars(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t,
+    count: usize
+) void:
+    handle *: void = GetStdHandle(4294967285)
+    if size != 1:
+        return
+    if count > length:
+        return
+    if count > 4294967295:
+        return
+    if count > 0:
+        WriteFile(handle, $buffer[0], _win32_count(count), Null, Null)
+    return
+
+; Imprime un buffer de bytes o su representacion hexadecimal.
+@unsafe
+public func printb(
+    buffer: byte[],
+    length: Len_t,
+    size: Size_t,
+    hexadecimal: bool
+) void:
+    handle *: void = GetStdHandle(4294967285)
+    if size != 1:
+        return
+
+    if hexadecimal:
+        digits: chain = "0123456789ABCDEF"
+        index: usize = 0
+        value: byte = 0
+        high: byte = 0
+        low: byte = 0
+        pair: char[3] = "00"
+        while index < length:
+            value = buffer[index]
+            high = value / 16
+            low = value % 16
+            pair[0] = digits[high]
+            pair[1] = digits[low]
+            WriteFile(handle, $pair[0], 2, Null, Null)
+            index += 1
+        return
+
+    if length > 4294967295:
+        return
+    if length > 0:
+        WriteFile(handle, $buffer[0], _win32_count(length), Null, Null)
+    return
+
+; chain incluye un terminador; Windows recibe solo los caracteres visibles.
+@unsafe
+public func write_text(text: chain, length: Len_t) void:
+    handle *: void = GetStdHandle(4294967285)
+    count: usize = 0
+    if length > 0:
+        count = length
+        count -= 1
+    if count > 4294967295:
+        return
+    if count > 0:
+        WriteFile(handle, $text[0], _win32_count(count), Null, Null)
+    return

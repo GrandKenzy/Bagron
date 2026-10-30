@@ -1,15 +1,16 @@
-; Ejemplo canonico de Bagron.
-; Este archivo usa solo construcciones que el frontend valida y que el backend
-; LLVM actual puede compilar a un ejecutable nativo.
+; Ejecutable canonico: configura el target y coordina los modulos del ejemplo.
 
 clause Arch 'auto'
 clause System 'windows'
 
-import standard
+import standard as std
 import time
 import alphabet
+import model as data
+import math as numeric
+import assembly as machine
 
-; Globales estaticos y literales soportados por LLVM.
+; Datos globales estaticos y literales soportados por LLVM.
 limite: const int32 = 10
 factor: const double = 3.141516
 mascara: uint8 = 31
@@ -19,109 +20,21 @@ nombre: char[10] = "Hola"
 bytes: byte[6] = "x0x0xb"
 mensaje: chain = "cadena estatica"
 
-; Tipos nominales con layout y acceso a miembros en LLVM.
-enum Estado int8:
-    INACTIVO,
-    ACTIVO = 4,
-    PAUSADO,
-
-struct Punto:
-    x: int32
-    y: int16
-    estado: Estado
-
-mold PuntoBase:
-    punto: Punto
-    codigo: int32
-
-flags Permisos uint8:
-    leer: uBint<1> = 1
-    escribir: uBint<1> = 0
-    reservado: uBint<6> = 0
-
-; @packed conserva el layout byte a byte. @align(N) eleva la alineacion de
-; la instancia sin cambiar la direccion de sus miembros.
-@packed
-@align(8)
-struct Paquete:
-    etiqueta: byte
-    valor: int32
-
-; El molde comparte un unico bloque de memoria entre todas sus vistas.
-volatile mold Registro:
-    entero: int32
-    crudo: uint32
-
-; El contenedor de flags es uint8. @order_msb asigna el primer campo desde
-; el bit mas significativo; sin decorador, el orden es LSB.
-@order_msb
-volatile flags EstadoBits uint8:
-    activo: uBint<1> = 1
-    modo: uBint<2> = 2
-    reservado: uBint<5> = 0
-
-; Instancias globales cero para comprobar sus tipos LLVM nominales.
-punto: Punto
-base: PuntoBase
-permisos: Permisos
-
-; Las funciones int32 se emiten a LLVM y pueden llamarse desde main.
-func sumar(a: int32, b: int32) int32:
-    resultado: int32 = a
-    puntero_local *: int32 = $resultado
-    (puntero_local) += b
-    return (puntero_local)
-
-; La forma `in` inserta la longitud exacta de la primera dimension y permite
-; demostrar el acceso al mismo array en una funcion segura.
-func sumar_array(values: int32[3], length: Len_t, element_size: Size_t) int32:
-    total: int32 = 0
-    for i: int32 in values:
-        total += values[i]
-    return total
-
-; Struct, mold y flags se inicializan de forma determinista. Los campos de
-; mold son vistas del mismo almacenamiento y los de flags se leen/escriben
-; mediante mascara y desplazamiento.
-func revisar_agregados() int32:
-    punto_local: Punto
-    punto_local.x = 4
-    punto_local.y = 3
-    base_local: PuntoBase
-    base_local.punto = punto_local
-    permisos_local: Permisos
-    permisos_local.leer = 0
-    permisos_local.escribir = 1
-    paquete: Paquete
-    paquete.etiqueta = 1
-    paquete.valor = 7
-    registro: Registro
-    registro.entero = paquete.valor
-    estado: EstadoBits
-    estado.activo = 0
-    if permisos_local.escribir == 1:
-        if estado.activo == 0:
-            if registro.crudo == 7:
-                return base_local.punto.x + base_local.punto.y
-    return 0
-
-@assembler
-func asm_status() int32:
-    #prep assembler "intel"
-        xor eax, eax
-    #end
-    return asm
-
-; El entrypoint puede retornar el resultado de una llamada.
-
+; Las llamadas mantienen los metadatos de array como parametros expansivos.
 @unsafe
 func main() int32:
-
     global NumericString
     global AlphabetString
 
-    print(NumericString)
-    print(AlphabetString)
+    std.print(NumericString)
+    std.print(AlphabetString)
 
     valores_locales: int32[3] = {10, 20, 30}
-    return sumar_array(valores_locales)
+    resultado: int32 = numeric.sumar_array(valores_locales)
+
+    if data.revisar_agregados() != 7:
+        return 41
+    if machine.asm_status() != 0:
+        return 42
+
+    return resultado

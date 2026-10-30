@@ -1,0 +1,68 @@
+; Tipos nominales y comprobaciones de layout del ejemplo canonico.
+
+public enum Estado int8:
+    INACTIVO,
+    ACTIVO = 4,
+    PAUSADO,
+
+public struct Punto:
+    x: int32
+    y: int16
+    estado: Estado
+
+public mold PuntoBase:
+    punto: Punto
+    codigo: int32
+
+public flags Permisos uint8:
+    leer: uBint<1> = 1
+    escribir: uBint<1> = 0
+    reservado: uBint<6> = 0
+
+; @packed conserva el layout byte a byte; @align eleva la alineacion inicial.
+@packed
+@align(8)
+public struct Paquete:
+    etiqueta: byte
+    valor: int32
+
+; Las dos vistas de Registro comparten el mismo almacenamiento.
+public volatile mold Registro:
+    entero: int32
+    crudo: uint32
+
+; Los campos se asignan desde el bit mas significativo hacia el menos significativo.
+@order_msb
+public volatile flags EstadoBits uint8:
+    activo: uBint<1> = 1
+    modo: uBint<2> = 2
+    reservado: uBint<5> = 0
+
+; Comprueba que las vistas de agregados conservan el layout esperado.
+public func revisar_agregados() int32:
+    punto_local: Punto
+    punto_local.x = 4
+    punto_local.y = 3
+
+    base_local: PuntoBase
+    base_local.punto = punto_local
+
+    permisos_local: Permisos
+    permisos_local.leer = 0
+    permisos_local.escribir = 1
+
+    paquete: Paquete
+    paquete.etiqueta = 1
+    paquete.valor = 7
+
+    registro: Registro
+    registro.entero = paquete.valor
+
+    estado: EstadoBits
+    estado.activo = 0
+
+    if permisos_local.escribir == 1:
+        if estado.activo == 0:
+            if registro.crudo == 7:
+                return base_local.punto.x + base_local.punto.y
+    return 0

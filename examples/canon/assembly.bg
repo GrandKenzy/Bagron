@@ -1,0 +1,9 @@
+; Punto de entrada minimo para comprobar la frontera ASM de Bagron.
+
+@assembler
+func asm_status() int32:
+    #prep assembler "intel"
+        # El backend convierte este dialecto al ensamblador GAS Intel.
+        xor eax, eax
+    #end
+    return asm

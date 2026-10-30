@@ -1,5 +1,7 @@
+; Reloj de alta resolucion de Windows aislado tras una API numerica segura.
 
 clause System 'windows'
+clause Arch 'amd'
 
 extern "kernel32":
     QueryPerformanceCounter(
@@ -11,30 +13,29 @@ extern "kernel32":
     ) int32
 
 @unsafe
-func time_ticks() int64:
+public func time_ticks() int64:
     ticks: int64 = 0
     if QueryPerformanceCounter($ticks) == 0:
         return 0
     return ticks
 
 @unsafe
-func time_frequency() int64:
+public func time_frequency() int64:
     frequency: int64 = 0
     if QueryPerformanceFrequency($frequency) == 0:
         return 0
     return frequency
 
-@unsafe
-func time_elapsed_ticks(start: int64, end: int64) int64:
+; Evita multiplicar el intervalo completo antes de dividir por la frecuencia.
+public inline func time_elapsed_ticks(start: int64, end: int64) int64:
     if end < start:
         return 0
-
     elapsed: int64 = end
     elapsed -= start
     return elapsed
 
 @unsafe
-func time_us(start: int64, end: int64) int64:
+public func time_us(start: int64, end: int64) int64:
     if end < start:
         return 0
 
@@ -44,9 +45,8 @@ func time_us(start: int64, end: int64) int64:
 
     elapsed: int64 = end
     elapsed -= start
-
-    ; Adecuado para intervalos cortos sin overflow.
-    elapsed *= 1000000
-    elapsed /= frequency
-
-    return elapsed
+    seconds: int64 = elapsed / frequency
+    remainder: int64 = elapsed % frequency
+    microseconds: int64 = seconds * 1000000
+    microseconds += (remainder * 1000000) / frequency
+    return microseconds
