@@ -41,3 +41,18 @@ absoluto dependiente del hardware.
 La frontera de `console.bg` ahora centraliza la validación y la llamada a
 `WriteFile`, reutiliza el handle estándar y emite hexadecimal en bloques de
 512 caracteres. Se mantienen las firmas públicas y `HexadecimalUpperString`.
+
+## Referencia C
+
+Se añade `examples/canon/benchmark.c` con la misma carga del benchmark Bagron.
+Se compiló sin warnings con clang 21.1.0 en `-O0` y `-O2`. En una ejecución
+canalizada comparable, `-O0` produjo aproximadamente 1673 us para
+`write_chars`, 2140 us para `printb` crudo, 1950 us para hexadecimal y 3070 us
+para `write_text`, frente a aproximadamente 1952, 1946, 2048 y 1879 us de la
+ejecución Bagron canalizada. Una ejecución aislada de `-O2` mostró un valor
+atípico de 10874 us en `printb` hexadecimal, confirmando que el destino de salida y
+la planificación del proceso dominan estas muestras pequeñas.
+
+Estos números sirven como referencia de protocolo y no como umbral fijo:
+`benchmark.c` usa llamadas Win32 directas y no reproduce la semántica completa
+de validación de los módulos Bagron.

@@ -54,3 +54,13 @@ Mide `write_chars`, `printb` en modo crudo y hexadecimal, y `write_text` con
 medidas, resta el coste de un bucle vacío y muestra mínimo, promedio y coste
 aproximado por llamada. Los tiempos se imprimen en microsegundos mediante
 `time.bg` y `printint(int64)`.
+
+Referencia nativa en C:
+
+```text
+clang -std=c11 -O0 examples/canon/benchmark.c -o examples/canon/build/benchmark_c_O0.exe
+clang -std=c11 -O2 examples/canon/benchmark.c -o examples/canon/build/benchmark_c_O2.exe
+```
+
+`benchmark.c` conserva el mismo número de rondas y llamadas, y escribe sus
+métricas en `stderr` para separar la salida de prueba de los resultados.
