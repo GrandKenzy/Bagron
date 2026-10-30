@@ -189,9 +189,50 @@ class GlobalBackendTests(unittest.TestCase):
             module,
         )
         self.assertIn('@"bytes" = global [6 x i8]', module)
-        self.assertIn('@"mensaje" = constant [5 x i8]', module)
+        self.assertIn('@"mensaje" = unnamed_addr constant [5 x i8]', module)
         self.assertIn('global i8 65', module)
         self.assertIn('global i8 255', module)
+
+    def test_prod_chain_uses_direct_rodata_pointers(self):
+        source = (
+            '@unsafe\n'
+            'func read_local() char:\n'
+            '    text: chain = "A"\n'
+            '    return text[0]\n'
+            '@unsafe\n'
+            'func read_converted() char:\n'
+            '    source: const char[2] = "A"\n'
+            '    text: chain = source\n'
+            '    return text[0]\n'
+            '@unsafe\n'
+            'func read_parameter(text: chain, length: Len_t) char:\n'
+            '    return text[0]\n'
+        )
+
+        development = self.compile_source(source, optimization_profile='dev')
+        production = self.compile_source(source, optimization_profile='prod')
+        high = self.compile_source(source, optimization_profile='high')
+
+        self.assertIn('text.addr', development)
+        self.assertNotIn('text.addr', production)
+        self.assertNotIn('text.addr', high)
+        self.assertIn('ptr nonnull %text', production)
+        self.assertIn('ptr nonnull %text', high)
+        self.assertIn('ret i8 65', production)
+        self.assertIn('ret i8 65', high)
+
+    def test_module_string_pool_deduplicates_chain_literals(self):
+        module = self.compile_source(
+            '@unsafe\n'
+            'func use() char:\n'
+            '    first: chain = "same"\n'
+            '    second: chain = "same"\n'
+            '    return first[0]\n',
+            optimization_profile='prod',
+        )
+
+        self.assertEqual(1, module.count('@__bagron_rodata_'))
+        self.assertIn('@__bagron_rodata_0 = private unnamed_addr constant', module)
 
     def test_builds_and_runs_local_char_and_byte(self):
         with tempfile.TemporaryDirectory() as directory:

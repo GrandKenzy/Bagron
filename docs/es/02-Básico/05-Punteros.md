@@ -87,6 +87,10 @@ Se puede obtener la dirección de:
 - un elemento de un array con `$array[indice]`;
 - una variable que ya sea un puntero, produciendo un nivel adicional.
 
+En el caso especial de `chain`, `$texto[indice]` sí puede obtener la dirección
+de un carácter concreto, pero el resultado conserva la constancia del rodata y
+solo es compatible con `const char*`.
+
 No se puede aplicar `$` a:
 
 - literales, expresiones temporales o resultados no direccionables;

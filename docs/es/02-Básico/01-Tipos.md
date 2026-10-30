@@ -219,6 +219,10 @@ seguro:
 - en un `chain` estático, incluye el terminador `NUL`;
 - conserva los elementos reservados aunque el texto inicial sea más corto.
 
+En `prod` y `high`, un `chain` constante se conserva como una referencia SSA a
+rodata privado del módulo. No se copia a la pila y los literales repetidos se
+deduplican; estas optimizaciones no cambian el ABI ni la longitud expandida.
+
 ```bg
 name: char[16] = "Hola"
 

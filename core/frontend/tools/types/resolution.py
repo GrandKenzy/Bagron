@@ -113,6 +113,31 @@ def _validate_array_index(
         )
 
 
+def _validate_chain_index(value: ValueInfo, index: ValueInfo) -> None:
+    """Validate the statically provable range of a chain index.
+
+    A chain parameter has no compile-time length in its signature, so dynamic
+    and literal accesses to it retain the existing ``@unsafe`` requirement.
+    Locally known literals, however, include their NUL byte in the only valid
+    static range and must reject an obvious out-of-bounds index even in unsafe
+    code.
+    """
+    if not index.is_literal or not isinstance(index.value, int):
+        return
+    if not value.is_literal or not isinstance(value.value, str):
+        return
+    try:
+        length = len(value.value.encode('ascii')) + 1
+    except UnicodeEncodeError as error:
+        raise ValueResolutionError(
+            'Una cadena usada por la ABI actual solo puede contener ASCII'
+        ) from error
+    if index.value < 0 or index.value >= length:
+        raise ValueResolutionError(
+            f'el indice {index.value} esta fuera del rango del chain [0, {length})'
+        )
+
+
 def _validate_buffer_index(value: ValueInfo, index: ValueInfo) -> None:
     """Validate the statically provable part of a buffer access.
 

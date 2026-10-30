@@ -14,6 +14,7 @@ from llvmlite import ir
 from core.backend.llvm.context import LLVMContextHandle
 from core.backend.llvm.functions import FunctionEmitter
 from core.backend.llvm.globals import GlobalEmitter
+from core.backend.llvm.rodata import StringPool
 from core.backend.llvm.targets import (
     TargetResolutionError,
     optimization_speed_level,
@@ -125,11 +126,17 @@ class LLVMBackend:
                 context.target.machine.target_data,
                 pointer_size=getattr(storage, 'pointer_size', 8),
             )
-            GlobalEmitter(context.module, type_registry).emit_storage(storage)
+            string_pool = StringPool(context.module)
+            GlobalEmitter(
+                context.module,
+                type_registry,
+                string_pool,
+            ).emit_storage(storage)
             FunctionEmitter(
                 context.module,
                 type_registry,
                 context.target.optimization_profile,
+                string_pool,
             ).emit_storage(storage)
             raw_module_text = str(context.module)
             verified = llvm.parse_assembly(raw_module_text)

@@ -452,6 +452,51 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_chain_index_is_const_and_literal_bounds_are_checked(self):
+        self.compile_source(
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    text: chain = "A"\n'
+            '    nul: char = text[1]\n'
+            '    return 0\n'
+        )
+
+        with self.assertRaisesRegex(CompilationError, 'fuera del rango del chain'):
+            self.compile_source(
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    text: chain = "A"\n'
+                '    value: char = text[2]\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'constante no puede asignarse'):
+            self.compile_source(
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    text: chain = "A"\n'
+                '    text[0] = "B"\n'
+                '    return 0\n'
+            )
+
+    def test_chain_element_address_preserves_const_pointer(self):
+        self.compile_source(
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    text: chain = "A"\n'
+            '    pointer *: const char = $text[0]\n'
+            '    return 0\n'
+        )
+
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    text: chain = "A"\n'
+                '    pointer *: char = $text[0]\n'
+                '    return 0\n'
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

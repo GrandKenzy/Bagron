@@ -319,6 +319,10 @@ class StatementEmitterMixin:
                 f'La variable local {name or "<anonima>"} no tiene almacenamiento LLVM'
             )
 
+        if name in self._active_direct_chains:
+            # Optimized chain locals already point into module rodata.
+            return
+
         value_node = next(
             (
                 child for child in self._children(declaration)
@@ -562,6 +566,7 @@ class StatementEmitterMixin:
         arguments: list[ir.Argument],
     ) -> dict[str, ir.Value]:
         values: dict[str, ir.Value] = {}
+        self._active_direct_chains = set()
         scope = symbol.scope
         if scope is None:
             return values
@@ -594,13 +599,30 @@ class StatementEmitterMixin:
             for parameter in symbol.signature.parameters
             if (
                 self._optimization_profile in {'prod', 'high'}
-                and (parameter.is_length or parameter.is_size)
+                and (
+                    parameter.is_length
+                    or parameter.is_size
+                    or parameter.type_spec.name == 'chain'
+                )
             )
         }
         for name, variable in variables.items():
             if name in direct_parameters:
-                # Len_t and Size_t are compiler-supplied immutable metadata;
-                # their ABI arguments are already SSA values and need no slot.
+                # Len_t/Size_t metadata and optimized chain parameters are
+                # already SSA values; neither needs a local storage slot.
+                continue
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and variable.type_spec.name == 'chain'
+                and getattr(variable, 'value_info', None) is not None
+                and getattr(variable.value_info, 'is_literal', False)
+                and isinstance(getattr(variable.value_info, 'value', None), str)
+            ):
+                self._active_direct_chains.add(name)
+                values[name] = self._string_pointer(
+                    variable.value_info.value,
+                    builder,
+                )
                 continue
             try:
                 if name in array_parameters:
@@ -656,6 +678,16 @@ class StatementEmitterMixin:
             if not parameter.is_region
         ]
         for parameter, argument in zip(runtime_parameters, arguments):
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and parameter.type_spec.name == 'chain'
+            ):
+                # The chain ABI is already an i8* to immutable bytes. Keep
+                # the incoming pointer in SSA instead of boxing it in i8**.
+                argument.name = parameter.name
+                values[parameter.name] = argument
+                self._active_direct_chains.add(parameter.name)
+                continue
             if (
                 self._optimization_profile in {'prod', 'high'}
                 and (parameter.is_length or parameter.is_size)

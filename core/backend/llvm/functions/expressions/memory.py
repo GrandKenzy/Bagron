@@ -42,6 +42,7 @@ class _MemoryPlace:
     value_type: ir.Type
     alignment: int | None = None
     volatile: bool = False
+    read_only: bool = False
     after_hooks: tuple[tuple[str, ir.Value, str], ...] = ()
 
 @dataclass
@@ -221,6 +222,7 @@ class MemoryExpressionMixin:
         *,
         alignment: int | None = None,
         volatile: bool = False,
+        read_only: bool = False,
         after_hooks: tuple[tuple[str, ir.Value, str], ...] = (),
     ) -> _MemoryPlace:
         if not isinstance(address.type, ir.PointerType):
@@ -231,6 +233,7 @@ class MemoryExpressionMixin:
             value_type=value_type,
             alignment=self._place_alignment(value_type, alignment),
             volatile=volatile or self._aggregate_volatile(value_type),
+            read_only=read_only,
             after_hooks=after_hooks,
         )
 
@@ -301,6 +304,10 @@ class MemoryExpressionMixin:
         builder: ir.IRBuilder,
     ) -> None:
         if isinstance(place, _MemoryPlace):
+            if place.read_only:
+                raise FunctionEmissionError(
+                    'No se puede escribir en almacenamiento inmutable'
+                )
             self._store_address(
                 value,
                 place.address,
@@ -556,6 +563,7 @@ class MemoryExpressionMixin:
                             builder.gep(data, [index], inbounds=False),
                             alignment=1,
                             volatile=place.volatile,
+                            read_only=place.read_only,
                             after_hooks=place.after_hooks,
                         )
                     elif self._is_buffer_descriptor_type(pointee):
@@ -569,6 +577,7 @@ class MemoryExpressionMixin:
                             builder.gep(data, [index], inbounds=False),
                             alignment=1,
                             volatile=place.volatile,
+                            read_only=place.read_only,
                             after_hooks=place.after_hooks,
                         )
                     elif isinstance(pointee, ir.PointerType):
@@ -591,6 +600,7 @@ class MemoryExpressionMixin:
                         place = self._memory_place(
                             address,
                             alignment=1,
+                            read_only=place.read_only,
                             after_hooks=place.after_hooks,
                         )
                     elif isinstance(pointee, ir.ArrayType):
@@ -607,6 +617,7 @@ class MemoryExpressionMixin:
                             address,
                             alignment=element_alignment,
                             volatile=place.volatile,
+                            read_only=place.read_only,
                             after_hooks=place.after_hooks,
                         )
                     else:
@@ -617,6 +628,7 @@ class MemoryExpressionMixin:
                         place = self._memory_place(
                             builder.gep(address, [index], inbounds=False),
                             alignment=1,
+                            read_only=place.read_only,
                             after_hooks=place.after_hooks,
                         )
                     continue
@@ -730,6 +742,9 @@ class MemoryExpressionMixin:
                         address,
                         alignment=alignment,
                         volatile=volatile,
+                        read_only=(
+                            place.read_only or field.type_spec.name == 'chain'
+                        ),
                         after_hooks=after_hooks,
                     )
             return place
@@ -740,9 +755,13 @@ class MemoryExpressionMixin:
             name = str(value)
             if name in values:
                 address = values[name]
+                type_spec = self._active_type_spec(name)
                 return self._memory_place(
                     address,
                     alignment=getattr(address, 'align', None),
+                    read_only=bool(
+                        type_spec is not None and type_spec.name == 'chain'
+                    ),
                 )
             if name == 'self':
                 self_place = self._method_self_place(builder, values)
@@ -750,9 +769,13 @@ class MemoryExpressionMixin:
                     return self_place
             global_value = self.module.globals.get(self._global_llvm_name(name))
             if isinstance(global_value, ir.GlobalVariable):
+                type_spec = self._active_type_spec(name)
                 return self._memory_place(
                     global_value,
                     alignment=getattr(global_value, 'align', None),
+                    read_only=bool(
+                        type_spec is not None and type_spec.name == 'chain'
+                    ),
                 )
             raise FunctionEmissionError(
                 f'La variable {name} no tiene almacenamiento LLVM'

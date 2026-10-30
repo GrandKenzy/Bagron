@@ -10,6 +10,7 @@ from core.backend.llvm.types import (
     llvm_type,
     value_type,
 )
+from core.backend.llvm.rodata import StringPool
 from core.frontend.objects import FunctionSymbol, TypeSpec
 from core.frontend.tools.types import UNSIGNED_INTEGER_TYPES
 
@@ -27,6 +28,7 @@ class FunctionEmitterBase:
         module: ir.Module,
         type_registry: LLVMTypeRegistry | None = None,
         optimization_profile: str = 'prod',
+        string_pool: StringPool | None = None,
     ):
         self.module = module
         self.type_registry = type_registry
@@ -41,40 +43,17 @@ class FunctionEmitterBase:
         self._active_function_symbol: FunctionSymbol | None = None
         self._suppress_magic_hooks = False
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
-        self._string_literals: dict[str, ir.GlobalVariable] = {}
+        self._string_pool = string_pool or StringPool(module)
         self._pointer_size = 8
         self._optimization_profile = optimization_profile
+        self._active_direct_chains: set[str] = set()
 
     def _string_pointer(
         self,
         value: str,
         builder: ir.IRBuilder,
     ) -> ir.Value:
-        global_value = self._string_literals.get(value)
-        if global_value is None:
-            data = value.encode('utf-8')
-            byte_type = ir.IntType(8)
-            array_type = ir.ArrayType(byte_type, len(data) + 1)
-            initializer = ir.Constant(
-                array_type,
-                [ir.Constant(byte_type, byte) for byte in (*data, 0)],
-            )
-            global_value = ir.GlobalVariable(
-                self.module,
-                array_type,
-                name=f'__bagron_string_{len(self._string_literals)}',
-            )
-            global_value.linkage = 'private'
-            global_value.global_constant = True
-            global_value.initializer = initializer
-            self._string_literals[value] = global_value
-
-        index_type = ir.IntType(32)
-        return builder.gep(
-            global_value,
-            [ir.Constant(index_type, 0), ir.Constant(index_type, 0)],
-            inbounds=True,
-        )
+        return self._string_pool.pointer(value, builder)
 
     def _runtime_function(
         self,
@@ -363,6 +342,16 @@ class FunctionEmitterBase:
                 and isinstance(function.args[llvm_index].type, ir.PointerType)
             ):
                 function.args[llvm_index].add_attribute('noalias')
+            if (
+                optimization_profile in {'prod', 'high'}
+                and getattr(parameter.type_spec, 'name', None) == 'chain'
+                and isinstance(function.args[llvm_index].type, ir.PointerType)
+            ):
+                # llvmlite 0.50 exposes ``nonnull`` for parameters, but not
+                # the newer parameter-level ``readonly`` spelling.  The
+                # immutable rodata representation supplies the read-only
+                # guarantee without emitting an unsupported attribute.
+                function.args[llvm_index].add_attribute('nonnull')
             llvm_index += 1
 
     @staticmethod

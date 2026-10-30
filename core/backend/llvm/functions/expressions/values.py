@@ -16,6 +16,79 @@ from .memory import _MemoryPlace
 
 
 class ValueExpressionMixin:
+    def _compile_static_chain_index(
+        self,
+        node: object,
+    ) -> ir.Value | None:
+        """Fold an index into a compile-time chain literal when possible."""
+        if getattr(node, 'name', None) != 'POSTFIX_EXPR':
+            return None
+        children = self._children(node)
+        primary = children[0] if children else None
+        suffixes: list[object] = []
+        for child in children[1:]:
+            suffixes.extend(
+                self._children(child) if isinstance(child, list) else [child]
+            )
+        if primary is None or len(suffixes) != 1:
+            return None
+        suffix = suffixes[0]
+        if getattr(suffix, 'name', None) != 'INDEX_ACCESS':
+            return None
+        index_node = next(
+            (
+                child for child in self._children(suffix)
+                if getattr(child, 'name', None) == 'VALUE'
+            ),
+            None,
+        )
+        if index_node is None:
+            return None
+        index_node = self._unwrap(index_node)
+        if self._token_kind(index_node) not in {'NUMBER', 'DECIMAL'}:
+            return None
+        try:
+            index = int(self._token_value(index_node))
+        except (TypeError, ValueError):
+            return None
+
+        base = self._unwrap(primary)
+        name = self._identifier(base)
+        if name is not None:
+            info = self._active_values.get(name)
+            if info is None:
+                info = self._global_values.get(name)
+            type_spec = self._active_type_spec(name)
+            if type_spec is None:
+                type_spec = getattr(info, 'type_spec', None)
+            if (
+                info is None
+                or type_spec is None
+                or type_spec.name != 'chain'
+                or not getattr(info, 'is_literal', False)
+                or not isinstance(getattr(info, 'value', None), str)
+            ):
+                return None
+            text = info.value
+        elif self._token_kind(base) == 'STRING':
+            text = self._token_value(base)
+            if not isinstance(text, str):
+                return None
+        else:
+            return None
+
+        try:
+            data = text.encode('ascii')
+        except UnicodeEncodeError as error:
+            raise FunctionEmissionError(
+                'Una cadena usada por la ABI actual solo puede contener ASCII'
+            ) from error
+        if index < 0 or index > len(data):
+            raise FunctionEmissionError(
+                f'El indice de chain {index} esta fuera del rango [0, {len(data) + 1})'
+            )
+        return ir.Constant(ir.IntType(8), 0 if index == len(data) else data[index])
+
     def _compile_expression(
         self,
         node: object,
@@ -260,6 +333,9 @@ class ValueExpressionMixin:
             )
             if call_suffix is not None:
                 return self._compile_call(current, builder, values)
+            static_chain_index = self._compile_static_chain_index(current)
+            if static_chain_index is not None:
+                return static_chain_index
             if primary is not None and not suffixes:
                 return self._compile_expression(primary, builder, values)
             if primary is not None:

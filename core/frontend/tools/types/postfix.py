@@ -14,7 +14,7 @@ from .common import (
 from .resolution import (
     _buffer_index_value, _identifier_from_node, _resolve_aggregate,
     _resolve_function, _unsafe_context, _validate_array_index,
-    is_buffer_type,
+    _validate_chain_index, is_buffer_type,
 )
 from .compatibility import _is_integer_scalar, is_compatible
 from .calls import (
@@ -274,12 +274,13 @@ def _infer_postfix(
                 elif is_buffer_type(result.type_spec):
                     result = _buffer_index_value(result, index)
                 elif result.type_spec.name == 'chain':
+                    _validate_chain_index(result, index)
                     if not _unsafe_context(current_function):
                         raise ValueResolutionError(
                             'la indexacion de chain requiere @unsafe'
                         )
                     result = ValueInfo(
-                        TypeSpec('char'),
+                        TypeSpec('char', value_is_const=True),
                         is_lvalue=True,
                         address_origin=result.address_origin,
                         storage_origin=result.storage_origin or result.address_origin,
@@ -287,6 +288,7 @@ def _infer_postfix(
                         address_path=(*result.address_path, ('index', index)),
                         member_owner=result.member_owner,
                         region_origin=result.region_origin,
+                        pointer_provenance_unknown=result.pointer_provenance_unknown,
                     )
                 elif result.type_spec.pointer_level:
                     if not _unsafe_context(current_function):
@@ -348,18 +350,21 @@ def _infer_postfix(
             elif is_buffer_type(result.type_spec):
                 result = _buffer_index_value(result, index)
             elif result.type_spec.name == 'chain':
+                _validate_chain_index(result, index)
                 if not _unsafe_context(current_function):
                     raise ValueResolutionError(
                         'la indexacion de chain requiere @unsafe'
                     )
                 result = ValueInfo(
-                    TypeSpec('char'),
+                    TypeSpec('char', value_is_const=True),
                     is_lvalue=True,
                     address_origin=result.address_origin,
                     storage_origin=result.storage_origin or result.address_origin,
                     identifier=result.identifier,
                     address_path=(*result.address_path, ('index', index)),
                     member_owner=result.member_owner,
+                    region_origin=result.region_origin,
+                    pointer_provenance_unknown=result.pointer_provenance_unknown,
                 )
             elif result.type_spec.pointer_level:
                 if not _unsafe_context(current_function):

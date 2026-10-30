@@ -188,7 +188,9 @@ func read_at(
 
 Un índice literal fuera de rango siempre es un error. `chain` tiene una regla
 aún más estricta: indexarlo también requiere `@unsafe`, porque es una cadena
-estática y constante, no un buffer mutable ordinario.
+estática y constante, no un buffer mutable ordinario. En un `chain` cuyo literal
+se conoce, el rango incluye el byte `NUL`: `[0, longitud + 1)`. El compilador
+rechaza un índice literal fuera de ese rango incluso dentro de `@unsafe`.
 
 El acceso a una matriz sigue la misma regla en cada profundidad. Los índices
 literales se comprueban contra todas las dimensiones conocidas; un índice
@@ -210,12 +212,12 @@ Ambos pueden representar texto, pero no tienen la misma semántica.
 
 | Característica | `char[]` | `chain` |
 |:---|:---|:---|
-| Naturaleza | Array ordinario de `char`. | Cadena estática especial. |
+| Naturaleza | Array ordinario de `char`. | Cadena estática especial almacenada en rodata. |
 | Mutabilidad | Mutable, salvo que use `const`. | Inmutable por definición. |
 | Tamaño | Puede declararse, inferirse o rellenarse. | Se calcula a partir del literal. |
 | Terminación | Solo se reserva `NUL` al inicializar desde un literal de cadena. | Siempre incluye `NUL`. |
 | Arrays o punteros | Puede combinarse con arrays y punteros según el tipo. | No puede combinarse con arrays ni punteros. |
-| Indexación | Segura con índice demostrable; dinámica en `@unsafe`. | Siempre requiere `@unsafe`. |
+| Indexación | Segura con índice demostrable; dinámica en `@unsafe`. | Siempre requiere `@unsafe`; un índice literal se valida contra el texto y su `NUL`. |
 
 `char` representa un carácter ASCII. `chain` representa almacenamiento de
 caracteres ASCII terminado en `NUL`, donde `NUL` es el byte cero (`0`) que
@@ -283,6 +285,9 @@ text: chain = "Hola"
 ; text[0] = "h"     ; no permitido: chain es inmutable
 ```
 
+Un elemento de `chain` conserva la constancia. Por eso `$text[indice]` solo
+puede pasar a un puntero `const char`; nunca a un `char*` mutable.
+
 No se puede escribir `const chain`: `chain` ya es inmutable y declarar la
 constancia otra vez es redundante e inválido.
 
@@ -346,7 +351,10 @@ func forward(data: int32[], length: Len_t, element_size: Size_t) void:
 
 `chain` no es un array ordinario y conserva su excepción: puede usar `Len_t`
 para su longitud estática y terminador `NUL`, pero no está obligado a declarar
-`Size_t`. `buffer` tampoco es un array estático: su descriptor incluye la
+`Size_t`. En perfiles `prod` y `high`, el backend conserva ese dato como un
+puntero SSA al rodata en vez de crear una copia local en la pila; el ABI no
+cambia. `dev` mantiene el almacenamiento explícito para facilitar la
+inspección del IR. `buffer` tampoco es un array estático: su descriptor incluye la
 capacidad en bytes y sus funciones deben declarar solo `Len_t`:
 
 ```bg

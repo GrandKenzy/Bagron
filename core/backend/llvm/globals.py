@@ -11,6 +11,7 @@ from core.backend.llvm.types import (
     value_type,
 )
 from core.frontend.objects import ValueInfo, Variable
+from core.backend.llvm.rodata import StringPool
 
 if TYPE_CHECKING:
     from llvmlite import ir
@@ -22,38 +23,19 @@ class GlobalEmissionError(ValueError):
 
 
 class GlobalEmitter:
-    def __init__(self, module: ir.Module, type_registry: LLVMTypeRegistry | None = None):
+    def __init__(
+        self,
+        module: ir.Module,
+        type_registry: LLVMTypeRegistry | None = None,
+        string_pool: StringPool | None = None,
+    ):
         self.module = module
         self.type_registry = type_registry
         self._resolving: list[str] = []
-        self._string_literals: dict[str, object] = {}
+        self._string_pool = string_pool or StringPool(module)
 
     def _string_pointer(self, value: str):
-        from llvmlite import ir
-
-        global_value = self._string_literals.get(value)
-        if global_value is None:
-            data = value.encode('utf-8')
-            byte_type = ir.IntType(8)
-            array_type = ir.ArrayType(byte_type, len(data) + 1)
-            global_value = ir.GlobalVariable(
-                self.module,
-                array_type,
-                name=f'__bagron_global_string_{len(self._string_literals)}',
-            )
-            global_value.linkage = 'private'
-            global_value.global_constant = True
-            global_value.initializer = ir.Constant(
-                array_type,
-                [ir.Constant(byte_type, byte) for byte in (*data, 0)],
-            )
-            self._string_literals[value] = global_value
-
-        index_type = ir.IntType(32)
-        return global_value.gep([
-            ir.Constant(index_type, 0),
-            ir.Constant(index_type, 0),
-        ])
+        return self._string_pool.pointer(value)
 
     def _aggregate_constant(self, spec, value: ValueInfo):
         from llvmlite import ir
@@ -216,6 +198,10 @@ class GlobalEmitter:
 
         global_value.initializer = initializer
         global_value.global_constant = symbol.value_is_const
+        if symbol.type_spec.name == 'chain':
+            # A named chain remains an array global for source/IR
+            # compatibility, but its address is not semantically observable.
+            global_value.unnamed_addr = 'unnamed_addr'
         if self.type_registry is not None:
             global_value.align = self.type_registry.abi_alignment(target_type)
         if symbol.privacy == 'private':

@@ -91,8 +91,8 @@ class StandardLibraryTests(unittest.TestCase):
             b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
             result.stdout,
         )
-        self.assertIn('@NumericString = constant [11 x i8]', module)
-        self.assertIn('@AlphabetString = constant [53 x i8]', module)
+        self.assertIn('@NumericString = unnamed_addr constant [11 x i8]', module)
+        self.assertIn('@AlphabetString = unnamed_addr constant [53 x i8]', module)
 
     def test_printa_rejects_scalar_char(self):
         project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'

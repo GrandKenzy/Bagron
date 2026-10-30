@@ -3,6 +3,7 @@
 
 clause System 'windows'
 clause Arch 'amd'
+clause Optimizations 'prod'
 
 import console
 import standard
@@ -29,10 +30,28 @@ func measure_empty_loop(iterations: uint32) int64:
     return total / 10
 
 @unsafe
+func median_ticks(
+    samples: int64[10],
+    sample_length: Len_t,
+    sample_size: Size_t
+) int64:
+    ; Ordena solo las diez muestras ya tomadas; queda fuera de la ventana
+    ; medida y evita que el coste del análisis contamine cada operación.
+    for round: uint32 ran (0, 10, 1):
+        for index: uint32 ran (0, 9, 1):
+            next: uint32 = index + 1
+            if samples[index] > samples[next]:
+                temporary: int64 = samples[index]
+                samples[index] = samples[next]
+                samples[next] = temporary
+    return samples[5]
+
+@unsafe
 func measure_write_chars(
     iterations: uint32,
     loop_cost: int64,
-    minimum *: int64
+    minimum *: int64,
+    median_value *: int64
 ) int64:
     chars: char[2] = "B"
     start: int64 = 0
@@ -40,6 +59,7 @@ func measure_write_chars(
     elapsed: int64 = 0
     total: int64 = 0
     best: int64 = 0
+    samples: int64[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
     for warmup: uint32 ran (0, 5, 1):
         start = time_ticks()
@@ -57,6 +77,7 @@ func measure_write_chars(
             elapsed -= loop_cost
         else:
             elapsed = 0
+        samples[sample] = elapsed
         if sample == 0:
             best = elapsed
         elif elapsed < best:
@@ -64,6 +85,7 @@ func measure_write_chars(
         total += elapsed
 
     (minimum) = best
+    (median_value) = median_ticks(samples)
     return total / 10
 
 @unsafe
@@ -71,7 +93,8 @@ func measure_printb(
     iterations: uint32,
     loop_cost: int64,
     hexadecimal: bool,
-    minimum *: int64
+    minimum *: int64,
+    median_value *: int64
 ) int64:
     bytes: byte[1] = {65}
     start: int64 = 0
@@ -79,6 +102,7 @@ func measure_printb(
     elapsed: int64 = 0
     total: int64 = 0
     best: int64 = 0
+    samples: int64[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
     for warmup: uint32 ran (0, 5, 1):
         start = time_ticks()
@@ -96,6 +120,7 @@ func measure_printb(
             elapsed -= loop_cost
         else:
             elapsed = 0
+        samples[sample] = elapsed
         if sample == 0:
             best = elapsed
         elif elapsed < best:
@@ -103,13 +128,15 @@ func measure_printb(
         total += elapsed
 
     (minimum) = best
+    (median_value) = median_ticks(samples)
     return total / 10
 
 @unsafe
 func measure_write_text(
     iterations: uint32,
     loop_cost: int64,
-    minimum *: int64
+    minimum *: int64,
+    median_value *: int64
 ) int64:
     text: chain = "B"
     start: int64 = 0
@@ -117,6 +144,7 @@ func measure_write_text(
     elapsed: int64 = 0
     total: int64 = 0
     best: int64 = 0
+    samples: int64[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
     for warmup: uint32 ran (0, 5, 1):
         start = time_ticks()
@@ -134,6 +162,7 @@ func measure_write_text(
             elapsed -= loop_cost
         else:
             elapsed = 0
+        samples[sample] = elapsed
         if sample == 0:
             best = elapsed
         elif elapsed < best:
@@ -141,6 +170,58 @@ func measure_write_text(
         total += elapsed
 
     (minimum) = best
+    (median_value) = median_ticks(samples)
+    return total / 10
+
+chain_sink: usize = 0
+
+func consume_chain(text: chain, length: Len_t) usize:
+    ; La cadena se recibe para mantener visible el coste del ABI sin I/O.
+    return length
+
+@unsafe
+func measure_chain_forward(
+    iterations: uint32,
+    loop_cost: int64,
+    minimum *: int64,
+    median_value *: int64
+) int64:
+    text: chain = "B"
+    observed: usize = 0
+    start: int64 = 0
+    finish: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
+    samples: int64[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+    global chain_sink
+
+    for warmup: uint32 ran (0, 5, 1):
+        for i: uint32 ran (0, iterations, 1):
+            observed += consume_chain(text)
+
+    for sample: uint32 ran (0, 10, 1):
+        observed = 0
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            observed += consume_chain(text)
+        finish = time_ticks()
+        elapsed = time_us(start, finish)
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        samples[sample] = elapsed
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
+
+    ; Hace observable la lectura completa fuera del intervalo cronometrado.
+    chain_sink = observed
+    (minimum) = best
+    (median_value) = median_ticks(samples)
     return total / 10
 
 @unsafe
@@ -148,6 +229,7 @@ func report(
     label: chain,
     label_length: Len_t,
     minimum: int64,
+    median_value: int64,
     average: int64,
     iterations: int64
 ) void:
@@ -155,6 +237,8 @@ func report(
     print(label)
     print(" min_us=")
     printint(minimum)
+    print(" median_us=")
+    printint(median_value)
     print(" avg_us=")
     printint(average)
     print(" per_call_us=")
@@ -167,43 +251,61 @@ func main() int32:
     iterations: uint32 = 1000
     loop_cost: int64 = 0
     write_chars_min: int64 = 0
+    write_chars_middle: int64 = 0
     write_chars_avg: int64 = 0
     printb_raw_min: int64 = 0
+    printb_raw_middle: int64 = 0
     printb_raw_avg: int64 = 0
     printb_hex_min: int64 = 0
+    printb_hex_middle: int64 = 0
     printb_hex_avg: int64 = 0
     write_text_min: int64 = 0
+    write_text_middle: int64 = 0
     write_text_avg: int64 = 0
+    chain_min: int64 = 0
+    chain_middle: int64 = 0
+    chain_avg: int64 = 0
 
     loop_cost = measure_empty_loop(iterations)
     write_chars_avg = measure_write_chars(
         iterations,
         loop_cost,
-        $write_chars_min
+        $write_chars_min,
+        $write_chars_middle
     )
     printb_raw_avg = measure_printb(
         iterations,
         loop_cost,
         false,
-        $printb_raw_min
+        $printb_raw_min,
+        $printb_raw_middle
     )
     printb_hex_avg = measure_printb(
         iterations,
         loop_cost,
         true,
-        $printb_hex_min
+        $printb_hex_min,
+        $printb_hex_middle
     )
     write_text_avg = measure_write_text(
         iterations,
         loop_cost,
-        $write_text_min
+        $write_text_min,
+        $write_text_middle
+    )
+    chain_avg = measure_chain_forward(
+        iterations,
+        loop_cost,
+        $chain_min,
+        $chain_middle
     )
 
     print("empty_loop_avg_us=")
     printint(loop_cost)
     print("\n")
-    report("write_chars", write_chars_min, write_chars_avg, 1000)
-    report("printb_raw", printb_raw_min, printb_raw_avg, 1000)
-    report("printb_hex", printb_hex_min, printb_hex_avg, 1000)
-    report("write_text", write_text_min, write_text_avg, 1000)
+    report("write_chars", write_chars_min, write_chars_middle, write_chars_avg, 1000)
+    report("printb_raw", printb_raw_min, printb_raw_middle, printb_raw_avg, 1000)
+    report("printb_hex", printb_hex_min, printb_hex_middle, printb_hex_avg, 1000)
+    report("write_text", write_text_min, write_text_middle, write_text_avg, 1000)
+    report("chain_forward", chain_min, chain_middle, chain_avg, 1000)
     return 0

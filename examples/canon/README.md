@@ -32,7 +32,8 @@ Responsabilidades de los módulos:
 - `standard.bg`: fachada publica para utilidades numericas;
 - `time.bg` y `alphabet.bg`: reloj y constantes independientes;
 - `assembly.bg`: frontera minima de ensamblador;
-- `benchmark.bg`: benchmark puro en Bagron para medir las escrituras de consola;
+- `benchmark.bg`: benchmark puro en Bagron para medir las escrituras de consola
+  y el forwarding de `chain` como rodata;
 - `_main.bg`: target, datos globales y orquestacion.
 
 Ejecutar desde la raíz del repositorio:
@@ -49,11 +50,12 @@ Benchmark de consola:
 vnma run main.py examples/canon/benchmark.bg
 ```
 
-Mide `write_chars`, `printb` en modo crudo y hexadecimal, y `write_text` con
-1000 iteraciones cada uno. Ejecuta 5 rondas de calentamiento y 10 rondas
-medidas, resta el coste de un bucle vacío y muestra mínimo, promedio y coste
-aproximado por llamada. Los tiempos se imprimen en microsegundos mediante
-`time.bg` y `printint(int64)`.
+Mide `write_chars`, `printb` en modo crudo y hexadecimal, `write_text` y un
+forwarding sin I/O (`chain_forward`) con 1000 iteraciones cada uno. Ejecuta 5
+rondas de calentamiento y 10 rondas medidas, resta el coste de un bucle vacío
+y muestra mínimo, mediana, promedio y coste aproximado por llamada. La
+ordenación de muestras ocurre fuera de la ventana medida. Los tiempos se
+imprimen en microsegundos mediante `time.bg` y `printint(int64)`.
 
 Referencia nativa en C:
 
