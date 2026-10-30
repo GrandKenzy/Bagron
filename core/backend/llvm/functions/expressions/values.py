@@ -62,7 +62,15 @@ class ValueExpressionMixin:
             if operator == 'DOLLAR':
                 return self._compile_address(current.operand, builder, values)
 
-            operand = self._compile_expression(current.operand, builder, values)
+            # NOTA: un literal usado por un operador unario debe conservar el
+            # ancho esperado; de lo contrario un valor int64 se trunca antes
+            # de aplicar el signo.
+            operand = self._compile_expression(
+                current.operand,
+                builder,
+                values,
+                expected_type=expected_type,
+            )
             if operator == 'PLUS':
                 return operand
             if operator == 'MINUS':
@@ -328,7 +336,13 @@ class ValueExpressionMixin:
                     else ir.FloatType()
                 )
                 return ir.Constant(target_type, float(value))
-            return ir.Constant(ir.IntType(32), int(value))
+            integer_type = (
+                expected_type
+                if isinstance(expected_type, ir.IntType)
+                and expected_type.width >= 32
+                else ir.IntType(32)
+            )
+            return ir.Constant(integer_type, int(value))
         if kind == 'BOOL':
             return ir.Constant(ir.IntType(1), int(str(value).lower() == 'true'))
         if kind == 'NULL':

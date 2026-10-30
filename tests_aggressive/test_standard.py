@@ -10,6 +10,11 @@ from core.compiler import CompilationError, Compiler
 
 
 class StandardLibraryTests(unittest.TestCase):
+    def _copy_canonical_console(self, root: Path) -> None:
+        source_root = Path(__file__).resolve().parents[1] / 'examples' / 'canon'
+        for name in ('alphabet.bg', 'console.bg', 'formatting.bg', 'standard.bg'):
+            shutil.copyfile(source_root / name, root / name)
+
     def test_print_writes_chain_using_windows_abi(self):
         project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
         with tempfile.TemporaryDirectory() as directory:
@@ -136,6 +141,79 @@ class StandardLibraryTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'A\x00\xff00FF', result.stdout)
+
+    def test_canonical_printint_supports_int64_and_int32_scaling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_canonical_console(root)
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    maximum: int64 = 9223372036854775807\n'
+                '    negative: int64 = -9223372036854775807\n'
+                '    printint(0)\n'
+                '    print(":")\n'
+                '    printint(-1)\n'
+                '    print(":")\n'
+                '    print_int(42)\n'
+                '    print(":")\n'
+                '    printint(maximum)\n'
+                '    print(":")\n'
+                '    printint(negative)\n'
+                '    print("\\n")\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(
+            b'0:-1:42:9223372036854775807:-9223372036854775807\n',
+            result.stdout,
+        )
+
+    def test_canonical_printb_preserves_large_hex_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_canonical_console(root)
+            main = root / '_main.bg'
+            main.write_text(
+                'import standard\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    raw: byte[3] = {65, 0, 255}\n'
+                '    large: byte[257]\n'
+                '    printb(raw, false)\n'
+                '    print("|")\n'
+                '    printb(raw, true)\n'
+                '    print("|")\n'
+                '    printb(large, true)\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+        self.assertEqual(
+            b'A\x00\xff|4100FF|' + (b'00' * 257),
+            result.stdout,
+        )
 
     def test_serialize_int_appends_decimal_text(self):
         project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'

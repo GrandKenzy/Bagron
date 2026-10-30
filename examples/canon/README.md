@@ -50,5 +50,7 @@ vnma run main.py examples/canon/benchmark.bg
 ```
 
 Mide `write_chars`, `printb` en modo crudo y hexadecimal, y `write_text` con
-1000 iteraciones cada uno. Los tiempos se imprimen en microsegundos mediante
+1000 iteraciones cada uno. Ejecuta 5 rondas de calentamiento y 10 rondas
+medidas, resta el coste de un bucle vacío y muestra mínimo, promedio y coste
+aproximado por llamada. Los tiempos se imprimen en microsegundos mediante
 `time.bg` y `printint(int64)`.

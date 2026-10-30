@@ -5,6 +5,11 @@ clause Arch 'amd'
 
 import alphabet
 
+; GetStdHandle devuelve un handle estable durante la vida del proceso. Se
+; inicializa bajo demanda para no pagar esa llamada en cada escritura.
+private stdout_handle *: void
+private stdout_initialized: bool = false
+
 extern "kernel32":
     GetStdHandle(nStdHandle: uint32) *: void
     WriteFile(
@@ -22,6 +27,20 @@ private func _win32_count(value: usize) uint32:
     #end
     return asm
 
+; Punto unico de validacion y escritura para las rutas de texto y bytes.
+@unsafe
+private func _write_stdout(buffer *: const void, count: usize) void:
+    global stdout_handle
+    global stdout_initialized
+    if not stdout_initialized:
+        stdout_handle = GetStdHandle(4294967285)
+        stdout_initialized = true
+    if count > 4294967295:
+        return
+    if count > 0:
+        WriteFile(stdout_handle, buffer, _win32_count(count), Null, Null)
+    return
+
 ; Escribe una cantidad explicita sin leer mas alla del array recibido.
 @unsafe
 public func write_chars(
@@ -30,15 +49,12 @@ public func write_chars(
     size: Size_t,
     count: usize
 ) void:
-    handle *: void = GetStdHandle(4294967285)
     if size != 1:
         return
     if count > length:
         return
-    if count > 4294967295:
-        return
     if count > 0:
-        WriteFile(handle, $buffer[0], _win32_count(count), Null, Null)
+        _write_stdout($buffer[0], count)
     return
 
 ; Imprime un buffer de bytes o su representacion hexadecimal.
@@ -49,43 +65,44 @@ public func printb(
     size: Size_t,
     hexadecimal: bool
 ) void:
-    handle *: void = GetStdHandle(4294967285)
     global HexadecimalUpperString
     if size != 1:
         return
 
     if hexadecimal:
+        hex_buffer: char[512]
+        write_position: usize = 0
         index: usize = 0
         value: byte = 0
         high: byte = 0
         low: byte = 0
-        pair: char[3] = "00"
         while index < length:
             value = buffer[index]
             high = value / 16
             low = value % 16
-            pair[0] = HexadecimalUpperString[high]
-            pair[1] = HexadecimalUpperString[low]
-            WriteFile(handle, $pair[0], 2, Null, Null)
+            hex_buffer[write_position] = HexadecimalUpperString[high]
+            write_position += 1
+            hex_buffer[write_position] = HexadecimalUpperString[low]
+            write_position += 1
+            if write_position == 512:
+                _write_stdout($hex_buffer[0], write_position)
+                write_position = 0
             index += 1
+        if write_position > 0:
+            _write_stdout($hex_buffer[0], write_position)
         return
 
-    if length > 4294967295:
-        return
     if length > 0:
-        WriteFile(handle, $buffer[0], _win32_count(length), Null, Null)
+        _write_stdout($buffer[0], length)
     return
 
 ; chain incluye un terminador; Windows recibe solo los caracteres visibles.
 @unsafe
 public func write_text(text: chain, length: Len_t) void:
-    handle *: void = GetStdHandle(4294967285)
     count: usize = 0
     if length > 0:
         count = length
         count -= 1
-    if count > 4294967295:
-        return
     if count > 0:
-        WriteFile(handle, $text[0], _win32_count(count), Null, Null)
+        _write_stdout($text[0], count)
     return

@@ -1,5 +1,5 @@
-; Benchmark puro en Bagron para medir las primitivas actuales de consola.
-; Cada bloque escribe el mismo volumen visible y solo mide la llamada probada.
+; Benchmark puro en Bagron para las primitivas actuales de consola.
+; Cada prueba calienta 5 rondas y promedia 10 rondas de 1000 llamadas.
 
 clause System 'windows'
 clause Arch 'amd'
@@ -9,49 +9,201 @@ import standard
 import time
 
 @unsafe
-func main() int32:
-    iterations: uint32 = 1000
-    text: chain = "B"
+func measure_empty_loop(iterations: uint32) int64:
+    start: int64 = 0
+    finish: int64 = 0
+    total: int64 = 0
+
+    for warmup: uint32 ran (0, 5, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            pass
+        finish = time_ticks()
+
+    for sample: uint32 ran (0, 10, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            pass
+        finish = time_ticks()
+        total += time_us(start, finish)
+    return total / 10
+
+@unsafe
+func measure_write_chars(
+    iterations: uint32,
+    loop_cost: int64,
+    minimum *: int64
+) int64:
     chars: char[2] = "B"
+    start: int64 = 0
+    finish: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
+
+    for warmup: uint32 ran (0, 5, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            write_chars(chars, 1)
+        finish = time_ticks()
+
+    for sample: uint32 ran (0, 10, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            write_chars(chars, 1)
+        finish = time_ticks()
+        elapsed = time_us(start, finish)
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
+
+    (minimum) = best
+    return total / 10
+
+@unsafe
+func measure_printb(
+    iterations: uint32,
+    loop_cost: int64,
+    hexadecimal: bool,
+    minimum *: int64
+) int64:
     bytes: byte[1] = {65}
     start: int64 = 0
     finish: int64 = 0
-    write_chars_us: int64 = 0
-    printb_raw_us: int64 = 0
-    printb_hex_us: int64 = 0
-    write_text_us: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
 
-    start = time_ticks()
-    for i: uint32 ran (0, iterations, 1):
-        write_chars(chars, 1)
-    finish = time_ticks()
-    write_chars_us = time_us(start, finish)
+    for warmup: uint32 ran (0, 5, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            printb(bytes, hexadecimal)
+        finish = time_ticks()
 
-    start = time_ticks()
-    for i: uint32 ran (0, iterations, 1):
-        printb(bytes, false)
-    finish = time_ticks()
-    printb_raw_us = time_us(start, finish)
+    for sample: uint32 ran (0, 10, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            printb(bytes, hexadecimal)
+        finish = time_ticks()
+        elapsed = time_us(start, finish)
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
 
-    start = time_ticks()
-    for i: uint32 ran (0, iterations, 1):
-        printb(bytes, true)
-    finish = time_ticks()
-    printb_hex_us = time_us(start, finish)
+    (minimum) = best
+    return total / 10
 
-    start = time_ticks()
-    for i: uint32 ran (0, iterations, 1):
-        write_text(text)
-    finish = time_ticks()
-    write_text_us = time_us(start, finish)
+@unsafe
+func measure_write_text(
+    iterations: uint32,
+    loop_cost: int64,
+    minimum *: int64
+) int64:
+    text: chain = "B"
+    start: int64 = 0
+    finish: int64 = 0
+    elapsed: int64 = 0
+    total: int64 = 0
+    best: int64 = 0
 
-    print("write_chars_us=")
-    printint(write_chars_us)
-    print("\nprintb_raw_us=")
-    printint(printb_raw_us)
-    print("\nprintb_hex_us=")
-    printint(printb_hex_us)
-    print("\nwrite_text_us=")
-    printint(write_text_us)
+    for warmup: uint32 ran (0, 5, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            write_text(text)
+        finish = time_ticks()
+
+    for sample: uint32 ran (0, 10, 1):
+        start = time_ticks()
+        for i: uint32 ran (0, iterations, 1):
+            write_text(text)
+        finish = time_ticks()
+        elapsed = time_us(start, finish)
+        if elapsed > loop_cost:
+            elapsed -= loop_cost
+        else:
+            elapsed = 0
+        if sample == 0:
+            best = elapsed
+        elif elapsed < best:
+            best = elapsed
+        total += elapsed
+
+    (minimum) = best
+    return total / 10
+
+@unsafe
+func report(
+    label: chain,
+    label_length: Len_t,
+    minimum: int64,
+    average: int64,
+    iterations: int64
+) void:
+    per_call: int64 = average / iterations
+    print(label)
+    print(" min_us=")
+    printint(minimum)
+    print(" avg_us=")
+    printint(average)
+    print(" per_call_us=")
+    printint(per_call)
     print("\n")
+    return
+
+@unsafe
+func main() int32:
+    iterations: uint32 = 1000
+    loop_cost: int64 = 0
+    write_chars_min: int64 = 0
+    write_chars_avg: int64 = 0
+    printb_raw_min: int64 = 0
+    printb_raw_avg: int64 = 0
+    printb_hex_min: int64 = 0
+    printb_hex_avg: int64 = 0
+    write_text_min: int64 = 0
+    write_text_avg: int64 = 0
+
+    loop_cost = measure_empty_loop(iterations)
+    write_chars_avg = measure_write_chars(
+        iterations,
+        loop_cost,
+        $write_chars_min
+    )
+    printb_raw_avg = measure_printb(
+        iterations,
+        loop_cost,
+        false,
+        $printb_raw_min
+    )
+    printb_hex_avg = measure_printb(
+        iterations,
+        loop_cost,
+        true,
+        $printb_hex_min
+    )
+    write_text_avg = measure_write_text(
+        iterations,
+        loop_cost,
+        $write_text_min
+    )
+
+    print("empty_loop_avg_us=")
+    printint(loop_cost)
+    print("\n")
+    report("write_chars", write_chars_min, write_chars_avg, 1000)
+    report("printb_raw", printb_raw_min, printb_raw_avg, 1000)
+    report("printb_hex", printb_hex_min, printb_hex_avg, 1000)
+    report("write_text", write_text_min, write_text_avg, 1000)
     return 0
