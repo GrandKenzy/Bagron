@@ -29,9 +29,10 @@ private func _redirect_count(value: usize) uint32:
 ; Serializa una linea fija para que buffer y archivo midan el mismo trabajo.
 @unsafe
 func build_record(
-    output: char[64],
+    output: unique char[64],
     output_length: Len_t,
     output_size: Size_t,
+    output_region: Region_t,
     value: int64
 ) usize:
     prefix: chain = "value="
