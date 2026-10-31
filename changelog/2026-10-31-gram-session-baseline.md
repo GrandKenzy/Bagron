@@ -62,3 +62,34 @@ La migración conserva el backend Python de Gram y no activa AOT. El registro
 léxico usa `Session.add_group()`, `Session.add_keyword()` y `Session.config`;
 la desactivación de `**` conserva la API de símbolos de Gram porque `Session`
 todavía no expone una operación pública equivalente.
+
+## Benchmark reproducible de compilación total
+
+Se añadió [`benchmarks/compile_baseline.py`](../benchmarks/compile_baseline.py)
+para repetir el baseline sin medir solo una fase. El script incluye el
+arranque de `vnma`, lexer/parser de Gram, análisis semántico, generación LLVM,
+enlace y creación del ejecutable. No activa Gram AOT.
+
+Comando registrado:
+
+```text
+python benchmarks/compile_baseline.py
+```
+
+Configuración por defecto: una compilación de calentamiento y cinco muestras
+reportadas sobre `examples/canon/_main.bg`. El script también permite
+`--warmup 0` para comparar arranques fríos y `--samples N` para ampliar la
+muestra.
+
+### Baseline reproducible actual
+
+- Gram editable: `3.0.0-5-g968dcf7`
+- Muestras: `9.879`, `6.992`, `7.674`, `7.739`, `7.812` segundos
+- Mínimo: `6.992 s`
+- Mediana: `7.739 s`
+- Promedio: `8.019 s`
+- Máximo: `9.879 s`
+
+Para comparar una mejora, se debe conservar el mismo target, número de
+muestras, calentamiento, plataforma y revisión de Gram. La métrica principal
+será la mediana; mínimo y máximo sirven para observar variación del entorno.
