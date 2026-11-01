@@ -26,3 +26,11 @@ vnma test tests_aggressive/test_aot.py
 También puede usarse un ejecutable externo mediante `BAGRON_AOT_PARSER`. Si no
 hay parser disponible, las pruebas AOT se omiten y la suite restante conserva
 su comportamiento normal.
+
+Cuando `build/aot/bagron_aot.exe` existe, `Compiler()` y la CLI usan AOT por
+defecto. Usa `--python` para forzar el parser Python, por ejemplo al medir el
+baseline:
+
+```text
+vnma run main.py --python examples/canon/_main.bg
+```

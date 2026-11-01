@@ -15,7 +15,7 @@ class CompilerState(Diagnostics):
     def __init__(
         self,
         *,
-        aot: bool = False,
+        aot: bool | None = None,
         aot_parser: str | Path | None = None,
         aot_strict: bool = False,
     ):
@@ -23,10 +23,14 @@ class CompilerState(Diagnostics):
         self.warnings: list[str] = []
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
-        self.aot_enabled = aot
+        # `None` es el modo auto: usa GIR si el parser construido está
+        # disponible y conserva Python cuando el checkout no tiene Clang/AOT.
+        self.aot_requested = aot
         self.aot_parser_path = aot_parser
         self.aot_strict = aot_strict
         self._aot_parser: AotParser | None = None
+        self._aot_config_checked = False
+        self._aot_config_error: AotParserError | None = None
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
 
     def error(self, note: str):
@@ -42,6 +46,20 @@ class CompilerState(Diagnostics):
         print(self.last_note())
         sys.exit(1)
 
+    def _get_aot_parser(self) -> AotParser:
+        if self._aot_parser is not None:
+            return self._aot_parser
+        if self._aot_config_checked and self._aot_config_error is not None:
+            raise self._aot_config_error
+
+        self._aot_config_checked = True
+        try:
+            self._aot_parser = AotParser.from_config(self.aot_parser_path)
+        except AotParserError as error:
+            self._aot_config_error = error
+            raise
+        return self._aot_parser
+
     def process_source(self, path: Path):
         ext = path.suffix
 
@@ -55,11 +73,10 @@ class CompilerState(Diagnostics):
 
         ext = ext.strip('.')
         if ext == 'bg':
-            if self.aot_enabled:
+            if self.aot_requested is not False:
                 try:
-                    if self._aot_parser is None:
-                        self._aot_parser = AotParser.from_config(self.aot_parser_path)
-                    return self._aot_parser.parse(
+                    parser = self._get_aot_parser()
+                    return parser.parse(
                         content,
                         session=frontend.BAGRON_SESSION,
                         name=path.name,
@@ -67,9 +84,10 @@ class CompilerState(Diagnostics):
                 except AotParserError as error:
                     if self.aot_strict:
                         raise CompilationError(str(error)) from error
-                    self.warning(
-                        f'AOT no disponible para {path.name}; se usara Gram Python: {error}'
-                    )
+                    if self.aot_requested is True or self._aot_parser is not None:
+                        self.warning(
+                            f'AOT no disponible para {path.name}; se usara Gram Python: {error}'
+                        )
 
             # Session.tokenize/parse ya usan el estado aislado de Gram; no
             # reactives el catálogo global legacy antes de cada compilación.

@@ -262,6 +262,7 @@ def _group_transparent_type(rule_name: str, children: list[Any]) -> list[Any]:
         start = _after_token(children, 'COLON')
         if start is None:
             return children
+        children = _lift_nested_boundary(children, start, 'ASSIGN')
         end = _before_token(children, 'ASSIGN', start)
         if end is None:
             end = len(children)
@@ -323,11 +324,72 @@ def _replace_range(
 ) -> list[Any]:
     grouped = children[start:end]
     if wrap_type_suffixes:
-        grouped = [
-            [child] if isinstance(child, list) else child
-            for child in grouped
-        ]
+        grouped = [_restore_type_child(child) for child in grouped]
     return [*children[:start], grouped, *children[end:]]
+
+
+def _restore_type_child(child: Any) -> Any:
+    """Restore one suffix per nested list after GIR splices `ARRAY_SUFFIX`."""
+    if not isinstance(child, list) or not child:
+        return child
+    if all(isinstance(item, list) for item in child):
+        return child
+
+    suffixes: list[list[Any]] = []
+    current: list[Any] | None = None
+    for item in child:
+        if _token_name(item) == 'LBRACKET':
+            if current is not None:
+                return child
+            current = [item]
+            continue
+        if current is None:
+            return child
+        current.append(item)
+        if _token_name(item) == 'RBRACKET':
+            suffixes.append(current)
+            current = None
+
+    if current is not None or not suffixes:
+        return child
+    return suffixes
+
+
+def _lift_nested_boundary(
+    children: list[Any],
+    start: int,
+    token_name: str,
+) -> list[Any]:
+    """Lift an optional tail spliced inside a transparent GIR rule.
+
+    A transparent `TYPE` followed by `Opt(Seq(ASSIGN, VALUE))` can arrive as
+    `[TYPE_PARTS, [ASSIGN, VALUE]]` in GIR. Python Gram keeps that optional
+    sequence as a sibling of the type, so restore the sibling boundary before
+    grouping `TYPE`.
+    """
+    for index in range(start, len(children)):
+        child = children[index]
+        if not isinstance(child, list):
+            continue
+        for nested_index, nested in enumerate(child):
+            if not isinstance(nested, list) or not nested:
+                continue
+            if _token_name(nested[0]) != token_name:
+                continue
+            prefix = child[:nested_index]
+            return [
+                *children[:index],
+                prefix,
+                *children[index + 1:],
+                nested,
+            ]
+    return children
+
+
+def _token_name(value: Any) -> str | None:
+    if not isinstance(value, ASTTokenNode):
+        return None
+    return getattr(value.token.token, 'name', None)
 
 
 def _after_token(children: list[Any], token_name: str, start: int = 0) -> int | None:
@@ -353,6 +415,8 @@ def _first_index(children: list[Any], names: set[str], start: int) -> int | None
         if isinstance(child, ASTRef) and child.name in names:
             return index
         if isinstance(child, ASTTokenNode) and getattr(child.token.token, 'name', None) in names:
+            return index
+        if isinstance(child, list) and child and _token_name(child[0]) in names:
             return index
     return None
 

@@ -7,14 +7,14 @@ def main(*args):
     argv = list(args[0])
     if not argv:
         print(
-            'Uso: vnma run main.py [--aot] [--aot-strict] '
+            'Uso: vnma run main.py [--aot|--python] [--aot-strict] '
             '[--aot-parser <ejecutable>] <archivo.bg>\n'
             'El parser AOT produce GIR; semántica y backend LLVM siguen en Bagron.'
         )
         return
 
     positional: list[str] = []
-    aot = False
+    aot = None
     aot_strict = False
     aot_parser = None
     index = 0
@@ -22,6 +22,8 @@ def main(*args):
         argument = argv[index]
         if argument == '--aot':
             aot = True
+        elif argument == '--python':
+            aot = False
         elif argument == '--aot-strict':
             aot = True
             aot_strict = True
@@ -33,7 +35,7 @@ def main(*args):
             aot_parser = argv[index]
         elif argument in {'-h', '--help'}:
             print(
-                'Uso: vnma run main.py [--aot] [--aot-strict] '
+                'Uso: vnma run main.py [--aot|--python] [--aot-strict] '
                 '[--aot-parser <ejecutable>] <archivo.bg>\n'
                 'El parser AOT produce GIR; semántica y backend LLVM siguen en Bagron.'
             )

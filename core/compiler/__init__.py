@@ -25,7 +25,7 @@ class Compiler(CompilerState):
     def __init__(
         self,
         *,
-        aot: bool = False,
+        aot: bool | None = None,
         aot_parser: str | Path | None = None,
         aot_strict: bool = False,
     ):

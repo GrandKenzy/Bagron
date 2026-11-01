@@ -55,6 +55,8 @@ def _compile(
     command = [vnma, 'run', 'main.py']
     if aot:
         command.append('--aot')
+    else:
+        command.append('--python')
     if aot_strict:
         command.append('--aot-strict')
     if aot_parser is not None:
@@ -130,7 +132,12 @@ def main() -> int:
     print(f"target={target.relative_to(repo)}")
     print(f"gram={_gram_revision(args.gram_path.resolve())}")
     print(f"warmup={args.warmup} samples={args.samples}")
-    print(f'aot={args.aot} aot_parser={args.aot_parser or "environment"}')
+    parser_source = (
+        str(args.aot_parser)
+        if args.aot_parser is not None
+        else ('auto-discovery' if args.aot else 'forced-python')
+    )
+    print(f'aot={args.aot} aot_parser={parser_source}')
 
     for warmup_index in range(args.warmup):
         _, exit_code, output = _compile(

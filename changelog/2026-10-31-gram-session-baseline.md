@@ -305,3 +305,20 @@ Comando del gate:
 python tools/build_aot_parser.py
 vnma test tests_aggressive/test_aot.py
 ```
+
+## Fase 7: activación automática con fallback
+
+El modo predeterminado de `Compiler()` y de la CLI pasó a ser `auto`: si existe
+el parser construido en `build/aot/` o configurado mediante
+`BAGRON_AOT_PARSER`, la fuente pasa por Gram AOT→GIR→AST; si no existe, se usa
+Gram Python sin cambiar el comportamiento del proyecto. `--aot` conserva la
+selección explícita y `--python` permite forzar el baseline anterior.
+
+La activación solo cambia la forma de obtener el AST. Después de
+`ast_from_gir()`, Bagron conserva exactamente el mismo procesador semántico,
+almacenamiento y backend LLVM; no se está migrando ni reemplazando ninguna
+optimización de backend.
+
+La suite rápida pasó `111/111` y la agresiva `168/168` con el parser AOT
+disponible. En una medición de tres muestras con warmup, Python forzado tuvo
+mediana `5.751 s` y AOT automático `3.125 s` sobre `_main.bg`.
