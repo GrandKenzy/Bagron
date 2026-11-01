@@ -41,7 +41,7 @@ jobs:
         run: git clone --depth 1 --branch main https://github.com/GrandKenzy/Gram.git "${{ github.workspace }}/../Gram"
 
       - name: Build Gram GIR parser and FFI library
-        run: python tools/build_aot_parser.py
+        run: python tools/build_aot_parser.py --gram-path "${{ github.workspace }}/../Gram"
 
       - name: Run fast tests
         run: vnma test tests
@@ -51,4 +51,4 @@ jobs:
 
       - name: Run optional benchmark
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark == true }}
-        run: python benchmarks/compile_baseline.py --warmup 1 --samples 5
+        run: python benchmarks/compile_baseline.py --gram-path "${{ github.workspace }}/../Gram" --warmup 1 --samples 5
