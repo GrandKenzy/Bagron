@@ -22,8 +22,18 @@ class ModuleTarget:
 
 
 class Compiler(CompilerState):
-    def __init__(self):
-        super().__init__()
+    def __init__(
+        self,
+        *,
+        aot: bool = False,
+        aot_parser: str | Path | None = None,
+        aot_strict: bool = False,
+    ):
+        super().__init__(
+            aot=aot,
+            aot_parser=aot_parser,
+            aot_strict=aot_strict,
+        )
         self.storage = storage.Storage('main')
         self.function_lookup = storage.FunctionLookup(self.storage)
         self.project_root: Path | None = None

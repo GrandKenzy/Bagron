@@ -201,3 +201,47 @@ backend. El siguiente paso de AOT será integrarlo detrás de una ruta opt-in,
 comparar diagnósticos y resultados semánticos, y conservar el parser Python
 como fallback antes de considerar activarlo por defecto. Los bloques `#prep`
 siguen requiriendo la extracción previa del preprocesador de Bagron.
+
+## Fase 3: integración AOT opt-in y benchmark inicial
+
+`CompilerState.process_source()` ya puede seleccionar el parser C mediante la
+opción opt-in `--aot` de `main.py`. El ejecutable exportado por Gram se indica
+con `--aot-parser <ruta>` o mediante `BAGRON_AOT_PARSER`. El flujo escribe la
+fuente parser-ready en un temporal, solicita GIR al driver nativo, reconstruye
+el AST con `ast_from_gir()` y continúa por las mismas pasadas semánticas y el
+mismo backend LLVM que la ruta Python.
+
+La ruta no cambia el comportamiento predeterminado. Si el parser no está
+configurado o falla, `--aot` registra una advertencia y vuelve a Python;
+`--aot-strict` convierte esa condición en un error para las comparaciones
+diferenciales y los benchmarks. Los binarios generados no se guardan en el
+repositorio.
+
+Comprobación de integración:
+
+```text
+vnma run main.py --aot --aot-strict --aot-parser build/aot_probe/bagron_aot.exe examples/canon/_main.bg
+```
+
+La compilación completa de `examples/canon/_main.bg`, incluyendo imports,
+análisis semántico, LLVM, enlace y ejecutable, terminó correctamente por la
+ruta nativa.
+
+Benchmark inicial con Gram `3.0.0-5-g968dcf7`, un calentamiento y tres muestras
+por ruta:
+
+| Ruta | Muestras (s) | Mediana | Promedio |
+| --- | --- | ---: | ---: |
+| Python | `5.905`, `5.967`, `6.871` | `5.967 s` | `6.247 s` |
+| AOT | `3.409`, `3.163`, `3.552` | `3.409 s` | `3.375 s` |
+
+La mediana observada fue aproximadamente un `43%` menor con AOT en esta
+ejecución. Es una señal inicial; hace falta ampliar muestras y repetir en
+condiciones controladas antes de activar AOT por defecto.
+
+La comparación adicional de LLVM IR produjo diferencias únicamente en los
+índices numéricos que llvmlite asigna a tipos anónimos en cada ejecución. Tras
+normalizar esos sufijos, el IR generado por Python y AOT fue idéntico para
+`examples/canon/_main.bg`. Por tanto, la paridad de backend del corpus probado
+queda cubierta; la equivalencia de diagnósticos sintácticos y el muestreo
+estadístico ampliado siguen siendo trabajo de la fase siguiente.

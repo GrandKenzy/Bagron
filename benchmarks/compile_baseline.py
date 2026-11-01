@@ -2,7 +2,8 @@
 
 The measured interval includes ``vnma`` startup, Gram tokenization and parsing,
 Bagron semantic analysis, LLVM generation, linking, and executable creation.
-It deliberately does not use Gram's AOT backend.
+The default uses Gram's Python parser; ``--aot`` measures the opt-in native
+parser when ``--aot-parser`` points to an exported Gram executable.
 """
 
 from __future__ import annotations
@@ -42,8 +43,23 @@ def _gram_revision(gram_path: Path) -> str:
     return revision if result.returncode == 0 and revision else "unknown"
 
 
-def _compile(vnma: str, repo: Path, target: Path) -> tuple[float, int, str]:
-    command = [vnma, "run", "main.py", str(target.relative_to(repo))]
+def _compile(
+    vnma: str,
+    repo: Path,
+    target: Path,
+    *,
+    aot: bool,
+    aot_parser: Path | None,
+    aot_strict: bool,
+) -> tuple[float, int, str]:
+    command = [vnma, 'run', 'main.py']
+    if aot:
+        command.append('--aot')
+    if aot_strict:
+        command.append('--aot-strict')
+    if aot_parser is not None:
+        command.extend(['--aot-parser', str(aot_parser)])
+    command.append(str(target.relative_to(repo)))
     started = time.perf_counter()
     result = subprocess.run(
         command,
@@ -84,6 +100,21 @@ def main() -> int:
         default=Path.home() / "Desktop" / "Gram",
         help="Editable Gram checkout used for revision reporting",
     )
+    parser.add_argument(
+        '--aot',
+        action='store_true',
+        help='Measure the opt-in native Gram parser instead of the Python parser',
+    )
+    parser.add_argument(
+        '--aot-parser',
+        type=Path,
+        help='Exported Gram parser executable used with --aot',
+    )
+    parser.add_argument(
+        '--aot-strict',
+        action='store_true',
+        help='Fail instead of falling back to the Python parser when AOT fails',
+    )
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
@@ -99,9 +130,17 @@ def main() -> int:
     print(f"target={target.relative_to(repo)}")
     print(f"gram={_gram_revision(args.gram_path.resolve())}")
     print(f"warmup={args.warmup} samples={args.samples}")
+    print(f'aot={args.aot} aot_parser={args.aot_parser or "environment"}')
 
     for warmup_index in range(args.warmup):
-        _, exit_code, output = _compile(vnma, repo, target)
+        _, exit_code, output = _compile(
+            vnma,
+            repo,
+            target,
+            aot=args.aot,
+            aot_parser=args.aot_parser,
+            aot_strict=args.aot_strict,
+        )
         if exit_code:
             print(f"warmup={warmup_index + 1} failed with exit={exit_code}", file=sys.stderr)
             print(output, file=sys.stderr)
@@ -109,7 +148,14 @@ def main() -> int:
 
     samples: list[float] = []
     for sample_index in range(args.samples):
-        elapsed, exit_code, output = _compile(vnma, repo, target)
+        elapsed, exit_code, output = _compile(
+            vnma,
+            repo,
+            target,
+            aot=args.aot,
+            aot_parser=args.aot_parser,
+            aot_strict=args.aot_strict,
+        )
         if exit_code:
             print(f"sample={sample_index + 1} failed with exit={exit_code}", file=sys.stderr)
             print(output, file=sys.stderr)

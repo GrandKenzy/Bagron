@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+import os
+from pathlib import Path
+import subprocess
+import tempfile
 from typing import Any
 
 from gram.core.ast.nodes import (
@@ -27,6 +31,119 @@ class AotAstError(ValueError):
     """Indica que un árbol GIR no puede conservar la forma del AST de Gram."""
 
 
+class AotParserError(RuntimeError):
+    """Indica que el parser C no pudo producir un GIR válido."""
+
+
+class AotParserUnavailable(AotParserError):
+    """Indica que no hay un ejecutable AOT configurado o disponible."""
+
+
+class AotParser:
+    """Invoca el parser C exportado por Gram y reconstruye el AST de Bagron."""
+
+    def __init__(self, executable: str | Path, *, timeout: float = 60.0):
+        path = Path(executable).expanduser()
+        if not path.is_file():
+            raise AotParserUnavailable(
+                f'No se encontró el parser AOT de Gram: {path}'
+            )
+        self.executable = path.resolve()
+        self.timeout = timeout
+
+    @classmethod
+    def from_config(
+        cls,
+        executable: str | Path | None = None,
+        *,
+        timeout: float = 60.0,
+    ) -> 'AotParser':
+        configured = executable or os.environ.get('BAGRON_AOT_PARSER')
+        if not configured:
+            raise AotParserUnavailable(
+                'No hay parser AOT configurado; usa --aot-parser o '
+                'BAGRON_AOT_PARSER.'
+            )
+        return cls(os.path.expandvars(str(configured)), timeout=timeout)
+
+    def parse(
+        self,
+        source: str | bytes | Iterable[str],
+        *,
+        session: Any,
+        name: str = '<aot>',
+    ) -> list[ASTNode]:
+        """Analiza `source` mediante GIR y devuelve raíces compatibles con Bagron."""
+        source_bytes = _source_bytes(source)
+        source_name = Path(name).name or 'source.bg'
+        if not Path(source_name).suffix:
+            source_name += '.bg'
+
+        with tempfile.TemporaryDirectory(prefix='bagron-aot-') as directory:
+            directory_path = Path(directory)
+            source_path = directory_path / source_name
+            gir_path = directory_path / f'{source_path.stem}.gir'
+            source_path.write_bytes(source_bytes)
+            try:
+                result = subprocess.run(
+                    [
+                        str(self.executable),
+                        'compile',
+                        str(source_path),
+                        '-o',
+                        str(gir_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=self.timeout,
+                )
+            except OSError as error:
+                raise AotParserError(
+                    f'No se pudo ejecutar el parser AOT {self.executable}: {error}'
+                ) from error
+            except subprocess.TimeoutExpired as error:
+                raise AotParserError(
+                    f'El parser AOT excedió el tiempo límite de {self.timeout:g} s.'
+                ) from error
+
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout).strip()
+                raise AotParserError(
+                    f'El parser AOT rechazó {name}'
+                    + (f': {detail}' if detail else '.')
+                )
+            if not gir_path.is_file():
+                raise AotParserError(
+                    f'El parser AOT terminó correctamente pero no produjo GIR para {name}.'
+                )
+
+            try:
+                source_view = GirView.from_file(
+                    gir_path,
+                    source=source_bytes,
+                    session=session,
+                )
+                return ast_from_gir(
+                    source_view,
+                    source_bytes,
+                    session=session,
+                    name=name,
+                )
+            except (AotAstError, ValueError) as error:
+                raise AotParserError(
+                    f'El GIR producido para {name} no coincide con Bagron: {error}'
+                ) from error
+
+
+def _source_bytes(source: str | bytes | Iterable[str]) -> bytes:
+    if isinstance(source, bytes):
+        return source
+    if isinstance(source, str):
+        return source.encode('utf-8')
+    return ''.join(source).encode('utf-8')
+
+
 # `Separator` es el único combinador de Bagron que devuelve ArrayNode. Las
 # secuencias y repeticiones restantes devuelven listas que Gram aplana al
 # incorporarlas a la regla padre; el generador C representa ambas como ARRAY.
@@ -40,7 +157,7 @@ _ROOT_REPETITION_RULES = frozenset(
 
 def ast_from_gir(
     view: GirView,
-    source: str | bytes,
+    source: str | bytes | Iterable[str],
     *,
     session: Any,
     name: str = '<aot>',
@@ -51,7 +168,7 @@ def ast_from_gir(
     conservando sus saltos de línea. Los spans GIR son offsets UTF-8; se
     valida su tamaño antes de reutilizar los tokens de la sesión Python.
     """
-    source_bytes = source if isinstance(source, bytes) else source.encode('utf-8')
+    source_bytes = _source_bytes(source)
     if view.header.source_size != len(source_bytes):
         raise AotAstError(
             'El GIR y la fuente no coinciden en tamaño; conserva los saltos '
@@ -309,4 +426,10 @@ def _source_offset(source: bytes, line: int, column: int) -> int:
     return len(prefix) + len(line_text[:column].encode('utf-8'))
 
 
-__all__ = ['AotAstError', 'ast_from_gir']
+__all__ = [
+    'AotAstError',
+    'AotParser',
+    'AotParserError',
+    'AotParserUnavailable',
+    'ast_from_gir',
+]

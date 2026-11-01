@@ -3,6 +3,7 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.prep import extract_prep_blocks
+from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
 
 
@@ -11,11 +12,21 @@ class CompilationError(RuntimeError):
 
 
 class CompilerState(Diagnostics):
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        aot: bool = False,
+        aot_parser: str | Path | None = None,
+        aot_strict: bool = False,
+    ):
         self.semantic_errors: list[str] = []
         self.warnings: list[str] = []
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
+        self.aot_enabled = aot
+        self.aot_parser_path = aot_parser
+        self.aot_strict = aot_strict
+        self._aot_parser: AotParser | None = None
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
 
     def error(self, note: str):
@@ -44,6 +55,22 @@ class CompilerState(Diagnostics):
 
         ext = ext.strip('.')
         if ext == 'bg':
+            if self.aot_enabled:
+                try:
+                    if self._aot_parser is None:
+                        self._aot_parser = AotParser.from_config(self.aot_parser_path)
+                    return self._aot_parser.parse(
+                        content,
+                        session=frontend.BAGRON_SESSION,
+                        name=path.name,
+                    )
+                except AotParserError as error:
+                    if self.aot_strict:
+                        raise CompilationError(str(error)) from error
+                    self.warning(
+                        f'AOT no disponible para {path.name}; se usara Gram Python: {error}'
+                    )
+
             # Session.tokenize/parse ya usan el estado aislado de Gram; no
             # reactives el catálogo global legacy antes de cada compilación.
             TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
