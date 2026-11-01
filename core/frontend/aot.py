@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+import ctypes
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from typing import Any
 
@@ -39,6 +41,25 @@ class AotParserUnavailable(AotParserError):
     """Indica que no hay un ejecutable AOT configurado o disponible."""
 
 
+_AOT_MESSAGE_SIZE = 192
+
+
+def _aot_library_names() -> tuple[str, ...]:
+    if sys.platform == 'win32':
+        return ('bagron_aot.dll',)
+    if sys.platform == 'darwin':
+        return ('bagron_aot.dylib', 'libbagron_aot.dylib')
+    return ('libbagron_aot.so', 'bagron_aot.so')
+
+
+def _sibling_aot_library(executable: Path) -> Path | None:
+    for name in _aot_library_names():
+        candidate = executable.parent / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 class AotParser:
     """Invoca el parser C exportado por Gram y reconstruye el AST de Bagron."""
 
@@ -59,6 +80,33 @@ class AotParser:
         timeout: float = 60.0,
     ) -> 'AotParser':
         configured = executable or os.environ.get('BAGRON_AOT_PARSER')
+        configured_library = os.environ.get('BAGRON_AOT_LIBRARY')
+        if configured:
+            executable_path = Path(
+                os.path.expandvars(str(configured))
+            ).expanduser()
+            library_path = (
+                Path(os.path.expandvars(configured_library)).expanduser()
+                if configured_library
+                else _sibling_aot_library(executable_path)
+            )
+            if library_path is not None:
+                try:
+                    return AotInMemoryParser(
+                        library_path,
+                        executable=executable_path,
+                        timeout=timeout,
+                    )
+                except AotParserUnavailable:
+                    if executable_path.is_file():
+                        return cls(executable_path, timeout=timeout)
+                    raise
+            return cls(executable_path, timeout=timeout)
+        if configured_library:
+            return AotInMemoryParser(
+                Path(os.path.expandvars(configured_library)).expanduser(),
+                timeout=timeout,
+            )
         if not configured:
             repository_root = Path(__file__).resolve().parents[2]
             for candidate in (
@@ -66,14 +114,26 @@ class AotParser:
                 repository_root / 'build' / 'aot' / 'bagron_aot',
             ):
                 if candidate.is_file():
-                    configured = candidate
-                    break
+                    library_path = _sibling_aot_library(candidate)
+                    if library_path is not None:
+                        try:
+                            return AotInMemoryParser(
+                                library_path,
+                                executable=candidate,
+                                timeout=timeout,
+                            )
+                        except AotParserUnavailable:
+                            pass
+                    return cls(candidate, timeout=timeout)
+            for name in _aot_library_names():
+                candidate = repository_root / 'build' / 'aot' / name
+                if candidate.is_file():
+                    return AotInMemoryParser(candidate, timeout=timeout)
         if not configured:
             raise AotParserUnavailable(
                 'No hay parser AOT configurado; usa tools/build_aot_parser.py, '
                 '--aot-parser o BAGRON_AOT_PARSER.'
             )
-        return cls(os.path.expandvars(str(configured)), timeout=timeout)
 
     def parse(
         self,
@@ -143,6 +203,109 @@ class AotParser:
                 raise AotParserError(
                     f'El GIR producido para {name} no coincide con Bagron: {error}'
                 ) from error
+
+
+class AotInMemoryParser(AotParser):
+    """Consume el driver FFI de Gram y evita CLI, temporales y `.gir` en disco."""
+
+    def __init__(
+        self,
+        library: str | Path,
+        *,
+        executable: str | Path | None = None,
+        timeout: float = 60.0,
+    ):
+        library_path = Path(library).expanduser()
+        if not library_path.is_file():
+            raise AotParserUnavailable(
+                f'No se encontró la biblioteca GIR de Gram: {library_path}'
+            )
+        executable_path = (
+            Path(executable).expanduser()
+            if executable is not None and Path(executable).is_file()
+            else None
+        )
+        self.executable = executable_path.resolve() if executable_path else None
+        self.library = library_path.resolve()
+        self.timeout = timeout
+        try:
+            native = ctypes.CDLL(str(self.library))
+            self._compile_source = native.bagron_compile_source_to_gir
+            self._free_gir = native.bagron_free_gir
+        except (AttributeError, OSError) as error:
+            raise AotParserUnavailable(
+                f'No se pudo cargar la biblioteca GIR de Gram {self.library}: {error}'
+            ) from error
+
+        self._compile_source.argtypes = [
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_size_t),
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_char),
+            ctypes.c_size_t,
+        ]
+        self._compile_source.restype = ctypes.c_int
+        self._free_gir.argtypes = [ctypes.c_void_p]
+        self._free_gir.restype = None
+
+    def parse(
+        self,
+        source: str | bytes | Iterable[str],
+        *,
+        session: Any,
+        name: str = '<aot>',
+    ) -> list[ASTNode]:
+        source_bytes = _source_bytes(source)
+        source_buffer = ctypes.create_string_buffer(source_bytes)
+        data = ctypes.c_void_p()
+        size = ctypes.c_size_t()
+        line = ctypes.c_uint32()
+        column = ctypes.c_uint32()
+        offset = ctypes.c_uint32()
+        message = ctypes.create_string_buffer(_AOT_MESSAGE_SIZE)
+        status = self._compile_source(
+            source_buffer,
+            len(source_bytes),
+            ctypes.byref(data),
+            ctypes.byref(size),
+            ctypes.byref(line),
+            ctypes.byref(column),
+            ctypes.byref(offset),
+            message,
+            len(message),
+        )
+        try:
+            if status != 0:
+                detail = message.value.decode('utf-8', errors='replace').strip()
+                location = name
+                if line.value:
+                    location = f'{name}:{line.value}:{column.value}'
+                raise AotParserError(
+                    f'El parser AOT rechazó {location}: '
+                    f'{detail or f"status={status}"}'
+                )
+            if not data.value or not size.value:
+                raise AotParserError(f'El parser AOT no produjo GIR para {name}.')
+            gir_bytes = ctypes.string_at(data.value, size.value)
+        finally:
+            if data.value:
+                self._free_gir(data)
+
+        try:
+            view = GirView.from_bytes(
+                gir_bytes,
+                source=source_bytes,
+                session=session,
+            )
+            return ast_from_gir(view, source_bytes, session=session, name=name)
+        except (AotAstError, ValueError) as error:
+            raise AotParserError(
+                f'El GIR producido para {name} no coincide con Bagron: {error}'
+            ) from error
 
 
 def _source_bytes(source: str | bytes | Iterable[str]) -> bytes:
@@ -501,6 +664,7 @@ def _source_offset(source: bytes, line: int, column: int) -> int:
 
 __all__ = [
     'AotAstError',
+    'AotInMemoryParser',
     'AotParser',
     'AotParserError',
     'AotParserUnavailable',

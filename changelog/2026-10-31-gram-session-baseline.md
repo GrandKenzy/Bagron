@@ -322,3 +322,28 @@ optimización de backend.
 La suite rápida pasó `111/111` y la agresiva `168/168` con el parser AOT
 disponible. En una medición de tres muestras con warmup, Python forzado tuvo
 mediana `5.751 s` y AOT automático `3.125 s` sobre `_main.bg`.
+
+## Fase 8: GIR en memoria mediante el driver de Gram
+
+Se añadió `tools/bagron_aot_ffi.c` y se amplió
+`tools/build_aot_parser.py` para producir también `bagron_aot.dll` (o la
+biblioteca compartida equivalente). El wrapper expone únicamente
+`source -> GIR` y la liberación del blob nativo.
+
+`AotParser.from_config()` prefiere ahora `AotInMemoryParser`, que invoca
+`gram_compile_source_to_ir()` con `ctypes`, carga el resultado mediante
+`GirView.from_bytes()` y libera el blob con el driver de Gram. El CLI y los
+temporales `.gir` permanecen como fallback para artefactos antiguos que solo
+contengan el ejecutable.
+
+La suite rápida (`111/111`) y la agresiva (`168/168`) pasaron usando el driver
+en memoria. Con un calentamiento y cinco muestras sobre `_main.bg`:
+
+| Ruta | Muestras (s) | Mediana | Promedio |
+| --- | --- | ---: | ---: |
+| Python forzado | `6.312`, `6.429`, `8.039`, `6.439`, `5.411` | `6.429 s` | `6.526 s` |
+| GIR en memoria | `2.992`, `2.930`, `3.096`, `3.359`, `3.646` | `3.096 s` | `3.205 s` |
+
+La mediana del camino GIR en memoria fue aproximadamente `51.8%` menor que la
+de Python en esta tanda. El resultado mide lexer/parser/GIR más el mismo
+backend LLVM; no representa una optimización del backend.

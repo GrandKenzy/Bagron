@@ -101,8 +101,37 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
     if result.returncode:
         raise RuntimeError(f'Clang terminó con código {result.returncode}.')
 
+    ffi_source = repository_root / 'tools' / 'bagron_aot_ffi.c'
+    if not ffi_source.is_file():
+        raise FileNotFoundError(f'No existe el wrapper GIR: {ffi_source}')
+    library_name = {
+        'win32': 'bagron_aot.dll',
+        'darwin': 'bagron_aot.dylib',
+    }.get(sys.platform, 'libbagron_aot.so')
+    library = output_dir / library_name
+    library_command = [
+        str(clang_path),
+        '-shared',
+        '-O2',
+        f'-I{include_dir}',
+        f'-I{lexer_source_dir}',
+        f'-I{output_dir}',
+        str(ffi_source),
+        *(str(path) for path in generated_sources if path.name != 'gram_cli.c'),
+        *(str(path) for path in lexer_sources),
+        '-o',
+        str(library),
+    ]
+    library_result = subprocess.run(library_command, check=False)
+    if library_result.returncode:
+        raise RuntimeError(
+            f'Clang no pudo crear la biblioteca GIR; terminó con código '
+            f'{library_result.returncode}.'
+        )
+
     print(f'grammar_id={manifest.get("grammar_id", "unknown")}')
     print(f'output={executable}')
+    print(f'shared_library={library}')
     return executable
 
 
