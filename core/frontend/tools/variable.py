@@ -4,6 +4,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.handles import VariableHandle, handle_variable
+from core.frontend.ownership import BORROWED, OWNED
 from core.frontend.objects import TypeSpec, ValueInfo, Variable
 from core.frontend.tools.types import (
     TypeResolutionError,
@@ -89,6 +90,8 @@ def build_symbol(
     )
     symbol.privacy = privacy
     symbol.scope_kind = kind
+    if is_buffer_type(type_spec):
+        symbol.buffer_state = BORROWED if kind == 'parameter' else OWNED
     symbol.initialized = kind == 'parameter' or value_node is not None
     symbol.bit_width = type_spec.bit_width
     symbol.signed = type_spec.signed

@@ -75,6 +75,9 @@ class FunctionSymbol:
     # this manifest lets LLVM reserve static storage for every local at
     # function entry, including locals declared in nested control blocks.
     local_variables: dict[str, object] = field(default_factory=dict)
+    # Flow-sensitive ownership metadata for buffers.  The backend never reads
+    # this map; it exists only while validating the source body.
+    buffer_states: dict[int, str] = field(default_factory=dict)
     # Module data is hidden from function/method scopes by default. A source
     # ``global name`` declaration records the explicit opt-in and is shared
     # with the function's Storage visibility gate.

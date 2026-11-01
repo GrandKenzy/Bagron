@@ -104,6 +104,18 @@ Del datos
 Después de liberar, el descriptor de `datos` queda en cero. `Del` no es un
 método y no añade atributos implícitos al tipo.
 
+El compilador mantiene un estado estático para cada buffer durante el análisis:
+
+- `owned`: la variable posee el bloque y puede ejecutar `Del` una vez;
+- `borrowed`: la variable es un parámetro prestado, puede leerse y modificarse,
+  pero no puede liberarse;
+- `dead`: el bloque ya fue liberado y cualquier lectura, escritura, llamada o
+  segundo `Del` se diagnostica como error.
+
+Estos estados no forman parte del descriptor, no agregan comprobaciones al
+programa generado y no cambian la ABI: son una comprobación de tiempo de
+compilación de coste cero en ejecución.
+
 ## Parámetros de función
 
 Un `buffer` puede recibirse como préstamo y debe declarar `Len_t`:
@@ -144,4 +156,8 @@ Este documento fija la representación, creación, indexación, inicialización,
 concatenación, liberación y expansión `Len_t` de `buffer`. La transferencia de
 propiedad y el retorno desde funciones quedan fuera del modelo del lenguaje.
 La liberación automática al salir de un ámbito continúa pendiente; por ahora la
-liberación es explícita mediante `Del`.
+liberación es explícita mediante `Del`. En esta fase el análisis de flujo es
+conservador: si alguna rama o iteración puede dejar un buffer en `dead`, no se
+permite usarlo después de ese punto. Por la misma razón, `Del` dentro de un
+bucle se rechaza: una segunda iteración no podría volver a liberar el mismo
+binding `owned`.
