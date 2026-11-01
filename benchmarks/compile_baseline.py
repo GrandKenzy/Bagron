@@ -2,8 +2,9 @@
 
 The measured interval includes ``vnma`` startup, Gram tokenization and parsing,
 Bagron semantic analysis, LLVM generation, linking, and executable creation.
-The default uses Gram's Python parser; ``--aot`` measures the opt-in native
-parser when ``--aot-parser`` points to an exported Gram executable.
+The default forces Gram's Python parser so the baseline is not affected by a
+locally built AOT artifact. ``--aot`` measures the native GIR parser, using the
+in-memory library discovered in ``build/aot`` unless ``--aot-parser`` is given.
 """
 
 from __future__ import annotations
@@ -105,7 +106,7 @@ def main() -> int:
     parser.add_argument(
         '--aot',
         action='store_true',
-        help='Measure the opt-in native Gram parser instead of the Python parser',
+        help='Measure the native Gram GIR parser instead of the Python parser',
     )
     parser.add_argument(
         '--aot-parser',

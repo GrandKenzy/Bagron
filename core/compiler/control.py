@@ -42,7 +42,7 @@ class CompilerState(Diagnostics):
         self.warnings.append(note)
         super().warn(note)
 
-    def exit(self):  # NOTE: Función temporal en lo que armamos los errores
+    def exit(self):
         print(self.last_note())
         sys.exit(1)
 
@@ -90,7 +90,7 @@ class CompilerState(Diagnostics):
                         )
 
             # Session.tokenize/parse ya usan el estado aislado de Gram; no
-            # reactives el catálogo global legacy antes de cada compilación.
+            # reactives el catálogo global antes de cada compilación.
             TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
             return frontend.BAGRON_SESSION.parse(TKNS, path.name, trace='off')
         else:
