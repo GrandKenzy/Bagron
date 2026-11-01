@@ -37,6 +37,7 @@ class AotFrontendTests(unittest.TestCase):
     def test_gate_uses_in_memory_gram_driver(self):
         self.assertIsInstance(self.parser, AotInMemoryParser)
         self.assertIsNotNone(self.parser.library)
+        self.assertIsNotNone(self.parser.expected_grammar_id)
 
     def test_compiles_canon_through_gir_and_existing_backend(self):
         output = Compiler(

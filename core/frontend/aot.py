@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 import ctypes
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -75,6 +76,29 @@ def _sibling_aot_library(executable: Path) -> Path | None:
     return None
 
 
+def _manifest_grammar_id(artifact: Path) -> int | None:
+    manifest_path = artifact.parent / 'gram_parser_manifest.json'
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        value = manifest.get('grammar_id')
+        return int(value, 0) if isinstance(value, str) else int(value)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise AotParserUnavailable(
+            f'El manifiesto AOT no contiene un grammar_id válido: {manifest_path}'
+        ) from error
+
+
+def _validate_gir_grammar(view: GirView, expected: int | None, name: str) -> None:
+    if expected is None or view.matches_grammar(expected):
+        return
+    raise AotParserError(
+        f'El GIR de {name} usa grammar_id 0x{view.header.grammar_id:016x}; '
+        f'se esperaba 0x{expected:016x}.'
+    )
+
+
 class AotParser:
     """Invoca el parser C exportado por Gram y reconstruye el AST de Bagron."""
 
@@ -86,6 +110,7 @@ class AotParser:
             )
         self.executable = path.resolve()
         self.timeout = timeout
+        self.expected_grammar_id = _manifest_grammar_id(self.executable)
 
     @classmethod
     def from_config(
@@ -208,6 +233,11 @@ class AotParser:
                     source=source_bytes,
                     session=session,
                 )
+                _validate_gir_grammar(
+                    source_view,
+                    self.expected_grammar_id,
+                    name,
+                )
                 return ast_from_gir(
                     source_view,
                     source_bytes,
@@ -243,6 +273,7 @@ class AotInMemoryParser(AotParser):
         self.executable = executable_path.resolve() if executable_path else None
         self.library = library_path.resolve()
         self.timeout = timeout
+        self.expected_grammar_id = _manifest_grammar_id(self.library)
         try:
             native = ctypes.CDLL(str(self.library))
             self._compile_source = native.bagron_compile_source_to_gir
@@ -320,6 +351,7 @@ class AotInMemoryParser(AotParser):
                 source=source_bytes,
                 session=session,
             )
+            _validate_gir_grammar(view, self.expected_grammar_id, name)
             return ast_from_gir(view, source_bytes, session=session, name=name)
         except (AotAstError, ValueError) as error:
             raise AotParserError(

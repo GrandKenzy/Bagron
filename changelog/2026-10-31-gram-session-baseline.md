@@ -360,3 +360,16 @@ seleccionada es `AotInMemoryParser` y no el CLI.
 La validación final de esta fase quedó en `111` pruebas rápidas y `169`
 agresivas. La suite agresiva requiere ejecutar previamente
 `python tools/build_aot_parser.py` para habilitar el gate nativo.
+
+## Fase 10: validación de identidad y CI
+
+El consumidor GIR lee `gram_parser_manifest.json` junto al ejecutable o la
+biblioteca AOT y valida que `GirView.header.grammar_id` coincida con el
+`grammar_id` exportado. Un artefacto GIR producido por otra gramática ya no
+puede avanzar silenciosamente hasta el procesador semántico.
+
+Se añadió `.github/workflows/gram-aot.yml`. En Ubuntu instala Clang y las
+dependencias Python, clona el checkout editable `main` de Gram, construye el
+ejecutable y la biblioteca FFI, y ejecuta `vnma test tests` junto con
+`vnma test tests_aggressive`. El benchmark de cinco muestras queda disponible
+como entrada manual `benchmark` del workflow.
