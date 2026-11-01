@@ -170,3 +170,34 @@ El sondeo necesitó cargar explícitamente el exportador de Gram porque el
 paquete `Bagron/tools` puede ocultar `Gram/tools` cuando ambos están en el
 `PYTHONPATH`. Es una consideración de tooling para automatizar el export, no
 un cambio aplicado al runtime de producción.
+
+## Paso 2: puente GIR a AST de Bagron
+
+Se añadió `core/frontend/aot.py` con `ast_from_gir()`, un adaptador que recibe
+un `GirView` y reconstruye el AST que produce la sesión Python de Bagron. El
+adaptador reutiliza los tokens de la misma fuente para conservar tokens,
+literales y posiciones, y convierte también las expresiones Pratt a
+`ASTUnaryOp`/`ASTBinaryOp`.
+
+El GIR de Gram representa de forma uniforme las listas como `ARRAY` y expande
+las reglas `nodeable=False`. Por eso el adaptador restaura explícitamente las
+listas transparentes de `TYPE`, los `ArrayNode` semánticos y las repeticiones
+de la raíz que Bagron necesita para sus pasadas posteriores. Esta decisión es
+deliberadamente específica de Bagron: la paridad genérica del GIR de Gram no
+garantiza por sí sola la forma exacta que consume el procesador de Bagron.
+
+Para que la raíz no introduzca un nodo artificial, `ENTRYPOINT` quedó marcado
+como `nodeable = False`, igual que la lista que devuelve el parser Python.
+
+La validación compiló el parser C y su runtime con Clang, generó GIR para los
+12 archivos parser-ready del corpus de ejemplos y comprobó la reconstrucción
+contra el AST Python:
+
+- parser nativo/GIR compilado: `12/12`;
+- paridad estructural Python↔GIR→AST: `12/12`.
+
+El puente todavía no está conectado a `CompilerState.process_source()` ni al
+backend. El siguiente paso de AOT será integrarlo detrás de una ruta opt-in,
+comparar diagnósticos y resultados semánticos, y conservar el parser Python
+como fallback antes de considerar activarlo por defecto. Los bloques `#prep`
+siguen requiriendo la extracción previa del preprocesador de Bagron.

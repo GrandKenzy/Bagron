@@ -40,6 +40,10 @@ VALUE.entrypoint = cmb.Alt(
 
 
 class ENTRYPOINT(cmb.RuleItem):
+    # El punto de entrada es un contenedor del modo `Many`, no un nodo del AST.
+    # Mantenerlo no nodeable alinea la raíz C/GIR con la lista que devuelve el
+    # analizador Python y evita introducir un `ENTRYPOINT` artificial en AOT.
+    nodeable = False
     entrypoint = cmb.Alt(
         cmb.Ref(VAR_ASSIGNATION),
         cmb.Ref(IMPORT),
