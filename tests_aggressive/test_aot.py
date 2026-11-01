@@ -7,7 +7,7 @@ from pathlib import Path
 
 from core.compiler import Compiler
 from core.frontend import BAGRON_SESSION
-from core.frontend.aot import AotParser, AotParserError
+from core.frontend.aot import AotInMemoryParser, AotParser, AotParserError
 
 
 class AotFrontendTests(unittest.TestCase):
@@ -24,12 +24,19 @@ class AotFrontendTests(unittest.TestCase):
 
     def test_rejects_invalid_source(self):
         source = 'func main() int32\n    return 0\n'
-        with self.assertRaises(AotParserError):
+        with self.assertRaises(AotParserError) as context:
             self.parser.parse(
                 source,
                 session=BAGRON_SESSION,
                 name='invalid_aot.bg',
             )
+        self.assertEqual(context.exception.status, 6)
+        self.assertEqual(context.exception.line, 2)
+        self.assertEqual(context.exception.column, 0)
+
+    def test_gate_uses_in_memory_gram_driver(self):
+        self.assertIsInstance(self.parser, AotInMemoryParser)
+        self.assertIsNotNone(self.parser.library)
 
     def test_compiles_canon_through_gir_and_existing_backend(self):
         output = Compiler(

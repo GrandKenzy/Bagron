@@ -36,6 +36,21 @@ class AotAstError(ValueError):
 class AotParserError(RuntimeError):
     """Indica que el parser C no pudo producir un GIR válido."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        line: int = 0,
+        column: int = 0,
+        offset: int = 0,
+    ):
+        super().__init__(message)
+        self.status = status
+        self.line = line
+        self.column = column
+        self.offset = offset
+
 
 class AotParserUnavailable(AotParserError):
     """Indica que no hay un ejecutable AOT configurado o disponible."""
@@ -286,7 +301,11 @@ class AotInMemoryParser(AotParser):
                     location = f'{name}:{line.value}:{column.value}'
                 raise AotParserError(
                     f'El parser AOT rechazó {location}: '
-                    f'{detail or f"status={status}"}'
+                    f'{detail or f"status={status}"}',
+                    status=status,
+                    line=line.value,
+                    column=column.value,
+                    offset=offset.value,
                 )
             if not data.value or not size.value:
                 raise AotParserError(f'El parser AOT no produjo GIR para {name}.')

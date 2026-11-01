@@ -347,3 +347,16 @@ en memoria. Con un calentamiento y cinco muestras sobre `_main.bg`:
 La mediana del camino GIR en memoria fue aproximadamente `51.8%` menor que la
 de Python en esta tanda. El resultado mide lexer/parser/GIR más el mismo
 backend LLVM; no representa una optimización del backend.
+
+## Fase 9: diagnósticos estructurados y gate FFI estricto
+
+`AotParserError` conserva ahora `status`, `line`, `column` y `offset` del
+driver C. En modo estricto, el diagnóstico identifica el archivo real que
+Bagron estaba compilando; en modo `auto`, un fallo AOT sigue permitiendo el
+fallback Python. El gate agresivo verifica un caso inválido con
+`status=6`, línea `2` y columna `0`, además de comprobar que la implementación
+seleccionada es `AotInMemoryParser` y no el CLI.
+
+La validación final de esta fase quedó en `111` pruebas rápidas y `169`
+agresivas. La suite agresiva requiere ejecutar previamente
+`python tools/build_aot_parser.py` para habilitar el gate nativo.

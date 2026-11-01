@@ -79,7 +79,7 @@ class CompilerState(Diagnostics):
                     return parser.parse(
                         content,
                         session=frontend.BAGRON_SESSION,
-                        name=path.name,
+                        name=str(path),
                     )
                 except AotParserError as error:
                     if self.aot_strict:
