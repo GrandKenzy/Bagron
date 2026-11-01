@@ -829,7 +829,7 @@ class FunctionSemanticTests(unittest.TestCase):
             '    return false\n'
         )
 
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(CompilationError):
             self.compile_source(
                 'func invalid(flag: bool) bool:\n'
                 '    if flag and true:\n'
@@ -837,7 +837,7 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return false\n'
             )
 
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(CompilationError):
             self.compile_source(
                 'func invalid(flag: bool) bool:\n'
                 '    if flag or true:\n'

@@ -4,12 +4,34 @@ from core.compiler import CompilationError, Compiler
 
 
 def main(*args):
-    argv = args[0]
+    argv = list(args[0])
     if not argv:
-        print("Uso: vnma run main.py <archivo.bg>")
+        print(
+            'Uso: vnma run main.py <archivo.bg>\n'
+            'El frontend Gram FFI produce GIR; semántica y backend LLVM '
+            'siguen en Bagron.'
+        )
         return
+
+    if argv[0] in {'-h', '--help'}:
+        print(
+            'Uso: vnma run main.py <archivo.bg>\n'
+            'El frontend Gram FFI produce GIR; semántica y backend LLVM '
+            'siguen en Bagron.'
+        )
+        return 0
+    if len(argv) != 1:
+        print('Uso: vnma run main.py <archivo.bg>', file=sys.stderr)
+        return 2
+    if argv[0].startswith('-'):
+        print(
+            'No se admiten opciones de parser: Bagron requiere el frontend Gram FFI.',
+            file=sys.stderr,
+        )
+        return 2
+
     compiler = Compiler()
-    target = argv[1] if len(argv) > 1 else argv[0]
+    target = argv[0]
     try:
         artifacts = compiler.compile(target)
     except CompilationError as error:

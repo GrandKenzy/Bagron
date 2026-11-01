@@ -1,11 +1,8 @@
-from gram import lexer
-from gram.core.lexer import tokens
+from __future__ import annotations
+
+from gram.sessions import Session
 
 from core.globvars import CLAUSES
-
-# `**` se tokeniza como dos `*` para permitir niveles de puntero (`**: tipo`)
-# en lugar de exponenciacion, que no forma parte de la sintaxis Bagron actual.
-tokens.disabled_symbol('**')
 
 GROUPS = {
     'imports': '#E5C07B',
@@ -169,47 +166,53 @@ KEYWORDS_BY_GROUP = {
 }
 
 
-# 1. Registrar grupos
-for group, color in GROUPS.items():
-    if not color:
-        lexer.words.add_group(group)
-    else:
-        lexer.words.add_group(group, color_group=color)
-   
-# 2. Registrar tipos intrínsecos en el grupo 'types'     
-for keyword in TYPES:
-    color = INTRINSIC_TYPES.get(keyword, GROUPS['types'])
-    kw_obj = lexer.words.add_keyword(
-        keyword,
-        hex_color=color,
-        group='types',
-        allow_override=True
-    )
-    grp_t = lexer.words.get_group('types')
-    if grp_t and keyword not in grp_t.values:
-        grp_t.add_keyword(kw_obj)
+def register_keywords(session: Session) -> None:
+    """Register Bagron's lexical catalog in an isolated Gram session."""
+    # 1. Registrar grupos
+    for group, color in GROUPS.items():
+        session.add_group(group, color_group=color or '#FFA500')
 
-# 3. Registrar palabras clave por grupo
-for group, words in KEYWORDS_BY_GROUP.items():
-    for word in words:
-        color = KEYWORDS.get(word, GROUPS.get(group, '#FFFFFF'))
-        lexer.words.add_keyword(
-            word,
+    # 2. Registrar tipos intrínsecos en el grupo `types`
+    for keyword in TYPES:
+        color = INTRINSIC_TYPES.get(keyword, GROUPS['types'])
+        session.add_keyword(
+            keyword,
             hex_color=color,
-            group=group,
+            group='types',
             allow_override=True,
         )
 
-# 4. Registrar palabras clave individuales restantes
-for kw, color in KEYWORDS.items():
-    if not lexer.words.keyword_exists(kw):
-        lexer.words.add_keyword(
-            kw,
-            hex_color=color or '#FFFFFF',
-            group='keywords',
-            allow_override=True,
-        )
-    else:
-        k_obj = lexer.words.get_keyword(kw)
-        if k_obj and color:
-            k_obj.hex_color = color
+    # 3. Registrar palabras clave por grupo
+    for group, words in KEYWORDS_BY_GROUP.items():
+        for word in words:
+            color = KEYWORDS.get(word, GROUPS.get(group, '#FFFFFF'))
+            session.add_keyword(
+                word,
+                hex_color=color,
+                group=group,
+                allow_override=True,
+            )
+
+    # 4. Registrar palabras clave individuales restantes
+    for kw, color in KEYWORDS.items():
+        if session.get_keyword(kw) is None:
+            session.add_keyword(
+                kw,
+                hex_color=color or '#FFFFFF',
+                group='keywords',
+                allow_override=True,
+            )
+        else:
+            keyword = session.get_keyword(kw)
+            if keyword and color:
+                keyword.hex_color = color
+
+
+__all__ = [
+    'GROUPS',
+    'KEYWORDS',
+    'INTRINSIC_TYPES',
+    'TYPES',
+    'KEYWORDS_BY_GROUP',
+    'register_keywords',
+]

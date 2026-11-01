@@ -3,6 +3,7 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.prep import extract_prep_blocks
+from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
 
 
@@ -16,6 +17,9 @@ class CompilerState(Diagnostics):
         self.warnings: list[str] = []
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
+        self._aot_parser: AotParser | None = None
+        self._aot_config_checked = False
+        self._aot_config_error: AotParserError | None = None
         super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
 
     def error(self, note: str):
@@ -27,9 +31,23 @@ class CompilerState(Diagnostics):
         self.warnings.append(note)
         super().warn(note)
 
-    def exit(self):  # NOTE: Función temporal en lo que armamos los errores
+    def exit(self):
         print(self.last_note())
         sys.exit(1)
+
+    def _get_aot_parser(self) -> AotParser:
+        if self._aot_parser is not None:
+            return self._aot_parser
+        if self._aot_config_checked and self._aot_config_error is not None:
+            raise self._aot_config_error
+
+        self._aot_config_checked = True
+        try:
+            self._aot_parser = AotParser.from_config()
+        except AotParserError as error:
+            self._aot_config_error = error
+            raise
+        return self._aot_parser
 
     def process_source(self, path: Path):
         ext = path.suffix
@@ -44,9 +62,17 @@ class CompilerState(Diagnostics):
 
         ext = ext.strip('.')
         if ext == 'bg':
-            frontend.BAGRON_SESSION.load()
-            TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
-            return frontend.BAGRON_SESSION.parse(TKNS, path.name, trace='off')
+            try:
+                parser = self._get_aot_parser()
+                return parser.parse(
+                    content,
+                    session=frontend.BAGRON_SESSION,
+                    name=str(path),
+                )
+            except AotParserError as error:
+                raise CompilationError(
+                    f'El frontend FFI de Gram no pudo producir GIR para {path}: {error}'
+                ) from error
         else:
             self.error(f'La extensión {ext} no está soportada.')
             self.exit()
