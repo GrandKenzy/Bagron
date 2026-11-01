@@ -134,13 +134,14 @@ no puede recibir dos argumentos que representen la misma región `unique`.
 Los buffers mantienen su descriptor por valor; por eso esta comprobación no
 cambia todavía la ABI ni añade `noalias` al descriptor.
 
-Todavía no se permite copiar buffers ni retornarlos desde una función. La
-transferencia de propiedad se definirá después con el ABI correspondiente;
-esto evita aliasing y dobles liberaciones mientras esa regla no exista.
+No se permite copiar ni retornar buffers. Una función puede recibir un buffer
+como préstamo, modificarlo y devolver únicamente datos intrínsecos u objetos
+por valor; el buffer siempre permanece bajo responsabilidad del llamador.
 
 ## Alcance actual
 
 Este documento fija la representación, creación, indexación, inicialización,
 concatenación, liberación y expansión `Len_t` de `buffer`. La transferencia de
-propiedad, el retorno desde funciones y la liberación automática al salir de un
-ámbito quedan pendientes.
+propiedad y el retorno desde funciones quedan fuera del modelo del lenguaje.
+La liberación automática al salir de un ámbito continúa pendiente; por ahora la
+liberación es explícita mediante `Del`.

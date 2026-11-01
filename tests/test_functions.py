@@ -184,6 +184,27 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    pass\n'
             )
 
+    def test_function_returns_only_intrinsics_or_aggregates(self):
+        invalid_returns = {
+            'int32[2]': 'no puede retornar arrays',
+            'int32*': 'no puede retornar punteros',
+            'buffer[8]': 'no puede retornar buffer',
+        }
+        for return_type, message in invalid_returns.items():
+            with self.subTest(return_type=return_type):
+                with self.assertRaisesRegex(CompilationError, message):
+                    self.compile_source(
+                        f'func bad() {return_type}:\n'
+                        '    return 0\n'
+                    )
+
+        self.compile_source(
+            'struct Point:\n'
+            '    value: int32\n'
+            'func echo_point(value: Point) Point:\n'
+            '    return value\n'
+        )
+
     def test_return_only_inside_while_does_not_satisfy_function_return(self):
         with self.assertRaisesRegex(CompilationError, 'no tiene return'):
             self.compile_source(

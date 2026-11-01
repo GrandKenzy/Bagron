@@ -27,17 +27,17 @@ class UnsafeBoundaryTests(unittest.TestCase):
         path.write_text(source, encoding='utf-8')
         return Compiler().compile(path, executable=executable)
 
-    def test_safe_function_can_forward_an_opaque_pointer(self):
-        self._compile(
-            'value: int32 = 7\n'
-            'func identity(pointer *: int32) int32*:\n'
-            '    return pointer\n'
-            'func main() int32:\n'
-            '    global value\n'
-            '    result *: int32 = identity($value)\n'
-            '    return 0\n',
-            executable=False,
-        )
+    def test_function_cannot_forward_an_opaque_pointer_as_return(self):
+        with self.assertRaisesRegex(CompilationError, 'no puede retornar punteros'):
+            self._compile(
+                'value: int32 = 7\n'
+                'func identity(pointer *: int32) int32*:\n'
+                '    return pointer\n'
+                'func main() int32:\n'
+                '    global value\n'
+                '    return 0\n',
+                executable=False,
+            )
 
     def test_safe_function_cannot_dereference_opaque_pointer_parameter(self):
         with self.assertRaisesRegex(CompilationError, 'procedencia conocida'):

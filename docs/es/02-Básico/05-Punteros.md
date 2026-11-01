@@ -38,21 +38,18 @@ En este ejemplo:
 - `pointer` apunta a un `int32`;
 - `pointer_pointer` apunta a un puntero que apunta a un `int32`.
 
-Los punteros también pueden aparecer en firmas:
+Los punteros pueden aparecer como parametros de funciones:
 
 ```bg
-func identity(pointer *: int32) int32*:
-    return pointer
-
 @unsafe
 func read(pointer *: int32) int32:
     return (pointer)
 ```
 
-La forma situada después del tipo de retorno (`int32*`) declara que la función
-devuelve un puntero. Un puntero no es un array y un array no se convierte
-implícitamente en un puntero ordinario. El paso de arrays a funciones tiene una
-ABI especial descrita en [Arrays](04-Arrays.md).
+Las funciones de Bagron no retornan punteros: solo retornan intrínsecos puros o
+valores agregados (`struct`, `mold`, `flags` y clases). Un puntero no es un
+array y un array no se convierte implícitamente en un puntero ordinario. El
+paso de arrays a funciones tiene una ABI especial descrita en [Arrays](04-Arrays.md).
 
 ## Obtener una dirección con `$`
 
@@ -152,9 +149,9 @@ handle *: void = Null
 ; value: int32 = (handle) ; inválido: void* no tiene tipo apuntado
 ```
 
-Un `void*` puede almacenarse, retornarse, pasarse a una API externa o volver a
-recibirse como un puntero tipado mediante una firma compatible, pero no puede
-leerse directamente.
+Un `void*` puede almacenarse y pasarse a una API externa o recibirse como un
+puntero tipado mediante una firma compatible, pero no puede leerse directamente
+ni retornarse desde una función de Bagron.
 
 ## `Null`
 
@@ -226,19 +223,12 @@ rechazar desreferenciaciones que no puede justificar estáticamente.
 | `$variable` local o global | Permitida si el tipo es válido. |
 | `$array[indice]` con acceso válido | Permitida si el acceso fue demostrado. |
 | Parámetro `T*` recibido desde fuera | Rechazada: procedencia desconocida. |
-| Puntero retornado por una función | Rechazada: procedencia desconocida. |
+| Puntero recibido desde una frontera externa | Rechazada: procedencia desconocida. |
 | Puntero leído desde almacenamiento crudo de un `mold` | Rechazada: procedencia desconocida. |
 | `Null` | Se compila, pero su desreferenciación produce una trampa. |
 
-Una función segura puede recibir y reenviar un puntero opaco sin
-desreferenciarlo:
-
-```bg
-func identity(pointer *: int32) int32*:
-    return pointer
-```
-
-Para leerlo o escribirlo cuando su procedencia no puede demostrarse, la función
+Una función puede recibir un puntero opaco, pero no puede retornarlo. Para leerlo
+o escribirlo cuando su procedencia no puede demostrarse, la función
 debe declarar explícitamente `@unsafe`:
 
 ```bg
@@ -261,18 +251,17 @@ garantías estáticas.
 Un puntero no posee el objeto al que apunta. No mantiene vivo un valor ni
 extiende automáticamente la vida de una variable.
 
-En código seguro, Bagron rechaza retornar la dirección de una variable local:
+Bagron no permite retornar punteros desde funciones, por lo que una dirección
+no puede escapar mediante un retorno, sea local o externa:
 
 ```bg
 func invalid() int32*:
     value: int32 = 10
-    return $value       ; error: la dirección local no puede escapar
+    return $value       ; error: las funciones no retornan punteros
 ```
 
-Una función `@unsafe` puede aceptar explícitamente ese riesgo, pero el puntero
-queda colgante cuando termina la función y no debe usarse después. El lenguaje
-no convierte esta operación en segura ni proporciona recolección, propiedad o
-conteo de referencias para corregirla.
+`@unsafe` no cambia esta regla; solo permite operaciones de lectura y escritura
+cuya procedencia no puede demostrarse.
 
 Los punteros pueden aliasar el mismo almacenamiento. Escribir mediante uno de
 ellos cambia el valor que leerá cualquier otro puntero válido al mismo objeto:
@@ -396,7 +385,7 @@ Bagron aplica estas reglas para mantener los punteros trazables:
 - los arrays no se convierten silenciosamente en punteros crudos;
 - `const` del puntero y `const` del objeto apuntado se comprueban por separado;
 - una función segura no puede llamar a `@unsafe`;
-- una dirección local no puede escapar mediante un retorno seguro;
+- una función no puede retornar punteros, arrays ni `buffer`;
 - `chain` no puede declararse como puntero;
 - un bitfield de `flags` no tiene dirección independiente.
 
