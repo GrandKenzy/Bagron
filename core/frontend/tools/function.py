@@ -9,6 +9,7 @@ from core.frontend.objects import (
     FunctionSymbol,
     ParameterSpec,
     TypeSpec,
+    ValueInfo,
 )
 from core.frontend.tools.types import (
     FOR_ITERATOR_TYPES,
@@ -37,11 +38,10 @@ from core.frontend.ownership import (
     BORROWED,
     DEAD,
     OWNED,
+    analyze_if,
+    analyze_loop,
     is_buffer_symbol,
-    merge as merge_buffer_states,
-    restore as restore_buffer_states,
     set_state as set_buffer_state,
-    snapshot as snapshot_buffer_states,
     state_for as buffer_state_for,
 )
 from gram import ast as gast
@@ -1171,6 +1171,52 @@ def _deletion_value(node: object) -> object | None:
     )
 
 
+def _validate_buffer_deletion(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    value_info: ValueInfo,
+    scope: Storage,
+    loop_depth: int,
+) -> None:
+    """Apply the ``owned -> dead`` transition for one buffer binding.
+
+    The caller has already resolved the expression as a buffer.  Keeping this
+    policy separate makes ``_validate_deletion`` readable: class destruction
+    and buffer ownership follow different rules.
+    """
+    owner = (
+        scope.resolve(value_info.identifier)
+        if value_info.identifier is not None
+        else None
+    )
+    owner_state = buffer_state_for(symbol, owner)
+    display_name = value_info.identifier or '<anonimo>'
+    if owner_state == BORROWED:
+        compiler.error(
+            f'Del en {symbol.name} no puede liberar un buffer '
+            f'{display_name}: su estado es borrowed'
+        )
+        return
+    if not value_info.is_lvalue:
+        compiler.error(
+            f'Del en {symbol.name} requiere una variable propietaria de buffer'
+        )
+        return
+    if owner_state != OWNED:
+        compiler.error(
+            f'Del en {symbol.name} requiere un buffer owned; '
+            f'{display_name} esta en estado {owner_state or "desconocido"}'
+        )
+        return
+    if loop_depth > 0:
+        compiler.error(
+            f'Del en {symbol.name} no puede liberar el buffer {display_name} '
+            'dentro de un bucle: una segunda iteracion lo dejaria en estado dead'
+        )
+        return
+    set_buffer_state(symbol, owner, DEAD)
+
+
 def _validate_deletion(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -1215,38 +1261,9 @@ def _validate_deletion(
         return
 
     if is_buffer_type(value_info.type_spec):
-        owner = (
-            scope.resolve(value_info.identifier)
-            if value_info.identifier is not None
-            else None
+        _validate_buffer_deletion(
+            compiler, symbol, value_info, scope, loop_depth
         )
-        owner_state = buffer_state_for(symbol, owner)
-        if owner_state == BORROWED:
-            compiler.error(
-                f'Del en {symbol.name} no puede liberar un buffer '
-                f'{value_info.identifier or "<anonimo>"}: su estado es borrowed'
-            )
-            return
-        if not value_info.is_lvalue:
-            compiler.error(
-                f'Del en {symbol.name} requiere una variable propietaria de buffer'
-            )
-            return
-        if owner_state != OWNED:
-            compiler.error(
-                f'Del en {symbol.name} requiere un buffer owned; '
-                f'{value_info.identifier or "<anonimo>"} esta en estado '
-                f'{owner_state or "desconocido"}'
-            )
-            return
-        if loop_depth > 0:
-            compiler.error(
-                f'Del en {symbol.name} no puede liberar el buffer '
-                f'{value_info.identifier or "<anonimo>"} dentro de un bucle: '
-                'una segunda iteracion lo dejaria en estado dead'
-            )
-            return
-        set_buffer_state(symbol, owner, DEAD)
         return
 
     aggregate = compiler.storage.resolve_type(value_info.type_spec.name)
@@ -1816,49 +1833,6 @@ def _new_block_scope(parent: Storage, symbol: FunctionSymbol) -> Storage:
     )
 
 
-def _if_branches(
-    node: gast.ASTRef,
-) -> tuple[list[tuple[object, object]], object | None]:
-    branches: list[tuple[object, object]] = []
-    else_body = None
-    if_signature = None
-
-    for child in _children(node):
-        name = getattr(child, 'name', None)
-        if name == 'IF_SIGNATURE':
-            if_signature = child
-        elif name == 'STATEMENT_BODY' and if_signature is not None:
-            branches.append((if_signature, child))
-            if_signature = None
-        elif name == 'ELIF':
-            signature = next(
-                (
-                    item for item in _children(child)
-                    if getattr(item, 'name', None) == 'ELIF_SIGNATURE'
-                ),
-                None,
-            )
-            body = next(
-                (
-                    item for item in _children(child)
-                    if getattr(item, 'name', None) == 'STATEMENT_BODY'
-                ),
-                None,
-            )
-            if signature is not None and body is not None:
-                branches.append((signature, body))
-        elif name == 'ELSE':
-            else_body = next(
-                (
-                    item for item in _children(child)
-                    if getattr(item, 'name', None) == 'STATEMENT_BODY'
-                ),
-                None,
-            )
-
-    return branches, else_body
-
-
 def _process_if_node(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -1867,39 +1841,13 @@ def _process_if_node(
     scope: Storage,
     loop_depth: int,
 ) -> None:
-    branches, else_body = _if_branches(node)
-    if not branches:
-        return
-
-    baseline = snapshot_buffer_states(symbol, symbol.local_variables)
-    branch_states: list[dict[int, str]] = []
-    for signature, body in branches:
-        restore_buffer_states(symbol, baseline)
+    def visit(child: object) -> None:
         _process_body_node(
-            compiler, symbol, signature, returns, scope, loop_depth
-        )
-        _process_body_node(
-            compiler, symbol, body, returns, scope, loop_depth
-        )
-        branch_states.append(
-            snapshot_buffer_states(symbol, symbol.local_variables)
+            compiler, symbol, child, returns, scope, loop_depth
         )
 
-    if else_body is not None:
-        restore_buffer_states(symbol, baseline)
-        _process_body_node(
-            compiler, symbol, else_body, returns, scope, loop_depth
-        )
-        branch_states.append(
-            snapshot_buffer_states(symbol, symbol.local_variables)
-        )
-    else:
-        # The condition may be false, so the implicit fall-through path keeps
-        # the state that existed before the if.
-        branch_states.append(baseline)
-
-    merge_buffer_states(symbol, branch_states)
-    symbol.body_supported_for_entrypoint = False
+    if analyze_if(symbol, node, symbol.local_variables, visit):
+        symbol.body_supported_for_entrypoint = False
 
 
 def _process_loop_node(
@@ -1910,12 +1858,11 @@ def _process_loop_node(
     scope: Storage,
     loop_depth: int,
 ) -> None:
-    baseline = snapshot_buffer_states(symbol, symbol.local_variables)
     loop_name = None
     if node.name == 'FOR':
         loop_name = _for_binding(compiler, symbol, node, scope)
 
-    for child in _children(node):
+    def visit(child: object) -> None:
         _process_body_node(
             compiler,
             symbol,
@@ -1925,10 +1872,7 @@ def _process_loop_node(
             loop_depth + 1,
         )
 
-    body_state = snapshot_buffer_states(symbol, symbol.local_variables)
-    # The loop may execute zero times, but any buffer dead in its body is not
-    # safe to use after the loop on every possible iteration count.
-    merge_buffer_states(symbol, [baseline, body_state])
+    analyze_loop(symbol, _children(node), symbol.local_variables, visit)
     symbol.body_supported_for_entrypoint = False
 
     if node.name == 'FOR' and loop_name is not None:

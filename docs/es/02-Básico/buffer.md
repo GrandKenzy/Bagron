@@ -116,6 +116,18 @@ Estos estados no forman parte del descriptor, no agregan comprobaciones al
 programa generado y no cambian la ABI: son una comprobación de tiempo de
 compilación de coste cero en ejecución.
 
+Las transiciones permitidas son deliberadamente pequeñas:
+
+| Estado | Puede leer/escribir | Puede ejecutar `Del` | Transición |
+| --- | --- | --- | --- |
+| `owned` | Sí | Sí | `Del` → `dead` |
+| `borrowed` | Sí | No | permanece `borrowed` dentro de la función |
+| `dead` | No | No | estado terminal |
+
+Pasar un buffer a una función no cambia el estado del llamador: la función
+recibe un préstamo y el llamador conserva `owned`. La forma `unique` agrega una
+garantía estática de exclusividad, pero tampoco transfiere ownership.
+
 ## Parámetros de función
 
 Un `buffer` puede recibirse como préstamo y debe declarar `Len_t`:
@@ -145,6 +157,16 @@ compilador demuestra una procedencia de almacenamiento concreta. La función
 no puede recibir dos argumentos que representen la misma región `unique`.
 Los buffers mantienen su descriptor por valor; por eso esta comprobación no
 cambia todavía la ABI ni añade `noalias` al descriptor.
+
+El análisis de control de flujo toma el estado más restrictivo entre las rutas.
+Por ejemplo, este uso posterior se rechaza porque una de las rutas ya liberó
+el buffer:
+
+```bg
+if condition:
+    Del datos
+datos[0] = 1 ; error: `datos` puede estar `dead`
+```
 
 No se permite copiar ni retornar buffers. Una función puede recibir un buffer
 como préstamo, modificarlo y devolver únicamente datos intrínsecos u objetos

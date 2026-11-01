@@ -23,3 +23,9 @@ ABI o al backend LLVM. En ramas y bucles se usa una unión conservadora: si una
 ruta puede producir `dead`, el uso posterior se rechaza; `Del` dentro de un
 bucle también se rechaza para evitar una doble liberación en iteraciones
 posteriores.
+
+La implementación mantiene la política de ownership separada de la caminata
+general del AST: `core/frontend/ownership.py` contiene estados, snapshots y
+merges de flujo; `core/frontend/tools/function.py` solo aplica las reglas de
+`Del` y visita las ramas. Esto facilita extender el modelo sin tocar el
+backend.
