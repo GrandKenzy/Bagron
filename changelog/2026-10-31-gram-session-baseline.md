@@ -245,3 +245,27 @@ normalizar esos sufijos, el IR generado por Python y AOT fue idéntico para
 `examples/canon/_main.bg`. Por tanto, la paridad de backend del corpus probado
 queda cubierta; la equivalencia de diagnósticos sintácticos y el muestreo
 estadístico ampliado siguen siendo trabajo de la fase siguiente.
+
+## Fase 4: benchmark y diagnósticos ampliados
+
+Se repitió el benchmark con un calentamiento y cinco muestras por ruta, usando
+el mismo target y Gram `3.0.0-5-g968dcf7`:
+
+| Ruta | Muestras (s) | Mínimo | Mediana | Promedio | Máximo |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Python | `7.757`, `7.863`, `7.031`, `7.231`, `9.532` | `7.031` | `7.757` | `7.883` | `9.532` |
+| AOT | `4.300`, `4.063`, `3.725`, `4.309`, `3.950` | `3.725` | `4.063` | `4.069` | `4.309` |
+
+La mediana AOT fue `3.694 s` menor, una reducción observada de `47.6%` frente
+a Python. La diferencia de dispersión también bajó en esta tanda, aunque el
+benchmark sigue siendo local y no sustituye una medición repetida en CI.
+
+La matriz diferencial de sintaxis quedó ampliada a:
+
+- `12/12` fuentes válidas aceptadas por Python y AOT;
+- `5/5` fuentes inválidas rechazadas por Python y AOT.
+
+La comparación es de aceptación/rechazo; los textos y códigos exactos de los
+diagnósticos todavía no están unificados porque el driver C de Gram y el
+diagnóstico Python exponen formatos distintos. Esa es la siguiente tarea de
+endurecimiento antes de activar AOT como ruta predeterminada.
