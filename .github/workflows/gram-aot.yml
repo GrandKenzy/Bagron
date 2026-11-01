@@ -51,4 +51,4 @@ jobs:
 
       - name: Run optional benchmark
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark == true }}
-        run: python benchmarks/compile_baseline.py --aot --aot-strict --warmup 1 --samples 5
+        run: python benchmarks/compile_baseline.py --warmup 1 --samples 5

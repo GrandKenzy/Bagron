@@ -1,4 +1,4 @@
-"""Validación opt-in del frontend Gram AOT que produce GIR."""
+"""Validación obligatoria del frontend Gram FFI que produce GIR."""
 
 from __future__ import annotations
 
@@ -15,12 +15,7 @@ class AotFrontendTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        try:
-            cls.parser = AotParser.from_config()
-        except AotParserError as error:
-            raise unittest.SkipTest(
-                f'Parser AOT no construido; ejecuta tools/build_aot_parser.py: {error}'
-            ) from error
+        cls.parser = AotParser.from_config()
 
     def test_rejects_invalid_source(self):
         source = 'func main() int32\n    return 0\n'
@@ -40,11 +35,7 @@ class AotFrontendTests(unittest.TestCase):
         self.assertIsNotNone(self.parser.expected_grammar_id)
 
     def test_compiles_canon_through_gir_and_existing_backend(self):
-        output = Compiler(
-            aot=True,
-            aot_parser=self.parser.executable,
-            aot_strict=True,
-        ).compile(
+        output = Compiler().compile(
             Path('examples/canon/_main.bg'),
             executable=False,
         )

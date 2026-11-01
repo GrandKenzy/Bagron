@@ -373,3 +373,17 @@ dependencias Python, clona el checkout editable `main` de Gram, construye el
 ejecutable y la biblioteca FFI, y ejecuta `vnma test tests` junto con
 `vnma test tests_aggressive`. El benchmark de cinco muestras queda disponible
 como entrada manual `benchmark` del workflow.
+
+## Fase 11: FFI obligatorio
+
+El frontend de producción quedó reducido a la biblioteca FFI de Gram. Se
+eliminó el camino alternativo que ejecutaba `bagron_aot` como subprocess y
+escribía archivos `.gir` temporales; también se eliminó el fallback al parser
+Python. `Compiler` y la CLI ahora fallan explícitamente si
+`build/aot/bagron_aot.dll` (o su equivalente compartido) no está disponible o
+si el driver FFI no puede producir GIR.
+
+`tools/build_aot_parser.py` ya no genera la CLI nativa: exporta solo el driver
+y compila la biblioteca compartida consumida por `ctypes`. El benchmark mide
+únicamente esta ruta mediante `benchmarks/compile_baseline.py`, y el workflow
+construye la biblioteca antes de ejecutar las suites.

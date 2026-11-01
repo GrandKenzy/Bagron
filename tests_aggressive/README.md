@@ -12,25 +12,20 @@ vnma test tests_aggressive
 
 Las pruebas de lógica y validación superficial deben permanecer en `tests/`.
 
-## Validación del frontend AOT de Gram
+## Validación del frontend FFI de Gram
 
-La prueba AOT es opt-in porque requiere un parser C generado con Clang. El
-parser solo produce GIR/AST; las pasadas semánticas y el backend LLVM siguen
-siendo los de Bagron:
+El frontend requiere la biblioteca C generada con Clang. Solo produce GIR/AST;
+las pasadas semánticas y el backend LLVM siguen siendo los de Bagron:
 
 ```text
 python tools/build_aot_parser.py
 vnma test tests_aggressive/test_aot.py
 ```
 
-También puede usarse un ejecutable externo mediante `BAGRON_AOT_PARSER`. Si no
-hay parser disponible, las pruebas AOT se omiten y la suite restante conserva
-su comportamiento normal.
-
-Cuando `build/aot/bagron_aot.exe` existe, `Compiler()` y la CLI usan AOT por
-defecto. Usa `--python` para forzar el parser Python, por ejemplo al medir el
-baseline:
+La compilación y las pruebas fallan si la biblioteca FFI no está disponible.
+El artefacto esperado es `build/aot/bagron_aot.dll` en Windows o su equivalente
+compartido en Linux/macOS. No existe una ruta CLI ni un parser Python alternativo.
 
 ```text
-vnma run main.py --python examples/canon/_main.bg
+vnma run main.py examples/canon/_main.bg
 ```

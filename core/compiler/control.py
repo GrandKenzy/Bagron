@@ -12,22 +12,11 @@ class CompilationError(RuntimeError):
 
 
 class CompilerState(Diagnostics):
-    def __init__(
-        self,
-        *,
-        aot: bool | None = None,
-        aot_parser: str | Path | None = None,
-        aot_strict: bool = False,
-    ):
+    def __init__(self):
         self.semantic_errors: list[str] = []
         self.warnings: list[str] = []
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
-        # `None` es el modo auto: usa GIR si el parser construido está
-        # disponible y conserva Python cuando el checkout no tiene Clang/AOT.
-        self.aot_requested = aot
-        self.aot_parser_path = aot_parser
-        self.aot_strict = aot_strict
         self._aot_parser: AotParser | None = None
         self._aot_config_checked = False
         self._aot_config_error: AotParserError | None = None
@@ -54,7 +43,7 @@ class CompilerState(Diagnostics):
 
         self._aot_config_checked = True
         try:
-            self._aot_parser = AotParser.from_config(self.aot_parser_path)
+            self._aot_parser = AotParser.from_config()
         except AotParserError as error:
             self._aot_config_error = error
             raise
@@ -73,26 +62,17 @@ class CompilerState(Diagnostics):
 
         ext = ext.strip('.')
         if ext == 'bg':
-            if self.aot_requested is not False:
-                try:
-                    parser = self._get_aot_parser()
-                    return parser.parse(
-                        content,
-                        session=frontend.BAGRON_SESSION,
-                        name=str(path),
-                    )
-                except AotParserError as error:
-                    if self.aot_strict:
-                        raise CompilationError(str(error)) from error
-                    if self.aot_requested is True or self._aot_parser is not None:
-                        self.warning(
-                            f'AOT no disponible para {path.name}; se usara Gram Python: {error}'
-                        )
-
-            # Session.tokenize/parse ya usan el estado aislado de Gram; no
-            # reactives el catálogo global antes de cada compilación.
-            TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
-            return frontend.BAGRON_SESSION.parse(TKNS, path.name, trace='off')
+            try:
+                parser = self._get_aot_parser()
+                return parser.parse(
+                    content,
+                    session=frontend.BAGRON_SESSION,
+                    name=str(path),
+                )
+            except AotParserError as error:
+                raise CompilationError(
+                    f'El frontend FFI de Gram no pudo producir GIR para {path}: {error}'
+                ) from error
         else:
             self.error(f'La extensión {ext} no está soportada.')
             self.exit()

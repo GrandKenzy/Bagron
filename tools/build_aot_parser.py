@@ -1,7 +1,7 @@
-"""Exporta y compila el parser C de Gram que produce GIR para Bagron.
+"""Exporta y compila la biblioteca FFI de Gram que produce GIR para Bagron.
 
-El ejecutable resultante solo cubre lexer/parser y serialización GIR. Bagron
-continúa ejecutando sus pasadas semánticas y su backend LLVM en Python.
+La biblioteca solo cubre lexer/parser y serialización GIR. Bagron continúa
+ejecutando sus pasadas semánticas y su backend LLVM en Python.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _find_clang(configured: str | None) -> Path:
 
 
 def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
-    """Exporta la sesión de Bagron y compila su driver GIR autónomo."""
+    """Exporta la sesión de Bagron y compila su biblioteca GIR FFI."""
     gram_path = gram_path.resolve()
     output_dir = output_dir.resolve()
     repository_root = Path(__file__).resolve().parents[1]
@@ -70,7 +70,7 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
     manifest = frontend.BAGRON_SESSION.export_c_parser(
         output_dir,
         emit_driver=True,
-        emit_cli=True,
+        emit_cli=False,
     )
 
     lexer_root = gram_path / 'native' / 'gram_lexer'
@@ -82,24 +82,6 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
         raise RuntimeError(f'Gram no generó unidades C en {output_dir}')
     if not lexer_sources:
         raise RuntimeError(f'No hay runtime lexer C en {lexer_source_dir}')
-
-    executable_name = 'bagron_aot.exe' if sys.platform == 'win32' else 'bagron_aot'
-    executable = output_dir / executable_name
-    command = [
-        str(clang_path),
-        '-std=c11',
-        '-O2',
-        f'-I{include_dir}',
-        f'-I{lexer_source_dir}',
-        f'-I{output_dir}',
-        *(str(path) for path in generated_sources),
-        *(str(path) for path in lexer_sources),
-        '-o',
-        str(executable),
-    ]
-    result = subprocess.run(command, check=False)
-    if result.returncode:
-        raise RuntimeError(f'Clang terminó con código {result.returncode}.')
 
     ffi_source = repository_root / 'tools' / 'bagron_aot_ffi.c'
     if not ffi_source.is_file():
@@ -130,9 +112,8 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
         )
 
     print(f'grammar_id={manifest.get("grammar_id", "unknown")}')
-    print(f'output={executable}')
     print(f'shared_library={library}')
-    return executable
+    return library
 
 
 def main() -> int:
@@ -149,7 +130,7 @@ def main() -> int:
         '--output-dir',
         type=Path,
         default=Path(__file__).resolve().parents[1] / 'build' / 'aot',
-        help='Directorio generado para C/GIR y el ejecutable',
+        help='Directorio generado para C/GIR y la biblioteca FFI',
     )
     parser.add_argument(
         '--clang',

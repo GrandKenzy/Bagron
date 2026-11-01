@@ -2,9 +2,9 @@
 
 The measured interval includes ``vnma`` startup, Gram tokenization and parsing,
 Bagron semantic analysis, LLVM generation, linking, and executable creation.
-The default forces Gram's Python parser so the baseline is not affected by a
-locally built AOT artifact. ``--aot`` measures the native GIR parser, using the
-in-memory library discovered in ``build/aot`` unless ``--aot-parser`` is given.
+The compiler always uses Gram's compiled FFI driver to produce GIR in memory.
+Historical Python-parser measurements remain in the changelog as reference
+points; this script measures the current production path only.
 """
 
 from __future__ import annotations
@@ -48,21 +48,8 @@ def _compile(
     vnma: str,
     repo: Path,
     target: Path,
-    *,
-    aot: bool,
-    aot_parser: Path | None,
-    aot_strict: bool,
 ) -> tuple[float, int, str]:
-    command = [vnma, 'run', 'main.py']
-    if aot:
-        command.append('--aot')
-    else:
-        command.append('--python')
-    if aot_strict:
-        command.append('--aot-strict')
-    if aot_parser is not None:
-        command.extend(['--aot-parser', str(aot_parser)])
-    command.append(str(target.relative_to(repo)))
+    command = [vnma, 'run', 'main.py', str(target.relative_to(repo))]
     started = time.perf_counter()
     result = subprocess.run(
         command,
@@ -103,21 +90,6 @@ def main() -> int:
         default=Path.home() / "Desktop" / "Gram",
         help="Editable Gram checkout used for revision reporting",
     )
-    parser.add_argument(
-        '--aot',
-        action='store_true',
-        help='Measure the native Gram GIR parser instead of the Python parser',
-    )
-    parser.add_argument(
-        '--aot-parser',
-        type=Path,
-        help='Exported Gram parser executable used with --aot',
-    )
-    parser.add_argument(
-        '--aot-strict',
-        action='store_true',
-        help='Fail instead of falling back to the Python parser when AOT fails',
-    )
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[1]
@@ -133,21 +105,13 @@ def main() -> int:
     print(f"target={target.relative_to(repo)}")
     print(f"gram={_gram_revision(args.gram_path.resolve())}")
     print(f"warmup={args.warmup} samples={args.samples}")
-    parser_source = (
-        str(args.aot_parser)
-        if args.aot_parser is not None
-        else ('auto-discovery' if args.aot else 'forced-python')
-    )
-    print(f'aot={args.aot} aot_parser={parser_source}')
+    print('frontend=gram-ffi-gir')
 
     for warmup_index in range(args.warmup):
         _, exit_code, output = _compile(
             vnma,
             repo,
             target,
-            aot=args.aot,
-            aot_parser=args.aot_parser,
-            aot_strict=args.aot_strict,
         )
         if exit_code:
             print(f"warmup={warmup_index + 1} failed with exit={exit_code}", file=sys.stderr)
@@ -160,9 +124,6 @@ def main() -> int:
             vnma,
             repo,
             target,
-            aot=args.aot,
-            aot_parser=args.aot_parser,
-            aot_strict=args.aot_strict,
         )
         if exit_code:
             print(f"sample={sample_index + 1} failed with exit={exit_code}", file=sys.stderr)
