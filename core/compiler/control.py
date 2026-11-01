@@ -44,7 +44,8 @@ class CompilerState(Diagnostics):
 
         ext = ext.strip('.')
         if ext == 'bg':
-            frontend.BAGRON_SESSION.load()
+            # Session.tokenize/parse ya usan el estado aislado de Gram; no
+            # reactives el catálogo global legacy antes de cada compilación.
             TKNS = frontend.BAGRON_SESSION.tokenize(content, path.name)
             return frontend.BAGRON_SESSION.parse(TKNS, path.name, trace='off')
         else:

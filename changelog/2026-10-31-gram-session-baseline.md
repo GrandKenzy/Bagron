@@ -93,3 +93,25 @@ muestra.
 Para comparar una mejora, se debe conservar el mismo target, número de
 muestras, calentamiento, plataforma y revisión de Gram. La métrica principal
 será la mediana; mínimo y máximo sirven para observar variación del entorno.
+
+## Eliminación de la activación global legacy
+
+`core/compiler/control.py` dejó de llamar a `BAGRON_SESSION.load()` antes de
+cada compilación. Gram `3.0.0` ya resuelve la configuración, el léxico y el
+parser desde la propia sesión en `Session.tokenize()` y `Session.parse()`;
+mantener esa activación solo añadía una sincronización global innecesaria.
+
+No quedan usos de `BAGRON_SESSION.load()` en el código de Bagron.
+
+Con el mismo comando y protocolo del benchmark reproducible, sobre Gram
+`3.0.0-5-g968dcf7`, se obtuvo:
+
+- Muestras: `5.969`, `6.153`, `6.017`, `6.303`, `5.816` segundos
+- Mínimo: `5.816 s`
+- Mediana: `6.017 s`
+- Promedio: `6.052 s`
+- Máximo: `6.303 s`
+
+La mediana observada bajó desde `7.739 s` a `6.017 s`. Es una mejora
+compatible con la eliminación de la sincronización global, aunque se debe
+confirmar con más ejecuciones si se necesita atribución estadística estricta.
