@@ -387,3 +387,17 @@ si el driver FFI no puede producir GIR.
 y compila la biblioteca compartida consumida por `ctypes`. El benchmark mide
 únicamente esta ruta mediante `benchmarks/compile_baseline.py`, y el workflow
 construye la biblioteca antes de ejecutar las suites.
+
+### Benchmark post-FFI obligatorio
+
+Con Gram editable `3.0.0-5-g968dcf7`, un calentamiento y cinco muestras sobre
+`examples/canon/_main.bg`, la ruta única FFI produjo:
+
+- Muestras: `2.932`, `3.805`, `3.802`, `3.136`, `2.984` segundos
+- Mínimo: `2.932 s`
+- Mediana: `3.136 s`
+- Promedio: `3.332 s`
+- Máximo: `3.805 s`
+
+El workflow valida tests rápidos en Ubuntu y Windows, y la suite agresiva en
+Windows porque sus casos de ABI y targets nativos requieren ese entorno.
