@@ -269,3 +269,23 @@ La comparación es de aceptación/rechazo; los textos y códigos exactos de los
 diagnósticos todavía no están unificados porque el driver C de Gram y el
 diagnóstico Python exponen formatos distintos. Esa es la siguiente tarea de
 endurecimiento antes de activar AOT como ruta predeterminada.
+
+## Fase 5: construcción reproducible del frontend AOT
+
+Se añadió `tools/build_aot_parser.py` para exportar la sesión de Bagron,
+compilar las unidades C de Gram con Clang y producir `build/aot/bagron_aot.exe`
+(o su equivalente nativo). El artefacto contiene lexer, parser, arena AST y
+serialización GIR; no contiene ni reemplaza el procesador semántico ni el
+backend LLVM de Bagron.
+
+`AotParser.from_config()` descubre ese artefacto local después de la
+construcción. También se mantienen `--aot-parser` y `BAGRON_AOT_PARSER` para
+CI o rutas personalizadas. Si el artefacto no existe, `--aot` conserva el
+fallback Python y `--aot-strict` falla explícitamente.
+
+Comando reproducible:
+
+```text
+python tools/build_aot_parser.py
+vnma run main.py --aot --aot-strict examples/canon/_main.bg
+```

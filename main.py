@@ -8,7 +8,8 @@ def main(*args):
     if not argv:
         print(
             'Uso: vnma run main.py [--aot] [--aot-strict] '
-            '[--aot-parser <ejecutable>] <archivo.bg>'
+            '[--aot-parser <ejecutable>] <archivo.bg>\n'
+            'El parser AOT produce GIR; semántica y backend LLVM siguen en Bagron.'
         )
         return
 
@@ -33,7 +34,8 @@ def main(*args):
         elif argument in {'-h', '--help'}:
             print(
                 'Uso: vnma run main.py [--aot] [--aot-strict] '
-                '[--aot-parser <ejecutable>] <archivo.bg>'
+                '[--aot-parser <ejecutable>] <archivo.bg>\n'
+                'El parser AOT produce GIR; semántica y backend LLVM siguen en Bagron.'
             )
             return 0
         else:

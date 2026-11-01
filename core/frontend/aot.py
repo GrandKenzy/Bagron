@@ -60,9 +60,18 @@ class AotParser:
     ) -> 'AotParser':
         configured = executable or os.environ.get('BAGRON_AOT_PARSER')
         if not configured:
+            repository_root = Path(__file__).resolve().parents[2]
+            for candidate in (
+                repository_root / 'build' / 'aot' / 'bagron_aot.exe',
+                repository_root / 'build' / 'aot' / 'bagron_aot',
+            ):
+                if candidate.is_file():
+                    configured = candidate
+                    break
+        if not configured:
             raise AotParserUnavailable(
-                'No hay parser AOT configurado; usa --aot-parser o '
-                'BAGRON_AOT_PARSER.'
+                'No hay parser AOT configurado; usa tools/build_aot_parser.py, '
+                '--aot-parser o BAGRON_AOT_PARSER.'
             )
         return cls(os.path.expandvars(str(configured)), timeout=timeout)
 
