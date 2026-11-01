@@ -11,3 +11,18 @@ vnma test tests_aggressive
 ```
 
 Las pruebas de lógica y validación superficial deben permanecer en `tests/`.
+
+## Validación del frontend AOT de Gram
+
+La prueba AOT es opt-in porque requiere un parser C generado con Clang. El
+parser solo produce GIR/AST; las pasadas semánticas y el backend LLVM siguen
+siendo los de Bagron:
+
+```text
+python tools/build_aot_parser.py
+vnma test tests_aggressive/test_aot.py
+```
+
+También puede usarse un ejecutable externo mediante `BAGRON_AOT_PARSER`. Si no
+hay parser disponible, las pruebas AOT se omiten y la suite restante conserva
+su comportamiento normal.

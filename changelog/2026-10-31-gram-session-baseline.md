@@ -289,3 +289,19 @@ Comando reproducible:
 python tools/build_aot_parser.py
 vnma run main.py --aot --aot-strict examples/canon/_main.bg
 ```
+
+## Fase 6: gate agresivo del frontend GIR
+
+Como el repositorio no tenía un workflow de CI, se añadió
+`tests_aggressive/test_aot.py` como gate reproducible y explícito. Comprueba
+que el parser nativo rechaza una fuente inválida y que un programa completo
+recorre GIR, las mismas pasadas semánticas de Bagron y el backend LLVM
+existente. La prueba se omite si no hay parser AOT construido, de modo que no
+convierte una dependencia local de Clang en requisito de la suite Python.
+
+Comando del gate:
+
+```text
+python tools/build_aot_parser.py
+vnma test tests_aggressive/test_aot.py
+```
