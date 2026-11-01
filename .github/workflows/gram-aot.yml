@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}/../Gram:${{ github.workspace }}:${{ github.workspace }}/vendor
+      VNMA_HERMETIC: '0'
     steps:
       - name: Checkout Bagron
         uses: actions/checkout@v4
