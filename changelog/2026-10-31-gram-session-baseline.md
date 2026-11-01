@@ -115,3 +115,30 @@ Con el mismo comando y protocolo del benchmark reproducible, sobre Gram
 La mediana observada bajó desde `7.739 s` a `6.017 s`. Es una mejora
 compatible con la eliminación de la sincronización global, aunque se debe
 confirmar con más ejecuciones si se necesita atribución estadística estricta.
+
+## Estandarización de combinadores para AOT
+
+- `_SAME_LINE` fue sustituido por `cmb.SameLine`, que conserva la restricción
+  de continuidad de línea y forma parte del conjunto compilable de Gram.
+- `_OPTIONAL_ARRAY_DIMENSION` fue eliminado. `Enclosed(...,
+  allow_empty=True)` resuelve correctamente `[]` y `[expresión]`, pero omite
+  los delimitadores y cambia la forma del AST que Bagron usa para calcular
+  `array_lengths`; `Separator` tampoco aplica porque modela listas y devuelve
+  `ArrayNode`.
+- `ARRAY_SUFFIX` usa ahora un `Alt` de dos `Seq` estándar: `[]` o
+  `[Ref(VALUE)]`. La alternativa conserva los tokens `LBRACKET`/`RBRACKET`,
+  mantiene el AST existente y queda dentro del contrato cerrado de AOT.
+
+El sondeo manual de `BAGRON_SESSION.export_c_parser()` recorrió las 75 reglas
+de Bagron y generó `gram_ast.*` y `gram_parser.*` sin rechazar combinadores.
+Esto demuestra que la gramática ya es exportable a C, pero todavía no implica
+paridad semántica ni activa AOT en el compilador.
+
+Después del cambio, con Gram editable `3.0.0-5-g968dcf7` y el benchmark total
+reproducible:
+
+- Muestras: `6.455`, `5.495`, `5.725`, `5.457`, `5.669` segundos
+- Mínimo: `5.457 s`
+- Mediana: `5.669 s`
+- Promedio: `5.760 s`
+- Máximo: `6.455 s`

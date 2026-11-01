@@ -2,59 +2,25 @@ from gram import combinators as cmb
 from gram import lexer
 
 
-class _SAME_LINE(cmb.Combinator):
-    """Run a postfix suffix only when it starts on the current source line."""
-
-    def __init__(self, combinator: cmb.Combinator):
-        super().__init__()
-        self.combinator = combinator
-
-    def parse(self, analyzer):
-        parser = analyzer.parser
-        current = parser.peek() if not parser.empty() else None
-        previous = (
-            parser.tokens[parser.pos - 1]
-            if parser.pos > 0
-            else None
-        )
-        if (
-            current is None
-            or previous is None
-            or current.line != previous.line
-        ):
-            return None
-        return analyzer.visitor(self.combinator)
-
-
 class VALUE(cmb.RuleItem):
     nodeable = True
 
 
-class _OPTIONAL_ARRAY_DIMENSION(cmb.Combinator):
-    """Parse a dimension only when the suffix is not ``[]``.
-
-    ``Opt(Ref(VALUE))`` cannot be used here because the expression parser
-    stages a deep failure when its first token is ``]``.  A small lookahead
-    keeps the long-standing inferred-array syntax intact while still allowing
-    dimensions such as ``[8 * 100]``.
-    """
-
-    def parse(self, analyzer):
-        parser = analyzer.parser
-        token = parser.peek() if not parser.empty() else None
-        if getattr(getattr(token, 'token', None), 'name', None) == 'RBRACKET':
-            return []
-        return analyzer.visitor(cmb.Ref(VALUE))
-
-
 class ARRAY_SUFFIX(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchToken('LBRACKET'),
-        # Fixed dimensions may be constant arithmetic expressions.  Keeping
-        # the expression in the AST lets the semantic pass distinguish a
-        # compile-time capacity from an inferred dimension.
-        _OPTIONAL_ARRAY_DIMENSION(),
-        cmb.MatchToken('RBRACKET'),
+    # Keep the delimiters in the AST: Bagron's semantic pass uses them to
+    # distinguish inferred `[]` from fixed `[8 * 100]` dimensions. Ordered
+    # `Alt` rollback provides the optional-content behavior without a custom
+    # lookahead combinator and remains closed under Gram AOT compilation.
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.MatchToken('LBRACKET'),
+            cmb.MatchToken('RBRACKET'),
+        ),
+        cmb.Seq(
+            cmb.MatchToken('LBRACKET'),
+            cmb.Ref(VALUE),
+            cmb.MatchToken('RBRACKET'),
+        ),
     )
     nodeable = False
 
@@ -253,9 +219,9 @@ class POSTFIX_EXPR(cmb.RuleItem):
         cmb.Ref(PRIMARY),
         cmb.Many(
             cmb.Alt(
-                _SAME_LINE(cmb.Ref(CALL_SUFFIX)),
-                _SAME_LINE(cmb.Ref(MEMBER_ACCESS)),
-                _SAME_LINE(cmb.Ref(INDEX_ACCESS)),
+                cmb.SameLine(cmb.Ref(CALL_SUFFIX)),
+                cmb.SameLine(cmb.Ref(MEMBER_ACCESS)),
+                cmb.SameLine(cmb.Ref(INDEX_ACCESS)),
             )
         ),
     )
