@@ -142,3 +142,31 @@ reproducible:
 - Mediana: `5.669 s`
 - Promedio: `5.760 s`
 - Máximo: `6.455 s`
+
+## Paso 1: sondeo del parser AOT nativo
+
+Se exportó el parser completo de Bagron con `emit_driver=True` y
+`emit_cli=True` en `build/aot_probe/`. El exportador produjo `gram_ast.*`,
+`gram_parser.*`, `gram_ir.*`, `gram_driver.*` y `gram_cli.c`, con grammar ID
+`0x3e06d0857d33b820`.
+
+Los C generados y el runtime nativo de Gram se compilaron con Clang en
+Windows. La compilación terminó correctamente; solo emitió advertencias de
+uso de `fopen` considerado obsoleto por el CRT de Windows. La ejecución se
+hizo con la orden `check`, que valida únicamente lexer y parser nativos.
+
+El corpus directo de `examples/**/*.bg` dio `8/12` archivos correctos. Los
+cuatro restantes contenían bloques `#prep ... #end`; esos bloques se extraen
+antes de tokenizar en el flujo Python de Bagron, pero la CLI nativa aislada no
+incluye todavía ese preprocesador. Al repetir el mismo corpus después de esa
+extracción previa, el resultado fue `12/12` correctos.
+
+Este paso confirma que la gramática exportada y el parser C compilan y
+reconocen las entradas parser-ready del corpus. No activa AOT en producción ni
+demuestra todavía paridad del AST, integración semántica o soporte nativo de
+`#prep`; esas comprobaciones pertenecen a los pasos posteriores.
+
+El sondeo necesitó cargar explícitamente el exportador de Gram porque el
+paquete `Bagron/tools` puede ocultar `Gram/tools` cuando ambos están en el
+`PYTHONPATH`. Es una consideración de tooling para automatizar el export, no
+un cambio aplicado al runtime de producción.
