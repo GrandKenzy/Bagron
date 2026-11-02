@@ -24,20 +24,6 @@ if TYPE_CHECKING:
     from core.compiler import Compiler
 
 
-def _bare_identifier(node: object) -> str | None:
-    if isinstance(node, gast.ASTRef):
-        if node.name in ('VALUE', 'POSTFIX_EXPR', 'PRIMARY') and len(node.nodes) == 1:
-            return _bare_identifier(node.nodes[0])
-        return None
-
-    token = getattr(node, 'token', None)
-    token_kind = getattr(getattr(token, 'token', None), 'name', None)
-    if token_kind == 'IDENT':
-        return str(getattr(token, 'value', ''))
-
-    return None
-
-
 def _is_buffer_concat(node: object) -> bool:
     current = node
     while isinstance(current, gast.ASTRef):
@@ -98,35 +84,6 @@ def build_symbol(
     symbol.bit_width = type_spec.bit_width
     symbol.signed = type_spec.signed
     return symbol
-
-
-def _validate_callptr(
-    compiler: Compiler,
-    storage,
-    handle: VariableHandle,
-    symbol: Variable,
-) -> None:
-    if symbol.pointer_level == 0:
-        compiler.error(
-            f'El tipo callptr requiere al menos un nivel de puntero: {handle.name}'
-        )
-        return
-
-    if handle.value_node is None:
-        return
-
-    target_name = _bare_identifier(handle.value_node)
-    function = compiler.function_lookup.get(target_name) if target_name else None
-    source = compiler.storage.namespace.get(target_name) if target_name else None
-
-    if function is not None:
-        symbol.call_signature = function.signature
-    elif source is not None and getattr(source, 'call_signature', None) is not None:
-        symbol.call_signature = source.call_signature
-    else:
-        compiler.error(
-            f'El inicializador de {handle.name} debe ser una función o un callptr compatible'
-        )
 
 
 def _frontend_initializer_value(
@@ -285,10 +242,6 @@ def _validate_initializer(
     current_function: object | None = None,
 ) -> None:
     if handle.value_node is None:
-        return
-
-    if symbol.type_spec.name == 'callptr':
-        _validate_callptr(compiler, storage, handle, symbol)
         return
 
     try:
@@ -601,3 +554,4 @@ __all__ = [
     'collect_local',
     'validate_initializer',
 ]
+
