@@ -4,6 +4,10 @@ Un módulo Bagron es un archivo `.bg`. El archivo ejecutable suele ser
 `_main.bg` o `main.bg` y puede importar otros módulos antes de declarar su
 `func main() int32:`.
 
+El resumen del flujo completo del compilador y de sus límites está en
+[Cómo funciona Bagron](../01-Funcionamiento.md). Este documento concreta las
+reglas de módulos, targets y perfiles.
+
 ## Formas canónicas
 
 Un import usa un identificador de módulo simple:
@@ -151,6 +155,10 @@ módulo de entrada. Un `for` cuyos iterador no usa `$iterador` se representa
 como un valor SSA del ancho declarado; LLVM decide después si usa un registro
 físico o memoria.
 
+El perfil no es un modo de seguridad: `dev`, `prod` y `high` ejecutan las
+mismas validaciones semánticas y de ABI. Solo cambia el IR optimizado y la
+configuración del generador de código.
+
 Los ciclos también son errores:
 
 ```text
@@ -204,3 +212,4 @@ primero se cargan los módulos, luego se registran todas las firmas y tipos, y
 por último se validan los cuerpos. Así las llamadas pueden aparecer antes o
 después de su definición, pero nunca saltan las reglas de visibilidad ni de
 firma.
+
