@@ -19,6 +19,7 @@ from .resolution import (
 from .compatibility import _is_integer_scalar, is_compatible
 from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
+    _record_function_call,
     _validate_array_argument_storage, _validate_expansion_parameters,
     _validate_external_buffer_argument,
     _validate_unique_arguments,
@@ -159,6 +160,7 @@ def _infer_postfix(
             )
         if function is None:
             raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
+        _record_function_call(current_function, function)
         if getattr(function, 'is_unsafe', False) and not _unsafe_context(
             current_function
         ):

@@ -170,6 +170,7 @@ se pueden repetir. Un decorador desconocido produce un error de compilación.
 |:---|:---|:---|
 | `unsafe` | `@unsafe` | Permite operaciones que cruzan la frontera insegura, como indexación dinámica o acceso a punteros crudos. |
 | `assembler` | `@assembler` | Declara una función con cuerpo de ensamblador preparado mediante `#prep assembler`. También implica `unsafe`. |
+| `recursive` | `@recursive` | Declara explícitamente que la función participa en una recursión que no puede convertirse en un bucle. |
 
 Una función segura no puede llamar a una función `@unsafe` o `@assembler`.
 `@unsafe` debe reservarse para la pequeña frontera que realmente necesita
@@ -185,6 +186,34 @@ GAS/LLVM; no es sintaxis NASM. `intel` se conserva como alias de compatibilidad.
 El dialecto `att` usa la sintaxis AT&T. Clang valida cada bloque durante la
 compilación y Bagron remite sus diagnósticos al archivo `.bg` y a la función
 `@assembler` que los originó.
+
+### Recursión explícita
+
+Bagron construye el grafo de llamadas después de resolver las funciones. La
+recursión directa, mutua y los ciclos de tres o más funciones se consideran un
+posible consumo ilimitado de pila. Un ciclo no terminal debe declararse en
+todas sus funciones:
+
+```bg
+@recursive
+func factorial(value: int32) int32:
+    if value == 0:
+        return 1
+    return value * factorial(value - 1)
+```
+
+Sin `@recursive`, el ciclo produce un error de compilación. La única excepción
+es la recursión directa de cola que Bagron puede demostrar convertible a un
+bucle para un marco simple: una llamada directa que constituye el `return`
+final se baja a un bucle LLVM y no crea un nuevo marco de pila. Esta
+optimización no se aplica a
+métodos, funciones con variables locales, parámetros auxiliares como `Len_t`,
+`Size_t`, `Signed_t` o `Region_t`, parámetros `chain`, ni a formas cuyo marco
+requiera metadatos adicionales.
+
+`@recursive` no promete una profundidad máxima ni instala una comprobación de
+runtime; solo hace explícita la decisión de aceptar el consumo potencial de
+pila. La anotación todavía no admite argumentos como `max_depth`.
 
 ### Preprocesador condicional
 

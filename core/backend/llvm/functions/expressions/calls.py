@@ -594,7 +594,9 @@ class CallExpressionMixin:
         node: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
-    ) -> ir.Value:
+        *,
+        tail_call_block: object | None = None,
+    ) -> ir.Value | None:
         """Emit a CALL or POSTFIX_EXPR whose suffixes contain a call."""
         children = self._children(node)
         primary = children[0] if children else None
@@ -826,6 +828,28 @@ class CallExpressionMixin:
                 )
             argument_index += 1
             llvm_index += 1
+        if tail_call_block is not None:
+            if symbol is None or symbol is not self._active_function_symbol:
+                raise FunctionEmissionError(
+                    'La optimizacion de recursividad de cola requiere la funcion activa'
+                )
+            for parameter, argument in zip(parameters, compiled):
+                slot = values.get(parameter.name)
+                if slot is None:
+                    raise FunctionEmissionError(
+                        f'El parametro {parameter.name} no tiene almacenamiento para '
+                        'la recursividad de cola'
+                    )
+                self._store_address(
+                    argument,
+                    slot,
+                    builder,
+                    alignment=getattr(slot, 'align', None),
+                    volatile=self._aggregate_volatile(slot.type.pointee),
+                )
+            builder.branch(tail_call_block)
+            return None
+
         result = builder.call(callee, compiled)
         return_type = getattr(
             getattr(symbol, 'signature', None),

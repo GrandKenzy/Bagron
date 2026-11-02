@@ -18,6 +18,17 @@ from .resolution import (
 from .compatibility import is_compatible
 
 
+def _record_function_call(
+    current_function: object | None,
+    target: object,
+) -> None:
+    """Retain resolved call edges for whole-program recursion validation."""
+    called = getattr(current_function, 'called_functions', None)
+    if called is None or any(item is target for item in called):
+        return
+    called.append(target)
+
+
 def _resolve_method_call(
     namespace: Mapping[str, object] | Callable[[str], object | None],
     primary: object,
@@ -137,6 +148,7 @@ def _infer_magic_operator(
     )
     if method is None:
         return None
+    _record_function_call(current_function, method)
     if getattr(method, 'is_static', False):
         raise ValueResolutionError(
             f'El metodo {aggregate.name}.{method.source_name} requiere '
@@ -563,6 +575,7 @@ def infer_call(
         )
     if function is None:
         raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
+    _record_function_call(current_function, function)
     if getattr(function, 'is_unsafe', False) and not _unsafe_context(
         current_function
     ):

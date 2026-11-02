@@ -775,7 +775,7 @@ def _method_decorators(
     method_name: str,
     decorators: tuple[str, ...],
 ) -> None:
-    allowed = {'static', 'unsafe', 'assembler', 'after'}
+    allowed = {'static', 'unsafe', 'assembler', 'recursive', 'after'}
     seen: set[str] = set()
     for decorator in decorators:
         magic_name = method_name.rsplit('.', 1)[-1]

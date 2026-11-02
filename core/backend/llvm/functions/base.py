@@ -41,6 +41,9 @@ class FunctionEmitterBase:
         self._active_values: dict[str, object] = {}
         self._global_values: dict[str, object] = {}
         self._active_function_symbol: FunctionSymbol | None = None
+        # Set only for a frontend-proven direct tail-recursive function.  The
+        # statement emitter branches here after rewriting the next arguments.
+        self._tail_loop_block = None
         self._suppress_magic_hooks = False
         self._loop_targets: list[tuple[ir.Block, ir.Block]] = []
         self._string_pool = string_pool or StringPool(module)

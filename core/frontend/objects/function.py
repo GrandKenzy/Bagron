@@ -58,6 +58,10 @@ class FunctionSymbol:
     # functions themselves are also marked as terminating by contract.
     body_terminates: bool = False
     never_call_nodes: set[int] = field(default_factory=set)
+    # Resolved source-level calls used by the compiler's recursion analysis.
+    # Symbols are kept by identity so aliases and methods retain their target.
+    called_functions: list['FunctionSymbol'] = field(default_factory=list)
+    tail_recursive: bool = False
     decorators: tuple[str, ...] = ()
     is_inline: bool = False
     return_asm_node: object | None = None
@@ -116,3 +120,7 @@ class FunctionSymbol:
             or self.is_assembler
             or 'unsafe' in self.decorators
         )
+
+    @property
+    def is_recursive(self) -> bool:
+        return 'recursive' in self.decorators
