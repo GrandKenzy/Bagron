@@ -548,7 +548,7 @@ def llvm_type(
         for _ in range(spec.pointer_level):
             value_type = value_type.as_pointer()
         return value_type
-    if spec.name in {'callptr', 'Null'}:
+    if spec.name == 'Null':
         raise LLVMTypeError(
             f'El tipo {spec.canonical_name!r} queda fuera de la primera emision LLVM'
         )
@@ -784,3 +784,4 @@ def constant_value(
     raise LLVMTypeError(
         f'El valor de {spec.canonical_name!r} aun no puede emitirse como constante'
     )
+
