@@ -722,6 +722,7 @@ class StatementEmitterMixin:
                 parameter.type_spec.array_depth
                 and not parameter.is_length
                 and not parameter.is_size
+                and not parameter.is_signed
                 and not parameter.is_region
             )
         }
@@ -741,13 +742,14 @@ class StatementEmitterMixin:
                 and (
                     parameter.is_length
                     or parameter.is_size
+                    or parameter.is_signed
                     or parameter.type_spec.name == 'chain'
                 )
             )
         }
         for name, variable in variables.items():
             if name in direct_parameters:
-                # Len_t/Size_t metadata and optimized chain parameters are
+                # Len_t/Size_t/Signed_t metadata and optimized chain parameters are
                 # already SSA values; neither needs a local storage slot.
                 continue
             value_info = getattr(variable, 'value_info', None)
@@ -849,7 +851,11 @@ class StatementEmitterMixin:
                 continue
             if (
                 self._optimization_profile in {'prod', 'high'}
-                and (parameter.is_length or parameter.is_size)
+                and (
+                    parameter.is_length
+                    or parameter.is_size
+                    or parameter.is_signed
+                )
             ):
                 values[parameter.name] = argument
                 continue

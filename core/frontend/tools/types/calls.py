@@ -163,6 +163,7 @@ def _infer_magic_operator(
         or any(
             parameter.is_length
             or parameter.is_size
+            or parameter.is_signed
             or parameter.is_region
             for parameter in explicit_parameters
         )
@@ -281,6 +282,7 @@ def _visible_parameters(parameters: object) -> list[object]:
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
             or getattr(parameter, 'is_receiver', False)
         )
@@ -385,11 +387,22 @@ def _validate_expansion_parameters(
     for parameter in parameters:
         is_length = getattr(parameter, 'is_length', False)
         is_size = getattr(parameter, 'is_size', False)
-        if not (is_length or is_size):
+        is_signed = getattr(parameter, 'is_signed', False)
+        if not (is_length or is_size or is_signed):
             continue
-        source_name = getattr(parameter, 'length_of', None)
+        source_name = (
+            getattr(parameter, 'signed_of', None)
+            if is_signed
+            else getattr(parameter, 'length_of', None)
+        )
         source = argument_infos.get(source_name or '')
         source_type = source.type_spec if source is not None else None
+        if is_signed:
+            if source_type is None:
+                raise ValueResolutionError(
+                    f'Signed_t de {function_name} no tiene un valor fuente valido'
+                )
+            continue
         if is_size and source_type is not None and is_buffer_type(source_type):
             raise ValueResolutionError(
                 f'Size_t de {function_name} no aplica al buffer {source_name}; '

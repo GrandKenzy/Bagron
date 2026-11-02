@@ -293,6 +293,7 @@ def _initializer_fields(
         if (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
             or getattr(parameter, 'is_unique', False)
         ):
@@ -519,6 +520,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_signed', False)
                 or getattr(parameter, 'is_region', False)
             )
         ]
@@ -567,6 +569,7 @@ def _initializer_parameter_scope(
         if (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
         ):
             continue
@@ -623,6 +626,7 @@ def _validate_parent_initializer_call(
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
         )
     ]

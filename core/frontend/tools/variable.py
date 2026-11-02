@@ -153,6 +153,7 @@ def _frontend_initializer_value(
         if not (
             getattr(parameter, 'is_length', False)
             or getattr(parameter, 'is_size', False)
+            or getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
         )
     ]
@@ -204,6 +205,7 @@ def _frontend_initializer_value(
                 if not (
                     getattr(parameter, 'is_length', False)
                     or getattr(parameter, 'is_size', False)
+                    or getattr(parameter, 'is_signed', False)
                     or getattr(parameter, 'is_region', False)
                     or getattr(parameter, 'is_receiver', False)
                 )

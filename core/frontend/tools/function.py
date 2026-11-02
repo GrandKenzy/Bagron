@@ -297,6 +297,7 @@ def validate_magic_method_signature(
         if not (
             parameter.is_length
             or parameter.is_size
+            or parameter.is_signed
             or parameter.is_region
             or parameter.is_receiver
         )
@@ -405,7 +406,7 @@ def _parameter_spec(
     type_node = pair.nodes[2]
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
     special_type = _type_name(type_node)
-    if special_type in {'Len_t', 'Size_t', 'Region_t'}:
+    if special_type in {'Len_t', 'Size_t', 'Signed_t', 'Region_t'}:
         if special_type == 'Region_t' and not allow_unique:
             raise TypeResolutionError(
                 'Region_t solo puede usarse en firmas internas de Bagron'
@@ -432,6 +433,7 @@ def _parameter_spec(
             ),
             is_length=special_type == 'Len_t',
             is_size=special_type == 'Size_t',
+            is_signed=special_type == 'Signed_t',
             is_region=special_type == 'Region_t',
         )
     type_spec = resolve_type(
@@ -500,10 +502,10 @@ def _signature_parameters(
                 )
             )
             continue
-        if parameter.is_length or parameter.is_size:
+        if parameter.is_length or parameter.is_size or parameter.is_signed:
             if last_data_parameter is None:
                 raise TypeResolutionError(
-                    'Len_t y Size_t deben seguir a un parametro de datos'
+                    'Len_t, Size_t y Signed_t deben seguir a un parametro de datos'
                 )
             source_type = last_data_parameter.type_spec
             lengthable_chain = (
@@ -536,7 +538,11 @@ def _signature_parameters(
                     has_default=parameter.has_default,
                     is_length=parameter.is_length,
                     is_size=parameter.is_size,
+                    is_signed=parameter.is_signed,
                     length_of=last_data_parameter.name,
+                    signed_of=(
+                        last_data_parameter.name if parameter.is_signed else None
+                    ),
                 )
             )
             continue
@@ -557,8 +563,16 @@ def _validate_array_expansion_parameters(
     explicit and prevents unsafe functions from silently omitting metadata.
     ``chain`` remains a separate static-string case and only uses ``Len_t``.
     A ``buffer`` carries its byte width in its descriptor, so it only accepts
-    ``Len_t``; ``Size_t`` would always be the redundant value ``1``.
+    ``Len_t``; ``Size_t`` would always be the redundant value ``1``. ``Signed_t``
+    is optional and follows the other array metadata when requested.
     """
+    def source_name(candidate: ParameterSpec) -> str | None:
+        if candidate.is_region:
+            return candidate.region_of
+        if candidate.is_signed:
+            return candidate.signed_of
+        return candidate.length_of
+
     for parameter in parameters:
         type_spec = parameter.type_spec
         if parameter.is_region:
@@ -571,17 +585,15 @@ def _validate_array_expansion_parameters(
                     (
                         candidate.is_length
                         or candidate.is_size
+                        or candidate.is_signed
                         or candidate.is_region
                     )
-                    and (
-                        candidate.length_of
-                        if not candidate.is_region
-                        else candidate.region_of
-                    ) == parameter.name
+                    and source_name(candidate) == parameter.name
                 )
             ]
             lengths = [candidate for candidate in linked if candidate.is_length]
             sizes = [candidate for candidate in linked if candidate.is_size]
+            signed = [candidate for candidate in linked if candidate.is_signed]
             regions = [
                 (index, candidate)
                 for index, candidate in enumerate(parameters)
@@ -592,6 +604,10 @@ def _validate_array_expansion_parameters(
                     f'El buffer {parameter.name} solo puede declarar Len_t; '
                     'Size_t no aplica a buffers'
                 )
+            if len(signed) > 1:
+                raise TypeResolutionError(
+                    f'El buffer {parameter.name} no puede declarar Signed_t mas de una vez'
+                )
             if len(lengths) != 1:
                 raise TypeResolutionError(
                     f'El buffer {parameter.name} debe declarar Len_t para '
@@ -600,6 +616,10 @@ def _validate_array_expansion_parameters(
             if parameter.is_unique and len(regions) != 1:
                 raise TypeResolutionError(
                     f'El buffer unique {parameter.name} debe declarar Region_t'
+                )
+            if signed and parameters.index(signed[0]) < parameters.index(lengths[0]):
+                raise TypeResolutionError(
+                    f'El buffer {parameter.name} debe declarar Signed_t despues de Len_t'
                 )
             if regions and parameters.index(lengths[0]) > regions[0][0]:
                 raise TypeResolutionError(
@@ -613,6 +633,7 @@ def _validate_array_expansion_parameters(
         if (
             parameter.is_length
             or parameter.is_size
+            or parameter.is_signed
             or type_spec.pointer_level
             or type_spec.array_depth == 0
         ):
@@ -625,13 +646,10 @@ def _validate_array_expansion_parameters(
                 (
                     candidate.is_length
                     or candidate.is_size
+                    or candidate.is_signed
                     or candidate.is_region
                 )
-                and (
-                    candidate.length_of
-                    if not candidate.is_region
-                    else candidate.region_of
-                ) == parameter.name
+                and source_name(candidate) == parameter.name
             )
         ]
         lengths = [
@@ -644,6 +662,11 @@ def _validate_array_expansion_parameters(
             for index, candidate in linked
             if candidate.is_size
         ]
+        signed = [
+            (index, candidate)
+            for index, candidate in linked
+            if candidate.is_signed
+        ]
         regions = [
             (index, candidate)
             for index, candidate in linked
@@ -654,9 +677,17 @@ def _validate_array_expansion_parameters(
                 f'El array {parameter.name} debe declarar Len_t y Size_t; '
                 'la longitud y el tamano del elemento son obligatorios'
             )
+        if len(signed) > 1:
+            raise TypeResolutionError(
+                f'El array {parameter.name} no puede declarar Signed_t mas de una vez'
+            )
         if lengths[0][0] > sizes[0][0]:
             raise TypeResolutionError(
                 f'El array {parameter.name} debe declarar Len_t antes de Size_t'
+            )
+        if signed and signed[0][0] < sizes[0][0]:
+            raise TypeResolutionError(
+                f'El array {parameter.name} debe declarar Signed_t despues de Size_t'
             )
         if parameter.is_unique and len(regions) != 1:
             raise TypeResolutionError(
