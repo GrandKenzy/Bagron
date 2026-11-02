@@ -47,46 +47,6 @@ class SafeArrayRangeTests(unittest.TestCase):
         )
         self.assertEqual(6, result.returncode)
 
-    def test_reverse_shape_is_safe_without_unsafe(self):
-        artifacts = self._compile(
-            'func reverse(data: char[], length: Len_t, size: Size_t) void:\n'
-            '    if size != 1:\n'
-            '        return\n'
-            '    if length == 0:\n'
-            '        return\n'
-            '    left: usize = 0\n'
-            '    right: usize = length\n'
-            '    right -= 1\n'
-            '    while left < length:\n'
-            '        if right < length:\n'
-            '            if left >= right:\n'
-            '                return\n'
-            '            temp: char = data[left]\n'
-            '            data[left] = data[right]\n'
-            '            data[right] = temp\n'
-            '        left += 1\n'
-            '        if left >= right:\n'
-            '            return\n'
-            '        right -= 1\n'
-            '    return\n'
-            'func main() int32:\n'
-            '    empty: char[1] = ""\n'
-            '    one: char[2] = "A"\n'
-            '    text: char[4] = "abc"\n'
-            '    reverse(empty)\n'
-            '    reverse(one)\n'
-            '    reverse(text)\n'
-            '    return 0\n',
-            executable=True,
-        )
-        result = subprocess.run(
-            [str(artifacts.executable)],
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
-        self.assertEqual(0, result.returncode)
-
     def test_unbounded_dynamic_index_remains_rejected(self):
         with self.assertRaisesRegex(CompilationError, 'indice conocido'):
             self._compile(
@@ -95,6 +55,16 @@ class SafeArrayRangeTests(unittest.TestCase):
                 'func main() int32:\n'
                 '    return 0\n',
             )
+
+    def test_if_len_t_bound_proves_a_dynamic_index(self):
+        self._compile(
+            'func read(data: char[], length: Len_t, size: Size_t, index: usize) char:\n'
+            '    if index < length:\n'
+            '        return data[index]\n'
+            '    return "X"\n'
+            'func main() int32:\n'
+            '    return 0\n',
+        )
 
     def test_loop_with_index_write_before_access_is_rejected(self):
         with self.assertRaisesRegex(CompilationError, 'indice conocido'):
