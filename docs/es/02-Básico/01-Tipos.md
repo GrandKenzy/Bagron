@@ -1,4 +1,4 @@
-# Intrinsecos
+# Intrínsecos
 
 Catálogo de **Intrínsecos Estrictos** del lenguaje Bagron. Solo se incluyen
 tipos cuyo ancho está fijado explícitamente.
@@ -37,6 +37,27 @@ func main() int32:
 
 El compilador representa estas funciones como terminaciones sin retorno en
 LLVM y marca como inalcanzable el código posterior a una llamada `Never`.
+
+## Catálogo de tipos no escalares
+
+Además de los intrínsecos anteriores, el lenguaje reconoce estas formas de
+tipo. No todas son valores escalares ni tienen almacenamiento independiente:
+
+| Categoría | Forma | Contrato actual |
+|:---|:---|:---|
+| Array | `T[N]`, `T[N][M]`, `T[N][M][K]` | Almacenamiento contiguo de hasta tres dimensiones; las dimensiones de una matriz deben ser conocidas. |
+| Array abierto de parámetro | `T[]` | Vista de un array estático recibida por una función; exige `Len_t` y `Size_t`. No declara memoria dinámica ni puede retornarse. |
+| Buffer administrado | `buffer[N]` o `buffer[]` | Descriptor de bytes dinámico; `buffer[]` solo puede usarse con capacidad inferible o como parámetro. Exige `Len_t` y no admite `Size_t`. |
+| Puntero | `T*`, `T**`, ... | Dirección tipada. Cada nivel se declara explícitamente y sus reglas de constancia son independientes. |
+| Cadena estática | `chain` | Referencia constante a bytes ASCII terminados en `NUL`; no se combina con arrays ni punteros. |
+| Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `flags Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. |
+| Descriptor opaco | `opaque Nombre: void*` o `opaque Nombre: entero` | Handle nominal con representación ABI conocida solo por el compilador; no es un puntero ni un entero intercambiable desde el código fuente. |
+
+`Null` es un literal de puntero nulo, no un tipo almacenable. Solo es compatible
+con un puntero y desreferenciarlo produce una trampa en ejecución. Los detalles
+de arrays, punteros, buffers, agregados y descriptores opacos se documentan en
+[Arrays](04-Arrays.md), [Punteros](05-Punteros.md), [buffer](buffer.md) y
+[Estructuras](02-Estructuras.md).
 
 ## Diferencia entre `char` y `byte`
 
@@ -214,12 +235,13 @@ No forman parte del catálogo de Intrínsecos Estrictos porque su ancho no es
 fijo. Los tipos estrictos deben reservarse para datos cuyo tamaño exacto sea
 parte del contrato.
 
-### Metatipos `Len_t`, `Size_t` y `Signed_t`
+### Metatipos `Len_t`, `Size_t`, `Signed_t` y `Region_t`
 
-`Len_t`, `Size_t` y `Signed_t` no son valores que el usuario escriba en una
-llamada. Son metatipos expansivos que aparecen en firmas de funciones y cuyo
-argumento se genera automáticamente durante la compilación. Internamente usan
-el ancho de `usize` del target.
+`Len_t`, `Size_t`, `Signed_t` y `Region_t` no son valores que el usuario
+proporcione en una llamada. Son metatipos expansivos que aparecen en firmas de
+funciones y cuyos argumentos se generan automáticamente durante la compilación.
+Internamente usan el ancho de `usize` del target, salvo `Region_t`, que es
+metadata semántica inmutable y no añade un argumento runtime al ABI.
 
 `Len_t` representa la longitud exacta del dato asociado. Funciona con arrays,
 con `buffer` y con el caso especial de `chain`, que es estático, inmutable y
@@ -291,7 +313,9 @@ send(values)              ; Bagron expande Len_t a 3 y Size_t a 4
 
 `Signed_t` expone la naturaleza signed del tipo asociado sin añadir un
 argumento visible: produce `0` si el tipo es signed y `1` si no lo es. Es
-opcional y debe aparecer después de `Size_t` cuando se declara para un array:
+opcional. Para un array debe aparecer después de `Size_t`; para un `buffer`,
+después de `Len_t`. También puede asociarse a un escalar, un puntero o un
+`chain` cuando la firma necesita exponer su signedness:
 
 ```bg
 func inspect_sign(data: int32[], length: Len_t, size: Size_t, sign: Signed_t) void:
@@ -302,6 +326,13 @@ inspect_sign(values)       ; expansión interna: ..., 0
 ```
 
 Para `uint32[]`, `byte[]` o `char[]`, el valor expandido es `1`.
+
+```bg
+func inspect_buffer(data: buffer[], length: Len_t, sign: Signed_t) void:
+    return
+```
+
+En ese caso `sign` vale `1`, porque el elemento del buffer es `byte`.
 
 Un `buffer` es distinto de un array: su descriptor ya contiene la capacidad
 en bytes, por lo que solo puede declarar `Len_t`; `Size_t` no aplica porque
@@ -358,7 +389,8 @@ solo describe el almacenamiento obligatorio que ya exige el tipo y no añade
 
 Los arrays y buffers normales pueden aliasar el mismo almacenamiento. Cuando
 una función necesita una región exclusiva puede marcar el parámetro de datos
-con `unique` y declarar `Region_t` después de sus expansiones ordinarias:
+con `unique` y declarar `Region_t` después de `Size_t` para arrays o después de
+`Len_t` para buffers:
 
 ```bg
 func copy_rows(
@@ -375,7 +407,8 @@ func copy_rows(
 ```
 
 `Region_t` es inmutable y lo suministra el compilador; no se escribe en la
-llamada. En código seguro, Bagron solo acepta una llamada cuando puede
+llamada. Solo puede seguir a un parámetro `unique` de tipo array o `buffer`. En
+código seguro, Bagron solo acepta una llamada cuando puede
 demostrar que cada región proviene de almacenamiento distinto o de un
 parámetro `unique` que está siendo reenviado. Si la procedencia es desconocida
 o dos argumentos podrían representar la misma variable, la compilación falla.
@@ -386,6 +419,9 @@ misma raíz como una sola región; no intenta adivinar que dos subrangos son
 disjuntos. El backend emite `noalias` para arrays `unique` demostrados. Los
 buffers conservan su descriptor por valor, por lo que su contrato se valida
 semánticamente sin alterar esa ABI en esta fase.
+
+`Region_t` no puede declararse para un puntero, un escalar o un parámetro sin
+`unique`; tampoco puede aparecer en una declaración `extern`.
 
 En cualquier firma que reciba un array, `Len_t` y `Size_t` son obligatorios y
 deben aparecer consecutivamente en ese orden, incluso si la función es
@@ -417,3 +453,4 @@ usarse como variables, parámetros, retornos, arrays o punteros.
 convertirse en un entero ni permitir conversiones hacia `byte` o `uint8`.
 Su almacenamiento físico mínimo sigue siendo de 1 byte y no puede tomarse su
 dirección de forma independiente.
+
