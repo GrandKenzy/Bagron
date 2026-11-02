@@ -16,7 +16,7 @@ from .resolution import (
     _identifier_from_node, _namespace_owner, _resolve_aggregate,
     _resolve_function, _resolve_symbol, _unsafe_context, is_buffer_type,
 )
-from .compatibility import is_compatible
+from .compatibility import is_chain_to_char_array_conversion, is_compatible
 
 
 def _record_function_call(
@@ -311,7 +311,11 @@ def _validate_array_argument_storage(
     """Require addressable storage for arrays and borrowed buffers."""
     type_spec = getattr(parameter, 'type_spec', TypeSpec('void'))
     requires_storage = type_spec.array_depth or is_buffer_type(type_spec)
-    if requires_storage and not argument.is_lvalue:
+    if (
+        requires_storage
+        and not argument.is_lvalue
+        and not is_chain_to_char_array_conversion(type_spec, argument)
+    ):
         raise ValueResolutionError(
             f'El argumento de {function_name} para {getattr(parameter, "name", "<array>")} '
             'debe ser una variable con almacenamiento propio'
@@ -615,6 +619,15 @@ def infer_call(
             raise ValueResolutionError(
                 f'El argumento de {name} no coincide con '
                 f'{parameter.type_spec.canonical_name}'
+            )
+        if (
+            is_chain_to_char_array_conversion(parameter.type_spec, argument_info)
+            and getattr(signature, 'return_type', TypeSpec('void')).pointer_level
+            > 0
+        ):
+            raise ValueResolutionError(
+                f'El argumento chain de {name} crea una temporal char[] que '
+                'no puede escapar por un retorno puntero'
             )
         if (
             argument_info.type_spec.pointer_level > 0

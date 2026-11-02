@@ -97,7 +97,15 @@ class CallExpressionMixin:
         target_type: ir.Type,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
+        target_spec: object | None = None,
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, target_spec):
+            return self._compile_chain_array_copy(
+                argument,
+                target_type,
+                builder,
+                values,
+            )
         if not isinstance(target_type, ir.PointerType):
             raise FunctionEmissionError(
                 'El parametro array no tiene una representacion de puntero'
@@ -215,6 +223,11 @@ class CallExpressionMixin:
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, source_spec):
+            return ir.Constant(
+                self._size_integer_type(),
+                self._compile_chain_length(argument),
+            )
         if getattr(source_spec, 'name', None) == 'chain':
             forwarded = self._compile_forwarded_expansion(
                 argument,
@@ -303,6 +316,8 @@ class CallExpressionMixin:
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, source_spec):
+            return ir.Constant(self._size_integer_type(), 1)
         if (
             getattr(source_spec, 'array_depth', 0) > 0
             and not getattr(source_spec, 'pointer_level', 0)
@@ -361,6 +376,7 @@ class CallExpressionMixin:
                 target_type,
                 builder,
                 values,
+                parameter.type_spec,
             )
         return self._coerce_value(
             self._compile_expression(
@@ -867,6 +883,7 @@ class CallExpressionMixin:
                         target_type,
                         builder,
                         values,
+                        parameter.type_spec,
                     )
                 )
             else:

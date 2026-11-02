@@ -376,6 +376,7 @@ class OperatorExpressionMixin:
                         target_type,
                         builder,
                         values,
+                        parameter.type_spec,
                     )
                 else:
                     argument = self._coerce_value(
