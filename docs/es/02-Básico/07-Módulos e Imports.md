@@ -23,6 +23,28 @@ Las tres formas significan:
 - `import { doble as twice } from math`: importa solo `doble` con el nombre
   local `twice`.
 
+Las variables globales públicas también forman parte de las exportaciones,
+pero solo las declaradas `const` se pueden leer implícitamente desde una
+función importadora. Se pueden usar con cualquiera de las dos formas:
+
+```bg
+; sdl_init.bg
+public SDL_INIT_AUDIO: const uint32 = 0x00000010
+
+; _main.bg
+import { SDL_INIT_AUDIO } from sdl_init
+func main() int32:
+    if SDL_INIT_AUDIO == 16:
+        return 0
+    return 1
+```
+
+Con un import de módulo se conserva el namespace (`sdl_init.SDL_INIT_AUDIO`).
+Los globals mutables nunca se vuelven implícitos: requieren `global nombre`,
+igual que los globals definidos en el módulo de entrada. Así una constante de
+configuración puede viajar entre módulos sin convertir el estado compartido en
+una dependencia invisible y escribible.
+
 El alias de una función conserva exactamente su firma original. Esto incluye
 los parámetros expansivos `Len_t` y `Size_t`, que el compilador sigue
 inyectando a partir del argumento real:

@@ -74,6 +74,11 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         # declaration that appears later in the file.
         tools.variable.collect_global(compiler, node, validate=False)
 
+    # Imported aliases must exist before validating global initializers.  This
+    # lets a module constant feed another constant without making mutable
+    # imported state implicitly visible inside function scopes.
+    tools.imports.bind_aliases(compiler)
+
     for node in global_nodes:
         compiler.activate_module(compiler.module_for_node(node))
         handle = tools.variable.handle_variable(node)
@@ -87,8 +92,6 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
                 handle,
                 symbol,
             )
-
-    tools.imports.bind_aliases(compiler)
 
     for node in nodes:
         compiler.activate_module(compiler.module_for_node(node))

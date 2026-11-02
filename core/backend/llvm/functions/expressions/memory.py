@@ -542,6 +542,38 @@ class MemoryExpressionMixin:
                 raise FunctionEmissionError('El acceso no tiene una base')
 
             primary_name = self._identifier(primary)
+            qualified_name = primary_name
+            if suffixes and all(
+                getattr(suffix, 'name', None) == 'MEMBER_ACCESS'
+                for suffix in suffixes
+            ):
+                for suffix in suffixes:
+                    member = self._identifier(suffix)
+                    if member is None:
+                        qualified_name = None
+                        break
+                    qualified_name = (
+                        f'{qualified_name}.{member}'
+                        if qualified_name
+                        else member
+                    )
+                if qualified_name is not None:
+                    imported_global = self.module.globals.get(
+                        self._global_llvm_name(qualified_name)
+                    )
+                    if isinstance(imported_global, ir.GlobalVariable):
+                        type_spec = self._active_type_spec(qualified_name)
+                        return self._memory_place(
+                            imported_global,
+                            alignment=getattr(imported_global, 'align', None),
+                            read_only=bool(
+                                type_spec is not None
+                                and (
+                                    type_spec.name == 'chain'
+                                    or type_spec.value_is_const
+                                )
+                            ),
+                        )
             place = self._compile_place(primary, builder, values)
             for suffix_index, suffix in enumerate(suffixes):
                 if isinstance(place, _BitfieldPlace):

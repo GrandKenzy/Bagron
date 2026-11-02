@@ -188,7 +188,15 @@ class Storage(diagnostic.Diagnostics):
             return symbol
         if self.parent is not None:
             if self._function_root is self and name not in self.global_names:
-                return None
+                # Imported read-only module data is a value dependency, not a
+                # writable global binding.  Expose only const aliases here;
+                # mutable globals still require an explicit ``global``
+                # declaration so global state cannot become implicit.
+                imported = self.parent.variable_aliases.get(name)
+                if imported is None or not getattr(
+                    imported, 'value_is_const', False
+                ):
+                    return None
             return self.parent.resolve(name)
         return None
 

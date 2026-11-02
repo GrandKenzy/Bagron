@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -135,6 +136,108 @@ class ModuleTests(unittest.TestCase):
             module = Path(module_path).read_text(encoding='utf-8')
 
         self.assertIn('call i32 @"doble"(i32 3)', module)
+
+    def test_imported_public_const_global_is_readable_without_global(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sdl_init.bg').write_text(
+                'public SDL_INIT_AUDIO: const uint32 = 0x00000010\n'
+                'public SDL_INIT_VIDEO: const uint32 = 0x00000020\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { SDL_INIT_AUDIO, SDL_INIT_VIDEO } from sdl_init\n'
+                'func main() int32:\n'
+                '    if SDL_INIT_AUDIO == 16 && SDL_INIT_VIDEO == 32:\n'
+                '        return 0\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+
+    def test_imported_public_const_can_initialize_another_const_global(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sdl_init.bg').write_text(
+                'public SDL_INIT_AUDIO: const uint32 = 0x00000010\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { SDL_INIT_AUDIO as AUDIO } from sdl_init\n'
+                'public COPY: const uint32 = AUDIO\n'
+                'func main() int32:\n'
+                '    global COPY\n'
+                '    if COPY == 16:\n'
+                '        return 0\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+
+    def test_imported_public_const_is_readable_through_module_namespace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sdl_init.bg').write_text(
+                'public SDL_INIT_AUDIO: const uint32 = 0x00000010\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import sdl_init\n'
+                'func main() int32:\n'
+                '    if sdl_init.SDL_INIT_AUDIO == 16:\n'
+                '        return 0\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+
+    def test_imported_public_mutable_global_still_requires_global(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'state.bg').write_text(
+                'public value: uint32 = 7\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import { value } from state\n'
+                'func main() int32:\n'
+                '    return value\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'no existe'):
+                Compiler().compile(main, executable=False)
 
     def test_selective_import_calls_multiple_specific_symbols(self):
         """A selective import binds each requested alias to its source symbol."""

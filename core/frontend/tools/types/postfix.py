@@ -14,7 +14,7 @@ from .common import (
 )
 from .resolution import (
     _buffer_index_value, _identifier_from_node, _resolve_aggregate,
-    _resolve_function, _unsafe_context, _validate_array_index,
+    _resolve_function, _resolve_symbol, _unsafe_context, _validate_array_index,
     _validate_chain_index, is_buffer_type,
 )
 from .compatibility import (
@@ -107,6 +107,48 @@ def _suffix_value(suffix: object) -> object | None:
             if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
         ),
         None,
+    )
+
+
+def _qualified_import_name(
+    primary: object,
+    suffixes: list[object],
+) -> str | None:
+    """Return a module-qualified data alias, excluding calls and indexes."""
+    if not suffixes or any(
+        getattr(suffix, 'name', None) != 'MEMBER_ACCESS'
+        for suffix in suffixes
+    ):
+        return None
+    name = _identifier_from_node(primary)
+    if name is None:
+        return None
+    for suffix in suffixes:
+        member = _identifier_from_node(suffix)
+        if member is None:
+            return None
+        name = f'{name}.{member}'
+    return name
+
+
+def _imported_const_value(
+    symbol: Variable,
+    name: str,
+) -> ValueInfo:
+    initialized = getattr(symbol, 'value_info', None)
+    is_literal = bool(
+        getattr(symbol, 'value_is_const', False)
+        and initialized is not None
+        and initialized.is_literal
+    )
+    return ValueInfo(
+        type_spec=symbol.type_spec,
+        identifier=name,
+        value=(initialized.value if is_literal else symbol.value),
+        is_literal=is_literal,
+        is_lvalue=True,
+        address_origin=getattr(symbol, 'scope_kind', None),
+        storage_origin=getattr(symbol, 'scope_kind', None),
     )
 
 
@@ -340,6 +382,14 @@ def _infer_postfix(
                     current_function=current_function,
                 )
         return result
+
+    qualified_name = _qualified_import_name(primary, suffixes)
+    if qualified_name is not None:
+        imported = _resolve_symbol(namespace, qualified_name)
+        if isinstance(imported, Variable) and getattr(
+            imported, 'value_is_const', False
+        ):
+            return _imported_const_value(imported, qualified_name)
 
     result = infer_value(
         primary,
