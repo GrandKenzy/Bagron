@@ -463,6 +463,9 @@ def _namespace_owner(
     namespace: Mapping[str, object] | Callable[[str], object | None],
 ) -> object | None:
     """Return the Storage behind a bound ``Storage.resolve`` callable."""
+    storage = getattr(namespace, 'storage', None)
+    if storage is not None:
+        return storage
     return getattr(namespace, '__self__', None)
 
 
@@ -471,6 +474,7 @@ def _resolve_aggregate(
     name: str,
 ) -> AggregateSymbol | None:
     owner = _namespace_owner(namespace)
+    owner = getattr(owner, 'storage', owner)
     resolver = getattr(owner, 'resolve_type', None)
     aggregate = resolver(name) if callable(resolver) else None
     return aggregate if isinstance(aggregate, AggregateSymbol) else None

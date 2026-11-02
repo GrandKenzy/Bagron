@@ -41,6 +41,8 @@ class FunctionEmitterBase:
         self._active_values: dict[str, object] = {}
         self._global_values: dict[str, object] = {}
         self._active_function_symbol: FunctionSymbol | None = None
+        # Expansion values propagated while a class initializer is inlined.
+        self._active_initializer_expansions: dict[tuple[str, bool], ir.Value] = {}
         # Set only for a frontend-proven direct tail-recursive function.  The
         # statement emitter branches here after rewriting the next arguments.
         self._tail_loop_block = None

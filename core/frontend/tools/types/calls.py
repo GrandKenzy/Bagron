@@ -38,6 +38,7 @@ def _resolve_method_call(
 ) -> object | None:
     """Resolve a class method without exposing its hidden receiver in source."""
     owner = _namespace_owner(namespace)
+    owner = getattr(owner, 'storage', owner)
     resolver = getattr(owner, 'resolve_method', None)
     if not callable(resolver):
         return None

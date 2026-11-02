@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from core.frontend.objects import (
@@ -268,6 +269,17 @@ def _initializer_fields(
         scope_name=f'class:{class_name}.{initializer_name}',
         function_scope=True,
     )
+    initializer_context = compiler.function_bindings.get(id(initializer_node))
+    if initializer_context is None:
+        from core.frontend.tools import function as function_tools
+
+        initializer_context = SimpleNamespace(
+            is_unsafe='unsafe' in function_tools._decorator_names(initializer_node),
+            signature=FunctionSignature(
+                parameters=parameters,
+                return_type=TypeSpec('void'),
+            ),
+        )
     seen_parameters: set[str] = set()
     for parameter in parameters:
         name = getattr(parameter, 'name', '')
@@ -291,15 +303,13 @@ def _initializer_fields(
             continue
         seen_parameters.add(name)
         if (
-            getattr(parameter, 'is_length', False)
-            or getattr(parameter, 'is_size', False)
-            or getattr(parameter, 'is_signed', False)
+            getattr(parameter, 'is_signed', False)
             or getattr(parameter, 'is_region', False)
             or getattr(parameter, 'is_unique', False)
         ):
             compiler.error(
                 f'El {initializer_name} de {class_name} no admite parametros '
-                'Len_t/Size_t/Region_t ni unique en esta fase'
+                'Signed_t/Region_t ni unique'
             )
             continue
         parameter_scope.add(
@@ -373,6 +383,7 @@ def _initializer_fields(
                 value_node,
                 parameter_scope.resolve,
                 compiler.function_lookup,
+                current_function=initializer_context,
             )
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(f'{class_name}.{field_name}: {error}')
@@ -509,10 +520,11 @@ def validate(compiler: Compiler, node: gast.ASTRef):
         )
         return node
     initializer_decorators = function_tools._decorator_names(initializer_node)
-    if initializer_decorators:
+    unsupported_initializer_decorators = set(initializer_decorators) - {'unsafe'}
+    if unsupported_initializer_decorators:
         compiler.error(
             f'El iniciador {symbol.name}.{initializer_name} no admite '
-            'decoradores'
+            'decoradores distintos de @unsafe'
         )
     if initializer_name == '__frontend__':
         visible_parameters = [

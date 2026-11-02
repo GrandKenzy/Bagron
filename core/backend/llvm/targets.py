@@ -102,6 +102,9 @@ def _triple_for_request(
     if str(system_request or '').strip().lower() == 'baremetal':
         return f'{architecture}-unknown-none-elf'
 
+    if str(system_request or '').strip().lower() == 'linux':
+        return f'{architecture}-unknown-linux-gnu'
+
     parts = host_triple.split('-')
     parts[0] = architecture
     return '-'.join(parts)
