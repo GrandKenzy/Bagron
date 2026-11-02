@@ -617,7 +617,10 @@ SECTIONS
             f'--target={triple}',
             '-fuse-ld=lld',
             *(str(path) for path in objects),
-            *(f'-l{library}' for library in native_links),
+            *(
+                f'-l{library.split(":", 1)[1] if ":" in library else library}'
+                for library in native_links
+            ),
             '-o',
             str(executable_path),
         ]

@@ -35,7 +35,7 @@ class ExternTests(unittest.TestCase):
         source = (
             "clause Arch 'auto'\n"
             "clause System 'windows'\n"
-            'extern "kernel32":\n'
+            'extern windows "kernel32":\n'
             '    GetStdHandle(nStdHandle: uint32) *: void\n'
             '    WriteFile(\n'
             '        hFile *: void,\n'
@@ -74,7 +74,7 @@ class ExternTests(unittest.TestCase):
         source = (
             "clause Arch 'auto'\n"
             "clause System 'windows'\n"
-            'extern "kernel32":\n'
+            'extern windows "kernel32":\n'
             '    GetCurrentProcessId() uint32\n'
             '@unsafe\n'
             'func main() int32:\n'
@@ -95,11 +95,94 @@ class ExternTests(unittest.TestCase):
             )
 
         self.assertEqual(0, result.returncode)
-        self.assertEqual(['kernel32'], compiler.storage.native_links)
+        self.assertEqual(['windows:kernel32'], compiler.storage.native_links)
+
+    def test_extern_domains_register_separate_links(self):
+        source = (
+            "clause System 'windows'\n"
+            'extern windows "kernel32":\n'
+            '    GetCurrentProcessId() uint32\n'
+            'extern c "ucrt":\n'
+            '    puts(value *: char) int32\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    pid: uint32 = GetCurrentProcessId()\n'
+            '    puts(Null)\n'
+            '    return 0\n'
+        )
+        compiler = Compiler()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(source, encoding='utf-8')
+            compiler.compile(path, executable=False)
+
+        self.assertEqual(
+            ['windows:kernel32', 'c:ucrt'],
+            compiler.storage.native_links,
+        )
+        self.assertEqual(
+            'windows',
+            compiler.storage.functions['GetCurrentProcessId'].external_domain,
+        )
+        self.assertEqual(
+            'c',
+            compiler.storage.functions['puts'].external_domain,
+        )
+
+    def test_extern_windows_rejects_linux_target(self):
+        with self.assertRaisesRegex(CompilationError, 'solo es valido'):
+            self.compile_source(
+                "clause System 'linux'\n"
+                'extern windows "kernel32":\n'
+                '    GetCurrentProcessId() uint32\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+    def test_extern_c_is_valid_for_non_baremetal_target(self):
+        source = (
+            "clause System 'linux'\n"
+            'extern c "ucrt":\n'
+            '    puts(value *: char) int32\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    puts(Null)\n'
+            '    return 0\n'
+        )
+        compiler = Compiler()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / '_main.bg'
+            path.write_text(source, encoding='utf-8')
+            compiler.compile(path, executable=False)
+
+        self.assertEqual(['c:ucrt'], compiler.storage.native_links)
+
+    def test_extern_is_rejected_for_baremetal_target(self):
+        with self.assertRaisesRegex(CompilationError, 'baremetal.*extern'):
+            self.compile_source(
+                "clause System 'baremetal'\n"
+                "clause Arch 'amd'\n"
+                "clause Boot 'none'\n"
+                'extern c "freestanding":\n'
+                '    puts(value *: char) int32\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+    def test_legacy_extern_is_rejected_after_migration(self):
+        source = (
+            "clause System 'windows'\n"
+            'extern "kernel32":\n'
+            '    GetCurrentProcessId() uint32\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+        with self.assertRaisesRegex(CompilationError, 'ya no es valida'):
+            self.compile_source(source)
 
     def test_extern_accepts_llvm_floating_scalars(self):
         source = (
-            'extern "kernel32":\n'
+            'extern windows "kernel32":\n'
             '    HalfNative(value: middle) middle\n'
             '    FloatNative(value: float) float\n'
             '    DoubleNative(value: double) double\n'
@@ -124,7 +207,7 @@ class ExternTests(unittest.TestCase):
     def test_extern_is_unsafe_from_safe_functions(self):
         with self.assertRaisesRegex(CompilationError, 'no puede llamar'):
             self.compile_source(
-                'extern "kernel32":\n'
+                'extern windows "kernel32":\n'
                 '    GetCurrentProcessId() uint32\n'
                 'func main() int32:\n'
                 '    return 0\n'
@@ -134,7 +217,7 @@ class ExternTests(unittest.TestCase):
     def test_extern_rejects_arrays_and_duplicate_names(self):
         with self.assertRaisesRegex(CompilationError, 'no puede usar arrays'):
             self.compile_source(
-                'extern "kernel32":\n'
+                'extern windows "kernel32":\n'
                 '    Bad(values: uint32[]) uint32\n'
                 'func main() int32:\n'
                 '    return 0\n'
@@ -142,7 +225,7 @@ class ExternTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'no puede usar Len_t'):
             self.compile_source(
-                'extern "kernel32":\n'
+                'extern windows "kernel32":\n'
                 '    Native(values: char[], long: Len_t) void\n'
                 'func main() int32:\n'
                 '    return 0\n'
@@ -152,7 +235,7 @@ class ExternTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'native.bg').write_text(
-                'extern "kernel32":\n'
+                'extern windows "kernel32":\n'
                 '    GetCurrentProcessId() uint32\n',
                 encoding='utf-8',
             )
@@ -175,9 +258,9 @@ class ExternTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'ya fue declarada'):
             self.compile_source(
-                'extern "kernel32":\n'
+                'extern windows "kernel32":\n'
                 '    Same() int32\n'
-                'extern "user32":\n'
+                'extern windows "user32":\n'
                 '    Same() int32\n'
                 'func main() int32:\n'
                 '    return 0\n'

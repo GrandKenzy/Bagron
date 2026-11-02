@@ -31,6 +31,13 @@ class EXTERN_FUNCTION(cmb.RuleItem):
     nodeable = True
 
 
+class EXTERN_DOMAIN(cmb.RuleItem):
+    """Domain marker used before an external library name."""
+
+    entrypoint = cmb.MatchToken('IDENT')
+    nodeable = True
+
+
 class EXTERN_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
@@ -41,11 +48,20 @@ class EXTERN_BODY(cmb.RuleItem):
 
 
 class EXTERN(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchKeyword('extern'),
-        cmb.MatchToken('STRING'),
-        cmb.MatchToken('COLON'),
-        cmb.Ref(EXTERN_BODY),
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.MatchKeyword('extern'),
+            cmb.Ref(EXTERN_DOMAIN),
+            cmb.MatchToken('STRING'),
+            cmb.MatchToken('COLON'),
+            cmb.Ref(EXTERN_BODY),
+        ),
+        cmb.Seq(
+            cmb.MatchKeyword('extern'),
+            cmb.MatchToken('STRING'),
+            cmb.MatchToken('COLON'),
+            cmb.Ref(EXTERN_BODY),
+        ),
     )
     nodeable = True
 
@@ -53,6 +69,7 @@ class EXTERN(cmb.RuleItem):
 __all__ = [
     'EXTERN',
     'EXTERN_BODY',
+    'EXTERN_DOMAIN',
     'EXTERN_FUNCTION',
     'EXTERN_RETURN',
 ]

@@ -78,6 +78,17 @@ def _string_value(node: object) -> str | None:
     return None
 
 
+def _extern_domain(node: gast.ASTRef) -> str | None:
+    domain_node = next(
+        (
+            child for child in _children(node)
+            if isinstance(child, gast.ASTRef) and child.name == 'EXTERN_DOMAIN'
+        ),
+        None,
+    )
+    return _identifier(domain_node) if domain_node is not None else None
+
+
 def _extern_body(node: gast.ASTRef) -> gast.ASTRef | None:
     return next(
         (
@@ -195,8 +206,18 @@ def _normalize_library(name: str) -> str:
     return name
 
 
+def _normalize_domain(name: str) -> str:
+    domain = name.strip().lower()
+    if domain not in {'windows', 'c'}:
+        raise TypeResolutionError(
+            f'El dominio extern {name!r} no esta soportado; usa windows o c'
+        )
+    return domain
+
+
 def _collect_function(
     compiler: Compiler,
+    domain: str | None,
     library: str,
     node: gast.ASTRef,
 ) -> FunctionSymbol | None:
@@ -274,6 +295,7 @@ def _collect_function(
         name,
         FunctionSignature(parameters=parameters, return_type=return_type),
         external_library=library,
+        external_domain=domain,
         module_path=compiler.active_module_path,
         privacy=_privacy(node),
     )
@@ -291,10 +313,25 @@ def collect(compiler: Compiler, node: gast.ASTRef) -> None:
         )
         return
 
+    domain_value = _extern_domain(node)
+    if domain_value is None:
+        compiler.error(
+            'La sintaxis extern "library" ya no es valida; declara el dominio '
+            'windows o c antes de la libreria'
+        )
+        return
+    else:
+        try:
+            domain = _normalize_domain(domain_value)
+        except TypeResolutionError as error:
+            compiler.error(str(error))
+            return
+
     library_value = _string_value(node)
     if library_value is None:
         compiler.error(
-            'La declaracion extern requiere una libreria: extern "library":'
+            'La declaracion extern requiere una libreria: '
+            'extern windows "library":'
         )
         return
 
@@ -302,6 +339,13 @@ def collect(compiler: Compiler, node: gast.ASTRef) -> None:
         library = _normalize_library(library_value)
     except TypeResolutionError as error:
         compiler.error(str(error))
+        return
+
+    system = str(compiler.storage.system).lower()
+    if domain == 'windows' and system != 'windows':
+        compiler.error(
+            f'extern windows "{library}" solo es valido con System "windows"'
+        )
         return
 
     body = _extern_body(node)
@@ -312,10 +356,18 @@ def collect(compiler: Compiler, node: gast.ASTRef) -> None:
     symbols = [
         symbol
         for function_node in _extern_functions(body)
-        if (symbol := _collect_function(compiler, library, function_node)) is not None
+        if (
+            symbol := _collect_function(
+                compiler,
+                domain,
+                library,
+                function_node,
+            )
+        ) is not None
     ]
-    if symbols and library not in compiler.storage.native_links:
-        compiler.storage.native_links.append(library)
+    link_name = f'{domain}:{library}' if domain is not None else library
+    if symbols and link_name not in compiler.storage.native_links:
+        compiler.storage.native_links.append(link_name)
 
 
 __all__ = ['collect']

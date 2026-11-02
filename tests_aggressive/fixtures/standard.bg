@@ -3,7 +3,7 @@
 
 clause System 'windows'
 
-extern "kernel32":
+extern windows "kernel32":
     GetStdHandle(nStdHandle: uint32) *: void
     WriteFile(
         hFile *: void,

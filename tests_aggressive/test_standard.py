@@ -22,7 +22,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    message: chain = "Hola"\n'
@@ -65,8 +65,8 @@ class StandardLibraryTests(unittest.TestCase):
             )
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
-                'import alphabet\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
+                'import { NumericString, AlphabetString } from alphabet\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    global NumericString\n'
@@ -101,7 +101,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    letter: char = "A"\n'
@@ -120,7 +120,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    raw: byte[3] = {65, 0, 255}\n'
@@ -148,7 +148,7 @@ class StandardLibraryTests(unittest.TestCase):
             self._copy_canonical_console(root)
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, print_int, printint } from standard\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    maximum: int64 = 9223372036854775807\n'
@@ -187,7 +187,8 @@ class StandardLibraryTests(unittest.TestCase):
             self._copy_canonical_console(root)
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print } from standard\n'
+                'import { printb } from console\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    raw: byte[3] = {65, 0, 255}\n'
@@ -222,7 +223,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func main() int32:\n'
                 '    positive: char[50] = "Mi edad es: "\n'
@@ -268,7 +269,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func check_leaf(\n'
                 '    data: int32[],\n'
@@ -327,7 +328,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func check_leaf(\n'
                 '    numbers: int32[],\n'
@@ -407,7 +408,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func invert_forward(\n'
                 '    chars: char[],\n'
@@ -481,7 +482,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func walk_forward(\n'
                 '    numbers: int32[2][3],\n'
@@ -568,7 +569,7 @@ class StandardLibraryTests(unittest.TestCase):
             shutil.copyfile(project_source, root / 'standard.bg')
             main = root / '_main.bg'
             main.write_text(
-                'import standard\n'
+                'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
                 'func walk_forward(\n'
                 '    numbers: int16[2][3][4],\n'

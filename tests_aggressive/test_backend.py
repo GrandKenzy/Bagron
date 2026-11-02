@@ -115,7 +115,7 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_optimized_for_keeps_addressable_iterator_storage(self):
         module = self.compile_source(
-            'extern "kernel32":\n'
+            'extern windows "kernel32":\n'
             '    KeepIterator(value *: uint32) void\n'
             '@unsafe\n'
             'func walk(limit: uint32) uint32:\n'

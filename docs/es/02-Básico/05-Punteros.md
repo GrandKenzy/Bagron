@@ -358,9 +358,24 @@ direcciones tipadas. `void*` se representa como un puntero de bytes opaco y es
 útil para handles y APIs externas:
 
 ```bg
-extern "kernel32":
+extern windows "kernel32":
     GetStdHandle(kind: uint32) *: void
+
+extern windows "user32":
+    MessageBoxA(window *: void, text *: char, caption *: char, flags: uint32) int32
+
+extern c "ucrt":
+    printf(format *: char) int32
 ```
+
+El primer identificador después de `extern` declara el dominio de la librería:
+`windows` solo es válido cuando el target usa `System 'windows'`; `c` declara
+una librería C del target y es válido en targets de sistema, pero ningún dominio
+externo está permitido en `baremetal`. El dominio también se conserva en el
+registro de enlaces (`windows:kernel32`, `windows:user32`, `c:ucrt`).
+
+La forma antigua `extern "library":` ya no es válida después de migrar los
+usos internos; la gramática la reconoce solo para emitir un diagnóstico claro.
 
 Una firma `extern` puede usar punteros a escalares, `void` y agregados
 compatibles con la ABI. No puede usar arrays, `chain`, `Null` como tipo de

@@ -10,7 +10,7 @@ import standard as std
 import time as time
 import formatting as formatting
 
-extern "kernel32":
+extern windows "kernel32":
     CreateFileA(
         lpFileName *: const char,
         dwDesiredAccess: uint32,
