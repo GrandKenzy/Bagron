@@ -194,7 +194,6 @@ func measure_chain_forward(
     total: int64 = 0
     best: int64 = 0
     samples: int64[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-    global chain_sink
 
     for warmup: uint32 ran (0, 5, 1):
         for i: uint32 ran (0, iterations, 1):

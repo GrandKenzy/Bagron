@@ -92,31 +92,25 @@ pequeñas o rutas calientes. No cambia la firma, el tipo de retorno ni las
 reglas de seguridad de la función; las declaraciones externas y los cuerpos
 ASM no se expanden.
 
-## Acceso explícito a datos globales
+## Acceso a datos globales
 
-Las funciones y los métodos tienen visibilidad local para los datos: los
-parámetros y variables locales están disponibles normalmente, pero una
-variable declarada en el módulo debe solicitarse de forma explícita:
+Las funciones y los métodos resuelven automáticamente las variables de módulo
+visibles. Los parámetros y variables locales siguen teniendo prioridad cuando
+comparten un nombre; una declaración `private` de otro módulo continúa siendo
+inaccesible:
 
 ```bg
 contador: int32 = 0
 
 func siguiente() int32:
-    global contador
     contador += 1
     return contador
 ```
 
-`global` solo acepta una variable de módulo que ya exista. La declaración es
-válida para toda la función aunque aparezca dentro de un bloque, y no crea
-instrucciones ni almacenamiento adicional en LLVM. Una función puede seguir
-llamando a otras funciones —incluidas `extern`— sin escribir `global`, porque
-las funciones pertenecen a un espacio de nombres distinto de los datos.
-
-El acceso implícito a una variable global produce un error de compilación. Esto
-evita que una función adquiera estado compartido accidentalmente y hace visible
-en el código cada dependencia mutable del módulo. `main` conserva la misma
-regla; su privilegio especial es únicamente ser el punto de entrada.
+La declaración `global` ya no forma parte de la sintaxis. Los globals públicos
+importados se resuelven con la misma regla, tanto mediante un alias selectivo
+como con un namespace cualificado (`modulo.nombre`). La privacidad sigue
+aplicándose antes de resolver el símbolo y `main` conserva estas mismas reglas.
 
 ## Especificadores de almacenamiento
 

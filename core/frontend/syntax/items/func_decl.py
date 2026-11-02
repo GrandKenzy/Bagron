@@ -2,7 +2,7 @@ from gram import combinators as cmb
 
 from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
-from core.frontend.syntax.items.statements import DEL, FOR, GLOBAL, IF, WHILE
+from core.frontend.syntax.items.statements import DEL, FOR, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.value import (
     PARAMETERS,
@@ -45,7 +45,7 @@ class FUNCTION_STATEMENT(cmb.RuleItem):
         cmb.Ref(STRUCT), cmb.Ref(FLAGS), cmb.Ref(MOLD), cmb.Ref(IF),
         cmb.Ref(WHILE), cmb.Ref(ENUM), cmb.Ref(FOR),
         cmb.Ref(VAR_ASSIGNATION), cmb.Ref(CALL), cmb.Ref(DEL),
-        cmb.Ref(GLOBAL), cmb.Ref(VAR), cmb.Ref(RETURN_ASM), cmb.Ref(RETURN),
+        cmb.Ref(VAR), cmb.Ref(RETURN_ASM), cmb.Ref(RETURN),
         cmb.MatchGroup('skipers'), cmb.MatchKeyword('pass')
     )
 

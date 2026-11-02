@@ -30,8 +30,6 @@ private func _win32_count(value: usize) uint32:
 ; Punto unico de validacion y escritura para las rutas de texto y bytes.
 @unsafe
 private inline func _write_stdout(buffer *: const void, count: usize) void:
-    global stdout_handle
-    global stdout_initialized
     if not stdout_initialized:
         stdout_handle = GetStdHandle(4294967285)
         stdout_initialized = true
@@ -65,7 +63,6 @@ public func printb(
     size: Size_t,
     hexadecimal: bool
 ) void:
-    global HexadecimalUpperString
     if size != 1:
         return
 

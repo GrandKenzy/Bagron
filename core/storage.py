@@ -67,18 +67,6 @@ class Storage(diagnostic.Diagnostics):
         self._function_root = self if function_scope else (
             parent._function_root if parent is not None else None
         )
-        # Names in this shared set are the only module data bindings visible
-        # from a function/method lexical scope. Child block scopes reuse the
-        # same set, so ``global`` is function-wide rather than block-local.
-        self.global_names: set[str] = (
-            set()
-            if function_scope
-            else (
-                parent.global_names
-                if parent is not None
-                else set()
-            )
-        )
         # The compiler changes this value while validating one module.  All
         # lexical child scopes consult the module root so private declarations
         # from another imported module cannot leak through the flattened AST.
@@ -187,16 +175,6 @@ class Storage(diagnostic.Diagnostics):
         if symbol is not None and self._is_visible(symbol, name):
             return symbol
         if self.parent is not None:
-            if self._function_root is self and name not in self.global_names:
-                # Imported read-only module data is a value dependency, not a
-                # writable global binding.  Expose only const aliases here;
-                # mutable globals still require an explicit ``global``
-                # declaration so global state cannot become implicit.
-                imported = self.parent.variable_aliases.get(name)
-                if imported is None or not getattr(
-                    imported, 'value_is_const', False
-                ):
-                    return None
             return self.parent.resolve(name)
         return None
 
@@ -303,7 +281,7 @@ class Storage(diagnostic.Diagnostics):
         return None
 
     def resolve_module_value(self, name: str) -> SemanticObject | None:
-        """Resolve an explicit ``global`` binding with module visibility."""
+        """Resolve a module-level value with module visibility."""
         symbol = self.namespace.get(name)
         if symbol is None:
             symbol = self.variable_aliases.get(name)

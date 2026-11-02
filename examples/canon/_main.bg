@@ -26,9 +26,6 @@ mensaje: chain = "cadena estatica"
 ; Las llamadas mantienen los metadatos de array como parametros expansivos.
 @unsafe
 func main() int32:
-    global NumericString
-    global AlphabetString
-
     std.print(NumericString)
     std.print(AlphabetString)
 

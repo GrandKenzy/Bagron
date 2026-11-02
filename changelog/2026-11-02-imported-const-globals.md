@@ -1,7 +1,7 @@
 # Imports de constantes globales
 
 Los módulos pueden exportar constantes globales y los módulos importadores
-pueden leerlas sin una declaración `global`:
+pueden leerlas directamente:
 
 ```bg
 ; sdl_init.bg
@@ -17,5 +17,6 @@ func main() int32:
 
 También se admite la forma cualificada `sdl_init.SDL_INIT_AUDIO`. El enlace se
 realiza antes de validar inicializadores globales, por lo que una constante
-importada puede inicializar otra constante. Los globals mutables continúan
-ocultos en funciones hasta que se declara `global nombre` explícitamente.
+importada puede inicializar otra constante. La posterior eliminación de la
+declaración `global` extendió la misma visibilidad automática a los globals
+mutables públicos.

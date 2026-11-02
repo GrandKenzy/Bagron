@@ -86,7 +86,6 @@ func consume_buffer(
     output_region: Region_t,
     length: usize
 ) void:
-    global buffer_sink
     index: usize = 0
 
     while index < length:
@@ -125,7 +124,6 @@ func measure_control(iterations: uint32, minimum *: int64) int64:
     elapsed: int64 = 0
     best: int64 = 0
 
-    global control_sink
     for warmup: uint32 ran (0, 5, 1):
         start = time.time_ticks()
         for index: uint32 ran (0, iterations, 1):

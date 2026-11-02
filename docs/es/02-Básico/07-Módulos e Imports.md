@@ -23,9 +23,9 @@ Las tres formas significan:
 - `import { doble as twice } from math`: importa solo `doble` con el nombre
   local `twice`.
 
-Las variables globales públicas también forman parte de las exportaciones,
-pero solo las declaradas `const` se pueden leer implícitamente desde una
-función importadora. Se pueden usar con cualquiera de las dos formas:
+Las variables globales públicas también forman parte de las exportaciones y se
+resuelven automáticamente desde una función importadora. Se pueden usar con
+cualquiera de las dos formas:
 
 ```bg
 ; sdl_init.bg
@@ -40,10 +40,9 @@ func main() int32:
 ```
 
 Con un import de módulo se conserva el namespace (`sdl_init.SDL_INIT_AUDIO`).
-Los globals mutables nunca se vuelven implícitos: requieren `global nombre`,
-igual que los globals definidos en el módulo de entrada. Así una constante de
-configuración puede viajar entre módulos sin convertir el estado compartido en
-una dependencia invisible y escribible.
+La declaración `global` ya no existe; los globals públicos mutables también
+se pueden leer y escribir directamente. Los globals privados siguen siendo
+inaccesibles desde otro módulo.
 
 El alias de una función conserva exactamente su firma original. Esto incluye
 los parámetros expansivos `Len_t` y `Size_t`, que el compilador sigue
@@ -175,8 +174,8 @@ public func answer() int32:
     return secret()
 ```
 
-Otro módulo puede importar `answer`, pero no puede llamar `secret`, declarar
-`global secret` ni construir un tipo `private` del módulo. La misma regla se
+Otro módulo puede importar `answer`, pero no puede llamar `secret` ni construir
+un tipo `private` del módulo. La misma regla se
 aplica a funciones, variables, `struct`, `mold`, `flags`, `enum`, `class` y
 métodos.
 
@@ -197,7 +196,7 @@ El compilador debe rechazar todos estos casos:
 - alias repetido dentro del mismo import;
 - alias que ya apunta a otro símbolo;
 - llamada a una función privada desde otro módulo;
-- acceso `global` a una variable privada;
+- acceso a una variable privada desde otro módulo;
 - uso o construcción de un tipo privado desde otro módulo.
 
 La resolución de imports ocurre antes de la validación semántica de cuerpos:

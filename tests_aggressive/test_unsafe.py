@@ -34,7 +34,6 @@ class UnsafeBoundaryTests(unittest.TestCase):
                 'func identity(pointer *: int32) int32*:\n'
                 '    return pointer\n'
                 'func main() int32:\n'
-                '    global value\n'
                 '    return 0\n',
                 executable=False,
             )

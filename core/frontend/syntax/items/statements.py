@@ -76,13 +76,6 @@ class DEL(cmb.RuleItem):
     )
 
 
-class GLOBAL(cmb.RuleItem):
-    nodeable = True
-    entrypoint = cmb.Seq(
-        cmb.MatchKeyword('global'),
-        cmb.MatchToken('IDENT'),
-    )
-    
 # for i: uint32 ran (inicio, limite, paso):
 # for i: int32 in values:
 class FOR_SIGNATURE(cmb.RuleItem):
@@ -122,7 +115,7 @@ class BLOCK_STATEMENT(cmb.RuleItem):
         cmb.Ref(ENUM), cmb.Ref(FLAGS), cmb.Ref(STRUCT), cmb.Ref(MOLD),
         cmb.Ref(WHILE), cmb.Ref(FOR), cmb.Ref(IF),
         cmb.Ref(VAR_ASSIGNATION), cmb.Ref(CALL), cmb.Ref(DEL),
-        cmb.Ref(GLOBAL), cmb.Ref(VAR), cmb.Ref(RETURN),
+        cmb.Ref(VAR), cmb.Ref(RETURN),
         cmb.MatchGroup('skipers'), cmb.MatchKeyword('pass')
     )
 
@@ -183,5 +176,4 @@ __all__ = [
     'IF',
     'WHILE',
     'DEL',
-    'GLOBAL',
 ]

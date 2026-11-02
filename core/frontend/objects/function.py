@@ -90,10 +90,6 @@ class FunctionSymbol:
     # Flow-sensitive proofs used by safe array indexing.  Facts are scoped to
     # the conditional or loop that established them and never reach LLVM.
     range_facts: list[object] = field(default_factory=list)
-    # Module data is hidden from function/method scopes by default. A source
-    # ``global name`` declaration records the explicit opt-in and is shared
-    # with the function's Storage visibility gate.
-    global_variables: set[str] = field(default_factory=set)
     # Methods are emitted under a reserved name while retaining their source
     # name for ``object.method(...)`` resolution.
     owner_type: str | None = None

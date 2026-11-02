@@ -131,7 +131,7 @@ def _qualified_import_name(
     return name
 
 
-def _imported_const_value(
+def _imported_global_value(
     symbol: Variable,
     name: str,
 ) -> ValueInfo:
@@ -386,10 +386,8 @@ def _infer_postfix(
     qualified_name = _qualified_import_name(primary, suffixes)
     if qualified_name is not None:
         imported = _resolve_symbol(namespace, qualified_name)
-        if isinstance(imported, Variable) and getattr(
-            imported, 'value_is_const', False
-        ):
-            return _imported_const_value(imported, qualified_name)
+        if isinstance(imported, Variable):
+            return _imported_global_value(imported, qualified_name)
 
     result = infer_value(
         primary,

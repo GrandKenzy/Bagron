@@ -44,9 +44,10 @@ práctica y los ejemplos ampliados se desarrollarán en `docs/`.
 
 * **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
 
-* **Datos globales explícitos:** Las funciones y métodos son locales para los
-  datos por defecto; `global nombre` habilita de forma estática una variable de
-  módulo concreta. Las llamadas a funciones no requieren esa declaración.
+* **Datos globales visibles:** Las funciones y métodos resuelven automáticamente
+  los globals públicos de su módulo y de módulos importados; `private` sigue
+  bloqueando el acceso entre módulos. La declaración `global` no forma parte
+  de la sintaxis.
 
 * **Terminación explícita:** `Never` es un tipo de retorno para funciones que
   no regresan; una llamada a una función `Never` termina el flujo actual y no

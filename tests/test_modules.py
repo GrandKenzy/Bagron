@@ -177,7 +177,6 @@ class ModuleTests(unittest.TestCase):
                 'import { SDL_INIT_AUDIO as AUDIO } from sdl_init\n'
                 'public COPY: const uint32 = AUDIO\n'
                 'func main() int32:\n'
-                '    global COPY\n'
                 '    if COPY == 16:\n'
                 '        return 0\n'
                 '    return 1\n',
@@ -221,7 +220,7 @@ class ModuleTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
 
-    def test_imported_public_mutable_global_still_requires_global(self):
+    def test_imported_public_mutable_global_is_visible_without_global(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'state.bg').write_text(
@@ -232,12 +231,63 @@ class ModuleTests(unittest.TestCase):
             main.write_text(
                 'import { value } from state\n'
                 'func main() int32:\n'
+                '    if value == 7:\n'
+                '        return 0\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
+
+    def test_global_statement_is_no_longer_valid_syntax(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'value: int32 = 7\n'
+                'func main() int32:\n'
+                '    global value\n'
                 '    return value\n',
                 encoding='utf-8',
             )
 
-            with self.assertRaisesRegex(CompilationError, 'no existe'):
+            with self.assertRaises(CompilationError):
                 Compiler().compile(main, executable=False)
+
+    def test_qualified_imported_mutable_global_can_be_updated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'state.bg').write_text(
+                'public value: int32 = 7\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import state\n'
+                'func main() int32:\n'
+                '    state.value = 8\n'
+                '    if state.value == 8:\n'
+                '        return 0\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            artifacts = Compiler().compile(main, executable=True)
+            result = subprocess.run(
+                [str(artifacts.executable)],
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(0, result.returncode)
 
     def test_selective_import_calls_multiple_specific_symbols(self):
         """A selective import binds each requested alias to its source symbol."""
@@ -329,7 +379,7 @@ class ModuleTests(unittest.TestCase):
             with self.assertRaisesRegex(CompilationError, 'funcion no existe'):
                 Compiler().compile(main, executable=False)
 
-    def test_private_global_is_not_accepted_by_global_declaration(self):
+    def test_private_global_is_not_visible_inside_importing_function(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'hidden.bg').write_text(
@@ -340,12 +390,11 @@ class ModuleTests(unittest.TestCase):
             main.write_text(
                 'import hidden\n'
                 'func main() int32:\n'
-                '    global secret\n'
                 '    return secret\n',
                 encoding='utf-8',
             )
 
-            with self.assertRaisesRegex(CompilationError, 'solo puede referirse'):
+            with self.assertRaisesRegex(CompilationError, 'variable global no existe'):
                 Compiler().compile(main, executable=False)
 
     def test_private_class_is_not_constructible_from_importer(self):
