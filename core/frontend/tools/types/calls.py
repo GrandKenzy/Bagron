@@ -30,6 +30,25 @@ def _record_function_call(
     called.append(target)
 
 
+def _validate_private_method_access(
+    method: object,
+    current_function: object | None,
+) -> None:
+    """Keep underscore-prefixed methods inside their declaring class."""
+    source_name = getattr(method, 'source_name', None)
+    declaring_type = getattr(method, 'owner_type', None)
+    active_type = getattr(current_function, 'owner_type', None)
+    if (
+        source_name
+        and source_name.startswith('_')
+        and active_type != declaring_type
+    ):
+        raise ValueResolutionError(
+            f'El metodo privado {declaring_type}.{source_name} solo es '
+            'accesible desde dentro de su clase'
+        )
+
+
 def _resolve_method_call(
     namespace: Mapping[str, object] | Callable[[str], object | None],
     primary: object,
@@ -64,6 +83,8 @@ def _resolve_method_call(
         if type_name is None:
             return None
         method = resolver(type_name, member_name)
+        if method is not None:
+            _validate_private_method_access(method, current_function)
         if (
             method is not None
             and class_reference
@@ -87,6 +108,8 @@ def _resolve_method_call(
     method_name = _identifier_from_node(primary)
     if owner_type and method_name:
         method = resolver(owner_type, method_name)
+        if method is not None:
+            _validate_private_method_access(method, current_function)
         if (
             method is not None
             and getattr(current_function, 'is_static', False)

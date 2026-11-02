@@ -75,6 +75,17 @@ def _member_value(
         raise ValueResolutionError(
             f'El miembro {member or "<anonimo>"} no existe en {aggregate.name}'
         )
+    declaring_type = getattr(field, 'declaring_type', None)
+    active_type = getattr(current_function, 'owner_type', None)
+    if (
+        declaring_type is not None
+        and field.name.startswith('_')
+        and active_type != declaring_type
+    ):
+        raise ValueResolutionError(
+            f'El atributo privado {declaring_type}.{field.name} solo es '
+            'accesible desde dentro de su clase'
+        )
     return ValueInfo(
         type_spec=field.type_spec,
         is_lvalue=True,

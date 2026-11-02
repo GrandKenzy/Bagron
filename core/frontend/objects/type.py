@@ -61,6 +61,9 @@ class FieldSpec:
     # Their offset is fixed by declaration order once the aggregate has been
     # validated.  It remains ``None`` for struct/mold fields.
     bit_offset: int | None = None
+    # Class-only declaration owner, used to keep private fields out of
+    # subclasses and unrelated classes.
+    declaring_type: str | None = None
 
 
 @dataclass
