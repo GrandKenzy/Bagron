@@ -124,6 +124,46 @@ class BufferTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_owned_buffer_becomes_dead_after_del(self):
+        with self.assertRaisesRegex(CompilationError, 'estado ya es dead'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: buffer[4] = 0\n'
+                '    Del data\n'
+                '    Del data\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'esta dead'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: buffer[4] = 0\n'
+                '    Del data\n'
+                '    value: byte = data[0]\n'
+                '    return value\n'
+            )
+
+    def test_dead_state_is_conservative_across_branches(self):
+        with self.assertRaisesRegex(CompilationError, 'esta dead'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: buffer[4] = 0\n'
+                '    if true:\n'
+                '        Del data\n'
+                '    data[0] = 1\n'
+                '    return 0\n'
+            )
+
+    def test_rejects_del_inside_loops(self):
+        with self.assertRaisesRegex(CompilationError, 'dentro de un bucle'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: buffer[4] = 0\n'
+                '    while true:\n'
+                '        Del data\n'
+                '    return 0\n'
+            )
+
     def test_unique_buffer_requires_region_but_keeps_descriptor_abi(self):
         module_path = self._compile(
             'func consume(data: unique buffer[], length: Len_t, '

@@ -24,3 +24,6 @@ class Variable:
         self.is_for_iterator = False
         self.is_receiver = False
         self.uses_frontend_initializer = False
+        # Compile-time-only ownership state for dynamic buffers.  It is never
+        # emitted into the LLVM descriptor or function ABI.
+        self.buffer_state = None

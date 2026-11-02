@@ -9,6 +9,7 @@ from core.frontend.objects import (
     FunctionSymbol,
     ParameterSpec,
     TypeSpec,
+    ValueInfo,
 )
 from core.frontend.tools.types import (
     FOR_ITERATOR_TYPES,
@@ -33,6 +34,16 @@ from core.frontend.tools.types import (
 )
 from core.frontend.tools.variable import build_symbol, collect_local
 from core.frontend.handles.variables import handle_variable
+from core.frontend.ownership import (
+    BORROWED,
+    DEAD,
+    OWNED,
+    analyze_if,
+    analyze_loop,
+    is_buffer_symbol,
+    set_state as set_buffer_state,
+    state_for as buffer_state_for,
+)
 from gram import ast as gast
 
 from core.storage import Storage
@@ -1160,11 +1171,58 @@ def _deletion_value(node: object) -> object | None:
     )
 
 
+def _validate_buffer_deletion(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    value_info: ValueInfo,
+    scope: Storage,
+    loop_depth: int,
+) -> None:
+    """Apply the ``owned -> dead`` transition for one buffer binding.
+
+    The caller has already resolved the expression as a buffer.  Keeping this
+    policy separate makes ``_validate_deletion`` readable: class destruction
+    and buffer ownership follow different rules.
+    """
+    owner = (
+        scope.resolve(value_info.identifier)
+        if value_info.identifier is not None
+        else None
+    )
+    owner_state = buffer_state_for(symbol, owner)
+    display_name = value_info.identifier or '<anonimo>'
+    if owner_state == BORROWED:
+        compiler.error(
+            f'Del en {symbol.name} no puede liberar un buffer '
+            f'{display_name}: su estado es borrowed'
+        )
+        return
+    if not value_info.is_lvalue:
+        compiler.error(
+            f'Del en {symbol.name} requiere una variable propietaria de buffer'
+        )
+        return
+    if owner_state != OWNED:
+        compiler.error(
+            f'Del en {symbol.name} requiere un buffer owned; '
+            f'{display_name} esta en estado {owner_state or "desconocido"}'
+        )
+        return
+    if loop_depth > 0:
+        compiler.error(
+            f'Del en {symbol.name} no puede liberar el buffer {display_name} '
+            'dentro de un bucle: una segunda iteracion lo dejaria en estado dead'
+        )
+        return
+    set_buffer_state(symbol, owner, DEAD)
+
+
 def _validate_deletion(
     compiler: Compiler,
     symbol: FunctionSymbol,
     node: object,
     scope: Storage | None = None,
+    loop_depth: int = 0,
 ) -> None:
     scope = scope or symbol.scope
     if scope is None:
@@ -1173,6 +1231,23 @@ def _validate_deletion(
     value_node = _deletion_value(node)
     if value_node is None:
         compiler.error(f'Del en {symbol.name} no contiene una instancia')
+        return
+
+    # Check the root binding before normal value inference so a second Del
+    # receives a precise diagnostic instead of the generic use-after-Del one.
+    deletion_name = _identifier(value_node)
+    deletion_symbol = (
+        scope.resolve(deletion_name)
+        if deletion_name is not None
+        else None
+    )
+    if is_buffer_symbol(deletion_symbol) and (
+        buffer_state_for(symbol, deletion_symbol) == DEAD
+    ):
+        compiler.error(
+            f'Del en {symbol.name} no puede liberar el buffer {deletion_name}: '
+            'su estado ya es dead'
+        )
         return
     try:
         value_info = infer_value(
@@ -1186,21 +1261,9 @@ def _validate_deletion(
         return
 
     if is_buffer_type(value_info.type_spec):
-        owner = (
-            scope.resolve(value_info.identifier)
-            if value_info.identifier is not None
-            else None
+        _validate_buffer_deletion(
+            compiler, symbol, value_info, scope, loop_depth
         )
-        if owner is not None and getattr(owner, 'scope_kind', None) == 'parameter':
-            compiler.error(
-                f'Del en {symbol.name} no puede liberar un buffer recibido como '
-                'parametro; la propiedad entre funciones aun no esta definida'
-            )
-            return
-        if not value_info.is_lvalue:
-            compiler.error(
-                f'Del en {symbol.name} requiere una variable propietaria de buffer'
-            )
         return
 
     aggregate = compiler.storage.resolve_type(value_info.type_spec.name)
@@ -1770,6 +1833,54 @@ def _new_block_scope(parent: Storage, symbol: FunctionSymbol) -> Storage:
     )
 
 
+def _process_if_node(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+    returns: list[int],
+    scope: Storage,
+    loop_depth: int,
+) -> None:
+    def visit(child: object) -> None:
+        _process_body_node(
+            compiler, symbol, child, returns, scope, loop_depth
+        )
+
+    if analyze_if(symbol, node, symbol.local_variables, visit):
+        symbol.body_supported_for_entrypoint = False
+
+
+def _process_loop_node(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    node: gast.ASTRef,
+    returns: list[int],
+    scope: Storage,
+    loop_depth: int,
+) -> None:
+    loop_name = None
+    if node.name == 'FOR':
+        loop_name = _for_binding(compiler, symbol, node, scope)
+
+    def visit(child: object) -> None:
+        _process_body_node(
+            compiler,
+            symbol,
+            child,
+            returns,
+            scope,
+            loop_depth + 1,
+        )
+
+    analyze_loop(symbol, _children(node), symbol.local_variables, visit)
+    symbol.body_supported_for_entrypoint = False
+
+    if node.name == 'FOR' and loop_name is not None:
+        iterator = scope.namespace.get(loop_name)
+        if getattr(iterator, 'is_for_iterator', False):
+            del scope.namespace[loop_name]
+
+
 def _process_body_node(
     compiler: Compiler,
     symbol: FunctionSymbol,
@@ -1848,8 +1959,18 @@ def _process_body_node(
         _validate_assignment(compiler, symbol, node, scope)
         return
     if node.name == 'DEL':
-        _validate_deletion(compiler, symbol, node, scope)
+        _validate_deletion(compiler, symbol, node, scope, loop_depth)
         symbol.body_supported_for_entrypoint = False
+        return
+    if node.name == 'IF':
+        _process_if_node(
+            compiler, symbol, node, returns, scope, loop_depth
+        )
+        return
+    if node.name in {'FOR', 'WHILE'}:
+        _process_loop_node(
+            compiler, symbol, node, returns, scope, loop_depth
+        )
         return
     if node.name == 'RETURN':
         _validate_return(compiler, symbol, node, scope)
@@ -1859,10 +1980,6 @@ def _process_body_node(
         _validate_return_asm(compiler, symbol, node)
         returns[0] += 1
         return
-    loop_name = None
-    if node.name == 'FOR':
-        loop_name = _for_binding(compiler, symbol, node, scope)
-
     if node.name == 'CALL':
         try:
             call_info = infer_call(
@@ -1886,7 +2003,6 @@ def _process_body_node(
     if node.name in {'CALL', 'IF', 'WHILE'}:
         symbol.body_supported_for_entrypoint = False
 
-    child_loop_depth = loop_depth + (node.name in {'FOR', 'WHILE'})
     for child in _children(node):
         _process_body_node(
             compiler,
@@ -1894,15 +2010,8 @@ def _process_body_node(
             child,
             returns,
             scope,
-            child_loop_depth,
+            loop_depth,
         )
-
-    if node.name == 'FOR' and loop_name is not None:
-        iterator = scope.namespace.get(loop_name)
-        if getattr(iterator, 'is_for_iterator', False):
-            # The iterator is visible only while this FOR body is being
-            # checked. Backend emission keeps its own hidden storage.
-            del scope.namespace[loop_name]
 
 
 def process(compiler: Compiler, node: gast.ASTRef) -> None:
@@ -1919,6 +2028,7 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
         return
 
     symbol.body_node = body
+    symbol.buffer_states.clear()
 
     _register_global_declarations(compiler, symbol, body)
 

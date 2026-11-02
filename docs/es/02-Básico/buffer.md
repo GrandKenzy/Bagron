@@ -104,6 +104,30 @@ Del datos
 Después de liberar, el descriptor de `datos` queda en cero. `Del` no es un
 método y no añade atributos implícitos al tipo.
 
+El compilador mantiene un estado estático para cada buffer durante el análisis:
+
+- `owned`: la variable posee el bloque y puede ejecutar `Del` una vez;
+- `borrowed`: la variable es un parámetro prestado, puede leerse y modificarse,
+  pero no puede liberarse;
+- `dead`: el bloque ya fue liberado y cualquier lectura, escritura, llamada o
+  segundo `Del` se diagnostica como error.
+
+Estos estados no forman parte del descriptor, no agregan comprobaciones al
+programa generado y no cambian la ABI: son una comprobación de tiempo de
+compilación de coste cero en ejecución.
+
+Las transiciones permitidas son deliberadamente pequeñas:
+
+| Estado | Puede leer/escribir | Puede ejecutar `Del` | Transición |
+| --- | --- | --- | --- |
+| `owned` | Sí | Sí | `Del` → `dead` |
+| `borrowed` | Sí | No | permanece `borrowed` dentro de la función |
+| `dead` | No | No | estado terminal |
+
+Pasar un buffer a una función no cambia el estado del llamador: la función
+recibe un préstamo y el llamador conserva `owned`. La forma `unique` agrega una
+garantía estática de exclusividad, pero tampoco transfiere ownership.
+
 ## Parámetros de función
 
 Un `buffer` puede recibirse como préstamo y debe declarar `Len_t`:
@@ -134,6 +158,16 @@ no puede recibir dos argumentos que representen la misma región `unique`.
 Los buffers mantienen su descriptor por valor; por eso esta comprobación no
 cambia todavía la ABI ni añade `noalias` al descriptor.
 
+El análisis de control de flujo toma el estado más restrictivo entre las rutas.
+Por ejemplo, este uso posterior se rechaza porque una de las rutas ya liberó
+el buffer:
+
+```bg
+if condition:
+    Del datos
+datos[0] = 1 ; error: `datos` puede estar `dead`
+```
+
 No se permite copiar ni retornar buffers. Una función puede recibir un buffer
 como préstamo, modificarlo y devolver únicamente datos intrínsecos u objetos
 por valor; el buffer siempre permanece bajo responsabilidad del llamador.
@@ -144,4 +178,8 @@ Este documento fija la representación, creación, indexación, inicialización,
 concatenación, liberación y expansión `Len_t` de `buffer`. La transferencia de
 propiedad y el retorno desde funciones quedan fuera del modelo del lenguaje.
 La liberación automática al salir de un ámbito continúa pendiente; por ahora la
-liberación es explícita mediante `Del`.
+liberación es explícita mediante `Del`. En esta fase el análisis de flujo es
+conservador: si alguna rama o iteración puede dejar un buffer en `dead`, no se
+permite usarlo después de ese punto. Por la misma razón, `Del` dentro de un
+bucle se rechaza: una segunda iteración no podría volver a liberar el mismo
+binding `owned`.

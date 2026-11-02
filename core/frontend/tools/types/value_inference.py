@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
+from core.frontend.ownership import DEAD, state_for
 from gram import ast as gast
 
 from .common import (
@@ -451,6 +452,10 @@ def infer_value(
         symbol = _resolve_symbol(namespace, str(value))
         if not isinstance(symbol, Variable) or symbol.type_spec is None:
             raise ValueResolutionError(f'La variable global no existe: {value}')
+        if state_for(current_function, symbol) == DEAD:
+            raise ValueResolutionError(
+                f'El buffer {value} esta dead; no puede usarse despues de Del'
+            )
         initialized = getattr(symbol, 'value_info', None)
         constant_literal = bool(
             getattr(symbol, 'value_is_const', False)
