@@ -83,6 +83,17 @@ El mismo tipo siempre es válido, pero no constituye una conversión. Dos tipos
 con el mismo ancho tampoco se convierten automáticamente si tienen nombres
 distintos: `byte` y `uint8` siguen siendo tipos distintos.
 
+`chain` y `char[]` son una excepción controlada a la regla de familias. Un
+`chain` constante con longitud conocida puede convertirse al inicializar un
+`char[]` o al adaptarse como argumento de una función que recibe `char[]`;
+Bagron crea una copia mutable y conserva el terminador `NUL`. En una llamada,
+`Len_t` incluye ese terminador y `Size_t` vale `1`.
+
+La dirección no es reversible: `char[] -> chain` siempre es un error. `chain`
+solo puede recibir otro `chain`, porque su almacenamiento debe permanecer
+constante en rodata. Un contenido mutable o de longitud desconocida no puede
+introducirse en `chain`.
+
 ### Enteros con signo
 
 Los enteros con signo se pueden ensanchar en esta dirección:

@@ -111,10 +111,11 @@ int32[2][3]    -> [2 x [3 x i32]]*
 int32[2][3][4] -> [2 x [3 x [4 x i32]]]*
 ```
 
-Una escritura dentro de la función modifica la variable original. No se crean
-copias silenciosas. Por esa razón, el argumento debe ser una variable de array
-con almacenamiento propio; los literales y temporales no pueden pasarse a un
-parámetro de array.
+Una escritura dentro de la función modifica la variable original. En general
+no se crean copias silenciosas: el argumento debe ser una variable de array con
+almacenamiento propio. La única excepción es la adaptación explícita de un
+`chain` constante a un parámetro `char[]`, que crea una copia temporal mutable
+solo durante la llamada.
 
 La forma también se valida en cada llamada y los metadatos ocultos permanecen
 asociados a su array aunque los arrays cambien de posición en firmas
@@ -290,6 +291,34 @@ puede pasar a un puntero `const char`; nunca a un `char*` mutable.
 
 No se puede escribir `const chain`: `chain` ya es inmutable y declarar la
 constancia otra vez es redundante e inválido.
+
+### Conversión entre `chain` y `char[]`
+
+La conversión permitida es unidireccional. Un `chain` constante con longitud
+conocida puede inicializar explícitamente un `char[]`; el compilador reserva un
+array nuevo, copia sus caracteres y añade el `NUL` final:
+
+```bg
+text: chain = "Hola"
+buffer: char[] = text       ; infiere char[5], mutable e independiente
+buffer[0] = "X"             ; válido; `text` sigue en rodata sin cambios
+```
+
+También puede usarse directamente como argumento de una función que reciba
+`char[]`, `Len_t` y `Size_t`:
+
+```bg
+func write(data: char[], length: Len_t, size: Size_t) void:
+    return
+
+write("Hola")               ; copia temporal, Len_t = 5, Size_t = 1
+```
+
+La copia automática solo vive durante la llamada. No puede convertirse en un
+puntero que escape de ella. La conversión inversa está prohibida: un `char[]`,
+aunque sea `const` o contenga un literal, no puede inicializar un `chain`.
+`chain` solo recibe otro valor `chain` y conserva su representación constante
+en rodata.
 
 En parámetros, `const` es estrictamente covariante:
 
