@@ -10,6 +10,23 @@ from core.frontend.tools.imports import resolve_module_path
 
 
 class ModuleTests(unittest.TestCase):
+    def test_main_link_directories_are_recorded_without_global_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'bins').mkdir()
+            main = root / '_main.bg'
+            main.write_text(
+                '#link "./bins"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            compiler.compile(main, executable=False)
+
+        self.assertEqual([root / 'bins'], compiler.storage.native_link_dirs)
+
     def test_entry_module_selects_the_optimization_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

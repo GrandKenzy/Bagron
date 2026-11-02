@@ -374,6 +374,36 @@ una librería C del target y es válido en targets de sistema, pero ningún domi
 externo está permitido en `baremetal`. El dominio también se conserva en el
 registro de enlaces (`windows:kernel32`, `windows:user32`, `c:ucrt`).
 
+### Directorios de librerías del proyecto
+
+El módulo de entrada puede declarar directorios locales para librerías
+compiladas mediante `#link`:
+
+```bg
+#link "./bins"
+#link "vendor/SDL3/../SDL3/bins"
+
+extern windows "SDL3":
+    SDL_Init(flags: uint32) int32
+```
+
+La ruta se resuelve respecto al archivo que contiene la directiva, se
+normaliza y debe ser un directorio existente dentro del proyecto. Se pueden
+declarar varias rutas; se conservan en el orden escrito y se pasan al linker
+como `-L`. Solo `main.bg` puede añadir estas rutas: un módulo importado no
+puede cambiar silenciosamente el entorno de enlace del proyecto.
+
+Para un target Windows se buscan variantes como `SDL3.lib` o una biblioteca
+de importación compatible; para Linux, `libSDL3.so` o `libSDL3.a`. Si se usa
+una biblioteca dinámica local, Bagron copia su runtime (`.dll` o `.so`) junto
+al ejecutable en `build/`. Las librerías del sistema, como `kernel32` o
+`ucrt`, siguen resolviéndose mediante `extern` y no necesitan `#link`.
+
+Las rutas absolutas, los archivos, los directorios inexistentes, las
+bibliotecas ausentes y las variantes incompatibles con el target producen un
+diagnóstico antes de ejecutar el linker. No se modifican variables globales ni
+se buscan dependencias fuera de las rutas declaradas.
+
 La forma antigua `extern "library":` ya no es válida después de migrar los
 usos internos; la gramática la reconoce solo para emitir un diagnóstico claro.
 

@@ -92,8 +92,9 @@ práctica y los ejemplos ampliados se desarrollarán en `docs/`.
     escrituras directas, compuestas y alias de puntero conocidos. La
     congelación es superficial y se propaga por la herencia.
 
-* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `extern
-  "library":` declara firmas ABI que LLVM enlaza directamente.
+* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `extern`
+  declara firmas ABI y `#link "./directorio"` añade rutas locales, relativas y
+  acotadas al proyecto para librerías compiladas sin alterar el entorno global.
 
 * **Control de Flujo Expresivo:**
   * Condicionales: `if`, `elif`, `else`, `not`.

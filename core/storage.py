@@ -109,6 +109,8 @@ class Storage(diagnostic.Diagnostics):
         self.function_scopes: dict[str, Storage] = {}
         self.types: dict[str, EnumSymbol | AggregateSymbol | OpaqueSymbol] = {}
         self.native_links: list[str] = []
+        # Search paths declared explicitly by #link in the entry module.
+        self.native_link_dirs: list[Path] = []
         self.loaded_modules: list[str] = []
         self.function_aliases: dict[str, str] = {}
         self.variable_aliases: dict[str, Variable] = {}

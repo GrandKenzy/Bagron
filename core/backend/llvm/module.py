@@ -14,6 +14,12 @@ from llvmlite import ir
 from core.backend.llvm.context import LLVMContextHandle
 from core.backend.llvm.functions import FunctionEmitter
 from core.backend.llvm.globals import GlobalEmitter
+from core.backend.llvm.links import (
+    NativeLinkError,
+    NativeLinkPlan,
+    copy_runtime_files,
+    resolve_native_links,
+)
 from core.backend.llvm.rodata import StringPool
 from core.backend.llvm.targets import (
     TargetResolutionError,
@@ -229,12 +235,21 @@ class LLVMBackend:
                 boot_image = self._build_baremetal_iso(raw_image, build_dir)
                 executable_path = boot_image
         else:
-            self._link_object(
-                objects,
-                executable_path,
-                context.target.triple,
-                storage.native_links,
-            )
+            try:
+                link_plan = resolve_native_links(
+                    storage.native_links,
+                    getattr(storage, 'native_link_dirs', ()),
+                    context.target.triple,
+                )
+                self._link_object(
+                    objects,
+                    executable_path,
+                    context.target.triple,
+                    link_plan=link_plan,
+                )
+                copy_runtime_files(link_plan.runtime_files, build_dir)
+            except NativeLinkError as error:
+                raise BackendError(str(error)) from error
         return BuildArtifacts(
             ir=ir_path,
             object_file=object_path,
@@ -604,6 +619,8 @@ SECTIONS
         executable_path: Path,
         triple: str,
         native_links: list[str] | tuple[str, ...] = (),
+        link_directories: Sequence[Path] = (),
+        link_plan: NativeLinkPlan | None = None,
     ) -> None:
         clang = shutil.which('clang')
         if clang is None:
@@ -613,15 +630,29 @@ SECTIONS
             )
 
         objects = [object_path] if isinstance(object_path, Path) else list(object_path)
+        if link_plan is None:
+            try:
+                link_plan = resolve_native_links(
+                    native_links,
+                    link_directories,
+                    triple,
+                )
+            except NativeLinkError as error:
+                raise BackendError(str(error)) from error
+        target_family = triple.lower()
+        runtime_args = (
+            ('-Wl,-rpath,$ORIGIN',)
+            if link_plan.has_runtime_files and 'linux' in target_family
+            else ()
+        )
         command = [
             clang,
             f'--target={triple}',
             '-fuse-ld=lld',
             *(str(path) for path in objects),
-            *(
-                f'-l{library.split(":", 1)[1] if ":" in library else library}'
-                for library in native_links
-            ),
+            *link_plan.search_args,
+            *link_plan.library_args,
+            *runtime_args,
             '-o',
             str(executable_path),
         ]

@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from core import frontend
+from core.compiler.links import extract_link_directives
 from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
@@ -61,6 +62,19 @@ class CompilerState(Diagnostics):
             architecture=getattr(self, 'preprocessor_architecture', 'auto'),
         )
         for error in conditional_errors:
+            self.error(error)
+
+        content, link_directories, link_errors = extract_link_directives(
+            content,
+            Path(path),
+            project_root=getattr(self, 'project_root', Path(path).parent),
+            allow=Path(path).resolve() == getattr(self, 'main_module_path', None),
+        )
+        if hasattr(self, 'storage'):
+            for directory in link_directories:
+                if directory not in self.storage.native_link_dirs:
+                    self.storage.native_link_dirs.append(directory)
+        for error in link_errors:
             self.error(error)
 
         content, prep_blocks, prep_errors = extract_prep_blocks(content, Path(path))

@@ -413,6 +413,8 @@ class Compiler(CompilerState):
         self.storage.prep_sources.clear()
         self.storage.prep_objects.clear()
         self.storage.prep_metadata.clear()
+        self.storage.native_links.clear()
+        self.storage.native_link_dirs.clear()
         self.storage.root = str(path)
 
         AST = self._load_module_tree(path)
