@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from gram import ast as gast
 
 from core.frontend.objects import FunctionSignature, FunctionSymbol, TypeSpec
+from core.frontend.tools.opaque import resolve_opaque
 from core.frontend.tools.function import _parameter_items, _parameter_spec
 from core.frontend.tools.types import (
     INTEGER_TYPES,
@@ -169,6 +170,16 @@ def _validate_abi_type(
             f'{context} usa un tipo no disponible en la ABI: '
             f'{type_spec.canonical_name}'
         )
+    opaque = resolve_opaque(compiler.storage, type_spec.name)
+    if opaque is not None:
+        if type_spec.pointer_level or type_spec.array_depth:
+            raise TypeResolutionError(
+                f'{context} no puede envolver un descriptor opaque con '
+                'punteros ni arrays'
+            )
+        # The nominal name stays in the source signature; only this known
+        # representation crosses the native boundary.
+        return
     if type_spec.name == 'void' and not type_spec.pointer_level and not is_return:
         raise TypeResolutionError(f'{context} no puede usar void por valor')
     scalar_names = INTEGER_TYPES | {'bool', 'char', 'middle', 'float', 'double'}

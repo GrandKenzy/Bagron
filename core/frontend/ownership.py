@@ -1,4 +1,4 @@
-"""Compile-time ownership states for dynamic buffers.
+"""Compile-time ownership states for buffers and opaque descriptors.
 
 The state is semantic metadata only.  It is never lowered to LLVM, stored in
 the buffer descriptor, or represented in the generated ABI.
@@ -12,7 +12,9 @@ from collections.abc import Callable, Mapping
 OWNED = 'owned'
 BORROWED = 'borrowed'
 DEAD = 'dead'
+CLOSED = 'closed'
 BUFFER_STATES = frozenset({OWNED, BORROWED, DEAD})
+RESOURCE_STATES = frozenset({OWNED, BORROWED, DEAD, CLOSED})
 
 
 def _children(node: object) -> list[object]:
@@ -38,12 +40,29 @@ def is_buffer_symbol(symbol: object | None) -> bool:
     )
 
 
+def is_opaque_symbol(symbol: object | None) -> bool:
+    """Return whether a variable carries a nominal opaque descriptor."""
+    return bool(
+        symbol is not None
+        and getattr(symbol, 'opaque_state', None) in RESOURCE_STATES
+    )
+
+
+def is_resource_symbol(symbol: object | None) -> bool:
+    return is_buffer_symbol(symbol) or is_opaque_symbol(symbol)
+
+
 def initial_state(symbol: object | None) -> str | None:
     """Get the state before flow analysis: locals own, parameters borrow."""
-    if not is_buffer_symbol(symbol):
+    if not is_resource_symbol(symbol):
         return None
-    state = getattr(symbol, 'buffer_state', None)
-    if state in BUFFER_STATES:
+    state = (
+        getattr(symbol, 'buffer_state', None)
+        if is_buffer_symbol(symbol)
+        else getattr(symbol, 'opaque_state', None)
+    )
+    allowed = BUFFER_STATES if is_buffer_symbol(symbol) else RESOURCE_STATES
+    if state in allowed:
         return state
     return BORROWED if getattr(symbol, 'scope_kind', None) == 'parameter' else OWNED
 
@@ -61,9 +80,9 @@ def state_for(function: object | None, symbol: object | None) -> str | None:
 
 def set_state(function: object | None, symbol: object | None, state: str) -> None:
     """Record a state transition in semantic metadata only."""
-    if state not in BUFFER_STATES:
-        raise ValueError(f'unknown buffer ownership state: {state}')
-    if not is_buffer_symbol(symbol):
+    if state not in RESOURCE_STATES:
+        raise ValueError(f'unknown resource ownership state: {state}')
+    if not is_resource_symbol(symbol):
         return
     states = getattr(function, 'buffer_states', None)
     if states is None:
@@ -71,12 +90,52 @@ def set_state(function: object | None, symbol: object | None, state: str) -> Non
     states[id(symbol)] = state
 
 
+def consume_opaque_argument(
+    function_name: str,
+    parameter: object,
+    argument: object,
+    namespace: Callable[[str], object | None],
+    current_function: object | None,
+) -> str | None:
+    """Apply the source-level ``close_*`` ownership convention.
+
+    Opaque parameters are borrowed by ordinary calls.  A close operation is
+    the one explicit consuming operation available in the current syntax.
+    """
+    type_spec = getattr(parameter, 'type_spec', None)
+    symbol = (
+        namespace(getattr(argument, 'identifier', ''))
+        if getattr(argument, 'identifier', None)
+        else None
+    )
+    if not function_name.startswith('close_') or not is_opaque_symbol(symbol):
+        return None
+    if (
+        type_spec is None
+        or getattr(type_spec, 'name', None)
+        != getattr(getattr(symbol, 'type_spec', None), 'name', None)
+    ):
+        return None
+    if not getattr(argument, 'is_lvalue', False):
+        return 'close_* requiere una variable lvalue de descriptor opaque'
+    state = state_for(current_function, symbol)
+    if state == CLOSED:
+        return f'El descriptor {symbol.name} esta closed; no puede cerrarse dos veces'
+    if state != OWNED:
+        return (
+            f'close_* requiere un descriptor owned; {symbol.name} esta '
+            f'en estado {state or "desconocido"}'
+        )
+    set_state(current_function, symbol, CLOSED)
+    return None
+
+
 def snapshot(function: object, symbols: Mapping[str, object]) -> dict[int, str]:
-    """Capture the states of all visible buffer bindings in a path."""
+    """Capture the states of all visible resource bindings in a path."""
     return {
         id(symbol): state_for(function, symbol)
         for symbol in symbols.values()
-        if is_buffer_symbol(symbol)
+        if is_resource_symbol(symbol)
     }
 
 
@@ -96,7 +155,9 @@ def merge(function: object, snapshots: list[Mapping[int, str]]) -> None:
     keys = set().union(*(states.keys() for states in snapshots))
     for key in keys:
         values = [states[key] for states in snapshots if key in states]
-        if DEAD in values:
+        if CLOSED in values:
+            merged[key] = CLOSED
+        elif DEAD in values:
             merged[key] = DEAD
         elif values:
             merged[key] = values[0]

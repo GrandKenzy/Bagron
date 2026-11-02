@@ -36,6 +36,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
 
     tools.structure.collect(compiler, nodes)
     tools.enumeration.collect(compiler, nodes)
+    tools.opaque.collect(compiler, nodes)
     tools.function.collect(compiler, nodes)
     for node in nodes:
         compiler.activate_module(compiler.module_for_node(node))
@@ -52,6 +53,8 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             tools.classes.validate(compiler, node)
         elif node.name in ('STRUCT', 'MOLD', 'FLAGS'):
             tools.structure.validate(compiler, node)
+        elif node.name == 'OPAQUE':
+            continue
         elif node.name == 'ENUM':
             tools.enumeration.validate(compiler, node)
 
@@ -106,6 +109,9 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         elif name in ('STRUCT', 'MOLD', 'FLAGS', 'ENUM'):
             # Definitions were validated before globals so postfix/member
             # initializers can resolve their fields.
+            continue
+
+        elif name == 'OPAQUE':
             continue
 
         elif name == 'IMPORT':

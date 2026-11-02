@@ -5,7 +5,8 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
-from core.frontend.ownership import DEAD, state_for
+from core.frontend.objects import OpaqueSymbol
+from core.frontend.ownership import CLOSED, DEAD, is_opaque_symbol, state_for
 from gram import ast as gast
 
 from .common import (
@@ -77,6 +78,17 @@ def infer_value(
             if not operand.is_lvalue:
                 raise ValueResolutionError(
                     'el operador $ requiere una variable o acceso direccionable'
+                )
+            namespace_owner = getattr(namespace, '__self__', None)
+            if (
+                namespace_owner is not None
+                and isinstance(
+                    namespace_owner.resolve_type(operand.type_spec.name),
+                    OpaqueSymbol,
+                )
+            ):
+                raise ValueResolutionError(
+                    'un descriptor opaque no puede convertirse en un puntero'
                 )
             if not operand.is_addressable:
                 raise ValueResolutionError(
@@ -456,9 +468,14 @@ def infer_value(
         symbol = _resolve_symbol(namespace, str(value))
         if not isinstance(symbol, Variable) or symbol.type_spec is None:
             raise ValueResolutionError(f'La variable global no existe: {value}')
-        if state_for(current_function, symbol) == DEAD:
+        resource_state = state_for(current_function, symbol)
+        if resource_state == DEAD:
             raise ValueResolutionError(
                 f'El buffer {value} esta dead; no puede usarse despues de Del'
+            )
+        if resource_state == CLOSED and is_opaque_symbol(symbol):
+            raise ValueResolutionError(
+                f'El descriptor {value} esta closed; no puede usarse despues de close'
             )
         initialized = getattr(symbol, 'value_info', None)
         constant_literal = bool(

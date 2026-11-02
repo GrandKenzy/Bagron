@@ -53,6 +53,7 @@ KEYWORDS = {
     'enum': '#17A2B8',
     'mold': '#17A2B8',
     'flags': '#17A2B8',
+    'opaque': '#17A2B8',
 
     # Modificadores de bajo nivel
     'inline': '#E2B93D',
@@ -153,6 +154,7 @@ KEYWORDS_BY_GROUP = {
         'enum',
         'mold',
         'flags',
+        'opaque',
         'class',
         'const',
         'Null',

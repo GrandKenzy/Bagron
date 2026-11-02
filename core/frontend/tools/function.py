@@ -33,6 +33,7 @@ from core.frontend.tools.types import (
     _type_name,
 )
 from core.frontend.tools.variable import build_symbol, collect_local
+from core.frontend.tools.opaque import is_opaque_type, validate_opaque_use
 from core.frontend.handles.variables import handle_variable
 from core.frontend.ownership import (
     BORROWED,
@@ -978,6 +979,13 @@ def _validate_return_type(
             f'La funcion {name or "<anonima>"} no puede retornar arrays; '
             'solo puede retornar valores intrinsecos u objetos'
         )
+    validate_opaque_use(
+        compiler.storage,
+        return_type,
+        f'El retorno de {name or "<anonima>"}',
+    )
+    if is_opaque_type(compiler.storage, return_type):
+        return
     if (
         return_type.name in {'void', 'Never'}
         or return_type.name in _PURE_RETURN_TYPES
@@ -1043,6 +1051,12 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
                 pointer_size=compiler.storage.pointer_size,
             )
             _validate_return_type(compiler, name, signature.return_type)
+            for parameter in signature.parameters:
+                validate_opaque_use(
+                    compiler.storage,
+                    parameter.type_spec,
+                    f'El parametro {parameter.name} de {name or "<anonima>"}',
+                )
         except TypeResolutionError as error:
             compiler.error(str(error))
             continue

@@ -8,6 +8,7 @@ from core.frontend.objects.type import (
     EnumMember,
     EnumSymbol,
     FieldSpec,
+    OpaqueSymbol,
     TypeSpec,
     ValueInfo,
 )
@@ -23,5 +24,6 @@ __all__ = [
     'AggregateSymbol',
     'EnumMember',
     'EnumSymbol',
+    'OpaqueSymbol',
     'Variable',
 ]
