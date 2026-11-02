@@ -329,17 +329,17 @@ En parámetros, `const` es estrictamente covariante:
 La forma y la constancia se comprueban juntas; `const` no permite convertir una
 matriz en otra forma ni elimina la comprobación de sus dimensiones.
 
-## Expansión de `Len_t` y `Size_t`
+## Expansión de `Len_t`, `Size_t` y `Signed_t`
 
-`Len_t` y `Size_t` son metatipos expansivos de compilación. El usuario los
-escribe en la firma de una función, pero no los proporciona en la llamada.
-Bagron calcula sus argumentos ocultos a partir del dato inmediatamente
-anterior.
+`Len_t`, `Size_t` y `Signed_t` son metatipos expansivos de compilación. El
+usuario los escribe en la firma de una función, pero no los proporciona en la
+llamada. Bagron calcula sus argumentos ocultos a partir del dato asociado.
 
 ### Regla obligatoria en firmas
 
 Toda función que reciba un array debe declarar, inmediatamente después del
-array, un bloque formado por `Len_t` y `Size_t`, siempre en ese orden:
+array, un bloque formado por `Len_t` y `Size_t`, siempre en ese orden. Puede
+añadir `Signed_t` después de `Size_t` cuando necesite exponer el signedness:
 
 ```bg
 func consume(data: int32[], length: Len_t, element_size: Size_t) void:
@@ -380,7 +380,10 @@ func forward(data: int32[], length: Len_t, element_size: Size_t) void:
 
 `chain` no es un array ordinario y conserva su excepción: puede usar `Len_t`
 para su longitud estática y terminador `NUL`, pero no está obligado a declarar
-`Size_t`. En perfiles `prod` y `high`, el backend conserva ese dato como un
+`Size_t`. `Signed_t` es opcional; para un array, si se solicita, debe seguir a
+`Size_t`, y vale `0` para un elemento signed y `1` en los demás casos. En
+`char[]`, `byte[]` y arrays nominales el valor es `1`. En perfiles `prod` y
+`high`, el backend conserva ese dato como un
 puntero SSA al rodata en vez de crear una copia local en la pila; el ABI no
 cambia. `dev` mantiene el almacenamiento explícito para facilitar la
 inspección del IR. `buffer` tampoco es un array estático: su descriptor incluye la
@@ -501,8 +504,8 @@ asociarse a `buffer`, porque siempre sería el valor redundante `1`.
 
 Para cada parámetro de array, `Len_t` y `Size_t` son obligatorios. Deben
 aparecer como un bloque consecutivo después del array, siempre en el orden
-`Len_t` y luego `Size_t`; después pueden solicitarse metadatos de otros
-parámetros:
+`Len_t` y luego `Size_t`; `Signed_t` es opcional y, si aparece, va después de
+`Size_t`. Después pueden solicitarse los metadatos de otros parámetros:
 
 ```bg
 values: int32[3] = {1, 2, 3}
@@ -531,7 +534,9 @@ ni calcular manualmente `Len_t` o `Size_t`.
 El comportamiento por defecto conserva el aliasing: una función con dos
 parámetros de array ordinarios puede recibir dos veces el mismo array. Para
 pedir una región exclusiva, el parámetro se declara como `unique` y añade el
-metadato inmutable `Region_t` después de `Len_t` y `Size_t`:
+metadato inmutable `Region_t` después de `Size_t`. `Signed_t`, si se solicita,
+también va después de `Size_t`; ambos metadatos son suministrados por el
+compilador:
 
 ```bg
 func transform(
@@ -548,4 +553,5 @@ procedencia del almacenamiento y rechaza aliasing potencial o procedencia
 desconocida. Un parámetro `unique` puede reenviarse a otra función `unique` y
 conserva su región. La prueba no separa subrangos por aritmética: si no puede
 probar que son distintos, conserva el rechazo seguro.
+
 
