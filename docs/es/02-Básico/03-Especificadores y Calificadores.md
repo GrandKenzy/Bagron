@@ -66,8 +66,8 @@ como un módulo o una clase.
 | `public` | `public struct Punto:` | Hace pública la declaración. |
 | `private` | `private func auxiliar() void:` | Restringe la declaración a su ámbito. |
 
-Pueden aplicarse a variables, funciones, `struct`, `mold`, `flags`, `enum` y
-`class`.
+Pueden aplicarse a variables, funciones, `struct`, `mold`, `flags`, `enum`,
+`class` y `opaque`.
 
 Si no se escribe ninguno, la declaración es pública por defecto.
 
@@ -316,3 +316,4 @@ diferencia frente a agregados no volátiles.
 Estas pruebas verifican el LLVM generado: los accesos volátiles se emiten como
 operaciones `load volatile` y `store volatile`, mientras que los agregados
 normales conservan operaciones de memoria ordinarias.
+
