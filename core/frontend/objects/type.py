@@ -35,6 +35,16 @@ class TypeSpec:
         return name + '[]' * self.array_depth
 
 
+@dataclass
+class OpaqueSymbol:
+    """Nominal type with a compiler-known, but source-inaccessible, ABI."""
+
+    name: str
+    representation: TypeSpec
+    privacy: str = 'public'
+    module_path: object | None = None
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     """Semantic description of one field in an aggregate type."""

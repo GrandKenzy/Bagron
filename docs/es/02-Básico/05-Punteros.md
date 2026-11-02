@@ -381,6 +381,40 @@ Una firma `extern` puede usar punteros a escalares, `void` y agregados
 compatibles con la ABI. No puede usar arrays, `chain`, `Null` como tipo de
 firma ni metatipos `Len_t`/`Size_t`.
 
+### Descriptores opaque
+
+Un descriptor nativo no debe declararse como un alias de puntero o entero. La
+forma `opaque` conserva un nombre nominal y deja su representación ABI bajo
+control del compilador:
+
+```bg
+opaque WINDOWS_FILE_DESCRIPTOR: void*
+opaque LINUX_FILE_DESCRIPTOR: int32
+
+extern windows "kernel32":
+    GetStdHandle(kind: uint32) WINDOWS_FILE_DESCRIPTOR
+    CloseHandle(handle: WINDOWS_FILE_DESCRIPTOR) int32
+
+@unsafe
+func create_file() WINDOWS_FILE_DESCRIPTOR:
+    return GetStdHandle(0)
+
+func close_file(handle: WINDOWS_FILE_DESCRIPTOR) void:
+    return
+```
+
+El valor Windows se emite como `ptr` LLVM y el Linux como `i32`, sin tags ni
+estructuras runtime. En código fuente un descriptor opaque solo coincide con
+otro descriptor del mismo nombre: no se puede desreferenciar, indexar, tomar su
+dirección, convertirlo a entero o puntero, ni mezclarlo con el descriptor de
+otra plataforma. El backend conserva únicamente la representación declarada.
+
+Los retornos y las variables locales de descriptor comienzan en estado
+`owned`; los parámetros son `borrowed`. Las llamadas ordinarias solo prestan el
+valor durante la llamada. Las funciones `close_*` consumen un descriptor
+`owned` y lo marcan `closed`, por lo que un segundo cierre se rechaza
+estáticamente. Estos estados no se almacenan en runtime.
+
 Los punteros a arrays no reciben la conversión especial de los parámetros de
 array. Un `buffer` es distinto: su almacenamiento lo administra Bagron y nunca
 puede cruzar directamente un `extern` como puntero derivado de `$data[0]`, ni
@@ -407,6 +441,8 @@ Bagron aplica estas reglas para mantener los punteros trazables:
 - una función no puede retornar punteros, arrays ni `buffer`;
 - `chain` no puede declararse como puntero;
 - un bitfield de `flags` no tiene dirección independiente.
+- un descriptor `opaque` es nominal y conserva su estado `owned`/`borrowed`/`closed`
+  solo durante el análisis estático.
 
 `callptr` es una categoría distinta de puntero destinada a referencias a
 funciones. No debe confundirse con un puntero a datos: su firma debe coincidir

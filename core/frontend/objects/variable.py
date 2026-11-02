@@ -27,3 +27,6 @@ class Variable:
         # Compile-time-only ownership state for dynamic buffers.  It is never
         # emitted into the LLVM descriptor or function ABI.
         self.buffer_state = None
+        # Opaque descriptor ownership is compile-time-only and never enters
+        # the raw LLVM representation.
+        self.opaque_state = None

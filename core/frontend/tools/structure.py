@@ -14,6 +14,7 @@ from core.frontend.tools.types import (
     is_compatible,
     resolve_type,
 )
+from core.frontend.tools.opaque import validate_opaque_use
 from gram import ast as gast
 
 if TYPE_CHECKING:
@@ -343,6 +344,16 @@ def _resolve_field_type(
         )
     except TypeResolutionError as error:
         compiler.error(f'{owner}.{handle.name}: {error}')
+        return None
+
+    try:
+        validate_opaque_use(
+            compiler.storage,
+            type_spec,
+            f'El campo {owner}.{handle.name}',
+        )
+    except TypeResolutionError as error:
+        compiler.error(str(error))
         return None
 
     if not _known_field_type(compiler, type_spec):

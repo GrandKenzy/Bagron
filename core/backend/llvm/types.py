@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING
 
 from llvmlite import ir
 
-from core.frontend.objects import AggregateSymbol, EnumSymbol, TypeSpec, ValueInfo
+from core.frontend.objects import (
+    AggregateSymbol,
+    EnumSymbol,
+    OpaqueSymbol,
+    TypeSpec,
+    ValueInfo,
+)
 
 if TYPE_CHECKING:
     from llvmlite.ir import Module
@@ -93,6 +99,7 @@ class LLVMTypeRegistry:
         self._pointer_size = pointer_size
         self._types: dict[str, ir.Type] = {}
         self._symbols: dict[str, AggregateSymbol] = {}
+        self._opaque_symbols: dict[str, OpaqueSymbol] = {}
         self._layouts: dict[str, AggregateLayout] = {}
         self._buffer_type: ir.IdentifiedStructType | None = None
 
@@ -100,6 +107,11 @@ class LLVMTypeRegistry:
         for name, symbol in symbols.items():
             if isinstance(symbol, EnumSymbol):
                 self._types[name] = scalar_type(symbol.base_type)
+            elif isinstance(symbol, OpaqueSymbol):
+                # Opaque values are lowered directly to their declared ABI
+                # shape; no identified LLVM type or runtime tag is created.
+                self._types[name] = self.resolve(symbol.representation)
+                self._opaque_symbols[name] = symbol
             elif isinstance(symbol, AggregateSymbol):
                 llvm_type = module.context.get_identified_type(name)
                 self._types[name] = llvm_type

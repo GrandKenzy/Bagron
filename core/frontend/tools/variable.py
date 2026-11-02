@@ -17,6 +17,7 @@ from core.frontend.tools.types import (
     is_compatible,
     resolve_type,
 )
+from core.frontend.tools.opaque import is_opaque_type, validate_opaque_use
 from core.storage import Storage
 from gram import ast as gast
 
@@ -92,6 +93,8 @@ def build_symbol(
     symbol.scope_kind = kind
     if is_buffer_type(type_spec):
         symbol.buffer_state = BORROWED if kind == 'parameter' else OWNED
+    elif is_opaque_type(storage, type_spec):
+        symbol.opaque_state = BORROWED if kind == 'parameter' else OWNED
     symbol.initialized = kind == 'parameter' or value_node is not None
     symbol.bit_width = type_spec.bit_width
     symbol.signed = type_spec.signed
@@ -454,6 +457,16 @@ def collect_in_scope(
         compiler.error(
             f'La variable {handle.name} no puede usar Never como almacenamiento'
         )
+        return None
+
+    try:
+        validate_opaque_use(
+            compiler.storage,
+            type_spec,
+            f'La variable {handle.name}',
+        )
+    except TypeResolutionError as error:
+        compiler.error(str(error))
         return None
 
     if is_buffer_type(type_spec) and kind == 'global':

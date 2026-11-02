@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
+from core.frontend.ownership import consume_opaque_argument
 from gram import ast as gast
 
 from .common import (
@@ -632,6 +633,17 @@ def infer_call(
         current_function=current_function,
     )
     _validate_unique_arguments(name, parameters, argument_infos)
+
+    for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
+        ownership_error = consume_opaque_argument(
+            name or '',
+            parameter,
+            argument_info,
+            namespace,
+            current_function,
+        )
+        if ownership_error is not None:
+            raise ValueResolutionError(ownership_error)
 
     return_type = getattr(signature, 'return_type', TypeSpec('void'))
     return ValueInfo(

@@ -10,6 +10,7 @@ from core.frontend.syntax.items.enum_decl import ENUM
 from core.frontend.syntax.items.externs import EXTERN
 from core.frontend.syntax.items.func_decl import FUNCTION
 from core.frontend.syntax.items.imports import IMPORT
+from core.frontend.syntax.items.opaque_decl import OPAQUE
 from core.frontend.syntax.items.statements import FOR, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.value import LOGICAL_NOT, POSTFIX_EXPR, VALUE
@@ -55,6 +56,7 @@ class ENTRYPOINT(cmb.RuleItem):
         cmb.Ref(MOLD),
         cmb.Ref(FLAGS),
         cmb.Ref(ENUM),
+        cmb.Ref(OPAQUE),
         cmb.Ref(WHILE),
         cmb.Ref(FOR),
         cmb.Ref(IF),

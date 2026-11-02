@@ -7,6 +7,7 @@ from core.frontend.objects import (
     AggregateSymbol,
     EnumSymbol,
     FunctionSymbol,
+    OpaqueSymbol,
     Variable,
 )
 
@@ -118,7 +119,7 @@ class Storage(diagnostic.Diagnostics):
         self.functions: dict[str, FunctionSymbol] = {}
         self.methods: dict[tuple[str, str], FunctionSymbol] = {}
         self.function_scopes: dict[str, Storage] = {}
-        self.types: dict[str, EnumSymbol | AggregateSymbol] = {}
+        self.types: dict[str, EnumSymbol | AggregateSymbol | OpaqueSymbol] = {}
         self.native_links: list[str] = []
         self.loaded_modules: list[str] = []
         self.function_aliases: dict[str, str] = {}
@@ -267,14 +268,20 @@ class Storage(diagnostic.Diagnostics):
             return self.parent.resolve_field(owner, name)
         return None
 
-    def define_type(self, symbol: EnumSymbol | AggregateSymbol) -> bool:
+    def define_type(
+        self,
+        symbol: EnumSymbol | AggregateSymbol | OpaqueSymbol,
+    ) -> bool:
         """Register a type in the current type namespace."""
         if symbol.name in self.types:
             return False
         self.types[symbol.name] = symbol
         return True
 
-    def resolve_type(self, name: str) -> EnumSymbol | AggregateSymbol | None:
+    def resolve_type(
+        self,
+        name: str,
+    ) -> EnumSymbol | AggregateSymbol | OpaqueSymbol | None:
         symbol = self.types.get(name)
         if symbol is not None and self._is_visible(symbol, name):
             return symbol
