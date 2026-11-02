@@ -165,11 +165,6 @@ class GlobalEmitter:
         if symbol.type_spec is None:
             raise GlobalEmissionError(f'El global {symbol.name} no tiene TypeSpec')
 
-        if symbol.type_spec.name == 'callptr':
-            raise GlobalEmissionError(
-                f'callptr global aun no tiene emision LLVM: {symbol.name}'
-            )
-
         try:
             value = symbol.value_info
             target_type = value_type(
@@ -359,3 +354,4 @@ class GlobalEmitter:
         """Emit one symbol for callers that use the emitter incrementally."""
         self._declare_symbol(storage, symbol)
         self._initialize_symbol(storage, symbol)
+
