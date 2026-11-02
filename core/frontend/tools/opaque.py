@@ -45,9 +45,16 @@ def _identifier(node: object) -> str | None:
     return None
 
 
+def _count_tokens(node: object, kind: str) -> int:
+    return (
+        (_token_kind(node) == kind)
+        + sum(_count_tokens(child, kind) for child in _children(node))
+    )
+
+
 def _representation_node(
     signature: gast.ASTRef,
-) -> tuple[str | None, object | None, int]:
+) -> tuple[str | None, object | None, int, int, bool, bool]:
     children = _children(signature)
     name = None
     colon_index = None
@@ -58,14 +65,35 @@ def _representation_node(
             colon_index = index
             break
     if colon_index is None or colon_index + 1 >= len(children):
-        return name, None, 0
-    type_node = children[colon_index + 1]
+        return name, None, 0, 0, False, False
+
+    representation_nodes = children[colon_index + 1:]
+    type_node = next(
+        (
+            child for child in representation_nodes
+            if _token_value(child) not in {'const', 'unique'}
+            and not (
+                isinstance(child, gast.ASTRef)
+                and child.name == 'POINTER'
+            )
+            and _token_kind(child) not in {'LBRACKET', 'RBRACKET'}
+        ),
+        None,
+    )
     pointer_level = sum(
         len(child.nodes)
-        for child in children[colon_index + 2:]
+        for child in representation_nodes
         if isinstance(child, gast.ASTRef) and child.name == 'POINTER'
     )
-    return name, type_node, pointer_level
+    array_depth = sum(_count_tokens(child, 'LBRACKET') for child in representation_nodes)
+    return (
+        name,
+        type_node,
+        pointer_level,
+        array_depth,
+        any(_token_value(child) == 'const' for child in representation_nodes),
+        any(_token_value(child) == 'unique' for child in representation_nodes),
+    )
 
 
 def _validate_representation(
@@ -73,7 +101,18 @@ def _validate_representation(
     name: str,
     type_node: object,
     pointer_level: int,
+    array_depth: int,
+    has_const: bool,
+    has_unique: bool,
 ) -> TypeSpec:
+    if has_const or has_unique:
+        raise TypeResolutionError(
+            f'La representacion de opaque {name} no puede ser const ni unique'
+        )
+    if array_depth:
+        raise TypeResolutionError(
+            f'La representacion de opaque {name} no puede ser un array'
+        )
     representation = resolve_type(
         type_node,
         pointer_level=pointer_level,
@@ -108,7 +147,14 @@ def collect(compiler: object, nodes: list[gast.ASTRef]) -> None:
         if signature is None:
             compiler.error('La declaracion opaque no tiene una firma valida')
             continue
-        name, type_node, pointer_level = _representation_node(signature)
+        (
+            name,
+            type_node,
+            pointer_level,
+            array_depth,
+            has_const,
+            has_unique,
+        ) = _representation_node(signature)
         if not name or type_node is None:
             compiler.error('La declaracion opaque no tiene nombre o representacion')
             continue
@@ -118,6 +164,9 @@ def collect(compiler: object, nodes: list[gast.ASTRef]) -> None:
                 name,
                 type_node,
                 pointer_level,
+                array_depth,
+                has_const,
+                has_unique,
             )
         except TypeResolutionError as error:
             compiler.error(str(error))
