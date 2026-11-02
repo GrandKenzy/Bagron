@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from core import frontend
-from core.compiler.prep import extract_prep_blocks
+from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
 
@@ -53,6 +53,15 @@ class CompilerState(Diagnostics):
         ext = path.suffix
 
         content = _open_file(self, path)
+
+        content, conditional_errors = preprocess_conditionals(
+            content,
+            Path(path),
+            system=getattr(self, 'preprocessor_system', 'auto'),
+            architecture=getattr(self, 'preprocessor_architecture', 'auto'),
+        )
+        for error in conditional_errors:
+            self.error(error)
 
         content, prep_blocks, prep_errors = extract_prep_blocks(content, Path(path))
         if hasattr(self, 'prep_blocks'):

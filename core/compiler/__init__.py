@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from platform import machine, system
+import re
 
 from core import globvars, storage
 from core.compiler.control import CompilationError, CompilerState, _found_main
@@ -36,6 +37,8 @@ class Compiler(CompilerState):
         self.active_module_path: Path | None = None
         self.main_module_path: Path | None = None
         self.prep_blocks: list[PrepBlock] = []
+        self.preprocessor_system = self._normalize_target_system(None)
+        self.preprocessor_architecture = self._normalize_target_architecture(None)
 
     def module_for_node(self, node: object) -> Path | None:
         return self.node_modules.get(id(node), self.active_module_path)
@@ -84,6 +87,20 @@ class Compiler(CompilerState):
         if normalized == 'auto':
             return system().lower()
         return normalized
+
+    @staticmethod
+    def _read_source_target_clauses(path: Path) -> dict[str, str]:
+        """Read target clauses needed before the source can be parsed."""
+        clause_re = re.compile(
+            r'^\s*clause\s+(?P<name>System|Arch)\s+'
+            r'(?P<quote>["\'])(?P<value>.*?)\2\s*$'
+        )
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding='utf-8').splitlines():
+            match = clause_re.match(line)
+            if match is not None and match.group('name') not in values:
+                values[match.group('name')] = match.group('value')
+        return values
 
     @staticmethod
     def _host_architecture() -> str:
@@ -376,6 +393,13 @@ class Compiler(CompilerState):
         globvars.BASEDIR = path.parent
         self.project_root = path.parent
         self.main_module_path = path
+        declared_target = self._read_source_target_clauses(path)
+        self.preprocessor_system = self._normalize_target_system(
+            declared_target.get('System')
+        )
+        self.preprocessor_architecture = self._normalize_target_architecture(
+            declared_target.get('Arch')
+        )
         self._loaded_module_paths.clear()
         self._loading_module_paths.clear()
         self.import_requests.clear()

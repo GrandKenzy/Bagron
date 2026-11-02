@@ -186,6 +186,31 @@ El dialecto `att` usa la sintaxis AT&T. Clang valida cada bloque durante la
 compilación y Bagron remite sus diagnósticos al archivo `.bg` y a la función
 `@assembler` que los originó.
 
+### Preprocesador condicional
+
+Los bloques condicionales se resuelven antes de tokenizar el módulo. Solo las
+líneas de la primera condición verdadera llegan al compilador; las demás se
+ignoran. Por ahora se admiten los flags `OS` y `ARCH`, una condición por
+directiva, y no se pueden anidar:
+
+```bg
+#if OS, "windows"
+func plataforma() int32:
+    return 1
+#elif ARCH, "amd"
+func plataforma() int32:
+    return 2
+#else
+func plataforma() int32:
+    return 0
+#end
+```
+
+`OS` compara el sistema del target y `ARCH` su arquitectura normalizada;
+`"amd"` es equivalente a `x86_64`. Las directivas soportadas son `#if`,
+`#elif`, `#else` y `#end`. Un bloque mal formado o anidado produce un error,
+pero el contenido de las ramas no seleccionadas no se analiza como Bagron.
+
 ## Decoradores de agregados
 
 Estos decoradores se aplican a `struct`, `mold` y `flags` según la tabla de

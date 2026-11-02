@@ -34,6 +34,17 @@ class _ActivePrep:
     is_module: bool = False
 
 
+@dataclass
+class _ConditionalBlock:
+    """State for one conditional preprocessor block."""
+
+    parent_active: bool
+    branch_matched: bool
+    active: bool
+    else_seen: bool
+    line: int
+
+
 _PREP_RE = re.compile(
     r'^(?P<indent>[ \t]*)#prep[ \t]+assembler[ \t]+'
     r'(?P<quote>["\'])(?P<dialect>.*?)\2[ \t]*$'
@@ -47,6 +58,27 @@ _FUNCTION_RE = re.compile(
     r'(?:(?:inline)[ \t]+)?func[ \t]+'
     r'(?P<name>[A-Za-z_]\w*)\b.*:[ \t]*$'
 )
+_CONDITIONAL_DIRECTIVE_RE = re.compile(
+    r'^(?P<indent>[ \t]*)#(?P<directive>if|elif|else|end)\b(?P<rest>.*)$',
+    re.IGNORECASE,
+)
+_CONDITION_RE = re.compile(
+    r'^\s*(?P<flag>[A-Za-z_]\w*)\s*,\s*'
+    r'(?P<quote>["\'])(?P<value>.*?)\2\s*$',
+)
+_PREPROCESSOR_ARCH_ALIASES = {
+    'amd': 'x86_64',
+    'amd64': 'x86_64',
+    'x86_64': 'x86_64',
+    'x86': 'i386',
+    'i386': 'i386',
+    'i686': 'i386',
+    'arm': 'aarch64',
+    'arm64': 'aarch64',
+    'aarch64': 'aarch64',
+    'riscv32': 'riscv32',
+    'riscv64': 'riscv64',
+}
 
 
 def _indent(line: str) -> int:
@@ -55,6 +87,221 @@ def _indent(line: str) -> int:
 
 def _blank_line(line: str) -> str:
     return '\n' if line.endswith(('\n', '\r')) else ''
+
+
+def _normalize_preprocessor_architecture(value: str) -> str:
+    normalized = str(value).strip().lower().split('-', 1)[0]
+    return _PREPROCESSOR_ARCH_ALIASES.get(normalized, normalized)
+
+
+def _parse_condition(
+    expression: str,
+) -> tuple[str, str] | None:
+    match = _CONDITION_RE.fullmatch(expression)
+    if match is None:
+        return None
+
+    flag = match.group('flag').upper()
+    if flag not in {'OS', 'ARCH'}:
+        return None
+    return flag, match.group('value')
+
+
+def _condition_matches(
+    flag: str,
+    value: str,
+    system: str,
+    architecture: str,
+) -> bool:
+    expected = value.strip().lower()
+    if flag == 'OS':
+        return expected == str(system).strip().lower()
+    return _normalize_preprocessor_architecture(expected) == (
+        _normalize_preprocessor_architecture(architecture)
+    )
+
+
+def _conditional_error(
+    source: Path,
+    line: int,
+    message: str,
+) -> str:
+    return f'{source}:{line}: {message}'
+
+
+def preprocess_conditionals(
+    lines: Sequence[str],
+    source: Path,
+    *,
+    system: str,
+    architecture: str,
+) -> tuple[list[str], list[str]]:
+    """Select one non-nested conditional branch before Bagron tokenization.
+
+    The supported form is ``#if OS, "windows"`` or ``#if ARCH, "amd"``;
+    ``#elif``, ``#else`` and ``#end`` use the same block.  Inactive lines are
+    replaced with blank lines so parser diagnostics retain source locations.
+    """
+    transformed: list[str] = []
+    errors: list[str] = []
+    stack: list[_ConditionalBlock] = []
+
+    def is_active() -> bool:
+        return all(block.active for block in stack)
+
+    for index, line in enumerate(lines):
+        raw_line = line.rstrip('\r\n')
+        match = _CONDITIONAL_DIRECTIVE_RE.match(raw_line)
+        if match is None:
+            transformed.append(line if is_active() else _blank_line(line))
+            continue
+
+        directive = match.group('directive').lower()
+        rest = match.group('rest').strip()
+        source_line = index + 1
+
+        if directive == 'if':
+            if stack:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        'los bloques #if no se pueden anidar',
+                    )
+                )
+            condition = _parse_condition(rest)
+            if condition is None:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#if requiere OS o ARCH seguido de una cadena, por ejemplo '
+                        '#if OS, "windows"',
+                    )
+                )
+                flag, value = 'OS', ''
+            else:
+                flag, value = condition
+            parent_active = is_active()
+            matches = _condition_matches(flag, value, system, architecture)
+            stack.append(
+                _ConditionalBlock(
+                    parent_active=parent_active,
+                    branch_matched=matches,
+                    active=parent_active and matches,
+                    else_seen=False,
+                    line=source_line,
+                )
+            )
+            transformed.append(_blank_line(line))
+            continue
+
+        if directive == 'elif':
+            if not stack:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#elif no tiene un #if abierto',
+                    )
+                )
+                transformed.append(_blank_line(line))
+                continue
+            block = stack[-1]
+            if block.else_seen:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#elif no puede aparecer despues de #else',
+                    )
+                )
+                block.active = False
+                transformed.append(_blank_line(line))
+                continue
+            condition = _parse_condition(rest)
+            if condition is None:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#elif requiere OS o ARCH seguido de una cadena, por ejemplo '
+                        '#elif ARCH, "amd"',
+                    )
+                )
+                matches = False
+            else:
+                flag, value = condition
+                matches = _condition_matches(flag, value, system, architecture)
+            block.active = (
+                block.parent_active
+                and not block.branch_matched
+                and matches
+            )
+            block.branch_matched = block.branch_matched or matches
+            transformed.append(_blank_line(line))
+            continue
+
+        if directive == 'else':
+            if not stack:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#else no tiene un #if abierto',
+                    )
+                )
+                transformed.append(_blank_line(line))
+                continue
+            block = stack[-1]
+            if rest:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#else no recibe una condicion',
+                    )
+                )
+            if block.else_seen:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        'un bloque #if solo puede tener un #else',
+                    )
+                )
+            block.else_seen = True
+            block.active = block.parent_active and not block.branch_matched
+            block.branch_matched = True
+            transformed.append(_blank_line(line))
+            continue
+
+        if rest:
+            errors.append(
+                _conditional_error(
+                    source,
+                    source_line,
+                    '#end no recibe argumentos',
+                )
+            )
+        if not stack:
+            # Existing ``#prep assembler ... #end`` blocks are consumed by
+            # ``extract_prep_blocks`` below.  Leave their terminator intact.
+            transformed.append(line)
+            continue
+        stack.pop()
+        transformed.append(_blank_line(line))
+
+    for block in stack:
+        errors.append(
+            _conditional_error(
+                source,
+                block.line,
+                '#if no tiene un #end de cierre',
+            )
+        )
+
+    return transformed, errors
 
 
 def extract_prep_blocks(
@@ -454,5 +701,6 @@ __all__ = [
     'PrepBlock',
     'PrepError',
     'extract_prep_blocks',
+    'preprocess_conditionals',
     'write_prep_files',
 ]
