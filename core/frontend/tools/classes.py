@@ -275,11 +275,14 @@ def _initializer_fields(
 
         initializer_context = SimpleNamespace(
             is_unsafe='unsafe' in function_tools._decorator_names(initializer_node),
+            owner_type=class_name,
             signature=FunctionSignature(
                 parameters=parameters,
                 return_type=TypeSpec('void'),
             ),
         )
+    elif getattr(initializer_context, 'owner_type', None) is None:
+        initializer_context.owner_type = class_name
     seen_parameters: set[str] = set()
     for parameter in parameters:
         name = getattr(parameter, 'name', '')
@@ -403,6 +406,7 @@ def _initializer_fields(
                 value_info.type_spec,
                 value_info,
                 initializer_node=value_node,
+                declaring_type=class_name,
             )
         )
 
