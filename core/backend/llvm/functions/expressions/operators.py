@@ -120,6 +120,10 @@ class OperatorExpressionMixin:
                     builder,
                     signed=False,
                 )
+            elif parameter.is_signed:
+                raise FunctionEmissionError(
+                    f'El metodo magico {method.name} no admite Signed_t'
+                )
             else:
                 if attribute_name is None:
                     raise FunctionEmissionError(
@@ -337,6 +341,7 @@ class OperatorExpressionMixin:
                 parameter.is_receiver
                 or parameter.is_length
                 or parameter.is_size
+                or parameter.is_signed
                 or parameter.is_region
             )
         ]
@@ -359,9 +364,9 @@ class OperatorExpressionMixin:
                     target_type,
                     builder,
                 )
-            elif parameter.is_length or parameter.is_size:
+            elif parameter.is_length or parameter.is_size or parameter.is_signed:
                 raise FunctionEmissionError(
-                    f'El metodo magico {method.name} no admite Len_t/Size_t'
+                    f'El metodo magico {method.name} no admite Len_t/Size_t/Signed_t'
                 )
             else:
                 argument_node = argument_nodes[argument_index]

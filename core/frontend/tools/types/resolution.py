@@ -358,9 +358,9 @@ def resolve_type(
     if not base_name:
         raise TypeResolutionError(f'Tipo invalido: {text or "<vacio>"}')
 
-    if base_name in {'Len_t', 'Size_t', 'Region_t'}:
+    if base_name in {'Len_t', 'Size_t', 'Signed_t', 'Region_t'}:
         raise TypeResolutionError(
-            'Len_t, Size_t y Region_t solo pueden aparecer como parametros especiales '
+            'Len_t, Size_t, Signed_t y Region_t solo pueden aparecer como parametros especiales '
             'de una funcion'
         )
     array_lengths = tuple(_constant_dimension_value(suffix) for suffix in suffixes)

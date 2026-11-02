@@ -203,12 +203,12 @@ No forman parte del catálogo de Intrínsecos Estrictos porque su ancho no es
 fijo. Los tipos estrictos deben reservarse para datos cuyo tamaño exacto sea
 parte del contrato.
 
-### Metatipos `Len_t` y `Size_t`
+### Metatipos `Len_t`, `Size_t` y `Signed_t`
 
-`Len_t` y `Size_t` no son valores que el usuario escriba en una llamada. Son
-metatipos expansivos que aparecen en firmas de funciones y cuyo argumento se
-genera automáticamente durante la compilación. Internamente usan el ancho de
-`usize` del target.
+`Len_t`, `Size_t` y `Signed_t` no son valores que el usuario escriba en una
+llamada. Son metatipos expansivos que aparecen en firmas de funciones y cuyo
+argumento se genera automáticamente durante la compilación. Internamente usan
+el ancho de `usize` del target.
 
 `Len_t` representa la longitud exacta del dato asociado. Funciona con arrays,
 con `buffer` y con el caso especial de `chain`, que es estático, inmutable y
@@ -278,6 +278,20 @@ func send(data: int32[], length: Len_t, bytes: Size_t) void:
 send(values)              ; Bagron expande Len_t a 3 y Size_t a 4
 ```
 
+`Signed_t` expone la naturaleza signed del tipo asociado sin añadir un
+argumento visible: produce `0` si el tipo es signed y `1` si no lo es. Es
+opcional y debe aparecer después de `Size_t` cuando se declara para un array:
+
+```bg
+func inspect_sign(data: int32[], length: Len_t, size: Size_t, sign: Signed_t) void:
+    return
+
+values: int32[3] = {1, 2, 3}
+inspect_sign(values)       ; expansión interna: ..., 0
+```
+
+Para `uint32[]`, `byte[]` o `char[]`, el valor expandido es `1`.
+
 Un `buffer` es distinto de un array: su descriptor ya contiene la capacidad
 en bytes, por lo que solo puede declarar `Len_t`; `Size_t` no aplica porque
 cada elemento del buffer es un byte:
@@ -293,7 +307,8 @@ inspect(raw)              ; Bagron extrae la longitud del descriptor
 
 Los metatipos siempre se expanden hacia la derecha del parámetro visible al
 que están asociados. Para cada array, `Len_t` y `Size_t` son obligatorios y
-deben aparecer como un bloque consecutivo en ese orden. Se pueden pedir
+deben aparecer como un bloque consecutivo en ese orden; `Signed_t`, si se
+solicita, va después de ellos. Se pueden pedir
 metadatos para varios parámetros mientras cada bloque conserve ese orden:
 
 ```bg
@@ -314,7 +329,8 @@ send(values, other)       ; expansión interna: send(values, 3, 4, other, 3, 4)
 ```
 
 El llamador solo proporciona los argumentos visibles. No puede insertar,
-reemplazar ni calcular manualmente los argumentos `Len_t` o `Size_t`.
+reemplazar ni calcular manualmente los argumentos `Len_t`, `Size_t` o
+`Signed_t`.
 
 En el backend, estos metadatos son inmutables y se representan directamente
 como argumentos escalares del ABI; en perfiles optimizados no necesitan una

@@ -9,6 +9,7 @@ from core.frontend.objects import TypeSpec
 from core.frontend.tools.types import (
     MAGIC_BINARY_OPERATORS,
     MAGIC_UNARY_OPERATORS,
+    SIGNED_INTEGER_TYPES,
 )
 
 from ..errors import FunctionEmissionError
@@ -318,6 +319,14 @@ class CallExpressionMixin:
             self._llvm_type_size(source_type, self._pointer_size),
         )
 
+    def _compile_signed_argument(self, source_spec: object) -> ir.Constant:
+        """Encode signedness as 0 for signed types and 1 otherwise."""
+        type_name = getattr(source_spec, 'name', None)
+        signed = getattr(source_spec, 'signed', None)
+        if signed is None:
+            signed = type_name in SIGNED_INTEGER_TYPES
+        return ir.Constant(self._size_integer_type(), 0 if signed else 1)
+
     @staticmethod
     def _visible_initializer_parameters(parameters: object) -> list[object]:
         return [
@@ -325,6 +334,7 @@ class CallExpressionMixin:
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_signed', False)
                 or getattr(parameter, 'is_region', False)
                 or getattr(parameter, 'is_receiver', False)
             )
@@ -684,6 +694,7 @@ class CallExpressionMixin:
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_signed', False)
                 or getattr(parameter, 'is_region', False)
                 or getattr(parameter, 'is_receiver', False)
             )
@@ -710,6 +721,7 @@ class CallExpressionMixin:
             if not (
                 getattr(parameter, 'is_length', False)
                 or getattr(parameter, 'is_size', False)
+                or getattr(parameter, 'is_signed', False)
                 or getattr(parameter, 'is_receiver', False)
             ):
                 source_llvm_indices[parameter.name] = source_llvm_index
@@ -729,9 +741,14 @@ class CallExpressionMixin:
                 llvm_index += 1
                 continue
 
-            if parameter.is_length or parameter.is_size:
-                source = source_arguments.get(parameter.length_of or '')
-                source_parameter = source_parameters.get(parameter.length_of or '')
+            if parameter.is_length or parameter.is_size or parameter.is_signed:
+                source_name = (
+                    parameter.signed_of
+                    if parameter.is_signed
+                    else parameter.length_of
+                )
+                source = source_arguments.get(source_name or '')
+                source_parameter = source_parameters.get(source_name or '')
                 if source is None:
                     raise FunctionEmissionError(
                         'Len_t/Size_t no tiene un valor fuente asociado'
@@ -752,7 +769,7 @@ class CallExpressionMixin:
                             values,
                         )
                     )
-                else:
+                elif parameter.is_size:
                     compiled.append(
                         self._compile_size_argument(
                             source,
@@ -760,6 +777,12 @@ class CallExpressionMixin:
                             source_parameter.type_spec,
                             builder,
                             values,
+                        )
+                    )
+                else:
+                    compiled.append(
+                        self._compile_signed_argument(
+                            source_parameter.type_spec,
                         )
                     )
                 llvm_index += 1

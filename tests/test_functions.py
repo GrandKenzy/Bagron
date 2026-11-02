@@ -82,6 +82,35 @@ class FunctionSemanticTests(unittest.TestCase):
         self.assertTrue(parameters[3].is_region)
         self.assertIn('noalias', Path(ir_path).read_text(encoding='utf-8'))
 
+    def test_signed_t_expands_to_zero_for_signed_and_one_for_unsigned_arrays(self):
+        source = (
+            'func signed_data(data: int32[2], length: Len_t, '
+            'size: Size_t, sign_flag: Signed_t) void:\n'
+            '    return\n'
+            'func unsigned_data(data: uint32[2], length: Len_t, '
+            'size: Size_t, sign_flag: Signed_t) void:\n'
+            '    return\n'
+        )
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            source
+            + '\nfunc main() int32:\n'
+            + '    signed_values: int32[2] = {1, 2}\n'
+            + '    unsigned_values: uint32[2] = {3, 4}\n'
+            + '    signed_data(signed_values)\n'
+            + '    unsigned_data(unsigned_values)\n'
+            + '    return 0\n',
+            encoding='utf-8',
+        )
+
+        ir_path = Compiler().compile(path, executable=False)
+        module = Path(ir_path).read_text(encoding='utf-8')
+
+        self.assertRegex(module, r'call void @signed_data\([^)]*i64 0\)')
+        self.assertRegex(module, r'call void @unsigned_data\([^)]*i64 1\)')
+
     def test_unique_rejects_same_storage_and_missing_region(self):
         with self.assertRaisesRegex(CompilationError, 'debe declarar Region_t'):
             self.compile_source(

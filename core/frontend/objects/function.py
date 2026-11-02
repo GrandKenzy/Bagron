@@ -18,7 +18,11 @@ class ParameterSpec:
     # supplied by the compiler from the data parameter immediately before them.
     is_length: bool = False
     is_size: bool = False
+    # ``Signed_t`` carries the signedness of the associated data parameter:
+    # zero for signed types and one for non-signed types.
+    is_signed: bool = False
     length_of: str | None = None
+    signed_of: str | None = None
     # ``Region_t`` is an immutable compiler-supplied provenance expansion.
     is_region: bool = False
     region_of: str | None = None
@@ -31,7 +35,7 @@ class ParameterSpec:
 
     @property
     def is_compiler_supplied(self) -> bool:
-        return self.is_length or self.is_size or self.is_region
+        return self.is_length or self.is_size or self.is_signed or self.is_region
 
 
 @dataclass(frozen=True)
