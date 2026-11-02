@@ -858,6 +858,16 @@ def collect_methods(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
                 )
                 continue
 
+            try:
+                function_tools._validate_return_type(
+                    compiler,
+                    f'{class_symbol.name}.{source_name}',
+                    source_signature.return_type,
+                )
+            except TypeResolutionError as error:
+                compiler.error(str(error))
+                continue
+
             decorators = function_tools._decorator_names(item)
             method_name = f'{class_symbol.name}.{source_name}'
             _method_decorators(compiler, method_name, decorators)

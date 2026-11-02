@@ -47,34 +47,38 @@ class PointerAndAddressTests(unittest.TestCase):
         )
         self.assertEqual(20, result.returncode)
 
-    def test_pointer_parameter_and_pointer_return_follow_llvm_types(self):
+    def test_pointer_parameters_remain_usable_without_pointer_returns(self):
         module_path = self._compile(
             'value: int32 = 7\n'
-            'func identity(pointer *: int32) int32*:\n'
-            '    return pointer\n'
             '@unsafe\n'
             'func read(pointer *: int32) int32:\n'
             '    return (pointer)\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    global value\n'
-            '    return read(identity($value))\n',
+            '    return read($value)\n',
             executable=False,
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn('define i32* @"identity"(i32*', module)
         self.assertIn('define i32 @"read"(i32*', module)
+
+        with self.assertRaisesRegex(CompilationError, 'no puede retornar punteros'):
+            self._compile(
+                'func identity(pointer *: int32) int32*:\n'
+                '    return pointer\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                executable=False,
+            )
 
     def test_void_pointer_uses_generic_llvm_pointer(self):
         module_path = self._compile(
             'func consume(pointer *: void) void:\n'
             '    return\n'
-            'func make() void*:\n'
-            '    return Null\n'
             'func main() int32:\n'
             '    value: int32 = 7\n'
-            '    handle *: void = make()\n'
+            '    handle *: void = Null\n'
             '    consume($value)\n'
             '    consume(handle)\n'
             '    return 0\n',
@@ -83,7 +87,6 @@ class PointerAndAddressTests(unittest.TestCase):
 
         module = Path(module_path).read_text(encoding='utf-8')
         self.assertIn('define void @"consume"(i8*', module)
-        self.assertIn('define i8* @"make"()', module)
 
     def test_global_address_and_constant_gep(self):
         module_path = self._compile(

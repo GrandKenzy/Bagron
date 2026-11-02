@@ -698,11 +698,6 @@ def signature_from_node(
         pointer_level=return_pointer,
         pointer_size=pointer_size,
     )
-    if return_type.name == 'buffer':
-        raise TypeResolutionError(
-            f'La funcion {name or "<anonima>"} no puede retornar buffer hasta '
-            'definir su ABI de propiedad entre funciones'
-        )
     if return_type.name == 'Never' and (
         return_type.pointer_level or return_type.array_depth
     ):
@@ -715,6 +710,56 @@ def signature_from_node(
     return name, FunctionSignature(
         parameters=parameters,
         return_type=return_type,
+    )
+
+
+_PURE_RETURN_TYPES = INTEGER_TYPES | {
+    'bool',
+    'char',
+    'chain',
+    'middle',
+    'float',
+    'double',
+}
+
+
+def _validate_return_type(
+    compiler: Compiler,
+    name: str,
+    return_type: TypeSpec,
+) -> None:
+    """Keep source-level returns value-like and free of borrowed storage.
+
+    Arrays, buffers and pointers are represented by storage or addresses whose
+    lifetime belongs to a caller or scope. Bagron functions do not transfer
+    those resources through returns; aggregates remain valid value results.
+    ``extern`` declarations use their separate ABI validator.
+    """
+    if return_type.name == 'buffer':
+        raise TypeResolutionError(
+            f'La funcion {name or "<anonima>"} no puede retornar buffer; '
+            'los buffers solo se rellenan mediante parametros'
+        )
+    if return_type.pointer_level:
+        raise TypeResolutionError(
+            f'La funcion {name or "<anonima>"} no puede retornar punteros; '
+            'solo puede retornar valores intrinsecos u objetos'
+        )
+    if return_type.array_depth:
+        raise TypeResolutionError(
+            f'La funcion {name or "<anonima>"} no puede retornar arrays; '
+            'solo puede retornar valores intrinsecos u objetos'
+        )
+    if (
+        return_type.name in {'void', 'Never'}
+        or return_type.name in _PURE_RETURN_TYPES
+    ):
+        return
+    if compiler.storage.resolve_type(return_type.name) is not None:
+        return
+    raise TypeResolutionError(
+        f'El retorno de {name or "<anonima>"} debe ser un intrinseco puro '
+        'o un objeto agregado (struct, mold, flags o class)'
     )
 
 
@@ -769,6 +814,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
                 node,
                 pointer_size=compiler.storage.pointer_size,
             )
+            _validate_return_type(compiler, name, signature.return_type)
         except TypeResolutionError as error:
             compiler.error(str(error))
             continue
