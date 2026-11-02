@@ -6,8 +6,9 @@ clause System 'windows'
 clause Arch 'amd'
 clause Optimizations 'prod'
 
-import standard
-import time
+import standard as std
+import time as time
+import formatting as formatting
 
 extern "kernel32":
     CreateFileA(
@@ -66,7 +67,7 @@ inline func build_record(
 
     ; El serializador valida el espacio restante y escribe el terminador.
     ; El terminador se sustituye por salto de linea para conservar el formato.
-    written: usize = serialize_int64_at(output, position, value)
+    written: usize = formatting.serialize_int64_at(output, position, value)
     if written == 0:
         return 0
     position += written
@@ -126,16 +127,16 @@ func measure_control(iterations: uint32, minimum *: int64) int64:
 
     global control_sink
     for warmup: uint32 ran (0, 5, 1):
-        start = time_ticks()
+        start = time.time_ticks()
         for index: uint32 ran (0, iterations, 1):
             control_sink ^= index
-        time_ticks()
+        time.time_ticks()
 
     for sample: uint32 ran (0, 10, 1):
-        start = time_ticks()
+        start = time.time_ticks()
         for index: uint32 ran (0, iterations, 1):
             control_sink ^= index
-        elapsed = time_elapsed_ticks(start, time_ticks())
+        elapsed = time.time_elapsed_ticks(start, time.time_ticks())
         samples[sample] = elapsed
         if sample == 0:
             best = elapsed
@@ -159,23 +160,23 @@ func measure_buffer(iterations: uint32, minimum *: int64) int64:
     for warmup: uint32 ran (0, 5, 1):
         output_position = 0
         value = 123456789
-        start = time_ticks()
+        start = time.time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(output, output_position, value)
             output_position = written
             value += 1
-        time_ticks()
+        time.time_ticks()
         consume_buffer(output, output_position)
 
     for sample: uint32 ran (0, 10, 1):
         output_position = 0
         value = 123456789
-        start = time_ticks()
+        start = time.time_ticks()
         for index: uint32 ran (0, iterations, 1):
             written = build_record(output, output_position, value)
             output_position = written
             value += 1
-        elapsed = time_elapsed_ticks(start, time_ticks())
+        elapsed = time.time_elapsed_ticks(start, time.time_ticks())
         consume_buffer(output, output_position)
         samples[sample] = elapsed
         if sample == 0:
@@ -236,14 +237,14 @@ func report(
     median: int64,
     iterations: int64
 ) void:
-    print(label)
-    print(" min_ticks=")
-    printint(minimum)
-    print(" median_ticks=")
-    printint(median)
-    print(" per_call_ticks=")
-    printint(median / iterations)
-    print("\n")
+    std.print(label)
+    std.print(" min_ticks=")
+    std.printint(minimum)
+    std.print(" median_ticks=")
+    std.printint(median)
+    std.print(" per_call_ticks=")
+    std.printint(median / iterations)
+    std.print("\n")
     return
 
 @unsafe

@@ -4,8 +4,11 @@ clause Arch 'auto'
 clause System 'windows'
 
 import standard as std
-import time
-import alphabet
+import time as time
+import {
+    NumericString as NumericString,
+    AlphabetString as AlphabetString
+} from alphabet
 import model as data
 import math as numeric
 import assembly as machine

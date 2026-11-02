@@ -3,7 +3,7 @@
 clause System 'windows'
 clause Arch 'amd'
 
-import alphabet
+import { HexadecimalUpperString as HexadecimalUpperString } from alphabet
 
 ; GetStdHandle devuelve un handle estable durante la vida del proceso. Se
 ; inicializa bajo demanda para no pagar esa llamada en cada escritura.

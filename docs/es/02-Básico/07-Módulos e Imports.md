@@ -16,8 +16,8 @@ import { doble as twice } from math
 
 Las tres formas significan:
 
-- `import math`: hace disponibles las declaraciones públicas de `math` con
-  sus nombres originales.
+- `import math`: hace disponibles las declaraciones públicas de `math` bajo
+  el namespace `math`, por ejemplo `math.doble(...)`.
 - `import standard as std`: permite usar las declaraciones públicas mediante
   el nombre cualificado, por ejemplo `std.print(...)`.
 - `import { doble as twice } from math`: importa solo `doble` con el nombre

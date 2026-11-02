@@ -5,9 +5,9 @@ clause System 'windows'
 clause Arch 'amd'
 clause Optimizations 'prod'
 
-import console
-import standard
-import time
+import { printb, write_chars, write_text } from console
+import { print, printint } from standard
+import { time_ticks, time_us } from time
 
 @unsafe
 func measure_empty_loop(iterations: uint32) int64:

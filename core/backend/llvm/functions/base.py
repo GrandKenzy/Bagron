@@ -158,6 +158,16 @@ class FunctionEmitterBase:
                     function.calling_convention = symbol.calling_convention
                 self._functions[symbol.name] = function
 
+        # Qualified imports can be used inside an imported module's body, so
+        # their LLVM function aliases must exist before the first body emits.
+        for alias, target in storage.function_aliases.items():
+            function = self._functions.get(target)
+            if function is not None:
+                self._functions[alias] = function
+                symbol = self._symbols.get(target)
+                if symbol is not None:
+                    self._symbols[alias] = symbol
+
         emitted: set[str] = set()
         for symbol in all_symbols:
             if (
@@ -169,14 +179,6 @@ class FunctionEmitterBase:
                 if symbol.return_asm_node is None and not symbol.has_asm_body:
                     self._emit_function(symbol, self._functions[symbol.name])
                 emitted.add(symbol.name)
-
-        for alias, target in storage.function_aliases.items():
-            function = self._functions.get(target)
-            if function is not None:
-                self._functions[alias] = function
-                symbol = self._symbols.get(target)
-                if symbol is not None:
-                    self._symbols[alias] = symbol
 
         main = storage.functions.get('main')
         if main is not None:

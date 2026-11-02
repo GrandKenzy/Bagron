@@ -23,7 +23,7 @@ class ModuleTests(unittest.TestCase):
                 "clause Optimizations 'dev'\n"
                 'import library\n'
                 'func main() int32:\n'
-                '    for i: uint32 ran (0, value(), 1):\n'
+                '    for i: uint32 ran (0, library.value(), 1):\n'
                 '        pass\n'
                 '    return 0\n',
                 encoding='utf-8',
@@ -48,7 +48,7 @@ class ModuleTests(unittest.TestCase):
                 "clause Optimizations 'dev'\n"
                 'import math\n'
                 'func main() int32:\n'
-                '    return doble(3)\n',
+                '    return math.doble(3)\n',
                 encoding='utf-8',
             )
 
@@ -59,6 +59,25 @@ class ModuleTests(unittest.TestCase):
         self.assertIn('define i32 @"doble"', module)
         self.assertIn('call i32 @"doble"(i32 3)', module)
         self.assertEqual(2, len(compiler.storage.loaded_modules))
+
+    def test_plain_import_does_not_expose_unqualified_symbol(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'math.bg').write_text(
+                'func doble(value: int32) int32:\n'
+                '    return value + value\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import math\n'
+                'func main() int32:\n'
+                '    return doble(3)\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'funcion no existe'):
+                Compiler().compile(main, executable=False)
 
     def test_import_reports_missing_module(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -418,7 +437,7 @@ class ModuleTests(unittest.TestCase):
                 "clause Arch 'amd'\n"
                 'import agnostic\n'
                 'func main() int32:\n'
-                '    return value()\n',
+                '    return agnostic.value()\n',
                 encoding='utf-8',
             )
 
@@ -485,13 +504,13 @@ class ModuleTests(unittest.TestCase):
             (root / 'left.bg').write_text(
                 'import shared\n'
                 'func from_left() int32:\n'
-                '    return leaf()\n',
+                '    return shared.leaf()\n',
                 encoding='utf-8',
             )
             (root / 'right.bg').write_text(
                 'import shared\n'
                 'func from_right() int32:\n'
-                '    return leaf()\n',
+                '    return shared.leaf()\n',
                 encoding='utf-8',
             )
             main = root / '_main.bg'
@@ -500,7 +519,7 @@ class ModuleTests(unittest.TestCase):
                 'import left\n'
                 'import right\n'
                 'func main() int32:\n'
-                '    return from_left() + from_right()\n',
+                '    return left.from_left() + right.from_right()\n',
                 encoding='utf-8',
             )
 

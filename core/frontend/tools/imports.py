@@ -239,10 +239,15 @@ def bind_aliases(compiler: Compiler) -> None:
         exports = compiler.module_exports.get(request.target, set())
         if request.selected:
             bindings = request.selected
-        elif request.alias:
-            bindings = tuple((name, f'{request.alias}.{name}') for name in exports)
         else:
-            bindings = tuple((name, name) for name in exports)
+            # A module import always introduces a namespace.  Keeping the
+            # module name as the default qualifier prevents imported symbols
+            # from leaking into the caller's scope; selective imports remain
+            # the explicit escape hatch for direct local bindings.
+            namespace = request.alias or request.module
+            bindings = tuple(
+                (name, f'{namespace}.{name}') for name in exports
+            )
 
         seen_local: set[str] = set()
         for source_name, local_name in bindings:
@@ -274,7 +279,7 @@ def bind_aliases(compiler: Compiler) -> None:
                     continue
                 if existing is None:
                     compiler.storage.functions[local_name] = symbol
-                if local_name != source_name:
+                if local_name != source_name or request.selected:
                     compiler.storage.function_aliases[local_name] = source_name
                 continue
 
@@ -284,7 +289,7 @@ def bind_aliases(compiler: Compiler) -> None:
                 if existing is not None and existing is not variable:
                     compiler.error(f'El simbolo importado ya existe: {local_name}')
                     continue
-                if local_name != source_name:
+                if local_name != source_name or request.selected:
                     compiler.storage.variable_aliases[local_name] = variable
                 continue
 
@@ -294,7 +299,7 @@ def bind_aliases(compiler: Compiler) -> None:
                 if existing is not None and existing != source_name:
                     compiler.error(f'El simbolo importado ya existe: {local_name}')
                     continue
-                if local_name != source_name:
+                if local_name != source_name or request.selected:
                     compiler.storage.type_aliases[local_name] = source_name
                 continue
 

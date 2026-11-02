@@ -3,7 +3,7 @@
 clause System 'windows'
 clause Arch 'amd'
 
-import alphabet
+import { NumericString as NumericString } from alphabet
 
 ; Escribe un entero sin asignacion dinamica y deja el terminador en el buffer.
 @unsafe

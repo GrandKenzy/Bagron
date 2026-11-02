@@ -27,12 +27,20 @@ class FunctionLookup:
         current_function: object | None = None,
     ) -> FunctionSymbol | None:
         function = self.storage.functions.get(name)
-        if function is None or getattr(function, 'privacy', 'public') != 'private':
-            return function
+        if function is None:
+            return None
         origin = getattr(function, 'module_path', None)
         active = getattr(current_function, 'module_path', None)
         if active is None:
             active = self.storage.active_module_path
+        # The flattened function table still contains source definitions for
+        # every module.  Only a qualified import alias may cross that module
+        # boundary; unqualified lookup must stay within the active module.
+        if origin is not None and active is not None and origin != active \
+                and '.' not in name and name not in self.storage.function_aliases:
+            return None
+        if getattr(function, 'privacy', 'public') != 'private':
+            return function
         return function if origin is None or origin == active else None
 
     def get(self, name: str, default=None):
@@ -147,19 +155,35 @@ class Storage(diagnostic.Diagnostics):
             current = current.parent
         return current
 
-    def _is_visible(self, symbol: object | None) -> bool:
+    def _is_visible(self, symbol: object | None, name: str | None = None) -> bool:
         if symbol is None or getattr(symbol, 'privacy', 'public') != 'private':
-            return symbol is not None
+            if symbol is None:
+                return False
+            origin = getattr(symbol, 'module_path', None)
+            active = self._module_root().active_module_path
+            return (
+                origin is None
+                or active is None
+                or origin == active
+                or (
+                    name is not None
+                    and (
+                        '.' in name
+                        or name in self.variable_aliases
+                        or name in self.type_aliases
+                    )
+                )
+            )
         origin = getattr(symbol, 'module_path', None)
         active = self._module_root().active_module_path
         return origin is None or origin == active
 
     def resolve(self, name: str) -> SemanticObject | None:
         symbol = self.namespace.get(name)
-        if symbol is not None and self._is_visible(symbol):
+        if symbol is not None and self._is_visible(symbol, name):
             return symbol
         symbol = self.variable_aliases.get(name)
-        if symbol is not None and self._is_visible(symbol):
+        if symbol is not None and self._is_visible(symbol, name):
             return symbol
         if self.parent is not None:
             if self._function_root is self and name not in self.global_names:
@@ -252,12 +276,12 @@ class Storage(diagnostic.Diagnostics):
 
     def resolve_type(self, name: str) -> EnumSymbol | AggregateSymbol | None:
         symbol = self.types.get(name)
-        if symbol is not None and self._is_visible(symbol):
+        if symbol is not None and self._is_visible(symbol, name):
             return symbol
         alias = self.type_aliases.get(name)
         if alias is not None:
             symbol = self.types.get(alias)
-            if symbol is not None and self._is_visible(symbol):
+            if symbol is not None and self._is_visible(symbol, name):
                 return symbol
         if self.parent is not None:
             return self.parent.resolve_type(name)
@@ -268,4 +292,4 @@ class Storage(diagnostic.Diagnostics):
         symbol = self.namespace.get(name)
         if symbol is None:
             symbol = self.variable_aliases.get(name)
-        return symbol if self._is_visible(symbol) else None
+        return symbol if self._is_visible(symbol, name) else None
