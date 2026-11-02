@@ -382,7 +382,8 @@ func forward(data: int32[], length: Len_t, element_size: Size_t) void:
 para su longitud estática y terminador `NUL`, pero no está obligado a declarar
 `Size_t`. `Signed_t` es opcional; para un array, si se solicita, debe seguir a
 `Size_t`, y vale `0` para un elemento signed y `1` en los demás casos. En
-`char[]`, `byte[]` y arrays nominales el valor es `1`. En perfiles `prod` y
+`char[]` y `byte[]` el valor es `1`; en un tipo nominal se deriva de su
+representación subyacente. En perfiles `prod` y
 `high`, el backend conserva ese dato como un
 puntero SSA al rodata en vez de crear una copia local en la pila; el ABI no
 cambia. `dev` mantiene el almacenamiento explícito para facilitar la
