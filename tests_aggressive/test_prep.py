@@ -18,6 +18,26 @@ class PrepTests(unittest.TestCase):
         path.write_text(source, encoding='utf-8')
         return Path(Compiler().compile(path, executable=False))
 
+    def test_conditional_preprocessor_filters_inactive_source_before_parser(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            'clause System "windows"\n'
+            'clause Arch "amd"\n'
+            '#if OS, "windows"\n'
+            'func main() int32:\n'
+            '    return 0\n'
+            '#else\n'
+            'this is not Bagron and must never reach Gram\n'
+            '#end\n',
+            encoding='utf-8',
+        )
+
+        ir_path = Compiler().compile(path, executable=False)
+
+        self.assertTrue(ir_path.exists())
+
     def test_extracts_raw_assembler_to_function_file(self):
         ir_path = self._compile(
             '@assembler\n'
