@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from core.compiler import Compiler
 
 
-_FUNCTION_DECORATORS = frozenset({'unsafe', 'assembler'})
+_FUNCTION_DECORATORS = frozenset({'unsafe', 'assembler', 'recursive'})
 _MAGIC_STATUS_METHODS = frozenset({'__ongetter__', '__onsetter__'})
 _MAGIC_COMPARISON_METHODS = frozenset({'__eq__'})
 _MAGIC_LIFECYCLE_METHODS = frozenset({'__deletion__'})
@@ -268,6 +268,192 @@ def _validate_decorators(
                 f'El decorador @{decorator} esta repetido en {function_name}'
             )
         seen.add(decorator)
+
+
+def _unwrap_call_expression(node: object) -> object:
+    current = node
+    while (
+        isinstance(current, gast.ASTRef)
+        and current.name in {'VALUE', 'POSTFIX_EXPR', 'PRIMARY'}
+        and len(_children(current)) == 1
+    ):
+        current = _children(current)[0]
+    return current
+
+
+def _call_name_from_node(node: object) -> str | None:
+    current = _unwrap_call_expression(node)
+    if not isinstance(current, gast.ASTRef) or current.name not in {
+        'CALL', 'POSTFIX_EXPR'
+    }:
+        return None
+    children = _children(current)
+    primary = children[0] if children else None
+    suffixes: list[object] = []
+    for child in children[1:]:
+        suffixes.extend(_children(child) if isinstance(child, list) else [child])
+    if not any(
+        getattr(suffix, 'name', None) == 'CALL_SUFFIX'
+        for suffix in suffixes
+    ):
+        return None
+    name = _identifier(primary)
+    for suffix in suffixes:
+        if getattr(suffix, 'name', None) != 'MEMBER_ACCESS':
+            continue
+        member = _identifier(suffix)
+        if member is not None:
+            name = f'{name}.{member}' if name else member
+    return name
+
+
+def _contains_descendant_call(node: object, function_name: str) -> bool:
+    return any(
+        _call_name_from_node(child) == function_name
+        or _contains_descendant_call(child, function_name)
+        for child in _children(node)
+    )
+
+
+def _tail_recursive_candidate(symbol: FunctionSymbol) -> bool:
+    """Accept only direct tail calls that can reuse one simple frame."""
+    if symbol.name == 'main' or symbol.is_method or symbol.is_external:
+        return False
+    if any(
+        parameter.is_length
+        or parameter.is_size
+        or parameter.is_signed
+        or parameter.is_region
+        or parameter.type_spec.name == 'chain'
+        for parameter in symbol.signature.parameters
+    ):
+        return False
+    if any(
+        getattr(variable, 'scope_kind', None) != 'parameter'
+        for variable in getattr(symbol, 'local_variables', {}).values()
+    ):
+        return False
+
+    found = False
+    invalid = False
+
+    def visit(node: object) -> None:
+        nonlocal found, invalid
+        if not isinstance(node, gast.ASTRef):
+            for child in _children(node):
+                visit(child)
+            return
+        if node.name == 'RETURN':
+            value = _return_value(node)
+            if value is None:
+                return
+            if _call_name_from_node(value) == symbol.name:
+                if _contains_descendant_call(
+                    _unwrap_call_expression(value),
+                    symbol.name,
+                ):
+                    invalid = True
+                else:
+                    found = True
+            elif _contains_descendant_call(value, symbol.name):
+                invalid = True
+            return
+        if _call_name_from_node(node) == symbol.name:
+            invalid = True
+        for child in _children(node):
+            visit(child)
+
+    if symbol.body_node is None:
+        return False
+    visit(symbol.body_node)
+    return found and not invalid
+
+
+def _recursive_components(
+    symbols: list[FunctionSymbol],
+) -> list[list[FunctionSymbol]]:
+    by_id = {id(symbol): symbol for symbol in symbols}
+    graph = {
+        id(symbol): [
+            id(target)
+            for target in getattr(symbol, 'called_functions', ())
+            if id(target) in by_id
+        ]
+        for symbol in symbols
+    }
+    index = 0
+    indices: dict[int, int] = {}
+    lowlinks: dict[int, int] = {}
+    stack: list[int] = []
+    on_stack: set[int] = set()
+    components: list[list[FunctionSymbol]] = []
+
+    def visit(node_id: int) -> None:
+        nonlocal index
+        indices[node_id] = index
+        lowlinks[node_id] = index
+        index += 1
+        stack.append(node_id)
+        on_stack.add(node_id)
+
+        for target_id in graph[node_id]:
+            if target_id not in indices:
+                visit(target_id)
+                lowlinks[node_id] = min(lowlinks[node_id], lowlinks[target_id])
+            elif target_id in on_stack:
+                lowlinks[node_id] = min(lowlinks[node_id], indices[target_id])
+
+        if lowlinks[node_id] != indices[node_id]:
+            return
+        component_ids: list[int] = []
+        while True:
+            target_id = stack.pop()
+            on_stack.remove(target_id)
+            component_ids.append(target_id)
+            if target_id == node_id:
+                break
+        components.append([by_id[item] for item in component_ids])
+
+    for symbol in symbols:
+        if id(symbol) not in indices:
+            visit(id(symbol))
+    return components
+
+
+def validate_recursion(compiler: Compiler) -> None:
+    """Reject unmarked recursive cycles after all calls have been resolved."""
+    symbols: list[FunctionSymbol] = []
+    seen: set[int] = set()
+    for symbol in [
+        *compiler.storage.functions.values(),
+        *compiler.storage.methods.values(),
+    ]:
+        if id(symbol) not in seen and not symbol.is_external:
+            seen.add(id(symbol))
+            symbols.append(symbol)
+
+    for symbol in symbols:
+        if any(target is symbol for target in symbol.called_functions):
+            symbol.tail_recursive = _tail_recursive_candidate(symbol)
+
+    for component in _recursive_components(symbols):
+        is_self_cycle = len(component) == 1 and any(
+            target is component[0]
+            for target in component[0].called_functions
+        )
+        if len(component) == 1 and not is_self_cycle:
+            continue
+        if is_self_cycle and component[0].tail_recursive:
+            continue
+        missing = [symbol for symbol in component if not symbol.is_recursive]
+        if not missing:
+            continue
+        cycle = ' -> '.join(sorted(symbol.name for symbol in component))
+        for symbol in missing:
+            compiler.error(
+                f'La funcion {symbol.name} participa en una recursividad sin '
+                f'limite declarado (ciclo: {cycle}); usa @recursive'
+            )
 
 
 def validate_magic_method_signature(
@@ -2099,6 +2285,7 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
 __all__ = [
     'collect',
     'process',
+    'validate_recursion',
     'signature_from_node',
     'validate_magic_method_signature',
 ]

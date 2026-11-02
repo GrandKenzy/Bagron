@@ -928,6 +928,19 @@ class StatementEmitterMixin:
             return
         if return_node is None:
             raise FunctionEmissionError('El return necesita un valor')
+        if (
+            active_symbol is not None
+            and active_symbol.tail_recursive
+            and self._tail_loop_block is not None
+            and self._is_tail_recursive_call(return_node, active_symbol)
+        ):
+            self._compile_call(
+                self._unwrap(return_node),
+                builder,
+                values,
+                tail_call_block=self._tail_loop_block,
+            )
+            return
         result = self._compile_expression(
             return_node,
             builder,
@@ -941,6 +954,36 @@ class StatementEmitterMixin:
             signed=not self._expression_is_unsigned(return_node),
         )
         builder.ret(result)
+
+    @classmethod
+    def _is_tail_recursive_call(
+        cls,
+        node: object,
+        symbol: FunctionSymbol,
+    ) -> bool:
+        current = cls._unwrap(node)
+        if getattr(current, 'name', None) not in {'CALL', 'POSTFIX_EXPR'}:
+            return False
+        children = cls._children(current)
+        primary = children[0] if children else None
+        suffixes: list[object] = []
+        for child in children[1:]:
+            suffixes.extend(
+                cls._children(child) if isinstance(child, list) else [child]
+            )
+        if not any(
+            getattr(suffix, 'name', None) == 'CALL_SUFFIX'
+            for suffix in suffixes
+        ):
+            return False
+        name = cls._identifier(primary)
+        for suffix in suffixes:
+            if getattr(suffix, 'name', None) != 'MEMBER_ACCESS':
+                continue
+            member = cls._identifier(suffix)
+            if member is not None:
+                name = f'{name}.{member}' if name else member
+        return name == symbol.name
 
     def _emit_for(
         self,
@@ -1429,7 +1472,16 @@ class StatementEmitterMixin:
         }
         self._loop_targets.clear()
         values = self._prepare_values(symbol, builder, list(function.args))
+        if symbol.tail_recursive:
+            self._tail_loop_block = function.append_basic_block(
+                name='tail.recursive'
+            )
+            builder.branch(self._tail_loop_block)
+            builder = ir.IRBuilder(self._tail_loop_block)
+        else:
+            self._tail_loop_block = None
         self._emit_body(symbol.body_node, builder, values, function, symbol)
+        self._tail_loop_block = None
         if builder.block.terminator is None and (
             symbol.signature.return_type.name == 'Never'
             and symbol.signature.return_type.pointer_level == 0
@@ -1508,6 +1560,7 @@ class StatementEmitterMixin:
             if getattr(variable, 'value_info', None) is not None
         }
         self._loop_targets.clear()
+        self._tail_loop_block = None
         values = self._prepare_values(symbol, source_builder, [])
         self._emit_body(
             symbol.body_node,

@@ -410,6 +410,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func invert_forward(\n'
                 '    chars: char[],\n'
                 '    chars_length: Len_t,\n'
@@ -432,6 +433,7 @@ class StandardLibraryTests(unittest.TestCase):
                 '        return 14\n'
                 '    return invert_reverse(source, chars, step + 1)\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func invert_reverse(\n'
                 '    source: chain,\n'
                 '    source_length: Len_t,\n'
@@ -484,6 +486,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func walk_forward(\n'
                 '    numbers: int32[2][3],\n'
                 '    numbers_length: Len_t,\n'
@@ -514,6 +517,7 @@ class StandardLibraryTests(unittest.TestCase):
                 '        return 0\n'
                 '    return walk_reverse(raw, numbers, step + 1)\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func walk_reverse(\n'
                 '    raw: byte[2][2],\n'
                 '    raw_length: Len_t,\n'
@@ -571,6 +575,7 @@ class StandardLibraryTests(unittest.TestCase):
             main.write_text(
                 'import { print, printa, printb, print_int, serialize_int, serialize_int_at } from standard\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func walk_forward(\n'
                 '    numbers: int16[2][3][4],\n'
                 '    numbers_length: Len_t,\n'
@@ -599,6 +604,7 @@ class StandardLibraryTests(unittest.TestCase):
                 '        return 0\n'
                 '    return walk_reverse(raw3d, numbers, step + 1)\n'
                 '@unsafe\n'
+                '@recursive\n'
                 'func walk_reverse(\n'
                 '    raw3d: byte[3][2][2],\n'
                 '    raw_length: Len_t,\n'

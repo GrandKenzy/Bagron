@@ -125,4 +125,5 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     # Methods live inside CLASS nodes rather than in the top-level function
     # list, but use the same body validator and local-variable collector.
     tools.classes.process_methods(compiler, nodes)
+    tools.function.validate_recursion(compiler)
     compiler.activate_module(None)
