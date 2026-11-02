@@ -87,6 +87,9 @@ class FunctionSymbol:
     # Flow-sensitive ownership metadata for buffers.  The backend never reads
     # this map; it exists only while validating the source body.
     buffer_states: dict[int, str] = field(default_factory=dict)
+    # Flow-sensitive proofs used by safe array indexing.  Facts are scoped to
+    # the conditional or loop that established them and never reach LLVM.
+    range_facts: list[object] = field(default_factory=list)
     # Module data is hidden from function/method scopes by default. A source
     # ``global name`` declaration records the explicit opt-in and is shared
     # with the function's Storage visibility gate.

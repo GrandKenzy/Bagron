@@ -78,6 +78,17 @@ def _validate_array_index(
     if _unsafe_context(function):
         return
     if not index.is_literal or not isinstance(index.value, int):
+        range_fact = next(
+            (
+                fact for fact in getattr(function, 'range_facts', ())
+                if getattr(fact, 'index', None) == index.identifier
+                and getattr(fact, 'source', None) == value.identifier
+                and getattr(fact, 'source_path', ()) == value.address_path
+            ),
+            None,
+        )
+        if range_fact is not None:
+            return
         length = (
             value.type_spec.array_lengths[0]
             if value.type_spec.array_lengths

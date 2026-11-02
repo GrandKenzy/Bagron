@@ -34,6 +34,11 @@ from core.frontend.tools.types import (
 )
 from core.frontend.tools.variable import build_symbol, collect_local
 from core.frontend.tools.opaque import is_opaque_type, validate_opaque_use
+from core.frontend.tools.ranges import (
+    body_preserves_range,
+    fact_from_condition,
+    for_fact,
+)
 from core.frontend.handles.variables import handle_variable
 from core.frontend.ownership import (
     BORROWED,
@@ -1364,7 +1369,7 @@ def _for_binding(
 
     iterator = build_symbol(scope, name, type_spec, kind='local')
     iterator.is_for_iterator = True
-    if array_form and length is not None:
+    if array_form:
         iterator.for_array_source = array_info.identifier
         iterator.for_array_path = array_info.address_path
         iterator.for_array_length = length
@@ -2072,7 +2077,37 @@ def _process_if_node(
     scope: Storage,
     loop_depth: int,
 ) -> None:
+    pending_fact: list[object | None] = []
+
     def visit(child: object) -> None:
+        if (
+            isinstance(child, gast.ASTRef)
+            and child.name in {'IF_SIGNATURE', 'ELIF_SIGNATURE'}
+        ):
+            _process_body_node(
+                compiler, symbol, child, returns, scope, loop_depth
+            )
+            fact = fact_from_condition(symbol, _condition_value(child))
+            pending_fact.append(fact)
+            return
+        if (
+            isinstance(child, gast.ASTRef)
+            and child.name == 'STATEMENT_BODY'
+            and pending_fact
+        ):
+            fact = pending_fact.pop()
+            if fact is not None and not body_preserves_range(child, fact):
+                fact = None
+            if fact is not None:
+                symbol.range_facts.append(fact)
+            try:
+                _process_body_node(
+                    compiler, symbol, child, returns, scope, loop_depth
+                )
+            finally:
+                if fact is not None:
+                    symbol.range_facts.pop()
+            return
         _process_body_node(
             compiler, symbol, child, returns, scope, loop_depth
         )
@@ -2090,8 +2125,36 @@ def _process_loop_node(
     loop_depth: int,
 ) -> None:
     loop_name = None
+    range_fact = None
     if node.name == 'FOR':
         loop_name = _for_binding(compiler, symbol, node, scope)
+        if loop_name is not None:
+            range_fact = for_fact(scope.namespace.get(loop_name))
+    else:
+        signature = next(
+            (
+                child for child in _children(node)
+                if isinstance(child, gast.ASTRef)
+                and child.name == 'WHILE_SIGNATURE'
+            ),
+            None,
+        )
+        range_fact = fact_from_condition(
+            symbol,
+            _condition_value(signature) if signature is not None else None,
+        )
+        body = next(
+            (
+                child for child in _children(node)
+                if isinstance(child, gast.ASTRef)
+                and child.name == 'STATEMENT_BODY'
+            ),
+            None,
+        )
+        if range_fact is not None and body is not None and not body_preserves_range(
+            body, range_fact
+        ):
+            range_fact = None
 
     def visit(child: object) -> None:
         _process_body_node(
@@ -2103,7 +2166,13 @@ def _process_loop_node(
             loop_depth + 1,
         )
 
-    analyze_loop(symbol, _children(node), symbol.local_variables, visit)
+    if range_fact is not None:
+        symbol.range_facts.append(range_fact)
+    try:
+        analyze_loop(symbol, _children(node), symbol.local_variables, visit)
+    finally:
+        if range_fact is not None:
+            symbol.range_facts.pop()
     symbol.body_supported_for_entrypoint = False
 
     if node.name == 'FOR' and loop_name is not None:
@@ -2260,6 +2329,7 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
 
     symbol.body_node = body
     symbol.buffer_states.clear()
+    symbol.range_facts.clear()
 
     _register_global_declarations(compiler, symbol, body)
 
