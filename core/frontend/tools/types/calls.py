@@ -304,6 +304,25 @@ def _validate_array_argument_storage(
         )
 
 
+def _validate_external_buffer_argument(
+    function_name: str,
+    function: object,
+    parameter: object,
+    argument: ValueInfo,
+) -> None:
+    """Keep managed buffer storage behind the Bagron ABI boundary."""
+    if (
+        not getattr(function, 'is_external', False)
+        or not getattr(parameter, 'type_spec', TypeSpec('void')).pointer_level
+        or not argument.buffer_derived
+    ):
+        return
+    raise ValueResolutionError(
+        f'El buffer administrado no puede pasar como puntero al extern '
+        f'{function_name}; usa una funcion Bagron con buffer[] o un puntero crudo'
+    )
+
+
 def _validate_unique_arguments(
     function_name: str,
     parameters: object,
@@ -571,6 +590,12 @@ def infer_call(
         )
         argument_infos[parameter.name] = argument_info
         _validate_array_argument_storage(name, parameter, argument_info)
+        _validate_external_buffer_argument(
+            name,
+            function,
+            parameter,
+            argument_info,
+        )
         if not is_compatible(parameter.type_spec, argument_info):
             raise ValueResolutionError(
                 f'El argumento de {name} no coincide con '

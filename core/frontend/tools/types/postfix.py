@@ -20,6 +20,7 @@ from .compatibility import _is_integer_scalar, is_compatible
 from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
     _validate_array_argument_storage, _validate_expansion_parameters,
+    _validate_external_buffer_argument,
     _validate_unique_arguments,
     _visible_parameters,
 )
@@ -89,6 +90,7 @@ def _deref_value(value: ValueInfo) -> ValueInfo:
         region_origin=value.region_origin,
         pointer_provenance_unknown=value.pointer_provenance_unknown,
         member_owner=value.member_owner,
+        buffer_derived=value.buffer_derived,
     )
 
 
@@ -184,6 +186,12 @@ def _infer_postfix(
             )
             argument_infos[parameter.name] = argument_info
             _validate_array_argument_storage(name, parameter, argument_info)
+            _validate_external_buffer_argument(
+                name,
+                function,
+                parameter,
+                argument_info,
+            )
             if not is_compatible(parameter.type_spec, argument_info):
                 raise ValueResolutionError(
                     f'El argumento de {name} no coincide con '

@@ -173,6 +173,7 @@ def _buffer_index_value(value: ValueInfo, index: ValueInfo) -> ValueInfo:
         address_path=(*value.address_path, ('index', index)),
         member_owner=value.member_owner,
         region_origin=value.region_origin,
+        buffer_derived=True,
     )
 
 

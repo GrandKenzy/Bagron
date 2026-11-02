@@ -87,6 +87,10 @@ def infer_value(
                 address_origin=operand.storage_origin or operand.address_origin,
                 address_of=operand.identifier,
                 address_path=operand.address_path,
+                buffer_derived=(
+                    operand.buffer_derived
+                    and operand.type_spec.pointer_level == 0
+                ),
                 member_owner=operand.member_owner,
             )
         if operator in LOGICAL_NOT_OPERATORS:
@@ -524,6 +528,11 @@ def infer_value(
             known_index_path=getattr(symbol, 'for_array_path', ()),
             known_index_length=getattr(symbol, 'for_array_length', None),
             region_origin=region_origin,
+            buffer_derived=(
+                getattr(initialized, 'buffer_derived', False)
+                if initialized is not None
+                else False
+            ),
         )
 
     if kind == 'BOOL' or isinstance(value, bool):

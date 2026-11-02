@@ -382,8 +382,12 @@ compatibles con la ABI. No puede usar arrays, `chain`, `Null` como tipo de
 firma ni metatipos `Len_t`/`Size_t`.
 
 Los punteros a arrays no reciben la conversión especial de los parámetros de
-array. Si una API necesita un buffer, debe declararse con el contrato que la
-ABI realmente espera y validar sus límites en la frontera `@unsafe`.
+array. Un `buffer` es distinto: su almacenamiento lo administra Bagron y nunca
+puede cruzar directamente un `extern` como puntero derivado de `$data[0]`, ni
+siquiera dentro de `@unsafe`. El tipo `buffer` sí puede cruzar funciones Bagron
+mediante `buffer[]`. Las APIs como `WriteFile` pueden seguir recibiendo un
+puntero crudo o la dirección explícita de un array fijo; esos casos siguen bajo
+la responsabilidad de la frontera `@unsafe`.
 
 ## Restricciones resumidas
 

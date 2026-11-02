@@ -153,3 +153,6 @@ class ValueInfo:
     # Safe ``unique`` calls require a compiler-proven storage identity. The
     # value is intentionally symbolic; no runtime ownership object is made.
     region_origin: str | None = None
+    # A pointer marked here came from indexing Bagron's managed ``buffer``.
+    # This is provenance for the extern boundary, not an ownership state.
+    buffer_derived: bool = False

@@ -70,6 +70,47 @@ class ExternTests(unittest.TestCase):
         self.assertIn('call i8* @"GetStdHandle"(i32 0)', module)
         self.assertIn('call i32 @"WriteFile"', module)
 
+    def test_extern_rejects_pointer_derived_from_managed_buffer(self):
+        with self.assertRaisesRegex(CompilationError, 'buffer administrado'):
+            self.compile_source(
+                "clause System 'windows'\n"
+                'extern c "ucrt":\n'
+                '    free(pointer *: void) void\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    data: buffer[4096] = 0\n'
+                '    free($data[0])\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'buffer administrado'):
+            self.compile_source(
+                "clause System 'windows'\n"
+                'extern c "ucrt":\n'
+                '    inspect(pointer *: byte) int32\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    data: buffer[4] = 0\n'
+                '    result: int32 = inspect($data[0])\n'
+                '    return result\n'
+            )
+
+    def test_extern_accepts_raw_pointers_and_fixed_arrays(self):
+        source = (
+            "clause System 'windows'\n"
+            'extern windows "kernel32":\n'
+            '    Native(pointer *: byte) void\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    payload: byte[4]\n'
+            '    raw *: byte = Null\n'
+            '    Native($payload[0])\n'
+            '    Native(raw)\n'
+            '    return 0\n'
+        )
+
+        self.compile_source(source)
+
     def test_extern_adds_library_and_links_windows_call(self):
         source = (
             "clause Arch 'auto'\n"
