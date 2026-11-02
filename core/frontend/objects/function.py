@@ -70,6 +70,7 @@ class FunctionSymbol:
     # ``return asm``.
     has_asm_body: bool = False
     external_library: str | None = None
+    external_domain: str | None = None
     calling_convention: str | None = None
     # Numeric `for` iterators are compiler-owned loop-local bindings.  They
     # are kept here because their lexical scope ends with the loop and they

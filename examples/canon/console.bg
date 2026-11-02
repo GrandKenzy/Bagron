@@ -10,7 +10,7 @@ import { HexadecimalUpperString as HexadecimalUpperString } from alphabet
 private stdout_handle *: void
 private stdout_initialized: bool = false
 
-extern "kernel32":
+extern windows "kernel32":
     GetStdHandle(nStdHandle: uint32) *: void
     WriteFile(
         hFile *: void,
