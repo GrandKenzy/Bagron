@@ -116,6 +116,26 @@ class OpaqueDescriptorTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_opaque_representation_consumes_and_rejects_array_suffixes(self):
+        for declaration in (
+            'opaque TOKEN: int32[2]\n',
+            'opaque TOKEN: int32[2][3]\n',
+        ):
+            with self.subTest(declaration=declaration):
+                with self.assertRaisesRegex(CompilationError, 'no puede ser un array'):
+                    self.compile_source(
+                        declaration
+                        + 'func main() int32:\n'
+                        + '    return 0\n'
+                    )
+
+        with self.assertRaisesRegex(CompilationError, 'no puede ser const'):
+            self.compile_source(
+                'opaque TOKEN: const int32\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
 
 if __name__ == '__main__':
     unittest.main()
