@@ -184,11 +184,12 @@ class LLVMBackend:
         stem = root.stem
         ir_path = build_dir / f'{stem}.ll'
         baremetal = str(getattr(storage, 'system', '')).lower() == 'baremetal'
+        linux = str(getattr(storage, 'system', '')).lower() == 'linux'
         boot = str(getattr(storage, 'boot', 'none')).lower()
-        object_suffix = '.o' if baremetal else '.obj'
+        object_suffix = '.o' if baremetal or linux else '.obj'
         object_path = build_dir / f'{stem}{object_suffix}'
         executable_path = build_dir / (
-            f'{stem}.bin' if baremetal else f'{stem}.exe'
+            f'{stem}.bin' if baremetal else (stem if linux else f'{stem}.exe')
         )
 
         ir_path.write_text(module_text, encoding='utf-8')

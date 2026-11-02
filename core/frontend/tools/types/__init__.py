@@ -87,8 +87,7 @@ from .values import (
 )
 
 from .compatibility import (
-    _constant_char_bytes,
-    constant_chain_value,
+    is_chain_to_char_array_conversion,
     _is_integer_scalar,
     _integer_bounds,
     _string_bytes,
@@ -173,8 +172,7 @@ __all__ = [
     '_infer_deref_target',
     'infer_lvalue',
     'infer_value',
-    '_constant_char_bytes',
-    'constant_chain_value',
+    'is_chain_to_char_array_conversion',
     '_is_integer_scalar',
     '_integer_bounds',
     '_string_bytes',

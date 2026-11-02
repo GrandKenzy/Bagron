@@ -11,7 +11,6 @@ from core.frontend.tools.types import (
     UnsupportedExpressionError,
     ValueResolutionError,
     buffer_capacity,
-    constant_chain_value,
     infer_value,
     is_buffer_type,
     is_compatible,
@@ -368,15 +367,6 @@ def _validate_initializer(
             f'{symbol.type_spec.canonical_name}'
         )
         return
-
-    if symbol.type_spec.name == 'chain' and value_info.type_spec.name != 'chain':
-        converted = constant_chain_value(value_info)
-        if converted is None:
-            compiler.error(
-                f'El valor inicial de {handle.name} requiere un char constante'
-            )
-            return
-        value_info = converted
 
     symbol.value_info = value_info
 

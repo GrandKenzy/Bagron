@@ -18,6 +18,10 @@ _BAGRON_SESSION_CONFIG = {
     'PARSER_ADD_ERROR': True,
     'PARSER_ADD_INFO': True,
     'LEXER_IGNORE_EMPTY_LINES': True,
+    # Los saltos de línea delimitan sentencias. La indentación continúa
+    # delimitando los bloques mediante INDENT/DEDENT.
+    'LEXER_IGNORE_NEWLINES': False,
+    'PARSER_REQUIRE_TOP_LEVEL_NEWLINES': True,
     'LEXER_SUPPORT_DOCSTRINGS': True,
     'LEXER_COMMENT_TOKEN': ';',
     'INFO_GENERATE_LOGFILE': True,

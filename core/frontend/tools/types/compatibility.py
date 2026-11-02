@@ -14,70 +14,22 @@ from .common import (
 from .resolution import buffer_capacity, is_buffer_type
 
 
-def _constant_char_bytes(value: ValueInfo) -> bytes | None:
-    """Return compile-time bytes from a constant char or char array."""
-    if not value.is_literal:
-        return None
-
-    type_spec = value.type_spec
-    if type_spec.name == 'chain' and type_spec.array_depth == 0:
-        return _string_bytes(value.value)
-
-    if (
-        type_spec.name == 'char'
-        and type_spec.pointer_level == 0
-        and type_spec.array_depth == 0
-    ):
-        if isinstance(value.value, str):
-            data = _string_bytes(value.value, ascii_only=True)
-            return data if data is not None and len(data) == 1 else None
-        if isinstance(value.value, int) and 0 <= value.value <= 255:
-            return bytes((value.value,))
-        return None
-
-    if (
-        type_spec.name != 'char'
-        or type_spec.pointer_level
-        or type_spec.array_depth != 1
-    ):
-        return None
-
-    if isinstance(value.value, str):
-        return _string_bytes(value.value, ascii_only=True)
-
-    if not value.items:
-        return None
-
-    result = bytearray()
-    for item in value.items:
-        if item.type_spec.name == 'chain' and item.is_literal:
-            data = _string_bytes(item.value, ascii_only=True)
-            if data is None or len(data) != 1:
-                return None
-            result.extend(data)
-            continue
-        if (
-            item.type_spec.name == 'char'
-            and item.is_literal
-            and isinstance(item.value, int)
-            and 0 <= item.value <= 255
-        ):
-            result.append(item.value)
-            continue
-        return None
-    return bytes(result)
-
-
-def constant_chain_value(value: ValueInfo) -> ValueInfo | None:
-    """Convert a compile-time char value into the chain semantic value."""
-    data = _constant_char_bytes(value)
-    if data is None:
-        return None
-    try:
-        text = data.decode('ascii')
-    except UnicodeDecodeError as error:
-        raise ValueResolutionError('Una conversion a chain solo acepta ASCII') from error
-    return ValueInfo(TypeSpec('chain'), is_literal=True, value=text)
+def is_chain_to_char_array_conversion(
+    target: TypeSpec,
+    source: ValueInfo,
+) -> bool:
+    """Return whether a constant chain may materialize as a ``char[]``."""
+    return (
+        target.name == 'char'
+        and target.pointer_level == 0
+        and target.array_depth == 1
+        and source.type_spec.name == 'chain'
+        and source.type_spec.pointer_level == 0
+        and source.type_spec.array_depth == 0
+        and source.is_literal
+        and isinstance(source.value, str)
+        and _string_bytes(source.value, ascii_only=True) is not None
+    )
 
 
 def _is_integer_scalar(type_spec: TypeSpec) -> bool:
@@ -265,19 +217,24 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
                     and literal_shape[dimension] != target_length
                 ):
                     return False
+        if is_chain_to_char_array_conversion(target, source):
+            data = _string_bytes(source.value, ascii_only=True)
+            declared_length = _target_array_length(target, 0)
+            required_length = len(data) + 1
+            return declared_length is None or required_length <= declared_length
+
         if (
             target.array_depth == 1
+            and target.name == 'byte'
             and source.is_literal
             and source_type.name == 'chain'
             and source_type.array_depth == 0
-            and target.name in {'char', 'byte'}
         ):
-            data = _string_bytes(source.value, ascii_only=target.name == 'char')
+            data = _string_bytes(source.value)
             if data is None:
                 return False
             declared_length = _target_array_length(target, 0)
-            required_length = len(data) + (1 if target.name == 'char' else 0)
-            return declared_length is None or required_length <= declared_length
+            return declared_length is None or len(data) <= declared_length
 
         if (
             target.array_depth == 1
@@ -340,9 +297,11 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         return all(is_compatible(element_target, item) for item in source.items)
 
     if target.name == 'chain':
-        if source_type.name == 'chain' and source_type.array_depth == 0:
-            return True
-        return _constant_char_bytes(source) is not None
+        return (
+            source_type.name == 'chain'
+            and source_type.pointer_level == 0
+            and source_type.array_depth == 0
+        )
 
     if source_type.array_depth > 0:
         return False

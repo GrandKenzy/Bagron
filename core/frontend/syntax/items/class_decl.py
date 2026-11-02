@@ -22,16 +22,34 @@ class CLASS_SIGNATURE(cmb.RuleItem):
         cmb.MatchToken('COLON')
     )
     
+class CLASS_MEMBER(cmb.RuleItem):
+    nodeable = False
+    entrypoint = cmb.Alt(
+        cmb.Ref(FUNCTION),
+        cmb.MatchKeyword('pass')
+    )
+
+
+class NEXT_CLASS_MEMBER(cmb.RuleItem):
+    nodeable = False
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.Many(cmb.MatchToken('NEWLINE')),
+            cmb.Not(cmb.SameLine(cmb.Peek(cmb.Ref(CLASS_MEMBER)))),
+            cmb.Ref(CLASS_MEMBER),
+        ),
+        cmb.Seq(cmb.Expected.newline(), cmb.Ref(CLASS_MEMBER)),
+    )
+
+
 class CLASS_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
+        cmb.MatchToken('NEWLINE'),
         cmb.MatchToken('INDENT'),
-        cmb.Some(
-            cmb.Alt(
-                cmb.Ref(FUNCTION),
-                cmb.MatchKeyword('pass')
-            )
-        ),
+        cmb.Ref(CLASS_MEMBER),
+        cmb.Many(cmb.Ref(NEXT_CLASS_MEMBER)),
+        cmb.Many(cmb.MatchToken('NEWLINE')),
         cmb.MatchToken('DEDENT')
     )
     

@@ -17,7 +17,11 @@ from .resolution import (
     _resolve_function, _unsafe_context, _validate_array_index,
     _validate_chain_index, is_buffer_type,
 )
-from .compatibility import _is_integer_scalar, is_compatible
+from .compatibility import (
+    _is_integer_scalar,
+    is_chain_to_char_array_conversion,
+    is_compatible,
+)
 from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
     _record_function_call,
@@ -199,6 +203,15 @@ def _infer_postfix(
                 raise ValueResolutionError(
                     f'El argumento de {name} no coincide con '
                     f'{parameter.type_spec.canonical_name}'
+                )
+            if (
+                is_chain_to_char_array_conversion(parameter.type_spec, argument_info)
+                and getattr(signature, 'return_type', TypeSpec('void')).pointer_level
+                > 0
+            ):
+                raise ValueResolutionError(
+                    f'El argumento chain de {name} crea una temporal char[] que '
+                    'no puede escapar por un retorno puntero'
                 )
             if (
                 argument_info.type_spec.pointer_level > 0

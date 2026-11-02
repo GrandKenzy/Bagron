@@ -97,7 +97,15 @@ class CallExpressionMixin:
         target_type: ir.Type,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
+        target_spec: object | None = None,
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, target_spec):
+            return self._compile_chain_array_copy(
+                argument,
+                target_type,
+                builder,
+                values,
+            )
         if not isinstance(target_type, ir.PointerType):
             raise FunctionEmissionError(
                 'El parametro array no tiene una representacion de puntero'
@@ -173,7 +181,14 @@ class CallExpressionMixin:
         values: dict[str, ir.Value],
     ) -> ir.Value | None:
         source_name = self._identifier(argument)
-        if self._active_function_symbol is None or not source_name:
+        if not source_name:
+            return None
+        initializer_value = self._active_initializer_expansions.get(
+            (source_name, is_length)
+        )
+        if initializer_value is not None:
+            return initializer_value
+        if self._active_function_symbol is None:
             return None
         forwarded = next(
             (
@@ -208,6 +223,11 @@ class CallExpressionMixin:
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, source_spec):
+            return ir.Constant(
+                self._size_integer_type(),
+                self._compile_chain_length(argument),
+            )
         if getattr(source_spec, 'name', None) == 'chain':
             forwarded = self._compile_forwarded_expansion(
                 argument,
@@ -296,6 +316,8 @@ class CallExpressionMixin:
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value:
+        if self._is_chain_array_argument(argument, source_spec):
+            return ir.Constant(self._size_integer_type(), 1)
         if (
             getattr(source_spec, 'array_depth', 0) > 0
             and not getattr(source_spec, 'pointer_level', 0)
@@ -354,6 +376,7 @@ class CallExpressionMixin:
                 target_type,
                 builder,
                 values,
+                parameter.type_spec,
             )
         return self._coerce_value(
             self._compile_expression(
@@ -384,8 +407,21 @@ class CallExpressionMixin:
             )
 
         previous_specs = self._active_specs
+        previous_initializer_expansions = self._active_initializer_expansions
         previous_hook_suppression = self._suppress_magic_hooks
         self._active_specs = dict(initializer_specs)
+        self._active_initializer_expansions = {}
+        for parameter in getattr(aggregate, 'constructor_parameters', ()) or ():
+            if not (
+                getattr(parameter, 'is_length', False)
+                or getattr(parameter, 'is_size', False)
+            ):
+                continue
+            value = initializer_values.get(parameter.name)
+            if value is not None and parameter.length_of:
+                self._active_initializer_expansions[
+                    (parameter.length_of, parameter.is_length)
+                ] = value
         self._suppress_magic_hooks = True
         try:
             parent_name = getattr(aggregate, 'parent_type', None)
@@ -473,6 +509,7 @@ class CallExpressionMixin:
             return result
         finally:
             self._active_specs = previous_specs
+            self._active_initializer_expansions = previous_initializer_expansions
             self._suppress_magic_hooks = previous_hook_suppression
 
     def _compile_constructor(
@@ -515,6 +552,9 @@ class CallExpressionMixin:
 
         constructor_values = dict(values)
         constructor_specs = dict(self._active_specs)
+        visible_arguments = dict(
+            zip(visible_parameters, argument_items)
+        )
         for parameter, argument in zip(visible_parameters, argument_items):
             compiled = self._compile_initializer_argument(
                 parameter,
@@ -523,6 +563,39 @@ class CallExpressionMixin:
                 values,
             )
             constructor_values[parameter.name] = compiled
+            constructor_specs[parameter.name] = parameter.type_spec
+
+        for parameter in parameters:
+            if not (
+                getattr(parameter, 'is_length', False)
+                or getattr(parameter, 'is_size', False)
+            ):
+                continue
+            source_parameter = next(
+                (
+                    candidate for candidate in visible_parameters
+                    if candidate.name == parameter.length_of
+                ),
+                None,
+            )
+            source_argument = visible_arguments.get(source_parameter)
+            if source_parameter is None or source_argument is None:
+                continue
+            if parameter.is_length:
+                constructor_values[parameter.name] = self._compile_length_argument(
+                    source_argument,
+                    source_parameter.type_spec,
+                    builder,
+                    values,
+                )
+            else:
+                constructor_values[parameter.name] = self._compile_size_argument(
+                    source_argument,
+                    self._function_parameter_type(source_parameter.type_spec),
+                    source_parameter.type_spec,
+                    builder,
+                    values,
+                )
             constructor_specs[parameter.name] = parameter.type_spec
 
         result = self.type_registry.default_constant(TypeSpec(name))
@@ -810,6 +883,7 @@ class CallExpressionMixin:
                         target_type,
                         builder,
                         values,
+                        parameter.type_spec,
                     )
                 )
             else:

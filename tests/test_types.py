@@ -436,19 +436,31 @@ class TypeSemanticTests(unittest.TestCase):
         )
         self.assertEqual('char[3]', compiler.storage.namespace['letras'].type)
 
-    def test_compile_time_char_array_to_chain_conversion(self):
+    def test_chain_to_char_array_is_explicit_and_mutable(self):
         compiler = self.compile_source(
-            'source: const char[5] = "Hola"\n'
-            'message: chain = source\n'
             'func main() int32:\n'
+            '    source: chain = "Hola"\n'
+            '    copy: char[] = source\n'
+            '    copy[0] = "X"\n'
             '    return 0\n'
         )
-        self.assertTrue(compiler.storage.namespace['message'].value_is_const)
+        copy = compiler.storage.functions['main'].local_variables['copy']
+        self.assertEqual('char[5]', copy.type)
+        self.assertFalse(copy.value_is_const)
 
         with self.assertRaisesRegex(CompilationError, 'no coincide'):
             self.compile_source(
-                'func bad(value: char) int32:\n'
-                '    message: chain = value\n'
+                'source: const char[5] = "Hola"\n'
+                'message: chain = source\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+            self.compile_source(
+                'func bad() int32:\n'
+                '    source: char[5] = "Hola"\n'
+                '    message: chain = source\n'
                 '    return 0\n'
             )
 
