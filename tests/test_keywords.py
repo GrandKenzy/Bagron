@@ -21,6 +21,7 @@ class KeywordRegistryTests(unittest.TestCase):
             'macro',
             'sizeof',
             'Visibility',
+            'callptr',
         }
 
         self.assertTrue(removed.isdisjoint(registered))
@@ -46,3 +47,4 @@ class KeywordRegistryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
