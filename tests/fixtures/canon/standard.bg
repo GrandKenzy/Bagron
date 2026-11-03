@@ -1,0 +1,30 @@
+; Fachada de utilidades numericas para el ejemplo Windows.
+; La ABI y el algoritmo de serializacion viven en modulos separados.
+
+clause System 'windows'
+clause Arch 'amd'
+
+import console as console
+import formatting as formatting
+
+; Conserva la API de alto nivel y oculta el nombre de la primitiva Windows.
+@unsafe
+public inline func print(text: chain, length: Len_t) void:
+    console.write_text(text)
+    return
+
+; La API histórica de 32 bits conserva el nombre existente y escala a int64.
+@unsafe
+public inline func print_int(value: int32) void:
+    printint(value)
+    return
+
+; Imprime el rango completo de int64 sin asignacion dinamica.
+@unsafe
+public inline func printint(value: int64) void:
+    buffer: char[32]
+    written: usize = formatting.serialize_int64(buffer, value)
+    if written > 0:
+        console.write_chars(buffer, written)
+    return
+
