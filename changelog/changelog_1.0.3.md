@@ -1,5 +1,14 @@
 # Changelog 1.0.3
 
+## Installer Runtime
+
+- Compiled Windows and Linux installers now include a portable CPython 3.14
+  runtime with pip.
+- The installer extracts that runtime into `.runtime/` and installs vnma,
+  Gram, and llvmlite without requiring a global Python installation.
+- POSIX bootstrap installation downloads the compiled installer directly
+  instead of executing a Python script from the source tree.
+
 ## Modules and Linking
 
 - **Search in base Bagron directories (`modules/` and `libs/`)**:

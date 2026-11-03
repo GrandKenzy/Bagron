@@ -63,6 +63,8 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Prepare portable Python runtime
+        run: python tools/prepare_portable_python.py --platform linux --output-dir build/portable-python
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
@@ -91,6 +93,8 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Prepare portable Python runtime
+        run: python tools/prepare_portable_python.py --platform windows --output-dir build/portable-python
       - name: Build compiled Windows installer
         shell: pwsh
         run: |

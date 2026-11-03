@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 import installer
+from tools.prepare_portable_python import _select_asset
 from tools.package_linux import build_package
 from tools.package_windows import build_package as build_windows_package
 
@@ -25,22 +26,25 @@ class InstallerTests(unittest.TestCase):
                 content = launcher.read_text(encoding='utf-8')
                 self.assertIn('#!/usr/bin/env bash', content)
                 self.assertIn('BAGRON_CALLER_DIR="$PWD"', content)
-                self.assertIn('vnma_bin="$bagron_home/.venv/bin/vnma"', content)
-                self.assertIn('exec "$vnma_bin" run main.py "$@"', content)
+                self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
+                self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
 
-    def test_bootstrap_vnma_uses_a_private_virtual_environment(self):
+    def test_bootstrap_vnma_uses_a_private_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'Bagron'
-            venv_python = installer._venv_python_path(target / installer.LOCAL_VENV_NAME)
-            vnma_path = installer._vnma_path(target / installer.LOCAL_VENV_NAME)
+            runtime_dir = target / installer.LOCAL_RUNTIME_NAME
+            if installer.os.name == 'nt':
+                (runtime_dir / 'Scripts').mkdir(parents=True)
+            runtime_python = installer._runtime_python_path(runtime_dir)
+            vnma_path = installer._vnma_path(runtime_dir)
             calls = []
 
             def fake_run(command, **kwargs):
                 text_command = [str(part) for part in command]
                 calls.append(text_command)
-                if 'venv' in text_command:
-                    venv_python.parent.mkdir(parents=True, exist_ok=True)
-                    venv_python.touch()
+                if '-m' in text_command and 'venv' in text_command:
+                    runtime_python.parent.mkdir(parents=True, exist_ok=True)
+                    runtime_python.touch()
                 elif text_command[-2:] == ['--upgrade', 'vnma']:
                     vnma_path.parent.mkdir(parents=True, exist_ok=True)
                     vnma_path.touch()
@@ -64,6 +68,19 @@ class InstallerTests(unittest.TestCase):
                 )
             )
 
+    def test_windows_launchers_use_portable_python_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory) / 'bin'
+            with mock.patch.object(installer.os, 'name', 'nt'):
+                installer._create_launchers(bin_dir)
+
+            cmd_content = (bin_dir / 'Bagron.cmd').read_text(encoding='utf-8')
+            ps1_content = (bin_dir / 'Bagron.ps1').read_text(encoding='utf-8')
+            self.assertIn(r'.runtime\python.exe', cmd_content)
+            self.assertIn('"%PYTHON%" -m vnma run main.py %*', cmd_content)
+            self.assertIn(r'.runtime\python.exe', ps1_content)
+            self.assertIn('& $python -m vnma run main.py @args', ps1_content)
+
     def test_installer_writes_current_version_to_vnma_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
@@ -75,6 +92,20 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
             self.assertFalse((target / 'vnma.lock').exists())
+
+    def test_portable_python_builder_prefers_stripped_runtime(self):
+        assets = [
+            {
+                'name': 'cpython-3.14.10+20261026-x86_64-pc-windows-msvc-install_only.tar.gz',
+            },
+            {
+                'name': 'cpython-3.14.10+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz',
+            },
+        ]
+
+        selected = _select_asset(assets, python_minor='3.14', target='windows')
+
+        self.assertTrue(selected['name'].endswith('install_only_stripped.tar.gz'))
 
     def test_local_install_does_not_reuse_vnma_or_vendor_state(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
@@ -135,7 +166,9 @@ class InstallerTests(unittest.TestCase):
         linux_job = workflow.split('  package-linux:', 1)[1].split('  package-windows:', 1)[0]
         windows_job = workflow.split('  package-windows:', 1)[1].split('  publish:', 1)[0]
         publish_job = workflow.split('  publish:', 1)[1]
-        self.assertTrue((Path(__file__).resolve().parents[2] / 'bagron-installer.spec').is_file())
+        source_root = Path(__file__).resolve().parents[2]
+        self.assertTrue((source_root / 'bagron-installer.spec').is_file())
+        self.assertTrue((source_root / 'tools' / 'prepare_portable_python.py').is_file())
 
         self.assertNotIn('package_linux.py', workflow)
         self.assertNotIn('package_windows.py', workflow)
@@ -151,6 +184,10 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('bagron-installer.spec', windows_job)
         self.assertIn('Bagron-${env:GITHUB_REF_NAME}-Setup.exe', windows_job)
         self.assertIn('path: dist/Bagron-${{ github.ref_name }}-Setup.exe', windows_job)
+        self.assertIn('prepare_portable_python.py --platform linux', linux_job)
+        self.assertIn('prepare_portable_python.py --platform windows', windows_job)
+        self.assertIn('build/portable-python', linux_job)
+        self.assertIn('build/portable-python', windows_job)
         self.assertIn('gh release delete-asset', publish_job)
         self.assertIn('--notes-file "$notes_file"', publish_job)
 

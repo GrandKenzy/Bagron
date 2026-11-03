@@ -1,11 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+
+portable_python_root = Path('build/portable-python')
+if not portable_python_root.is_dir():
+    raise SystemExit(
+        'Falta build/portable-python; ejecuta tools/prepare_portable_python.py antes de PyInstaller.'
+    )
+portable_python = [
+    (
+        str(path),
+        str(Path('portable-python') / path.relative_to(portable_python_root).parent),
+    )
+    for path in portable_python_root.rglob('*')
+    if path.is_file()
+]
+if not portable_python:
+    raise SystemExit('build/portable-python no contiene archivos para embebir.')
+
 
 a = Analysis(
     ['installer.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=portable_python,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

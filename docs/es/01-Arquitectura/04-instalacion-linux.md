@@ -6,17 +6,21 @@ release no publica paquetes fuente comprimidos.
 
 ## Requisitos
 
-- Python 3.14 o superior.
 - Git, para descargar las fuentes nativas de Gram cuando el paquete no incluya
   la biblioteca AOT.
 - LLVM, Clang y LLD disponibles en el PATH.
 - `libcurl.so.4` si el proyecto usa el módulo `net` con `https://`.
 
+El instalador ELF incluye un runtime portable de Python 3.14 con `pip`, por lo
+que no necesita Python instalado globalmente. La ejecución de `installer.py`
+desde una copia del repositorio sí requiere Python 3.14+ como herramienta de
+desarrollo.
+
 En Debian o Ubuntu, las herramientas base pueden instalarse con:
 
 ```bash
 sudo apt update
-sudo apt install python3 python3-venv python3-pip git clang lld libcurl4
+sudo apt install git clang lld libcurl4
 ```
 
 ## Instalación desde Internet
@@ -25,9 +29,9 @@ sudo apt install python3 python3-venv python3-pip git clang lld libcurl4
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
 ```
 
-El comando instala Bagron en `~/Bagron`, crea una venv privada, instala vnma,
-resuelve Gram y llvmlite, construye el parser AOT/FFI de Gram cuando es
-necesario y crea:
+El comando descarga el instalador ELF, que instala Bagron en `~/Bagron`,
+extrae su Python portable en `.runtime/`, instala vnma, resuelve Gram y
+llvmlite, construye el parser AOT/FFI de Gram cuando es necesario y crea:
 
 - `~/.local/bin/bagron`
 - `~/.local/bin/Bagron`
@@ -56,8 +60,8 @@ chmod +x Bagron-1.0.3-linux-x86_64
 ./Bagron-1.0.3-linux-x86_64
 ```
 
-Para desinstalar:
+Para desinstalar usando el Python portable incluido:
 
 ```bash
-python3 "$HOME/Bagron/installer.py" --uninstall
+"$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
 ```

@@ -177,16 +177,24 @@ Desde el release puedes descargar el instalador compilado
 `Bagron-1.0.3-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
-El instalador necesita Python 3.14 o superior, Git y LLVM/Clang/LLD. Crea una
-venv privada en `.venv`, instala `vnma` dentro de ella y usa `vnma install`
-para resolver Gram y `llvmlite`; no modifica el Python global.
+El instalador compilado ya incluye un runtime portable de Python 3.14 con
+`pip`. Lo extrae en `.runtime/`, instala `vnma` dentro de ese runtime y usa
+`vnma install` para resolver Gram y `llvmlite`; no necesita Python global ni
+modifica ninguna instalación de Python del sistema. Git y LLVM/Clang/LLD
+siguen siendo necesarios para descargar Gram y construir el parser AOT.
+
+La ejecución directa desde una copia del repositorio (`python installer.py`)
+sigue siendo una ruta de desarrollo y usa Python 3.14+ del sistema para crear
+su runtime local.
 
 ### Linux
 
-El instalador Linux requiere Python 3.14+, Git, LLVM/Clang/LLD y, para
-proyectos que usen `net` con HTTPS, `libcurl.so.4`. `vnma`, Gram y `llvmlite`
-se instalan dentro de la venv privada de Bagron. Puede ejecutarse directamente
-desde el release publicado:
+El instalador Linux compilado incluye un runtime portable de Python 3.14 con
+`pip`. Lo extrae en `.runtime/`, instala `vnma`, Gram y `llvmlite` allí y no
+requiere Python global. Git y LLVM/Clang/LLD siguen siendo necesarios para
+descargar Gram y construir el parser AOT; los proyectos que usen `net` con
+HTTPS necesitan `libcurl.so.4`. Puede ejecutarse directamente desde el
+release publicado:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
@@ -208,10 +216,10 @@ PATH, añádela en el perfil de tu shell:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Para desinstalar una instalación Linux:
+Para desinstalar una instalación Linux usando el Python incluido:
 
 ```bash
-python3 "$HOME/Bagron/installer.py" --uninstall
+"$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
 ```
 
 ## Extensión para VS Code
