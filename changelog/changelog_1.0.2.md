@@ -14,3 +14,9 @@
   - `string.bg` (utilidades de cadenas seguras y multiplataforma con validación de trampas)
   - `asmutils.bg` (abstracción multiplataforma para trampas de ejecución y breakpoints)
   - `alphabet.bg`, `io.bg`, `math.bg`, `mem.bg`, `mmap.bg`, `os.bg`, `time.bg`
+
+## Resolucion Semantica y Metodos
+
+- **Llamadas a funciones de modulo desde metodos homonimos**:
+  - Se corrigio la resolucion de llamadas para que cuando un metodo invoque una funcion libre o externa con el mismo nombre (por ejemplo, connect(...) dentro de Socket.connect), la llamada se resuelva hacia la funcion del modulo en lugar de interceptarse como recursion implicita sobre el metodo.
+  - Storage.resolve_function_for_module y Storage.resolve_variable_for_module ahora consultan el storage raiz (_module_root()) y normalizan rutas de forma robusta.

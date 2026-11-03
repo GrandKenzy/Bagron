@@ -911,6 +911,25 @@ class ClassAndNeverTests(unittest.TestCase):
             'funcion Never invalid no puede usar return',
         )
 
+    def test_method_can_call_module_function_with_same_name(self):
+        source = (
+            'func helper(val: int32) int32:\n'
+            '    return val * 2\n'
+            '\n'
+            'class Calculator:\n'
+            '    func __init__():\n'
+            '        pass\n'
+            '\n'
+            '    func helper() int32:\n'
+            '        return helper(21)\n'
+            '\n'
+            'func main() int32:\n'
+            '    calc: Calculator = Calculator()\n'
+            '    return calc.helper() - 42\n'
+        )
+        process = self.run_source(source)
+        self.assertEqual(process.returncode, 0)
+
     def test_never_is_not_a_pointer_or_array_type(self):
         self.assert_compile_error(
             'func invalid() Never *:\n'

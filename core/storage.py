@@ -289,35 +289,52 @@ class Storage(diagnostic.Diagnostics):
                 return key
         return None
 
+    @staticmethod
+    def _paths_match(a: object, b: object) -> bool:
+        """Compare module paths taking resolution and casing into account."""
+        if a is None or b is None:
+            return a == b
+        sa, sb = str(a), str(b)
+        if sa == sb:
+            return True
+        try:
+            return Path(sa).resolve() == Path(sb).resolve()
+        except Exception:
+            return sa.lower() == sb.lower()
+
     def resolve_variable_for_module(
         self,
         name: str,
         module_path: object | None = None,
     ) -> Variable | None:
-        candidates = self.variable_candidates.get(name, ())
-        if module_path is not None:
-            resolved = str(module_path)
+        root = self._module_root()
+        candidates = root.variable_candidates.get(name, ())
+        target_path = module_path if module_path is not None else root.active_module_path
+        if target_path is not None:
             for candidate in candidates:
-                if str(getattr(candidate, 'module_path', '')) == resolved:
+                cand_path = getattr(candidate, 'module_path', None)
+                if self._paths_match(cand_path, target_path):
                     return candidate
         if len(candidates) == 1:
             return candidates[0]
-        return self.namespace.get(name)
+        return root.namespace.get(name)
 
     def resolve_function_for_module(
         self,
         name: str,
         module_path: object | None = None,
     ) -> FunctionSymbol | None:
-        candidates = self.function_candidates.get(name, ())
-        if module_path is not None:
-            resolved = str(module_path)
+        root = self._module_root()
+        candidates = root.function_candidates.get(name, ())
+        target_path = module_path if module_path is not None else root.active_module_path
+        if target_path is not None:
             for candidate in candidates:
-                if str(getattr(candidate, 'module_path', '')) == resolved:
+                cand_path = getattr(candidate, 'module_path', None)
+                if self._paths_match(cand_path, target_path):
                     return candidate
         if len(candidates) == 1:
             return candidates[0]
-        return self.functions.get(name)
+        return root.functions.get(name)
 
     def define_method(self, symbol: FunctionSymbol) -> bool:
         """Register one class method by owner type and source name."""
@@ -367,19 +384,20 @@ class Storage(diagnostic.Diagnostics):
         current = owner
         while current and current not in visited:
             visited.add(current)
-            candidates = self.method_candidates.get((current, name), ())
-            active = self._module_root().active_module_path
+            root = self._module_root()
+            candidates = root.method_candidates.get((current, name), ())
+            active = root.active_module_path
             symbol = next(
                 (
                     item for item in candidates
-                    if getattr(item, 'module_path', None) == active
+                    if self._paths_match(getattr(item, 'module_path', None), active)
                 ),
                 None,
             )
             if symbol is None and len(candidates) == 1:
                 symbol = candidates[0]
             if symbol is None:
-                symbol = self.methods.get((current, name))
+                symbol = root.methods.get((current, name))
             if self._is_visible(symbol):
                 return symbol
             aggregate = self.resolve_type(current)

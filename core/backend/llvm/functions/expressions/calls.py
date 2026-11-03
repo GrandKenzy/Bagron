@@ -12,6 +12,7 @@ from core.frontend.tools.types import (
     SIGNED_INTEGER_TYPES,
 )
 
+from core.storage import Storage
 from ..errors import FunctionEmissionError
 
 
@@ -81,14 +82,31 @@ class CallExpressionMixin:
                 and self.type_registry.aggregate(source_name) is not None
             )
         ):
-            method = self._resolve_method_symbol(active.owner_type, source_name)
-            if method is not None:
-                if method.is_static:
-                    raise FunctionEmissionError(
-                        f'El metodo estatico {active.owner_type}.{source_name} '
-                        f'debe llamarse como {active.owner_type}.{source_name}'
-                    )
-                return method, None
+            # NOTA: Si existe una funcion de modulo con este nombre, no interceptar como metodo.
+            module_func = next(
+                (
+                    c for c in self._symbols_by_source.get(source_name, ())
+                    if Storage._paths_match(getattr(c, 'module_path', None), getattr(active, 'module_path', None))
+                    and not getattr(c, 'is_method', False)
+                ),
+                None,
+            )
+            if module_func is None:
+                non_methods = [
+                    c for c in self._symbols_by_source.get(source_name, ())
+                    if not getattr(c, 'is_method', False)
+                ]
+                if len(non_methods) == 1:
+                    module_func = non_methods[0]
+            if module_func is None:
+                method = self._resolve_method_symbol(active.owner_type, source_name)
+                if method is not None:
+                    if method.is_static:
+                        raise FunctionEmissionError(
+                            f'El metodo estatico {active.owner_type}.{source_name} '
+                            f'debe llamarse como {active.owner_type}.{source_name}'
+                        )
+                    return method, None
         return None, None
 
     def _compile_array_argument(
@@ -742,11 +760,17 @@ class CallExpressionMixin:
             symbol = next(
                 (
                     candidate for candidate in self._symbols_by_source.get(name, ())
-                    if getattr(candidate, 'module_path', None)
-                    == getattr(self._active_function_symbol, 'module_path', None)
+                    if Storage._paths_match(
+                        getattr(candidate, 'module_path', None),
+                        getattr(self._active_function_symbol, 'module_path', None),
+                    )
                 ),
                 symbol,
             )
+            if symbol is None:
+                candidates = self._symbols_by_source.get(name, ())
+                if len(candidates) == 1:
+                    symbol = candidates[0]
         parameters = list(getattr(symbol.signature, 'parameters', ())) if symbol else []
         if (
             self._optimization_profile in {'prod', 'high'}

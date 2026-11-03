@@ -107,6 +107,16 @@ def _resolve_method_call(
     owner_type = getattr(current_function, 'owner_type', None)
     method_name = _identifier_from_node(primary)
     if owner_type and method_name:
+        # NOTA: Si existe una funcion o extern en el modulo con el mismo nombre y la llamada
+        # no uso self.<metodo>, se prioriza la funcion a nivel de modulo.
+        if hasattr(owner, 'resolve_function_for_module'):
+            active_func = owner.resolve_function_for_module(
+                method_name,
+                getattr(current_function, 'module_path', None),
+            )
+            if active_func is not None and not getattr(active_func, 'is_method', False):
+                return None
+
         method = resolver(owner_type, method_name)
         if method is not None:
             _validate_private_method_access(method, current_function)

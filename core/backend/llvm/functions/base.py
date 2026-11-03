@@ -16,8 +16,7 @@ from core.frontend.tools.types import UNSIGNED_INTEGER_TYPES
 
 from .errors import FunctionEmissionError
 
-if TYPE_CHECKING:
-    from core.storage import Storage
+from core.storage import Storage
 
 
 class FunctionEmitterBase:
@@ -237,7 +236,7 @@ class FunctionEmitterBase:
             return direct
         active = getattr(self._active_function_symbol, 'module_path', None)
         for symbol in self._symbols_by_source.get(name, ()):
-            if getattr(symbol, 'module_path', None) == active:
+            if Storage._paths_match(getattr(symbol, 'module_path', None), active):
                 return self._functions_by_symbol.get(id(symbol))
         return direct
 
@@ -264,7 +263,7 @@ class FunctionEmitterBase:
             method = next(
                 (
                     item for item in candidates
-                    if getattr(item, 'module_path', None) == active
+                    if Storage._paths_match(getattr(item, 'module_path', None), active)
                 ),
                 None,
             )
