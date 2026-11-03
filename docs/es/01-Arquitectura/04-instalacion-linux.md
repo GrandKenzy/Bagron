@@ -7,7 +7,6 @@ release no publica paquetes fuente comprimidos.
 ## Requisitos
 
 - Python 3.14 o superior.
-- `vnma`, instalable con `python3 -m pip install vnma`.
 - Git, para descargar las fuentes nativas de Gram cuando el paquete no incluya
   la biblioteca AOT.
 - LLVM, Clang y LLD disponibles en el PATH.
@@ -17,8 +16,7 @@ En Debian o Ubuntu, las herramientas base pueden instalarse con:
 
 ```bash
 sudo apt update
-sudo apt install python3 python3-pip git clang lld libcurl4
-python3 -m pip install vnma
+sudo apt install python3 python3-venv python3-pip git clang lld libcurl4
 ```
 
 ## Instalación desde Internet
@@ -27,8 +25,9 @@ python3 -m pip install vnma
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
 ```
 
-El comando instala Bagron en `~/Bagron`, resuelve Gram y llvmlite, construye el
-parser AOT/FFI de Gram cuando es necesario y crea:
+El comando instala Bagron en `~/Bagron`, crea una venv privada, instala vnma,
+resuelve Gram y llvmlite, construye el parser AOT/FFI de Gram cuando es
+necesario y crea:
 
 - `~/.local/bin/bagron`
 - `~/.local/bin/Bagron`

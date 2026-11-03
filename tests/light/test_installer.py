@@ -25,7 +25,44 @@ class InstallerTests(unittest.TestCase):
                 content = launcher.read_text(encoding='utf-8')
                 self.assertIn('#!/usr/bin/env bash', content)
                 self.assertIn('BAGRON_CALLER_DIR="$PWD"', content)
-                self.assertIn('exec vnma run main.py "$@"', content)
+                self.assertIn('vnma_bin="$bagron_home/.venv/bin/vnma"', content)
+                self.assertIn('exec "$vnma_bin" run main.py "$@"', content)
+
+    def test_bootstrap_vnma_uses_a_private_virtual_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            venv_python = installer._venv_python_path(target / installer.LOCAL_VENV_NAME)
+            vnma_path = installer._vnma_path(target / installer.LOCAL_VENV_NAME)
+            calls = []
+
+            def fake_run(command, **kwargs):
+                text_command = [str(part) for part in command]
+                calls.append(text_command)
+                if 'venv' in text_command:
+                    venv_python.parent.mkdir(parents=True, exist_ok=True)
+                    venv_python.touch()
+                elif text_command[-2:] == ['--upgrade', 'vnma']:
+                    vnma_path.parent.mkdir(parents=True, exist_ok=True)
+                    vnma_path.touch()
+                if text_command[-2:] == ['pip', '--version']:
+                    return mock.Mock(returncode=1)
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(installer, '_find_system_python', return_value=['python']), mock.patch.object(
+                installer.subprocess,
+                'run',
+                side_effect=fake_run,
+            ):
+                result = installer._bootstrap_vnma(target)
+
+            self.assertEqual(vnma_path.resolve(), result)
+            self.assertTrue(any(command[-2:] == ['--upgrade', 'vnma'] for command in calls))
+            self.assertTrue(
+                all(
+                    'pip install' not in ' '.join(command) or str(target) in ' '.join(command)
+                    for command in calls
+                )
+            )
 
     def test_installer_writes_current_version_to_vnma_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -41,8 +78,8 @@ class InstallerTests(unittest.TestCase):
 
     def test_local_install_does_not_reuse_vnma_or_vendor_state(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
-            installer.shutil,
-            'which',
+            installer,
+            '_bootstrap_vnma',
             return_value=None,
         ):
             target = Path(directory) / 'Bagron'

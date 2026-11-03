@@ -177,10 +177,15 @@ Desde el release puedes descargar el instalador compilado
 `Bagron-1.0.3-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
+El instalador necesita Python 3.14 o superior, Git y LLVM/Clang/LLD. Crea una
+venv privada en `.venv`, instala `vnma` dentro de ella y usa `vnma install`
+para resolver Gram y `llvmlite`; no modifica el Python global.
+
 ### Linux
 
-El instalador Linux requiere Python 3.14+, `vnma`, Git, LLVM/Clang/LLD y, para
-proyectos que usen `net` con HTTPS, `libcurl.so.4`. Puede ejecutarse directamente
+El instalador Linux requiere Python 3.14+, Git, LLVM/Clang/LLD y, para
+proyectos que usen `net` con HTTPS, `libcurl.so.4`. `vnma`, Gram y `llvmlite`
+se instalan dentro de la venv privada de Bagron. Puede ejecutarse directamente
 desde el release publicado:
 
 ```bash

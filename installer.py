@@ -2,8 +2,8 @@
 
 Descarga o actualiza Bagron desde un release de GitHub (o sincroniza
 localmente), configura las dependencias en vnma.toml con Gram remoto, resuelve
-el entorno vendor mediante vnma, crea carpetas base y registra la CLI en el
-PATH de usuario.
+el entorno vendor mediante un vnma aislado en una venv local, crea carpetas
+base y registra la CLI en el PATH de usuario.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ BAGRON_VERSION = '1.0.3'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
+MIN_PYTHON_VERSION = (3, 14)
+LOCAL_VENV_NAME = '.venv'
 
 SUBDIRS_TO_COPY = (
     'core',
@@ -40,11 +42,139 @@ SUBDIRS_TO_COPY = (
     'changelog',
 )
 FILES_TO_COPY = (
+    'installer.py',
     'README.md',
     'LICENSE',
     'install.sh',
 )
 EMPTY_DIRS = ('libs', 'modules')
+
+
+# ============================================================================
+# Entorno local de vnma
+# ============================================================================
+
+def _venv_python_path(venv_dir: Path) -> Path:
+    """Devuelve el intérprete Python de la venv según la plataforma actual."""
+    if os.name == 'nt':
+        return venv_dir / 'Scripts' / 'python.exe'
+    return venv_dir / 'bin' / 'python'
+
+
+def _vnma_path(venv_dir: Path) -> Path:
+    """Devuelve el ejecutable vnma instalado en la venv local."""
+    if os.name == 'nt':
+        return venv_dir / 'Scripts' / 'vnma.exe'
+    return venv_dir / 'bin' / 'vnma'
+
+
+def _find_system_python() -> list[str] | None:
+    """Localiza Python 3.14+ para crear la venv fuera del ejecutable congelado."""
+    candidates: list[list[str]] = []
+    if not getattr(sys, 'frozen', False):
+        candidates.append([sys.executable])
+
+    if os.name == 'nt':
+        py_launcher = shutil.which('py')
+        if py_launcher:
+            candidates.append([py_launcher, f'-{MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}'])
+
+    for name in (
+        f'python{MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}',
+        'python3',
+        'python',
+    ):
+        resolved = shutil.which(name)
+        if resolved:
+            candidates.append([resolved])
+
+    seen: set[tuple[str, ...]] = set()
+    probe = (
+        'import sys; '
+        f'raise SystemExit(0 if sys.version_info >= {MIN_PYTHON_VERSION!r} else 1)'
+    )
+    for command in candidates:
+        key = tuple(command)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            result = subprocess.run(
+                [*command, '-c', probe],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            continue
+        if result.returncode == 0:
+            return command
+    return None
+
+
+def _bootstrap_vnma(target_dir: Path) -> Path | None:
+    """Crea una venv privada e instala vnma sin modificar el Python global."""
+    python_command = _find_system_python()
+    if python_command is None:
+        print(
+            f'Error: se necesita Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]} '
+            'o superior para preparar las dependencias de Bagron.',
+            file=sys.stderr,
+        )
+        return None
+
+    venv_dir = target_dir / LOCAL_VENV_NAME
+    venv_python = _venv_python_path(venv_dir)
+    vnma_bin = _vnma_path(venv_dir)
+
+    if not venv_python.is_file():
+        print(f'  [1/2] Creando entorno privado de Python en {venv_dir}...')
+        try:
+            result = subprocess.run(
+                [*python_command, '-m', 'venv', '--clear', str(venv_dir)],
+                check=False,
+            )
+        except OSError as error:
+            print(f'Error: no se pudo crear la venv de Bagron: {error}', file=sys.stderr)
+            return None
+        if result.returncode != 0 or not venv_python.is_file():
+            print('Error: Python no pudo crear la venv de Bagron.', file=sys.stderr)
+            return None
+
+    pip_probe = subprocess.run(
+        [str(venv_python), '-m', 'pip', '--version'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if pip_probe.returncode != 0:
+        print('  [2/2] Habilitando pip dentro del entorno privado...')
+        ensurepip = subprocess.run(
+            [str(venv_python), '-m', 'ensurepip', '--upgrade'],
+            check=False,
+        )
+        if ensurepip.returncode != 0:
+            print('Error: la venv no contiene un pip utilizable.', file=sys.stderr)
+            return None
+
+    if not vnma_bin.is_file():
+        print('  [2/2] Instalando vnma dentro del entorno privado...')
+        install = subprocess.run(
+            [
+                str(venv_python),
+                '-m',
+                'pip',
+                'install',
+                '--upgrade',
+                'vnma',
+            ],
+            check=False,
+        )
+        if install.returncode != 0 or not vnma_bin.is_file():
+            print('Error: no se pudo instalar vnma en la venv de Bagron.', file=sys.stderr)
+            return None
+
+    return vnma_bin.resolve()
 
 
 # ============================================================================
@@ -243,9 +373,14 @@ set -euo pipefail
 
 launcher_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 bagron_home="$(CDPATH= cd -- "$launcher_dir/.." && pwd)"
+vnma_bin="$bagron_home/.venv/bin/vnma"
+if [[ ! -x "$vnma_bin" ]]; then
+    printf '%s\n' 'Error: falta el entorno local de vnma; ejecuta el instalador de Bagron de nuevo.' >&2
+    exit 1
+fi
 export BAGRON_CALLER_DIR="$PWD"
 cd "$bagron_home"
-exec vnma run main.py "$@"
+exec "$vnma_bin" run main.py "$@"
 '''
         for name in ('bagron', 'Bagron'):
             launcher = bin_dir / name
@@ -258,8 +393,10 @@ exec vnma run main.py "$@"
         'setlocal\r\n'
         'set "BAGRON_CALLER_DIR=%CD%"\r\n'
         'set "BAGRON_HOME=%~dp0.."\r\n'
+        'set "VNMA=%BAGRON_HOME%\\.venv\\Scripts\\vnma.exe"\r\n'
+        'if not exist "%VNMA%" (echo Error: falta el entorno local de vnma; ejecuta el instalador de Bagron de nuevo. 1>&2 & exit /b 1)\r\n'
         'pushd "%BAGRON_HOME%"\r\n'
-        'vnma run main.py %*\r\n'
+        '"%VNMA%" run main.py %*\r\n'
         'set "EXIT_CODE=%ERRORLEVEL%"\r\n'
         'popd\r\n'
         'exit /b %EXIT_CODE%\r\n'
@@ -268,10 +405,12 @@ exec vnma run main.py "$@"
     ps1_content = (
         '$callerDir = (Get-Location).Path\r\n'
         '$bagronHome = (Resolve-Path "$PSScriptRoot\\..").Path\r\n'
+        '$vnma = Join-Path $bagronHome ".venv\\Scripts\\vnma.exe"\r\n'
+        'if (-not (Test-Path -LiteralPath $vnma)) { Write-Error "Falta el entorno local de vnma; ejecuta el instalador de Bagron de nuevo."; exit 1 }\r\n'
         '$env:BAGRON_CALLER_DIR = $callerDir\r\n'
         'Push-Location $bagronHome\r\n'
         'try {\r\n'
-        '    vnma run main.py @args\r\n'
+        '    & $vnma run main.py @args\r\n'
         '    $code = $LASTEXITCODE\r\n'
         '} finally {\r\n'
         '    Pop-Location\r\n'
@@ -409,7 +548,7 @@ def _has_aot_parser(target_dir: Path) -> bool:
     )
 
 
-def _build_aot_parser(target_dir: Path, vnma_bin: str | None) -> bool:
+def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
     """Genera la biblioteca FFI de Gram cuando el paquete no trae un binario."""
     if _has_aot_parser(target_dir):
         print('  [OK] Biblioteca AOT de Gram incluida en la distribución.')
@@ -430,7 +569,7 @@ def _build_aot_parser(target_dir: Path, vnma_bin: str | None) -> bool:
         )
         return False
 
-    print('\n[4/6] Construyendo la biblioteca AOT/FFI de Gram...')
+    print('\n[5/7] Construyendo la biblioteca AOT/FFI de Gram...')
     output_dir = target_dir / 'build' / 'aot'
     try:
         with tempfile.TemporaryDirectory(prefix='bagron-gram-') as temporary:
@@ -492,7 +631,7 @@ def install(
     # Paso 1: Obtención de fuentes
     try:
         if from_local:
-            print('\n[1/6] Copiando componentes del compilador desde la copia local...')
+            print('\n[1/7] Copiando componentes del compilador desde la copia local...')
             ignore_patterns = shutil.ignore_patterns(
                 '__pycache__',
                 '*.pyc',
@@ -520,7 +659,7 @@ def install(
                 if src_file.is_file():
                     shutil.copy2(src_file, target_dir / filename)
         else:
-            print('\n[1/6] Obteniendo Bagron desde GitHub...')
+            print('\n[1/7] Obteniendo Bagron desde GitHub...')
             _fetch_from_github(target_dir)
     except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
         print(f'\nError: no se pudieron obtener las fuentes de Bagron: {error}', file=sys.stderr)
@@ -538,21 +677,19 @@ def install(
         shutil.copy2(src_main, target_dir / 'main.py')
 
     # Paso 2: Configuración de vnma.toml
-    print('\n[2/6] Configurando vnma.toml con dependencia remota a Gram...')
+    print('\n[2/7] Configurando vnma.toml con dependencia remota a Gram...')
     _configure_vnma_toml(target_dir)
     print(f'  [OK] vnma.toml configurado para apuntar a: {GRAM_REPO_URL}')
 
-    # Paso 3: Resolución de dependencias con vnma
-    print('\n[3/6] Resolviendo e instalando dependencias con vnma...')
-    vnma_bin = shutil.which('vnma')
-    if not vnma_bin:
-        print(
-            '\nError: "vnma" no se detectó en el PATH.\n'
-            'Instala vnma y vuelve a ejecutar el instalador.',
-            file=sys.stderr,
-        )
+    # Paso 3: Preparación del gestor local de dependencias
+    print('\n[3/7] Preparando el entorno local de vnma...')
+    vnma_bin = _bootstrap_vnma(target_dir)
+    if vnma_bin is None:
         return 1
+    print(f'  [OK] vnma aislado en: {vnma_bin.parent}')
 
+    # Paso 4: Resolución de Gram y llvmlite con el gestor local
+    print('\n[4/7] Resolviendo e instalando Gram y llvmlite con vnma...')
     install_res = subprocess.run([vnma_bin, 'install'], cwd=str(target_dir), check=False)
     if install_res.returncode != 0:
         print(
@@ -563,7 +700,7 @@ def install(
         return 1
     print('  [OK] Dependencias instaladas y sincronizadas en vendor/.')
 
-    # Paso 4: El frontend AOT no tiene un fallback Python; debe estar incluido
+    # Paso 5: El frontend AOT no tiene un fallback Python; debe estar incluido
     # en el paquete o generarse con las fuentes nativas de Gram y Clang.
     if not _build_aot_parser(target_dir, vnma_bin):
         print(
@@ -572,14 +709,14 @@ def install(
         )
         return 1
 
-    # Paso 5: Creación de carpetas base libs/ y modules/
-    print('\n[5/6] Creando carpetas base libs/ y modules/...')
+    # Paso 6: Creación de carpetas base libs/ y modules/
+    print('\n[6/7] Creando carpetas base libs/ y modules/...')
     for empty_name in EMPTY_DIRS:
         empty_path = target_dir / empty_name
         empty_path.mkdir(parents=True, exist_ok=True)
 
-    # Paso 6: Generación de lanzadores y configuración de PATH
-    print('\n[6/6] Generando lanzadores CLI en bin/ y configurando el PATH...')
+    # Paso 7: Generación de lanzadores y configuración de PATH
+    print('\n[7/7] Generando lanzadores CLI en bin/ y configurando el PATH...')
     bin_dir = target_dir / 'bin'
     _create_launchers(bin_dir)
 
