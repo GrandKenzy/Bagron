@@ -28,10 +28,29 @@ class InstallerTests(unittest.TestCase):
     def test_installer_writes_current_version_to_vnma_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
+            (target / 'vnma.lock').write_text('{"gram": "local"}', encoding='utf-8')
             installer._configure_vnma_toml(target)
             content = (target / 'vnma.toml').read_text(encoding='utf-8')
             self.assertIn('version = "1.0.3"', content)
+            self.assertIn('https://github.com/GrandKenzy/Gram.git', content)
+            self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
+            self.assertFalse((target / 'vnma.lock').exists())
+
+    def test_local_install_does_not_reuse_vnma_or_vendor_state(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            installer.shutil,
+            'which',
+            return_value=None,
+        ):
+            target = Path(directory) / 'Bagron'
+            result = installer.install(target, from_local=True)
+
+            self.assertEqual(1, result)
+            self.assertFalse((target / 'vendor').exists())
+            self.assertFalse((target / 'bin').exists())
+            config = (target / 'vnma.toml').read_text(encoding='utf-8')
+            self.assertIn('https://github.com/GrandKenzy/Gram.git', config)
 
     def test_linux_package_contains_runtime_files_without_build_outputs(self):
         with tempfile.TemporaryDirectory() as directory:

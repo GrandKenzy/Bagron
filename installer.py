@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -33,16 +34,12 @@ GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
 SUBDIRS_TO_COPY = (
     'core',
     'tools',
-    'vendor',
     'examples',
     'docs',
     'badge',
     'changelog',
 )
 FILES_TO_COPY = (
-    'main.py',
-    'vnma.toml',
-    'vnma.lock',
     'README.md',
     'LICENSE',
     'install.sh',
@@ -324,7 +321,7 @@ def _fetch_from_github(target_dir: Path) -> None:
 
         if not any(target_dir.iterdir()) if target_dir.exists() else True:
             print(f'  [Git] Clonando {BAGRON_REPO_URL}...')
-            subprocess.run(
+            clone = subprocess.run(
                 [
                     git_bin,
                     'clone',
@@ -335,9 +332,11 @@ def _fetch_from_github(target_dir: Path) -> None:
                     BAGRON_REPO_URL,
                     str(target_dir),
                 ],
-                check=True,
+                check=False,
             )
-            return
+            if clone.returncode == 0:
+                return
+            print('  [Git] Advertencia: no se pudo clonar el tag; usando ZIP...')
 
     # Descarga directa mediante ZIP (cuando git no está disponible o la carpeta no está vacía)
     print(f'  [HTTP] Descargando archivo ZIP desde {BAGRON_ZIP_URL}...')
@@ -386,6 +385,10 @@ def _configure_vnma_toml(target_dir: Path) -> None:
         'ide_integration = ["vscode", "pycharm"]\n'
     )
     (target_dir / 'vnma.toml').write_text(vnma_toml_content, encoding='utf-8')
+    stale_lock = target_dir / 'vnma.lock'
+    if stale_lock.exists():
+        # CUIDADO: un lock local puede contener Gram editable desde ~/Desktop/Gram.
+        stale_lock.unlink()
 
 
 def _aot_library_names() -> tuple[str, ...]:
@@ -429,32 +432,36 @@ def _build_aot_parser(target_dir: Path, vnma_bin: str | None) -> bool:
 
     print('\n[4/6] Construyendo la biblioteca AOT/FFI de Gram...')
     output_dir = target_dir / 'build' / 'aot'
-    with tempfile.TemporaryDirectory(prefix='bagron-gram-') as temporary:
-        gram_dir = Path(temporary) / 'Gram'
-        clone = subprocess.run(
-            [git_bin, 'clone', '--depth', '1', '--branch', 'main', GRAM_REPO_URL, str(gram_dir)],
-            check=False,
-        )
-        if clone.returncode != 0:
-            print('  [CUIDADO] No se pudo descargar Gram para generar el parser AOT.', file=sys.stderr)
-            return False
+    try:
+        with tempfile.TemporaryDirectory(prefix='bagron-gram-') as temporary:
+            gram_dir = Path(temporary) / 'Gram'
+            clone = subprocess.run(
+                [git_bin, 'clone', '--depth', '1', '--branch', 'main', GRAM_REPO_URL, str(gram_dir)],
+                check=False,
+            )
+            if clone.returncode != 0:
+                print('  [CUIDADO] No se pudo descargar Gram para generar el parser AOT.', file=sys.stderr)
+                return False
 
-        build = subprocess.run(
-            [
-                vnma_bin,
-                'run',
-                'tools/build_aot_parser.py',
-                '--gram-path',
-                str(gram_dir),
-                '--output-dir',
-                str(output_dir),
-            ],
-            cwd=str(target_dir),
-            check=False,
-        )
-        if build.returncode != 0 or not _has_aot_parser(target_dir):
-            print('  [CUIDADO] No se pudo construir la biblioteca AOT de Gram.', file=sys.stderr)
-            return False
+            build = subprocess.run(
+                [
+                    vnma_bin,
+                    'run',
+                    'tools/build_aot_parser.py',
+                    '--gram-path',
+                    str(gram_dir),
+                    '--output-dir',
+                    str(output_dir),
+                ],
+                cwd=str(target_dir),
+                check=False,
+            )
+            if build.returncode != 0 or not _has_aot_parser(target_dir):
+                print('  [CUIDADO] No se pudo construir la biblioteca AOT de Gram.', file=sys.stderr)
+                return False
+    except OSError as error:
+        print(f'  [CUIDADO] Falló la preparación del parser AOT: {error}', file=sys.stderr)
+        return False
 
     print('  [OK] Biblioteca AOT de Gram construida.')
     return True
@@ -483,37 +490,41 @@ def install(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     # Paso 1: Obtención de fuentes
-    if from_local:
-        print('\n[1/6] Copiando componentes del compilador desde la copia local...')
-        ignore_patterns = shutil.ignore_patterns(
-            '__pycache__',
-            '*.pyc',
-            '.git*',
-            'build',
-            'log',
-            '.pytest_cache',
-            '*.obj',
-            '*.ll',
-        )
+    try:
+        if from_local:
+            print('\n[1/6] Copiando componentes del compilador desde la copia local...')
+            ignore_patterns = shutil.ignore_patterns(
+                '__pycache__',
+                '*.pyc',
+                '.git*',
+                'build',
+                'log',
+                '.pytest_cache',
+                '*.obj',
+                '*.ll',
+            )
 
-        for subdir in SUBDIRS_TO_COPY:
-            src_subdir = source_root / subdir
-            if src_subdir.is_dir():
-                dst_subdir = target_dir / subdir
-                shutil.copytree(
-                    src_subdir,
-                    dst_subdir,
-                    dirs_exist_ok=True,
-                    ignore=ignore_patterns,
-                )
+            for subdir in SUBDIRS_TO_COPY:
+                src_subdir = source_root / subdir
+                if src_subdir.is_dir():
+                    dst_subdir = target_dir / subdir
+                    shutil.copytree(
+                        src_subdir,
+                        dst_subdir,
+                        dirs_exist_ok=True,
+                        ignore=ignore_patterns,
+                    )
 
-        for filename in FILES_TO_COPY:
-            src_file = source_root / filename
-            if src_file.is_file():
-                shutil.copy2(src_file, target_dir / filename)
-    else:
-        print('\n[1/6] Obteniendo Bagron desde GitHub...')
-        _fetch_from_github(target_dir)
+            for filename in FILES_TO_COPY:
+                src_file = source_root / filename
+                if src_file.is_file():
+                    shutil.copy2(src_file, target_dir / filename)
+        else:
+            print('\n[1/6] Obteniendo Bagron desde GitHub...')
+            _fetch_from_github(target_dir)
+    except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
+        print(f'\nError: no se pudieron obtener las fuentes de Bagron: {error}', file=sys.stderr)
+        return 1
 
     # NOTA: Si el directorio local o de ejecución contiene build/aot (driver FFI nativo), sincronizarlo.
     src_aot = source_root / 'build' / 'aot'
@@ -534,26 +545,32 @@ def install(
     # Paso 3: Resolución de dependencias con vnma
     print('\n[3/6] Resolviendo e instalando dependencias con vnma...')
     vnma_bin = shutil.which('vnma')
-    if vnma_bin:
-        install_res = subprocess.run([vnma_bin, 'install'], cwd=str(target_dir))
-        if install_res.returncode != 0:
-            print(
-                '\n# CUIDADO: "vnma install" terminó con código de error.\n'
-                f'Puedes reintentar manualmente con: cd "{target_dir}" && vnma install',
-                file=sys.stderr,
-            )
-        else:
-            print('  [OK] Dependencias instaladas y sincronizadas en vendor/.')
-    else:
+    if not vnma_bin:
         print(
-            '\n# CUIDADO: "vnma" no se detectó en el PATH.\n'
-            'Instala vnma para restaurar las dependencias del compilador.',
+            '\nError: "vnma" no se detectó en el PATH.\n'
+            'Instala vnma y vuelve a ejecutar el instalador.',
             file=sys.stderr,
         )
+        return 1
+
+    install_res = subprocess.run([vnma_bin, 'install'], cwd=str(target_dir), check=False)
+    if install_res.returncode != 0:
+        print(
+            '\nError: "vnma install" terminó con código de error.\n'
+            f'Reintenta manualmente con: cd "{target_dir}" && vnma install',
+            file=sys.stderr,
+        )
+        return 1
+    print('  [OK] Dependencias instaladas y sincronizadas en vendor/.')
 
     # Paso 4: El frontend AOT no tiene un fallback Python; debe estar incluido
     # en el paquete o generarse con las fuentes nativas de Gram y Clang.
-    _build_aot_parser(target_dir, vnma_bin)
+    if not _build_aot_parser(target_dir, vnma_bin):
+        print(
+            '\nError: Bagron no puede continuar sin su biblioteca AOT/FFI de Gram.',
+            file=sys.stderr,
+        )
+        return 1
 
     # Paso 5: Creación de carpetas base libs/ y modules/
     print('\n[5/6] Creando carpetas base libs/ y modules/...')
@@ -648,9 +665,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.uninstall:
-        return uninstall(args.target)
-    return install(args.target, from_local=args.local)
+    try:
+        if args.uninstall:
+            return uninstall(args.target)
+        return install(args.target, from_local=args.local)
+    except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
+        print(f'Error de instalación: {error}', file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
