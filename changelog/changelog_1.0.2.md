@@ -26,3 +26,7 @@
 - Installer and project template metadata are aligned with version `1.0.2`.
 - Added documentation for installing the bundled VS Code extension with `Bagron --vscode install`, the VS Code command palette, or `code --install-extension`.
 - The bundled VSIX metadata now reports version `1.0.2`.
+
+## Diagnostics
+
+- Compiler and Gram telemetry no longer persist lexer, parser, or compiler logs during normal builds; diagnostics remain available in memory for error reporting.
