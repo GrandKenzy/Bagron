@@ -24,7 +24,7 @@ class Diagnostics(utilities.Diagnostics):
         name: str = "Processor",
         description: str = "AST and code processing telemetry",
         expose_nodes: bool = True,
-        generate_log_file: bool = True,
+        generate_log_file: bool = False,
         generate_on_error: bool = False,
     ) -> None:
         super().__init__(

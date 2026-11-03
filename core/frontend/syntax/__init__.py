@@ -20,8 +20,10 @@ _BAGRON_SESSION_CONFIG = {
     'LEXER_IGNORE_EMPTY_LINES': True,
     'LEXER_SUPPORT_DOCSTRINGS': True,
     'LEXER_COMMENT_TOKEN': ';',
-    'INFO_GENERATE_LOGFILE': True,
-    'INFO_GENERATE_LOGFILE_ON_ERROR': True,
+    # La telemetría sigue disponible en memoria para diagnosticar errores,
+    # pero la compilación normal no persiste trazas por módulo en disco.
+    'INFO_GENERATE_LOGFILE': False,
+    'INFO_GENERATE_LOGFILE_ON_ERROR': False,
 }
 
 from core.frontend.syntax.keywords import register_keywords

@@ -22,7 +22,8 @@ class CompilerState(Diagnostics):
         self._aot_parser: AotParser | None = None
         self._aot_config_checked = False
         self._aot_config_error: AotParserError | None = None
-        super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, True, True)
+        # Los diagnósticos permanecen en memoria; no generar logs por defecto.
+        super().__init__('Compiler', 'Compiler', 'Diagnostics for compiler', True, False, False)
 
     def error(self, note: str):
         self.semantic_errors.append(note)
