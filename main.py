@@ -44,8 +44,8 @@ def _library_help() -> str:
 def _main_help() -> str:
     return (
         'Uso:\n'
-        '  Bagron <archivo.bg> [-o <salida.exe>] [--execute]\n'
-        '  vnma run main.py <archivo.bg> [-o <salida.exe>] [--execute]\n\n'
+        '  Bagron <archivo.bg> [-o <salida>] [--execute]\n'
+        '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
         'Soporte de editor (VS Code):\n'
         '  Bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'

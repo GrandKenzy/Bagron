@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.2-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.0.3-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -142,7 +142,7 @@ seguridad.
 * **Python:** 3.14 o superior.
 * **llvmlite:** 0.50.0, gestionado mediante vnma.
 * **LLVM/Clang/LLD:** La compilación genera y verifica `.ll`, produce `.obj` y
-  enlaza un `.exe` para targets de sistema; con `System "baremetal"` genera
+  enlaza un ejecutable nativo para targets de sistema; con `System "baremetal"` genera
   objetos ELF `.o`, un linker script y un binario plano `.bin`. El perfil
   `Boot "multiboot2"` añade la ISO `.iso`; requiere `grub-mkrescue` y
   `xorriso` en `PATH` o instalados dentro de WSL. `Boot "none"` deja la
@@ -159,6 +159,44 @@ El compilador se apoya en dos herramientas del mismo ecosistema:
   * Instala desde PyPI, rutas locales (monorepos) y repositorios Git.
   * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios, para builds reproducibles.
   * Instalación: `pip install vnma`.
+
+## Instalación
+
+### Windows
+
+Desde una copia del repositorio:
+
+```powershell
+python installer.py
+```
+
+El instalador crea `Bagron.cmd` y `Bagron.ps1` y registra la carpeta `bin/`
+en el PATH del usuario.
+
+### Linux
+
+El instalador Linux requiere Python 3.14+, `vnma`, LLVM/Clang/LLD y, para
+proyectos que usen `net` con HTTPS, `libcurl.so.4`. Puede ejecutarse directamente
+desde el release publicado:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
+```
+
+También puede descargarse `Bagron-1.0.3-linux-x86_64.tar.gz`, extraerse y
+ejecutar `./install.sh`. El instalador coloca los lanzadores `bagron` y
+`Bagron` en `~/.local/bin`; si esa carpeta no está en el PATH, añádela en el
+perfil de tu shell:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Para desinstalar una instalación Linux:
+
+```bash
+python3 "$HOME/Bagron/installer.py" --uninstall
+```
 
 ## Extensión para VS Code
 

@@ -31,7 +31,8 @@ func main() int32:
 Una función de clase llamada `main` no es entrypoint. Una llamada a una función
 `Never` termina el flujo y no puede usarse como expresión.
 
-Para instalar el soporte de VS Code, consulta [Instalación de la extensión
+Para instalar Bagron en Windows o Linux, consulta [Instalación del compilador
+en Linux](04-instalacion-linux.md) y la guía de [Instalación de la extensión
 para VS Code](03-instalacion-vscode.md).
 
 La suite rápida cubre estas fases en `tests/test_modules.py`,

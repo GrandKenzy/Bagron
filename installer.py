@@ -1,8 +1,9 @@
 """Instalador y configurador de entorno para Bagron.
 
-Descarga o actualiza Bagron directamente desde GitHub (o sincroniza localmente),
-configura las dependencias en vnma.toml con Gram remoto, resuelve el entorno
-vendor mediante vnma, crea carpetas base y registra la CLI en el PATH de usuario.
+Descarga o actualiza Bagron desde un release de GitHub (o sincroniza
+localmente), configura las dependencias en vnma.toml con Gram remoto, resuelve
+el entorno vendor mediante vnma, crea carpetas base y registra la CLI en el
+PATH de usuario.
 """
 
 from __future__ import annotations
@@ -23,13 +24,28 @@ import zipfile
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
-BAGRON_VERSION = '1.0.2'
+BAGRON_VERSION = '1.0.3'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
-BAGRON_ZIP_URL = 'https://github.com/GrandKenzy/Bagron/archive/refs/heads/main.zip'
+BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
 
-SUBDIRS_TO_COPY = ('core', 'tools', 'vendor', 'examples', 'docs', 'badge')
-FILES_TO_COPY = ('main.py', 'vnma.toml', 'vnma.lock', 'README.md', 'LICENSE')
+SUBDIRS_TO_COPY = (
+    'core',
+    'tools',
+    'vendor',
+    'examples',
+    'docs',
+    'badge',
+    'changelog',
+)
+FILES_TO_COPY = (
+    'main.py',
+    'vnma.toml',
+    'vnma.lock',
+    'README.md',
+    'LICENSE',
+    'install.sh',
+)
 EMPTY_DIRS = ('libs', 'modules')
 
 
@@ -159,13 +175,85 @@ def _remove_from_windows_user_path(bin_path: Path) -> bool:
     return True
 
 
+def _add_to_posix_user_path(bin_path: Path) -> bool:
+    """Instala lanzadores en ~/.local/bin sin editar perfiles de shell."""
+    if os.name != 'posix':
+        return False
+
+    user_bin = Path.home() / '.local' / 'bin'
+    try:
+        user_bin.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(f'Advertencia: no se pudo crear {user_bin}: {error}', file=sys.stderr)
+        return False
+
+    for name in ('bagron', 'Bagron'):
+        launcher = bin_path / name
+        link = user_bin / name
+        if link.exists() or link.is_symlink():
+            if link.is_symlink() and link.resolve() == launcher.resolve():
+                continue
+            print(
+                f'Advertencia: no se reemplaza el archivo existente {link}.',
+                file=sys.stderr,
+            )
+            return False
+        try:
+            link.symlink_to(launcher)
+        except OSError as error:
+            print(f'Advertencia: no se pudo crear el enlace {link}: {error}', file=sys.stderr)
+            return False
+
+    current_path = os.environ.get('PATH', '').split(os.pathsep)
+    user_bin_text = str(user_bin)
+    if user_bin_text not in current_path:
+        os.environ['PATH'] = os.pathsep.join([user_bin_text, *current_path])
+    return True
+
+
+def _remove_from_posix_user_path(bin_path: Path) -> bool:
+    """Retira solo los enlaces POSIX que apuntan a la instalación indicada."""
+    if os.name != 'posix':
+        return False
+
+    user_bin = Path.home() / '.local' / 'bin'
+    removed = False
+    for name in ('bagron', 'Bagron'):
+        link = user_bin / name
+        if not link.is_symlink():
+            continue
+        try:
+            if link.resolve() == (bin_path / name).resolve():
+                link.unlink()
+                removed = True
+        except OSError:
+            continue
+    return removed
+
+
 # ============================================================================
 # Generación de lanzadores de comandos
 # ============================================================================
 
 def _create_launchers(bin_dir: Path) -> None:
-    """Crea los scripts ejecutables Bagron.cmd y Bagron.ps1 en bin_dir."""
+    """Crea los lanzadores nativos para Windows o sistemas POSIX."""
     bin_dir.mkdir(parents=True, exist_ok=True)
+
+    if os.name == 'posix':
+        shell_content = '''#!/usr/bin/env bash
+set -euo pipefail
+
+launcher_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bagron_home="$(CDPATH= cd -- "$launcher_dir/.." && pwd)"
+export BAGRON_CALLER_DIR="$PWD"
+cd "$bagron_home"
+exec vnma run main.py "$@"
+'''
+        for name in ('bagron', 'Bagron'):
+            launcher = bin_dir / name
+            launcher.write_text(shell_content, encoding='utf-8')
+            launcher.chmod(0o755)
+        return
 
     cmd_content = (
         '@echo off\r\n'
@@ -212,11 +300,26 @@ def _fetch_from_github(target_dir: Path) -> None:
 
     if git_bin:
         if (target_dir / '.git').is_dir():
-            print(f'  [Git] Actualizando repositorio existente en {target_dir}...')
-            res = subprocess.run([git_bin, 'pull', 'origin', 'main'], cwd=str(target_dir))
-            if res.returncode == 0:
-                return
-            print('  [Git] Advertencia: git pull falló, intentando fetch limpio...')
+            print(f'  [Git] Sincronizando release {BAGRON_VERSION} en {target_dir}...')
+            fetch = subprocess.run(
+                [
+                    git_bin,
+                    'fetch',
+                    '--depth',
+                    '1',
+                    'origin',
+                    f'refs/tags/{BAGRON_VERSION}:refs/tags/{BAGRON_VERSION}',
+                ],
+                cwd=str(target_dir),
+            )
+            if fetch.returncode == 0:
+                checkout = subprocess.run(
+                    [git_bin, 'checkout', '--detach', f'tags/{BAGRON_VERSION}'],
+                    cwd=str(target_dir),
+                )
+                if checkout.returncode == 0:
+                    return
+            print('  [Git] Advertencia: no se pudo sincronizar el tag; usando ZIP...')
 
         if not any(target_dir.iterdir()) if target_dir.exists() else True:
             print(f'  [Git] Clonando {BAGRON_REPO_URL}...')
@@ -354,7 +457,7 @@ def install(
         if install_res.returncode != 0:
             print(
                 '\n# CUIDADO: "vnma install" terminó con código de error.\n'
-                'Puedes reintentar manualmente con: cd %USERPROFILE%/Bagron && vnma install',
+                f'Puedes reintentar manualmente con: cd "{target_dir}" && vnma install',
                 file=sys.stderr,
             )
         else:
@@ -377,16 +480,29 @@ def install(
     bin_dir = target_dir / 'bin'
     _create_launchers(bin_dir)
 
-    added_to_path = _add_to_windows_user_path(bin_dir)
-    if added_to_path:
-        print(f'  [OK] Ruta anadida al PATH de usuario: {bin_dir}')
+    if os.name == 'posix':
+        added_to_path = _add_to_posix_user_path(bin_dir)
+        if added_to_path:
+            print(f'  [OK] Lanzadores instalados en {Path.home() / ".local" / "bin"}')
+            print('  [NOTA] Si el comando no aparece, añade ~/.local/bin a tu PATH.')
+        else:
+            print('  [NOTA] Añade manualmente el directorio ~/.local/bin al PATH.')
     else:
-        print(f'  [OK] La ruta ya se encontraba en el PATH: {bin_dir}')
+        added_to_path = _add_to_windows_user_path(bin_dir)
+        if added_to_path:
+            print(f'  [OK] Ruta añadida al PATH de usuario: {bin_dir}')
+        else:
+            print(f'  [OK] La ruta ya se encontraba en el PATH: {bin_dir}')
 
     print('\n¡Instalación completada con éxito!')
-    print('Ahora puedes abrir una nueva terminal y ejecutar:')
-    print('  Bagron "ruta/a/archivo.bg" -o programa.exe')
-    print('  Bagron --execute "ruta/a/archivo.bg" -o programa.exe\n')
+    if os.name == 'posix':
+        print('Ahora puedes abrir una nueva terminal y ejecutar:')
+        print('  bagron "ruta/a/archivo.bg" -o programa')
+        print('  bagron --execute "ruta/a/archivo.bg" -o programa\n')
+    else:
+        print('Ahora puedes abrir una nueva terminal y ejecutar:')
+        print('  Bagron "ruta/a/archivo.bg" -o programa.exe')
+        print('  Bagron --execute "ruta/a/archivo.bg" -o programa.exe\n')
     return 0
 
 
@@ -401,7 +517,13 @@ def uninstall(target_dir: Path | None = None) -> int:
     print(f'=== Desinstalador de Bagron ===')
     print(f'Objetivo: {target_dir}')
 
-    if bin_dir.exists():
+    if os.name == 'posix':
+        removed = _remove_from_posix_user_path(bin_dir)
+        if removed:
+            print(f'  [OK] Lanzadores retirados de {Path.home() / ".local" / "bin"}')
+        else:
+            print('  - No había enlaces POSIX asociados a esta instalación.')
+    elif bin_dir.exists():
         removed = _remove_from_windows_user_path(bin_dir)
         if removed:
             print(f'  [OK] Ruta retirada del PATH: {bin_dir}')
@@ -426,7 +548,7 @@ def main() -> int:
         '--target',
         type=Path,
         default=None,
-        help='Directorio de destino (por defecto: %%USERPROFILE%%/Bagron)',
+        help='Directorio de destino (por defecto: carpeta Bagron del usuario)',
     )
     parser.add_argument(
         '--local',
