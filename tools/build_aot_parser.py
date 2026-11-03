@@ -58,11 +58,24 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
     clang_path = _find_clang(clang)
 
     repository_text = str(repository_root)
-    if repository_text not in sys.path:
-        sys.path.insert(0, repository_text)
     gram_text = str(gram_path)
-    if gram_text not in sys.path:
-        sys.path.insert(0, gram_text)
+    vendored_gram = (repository_root / 'vendor' / 'gram').resolve()
+    prioritized = [repository_text, gram_text]
+    remaining = []
+    for entry in sys.path:
+        if not entry:
+            continue
+        try:
+            resolved = Path(entry).resolve()
+        except OSError:
+            remaining.append(entry)
+            continue
+        # NOTA: vnma puede proyectar vendor/gram antes que el checkout del
+        # proyecto; esa ruta también contiene ``core`` y oculta Bagron.
+        if resolved == repository_root or resolved == gram_path or resolved == vendored_gram:
+            continue
+        remaining.append(entry)
+    sys.path[:] = [*prioritized, *remaining]
     _load_gram_exporter(gram_path)
 
     from core import frontend
