@@ -1,16 +1,22 @@
 # Changelog 1.0.2
 
-## Módulos y Enlace
+## Modules and Linking
 
-- **Búsqueda en las carpetas base de Bagron (`modules/` y `libs/`)**:
-  - `import`: Ahora revisa las carpetas canónicas `modules/` y `libs/` donde se encuentra instalado Bagron (`BAGRON_ROOT`), permitiendo que cualquier proyecto externo consuma los módulos estándar (`string`, `asmutils`, `io`, etc.) sin necesidad de copiarlos localmente.
-  - Los módulos estándar importados pueden a su vez importar módulos hermanos dentro de Bagron sin generar errores de módulo fuera de la raíz del proyecto.
-  - `#link`: La directiva `#link "<ruta>"` ahora revisa en el proyecto local y, en caso de no existir localmente, busca en `BAGRON_ROOT / 'libs'`, `BAGRON_ROOT / 'modules'` o en la raíz de Bagron (incluyendo prefijos `bagron/<subcarpeta>`).
-  - `mangling`: Las claves internas de símbolos de módulos provenientes de `BAGRON_ROOT` se normalizan de manera canónica y determinista relativa a la instalación.
+- **Search in base Bagron directories (`modules/` and `libs/`)**:
+  - `import`: Now checks the canonical `modules/` and `libs/` directories located in the Bagron installation root (`BAGRON_ROOT`), allowing external projects to consume standard modules (`string`, `asmutils`, `io`, etc.) without copying them locally.
+  - Standard imported modules can in turn import sibling modules within Bagron without triggering out-of-root module errors.
+  - `#link`: The `#link "<path>"` directive now checks within the local project and, if not found locally, searches in `BAGRON_ROOT / 'libs'`, `BAGRON_ROOT / 'modules'`, or the Bagron root (including `bagron/<subfolder>` prefixes).
+  - `mangling`: Internal symbol keys for modules originating from `BAGRON_ROOT` are normalized canonically and deterministically relative to the installation root.
 
-## Biblioteca Estándar
+## Standard Library
 
-- Se incorporan los módulos base en la carpeta `modules/` del repositorio de Bagron:
-  - `string.bg` (utilidades de cadenas seguras y multiplataforma con validación de trampas)
-  - `asmutils.bg` (abstracción multiplataforma para trampas de ejecución y breakpoints)
+- Standard modules added to `modules/` in the Bagron repository:
+  - `string.bg` (safe and cross-platform chain utilities with execution trap validation)
+  - `asmutils.bg` (cross-platform abstractions for execution traps and breakpoints)
   - `alphabet.bg`, `io.bg`, `math.bg`, `mem.bg`, `mmap.bg`, `os.bg`, `time.bg`
+
+## Semantic Resolution and Methods
+
+- **Module function calls from homonymous methods**:
+  - Fixed call resolution so that when a class method invokes a free or external function with the same name (such as `connect(...)` inside `Socket.connect`), the call resolves to the module-level function instead of being intercepted as implicit recursion on the method.
+  - `Storage.resolve_function_for_module` and `Storage.resolve_variable_for_module` now consistently query the root module storage (`_module_root()`) and canonicalize paths across Windows and Linux.

@@ -1,6 +1,6 @@
 # Changelog 1.0.1
 
-## Tipos
+## Types
 
 - **Target-sized integer widening (`usize` and `isize`)**:
   Safe implicit widening is now permitted from smaller and equal-width integer types into target-sized pointer scalars (`usize` for unsigned integers, `isize` for signed integers) whenever `sizeof(source) <= sizeof(target)`.
@@ -9,12 +9,12 @@
   - Implicit narrowing remains prohibited: assigning `usize` or `isize` back to smaller or fixed-width integer types without validation raises a compilation error.
   - The raw `byte` type remains isolated and does not implicitly widen to `usize`.
 
-## Léxico y Sintaxis
+## Lexing and Syntax
 
-- **Coma final opcional en `enum`**:
-  Los miembros dentro de un bloque `enum` se delimitan por comas, pero la coma final en el último miembro ahora es opcional.
+- **Optional trailing comma in `enum`**:
+  Members within an `enum` block are delimited by commas, but the trailing comma on the last member is now optional.
   ```bg
   enum Token uint8:
       IDENT = 0
   ```
-  Las declaraciones con múltiples miembros pueden omitir la coma en el último elemento (por ejemplo, `A = 0, B = 1`) o conservarla (`A = 0, B = 1,`).
+  Declarations with multiple members can omit the comma on the last element (e.g. `A = 0, B = 1`) or retain it (`A = 0, B = 1,`).
