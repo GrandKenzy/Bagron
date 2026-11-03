@@ -17,6 +17,8 @@
   reconstruirlo cuando esos binarios no están disponibles.
 - Se añade el paquete Windows `Bagron-1.0.3-windows-x86_64.zip` con
   `bagron_aot.dll` y el instalador rechaza configuraciones incompletas.
+- La release Windows publica también `Bagron-1.0.3-Setup.exe`, generado con
+  PyInstaller desde `bagron-installer.spec`; el ZIP queda como paquete manual.
 - La instalación siempre genera un `vnma.toml` de producción con Gram desde
   GitHub y descarta locks o dependencias locales del checkout.
 

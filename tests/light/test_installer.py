@@ -91,6 +91,18 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('Bagron-1.0.3/build/aot/gram_parser_manifest.json', names)
             self.assertFalse(any('/vendor/' in name for name in names))
 
+    def test_windows_release_publishes_compiled_installer(self):
+        workflow = (Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml').read_text(
+            encoding='utf-8'
+        )
+        windows_job = workflow.split('  package-windows:', 1)[1].split('  publish:', 1)[0]
+
+        self.assertIn('python -m pip install pyinstaller', windows_job)
+        self.assertIn('python -m PyInstaller --clean --noconfirm', windows_job)
+        self.assertIn('bagron-installer.spec', windows_job)
+        self.assertIn('Bagron-${env:GITHUB_REF_NAME}-Setup.exe', windows_job)
+        self.assertIn('path: dist/*', windows_job)
+
 
 if __name__ == '__main__':
     unittest.main()

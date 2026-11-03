@@ -173,8 +173,10 @@ python installer.py
 El instalador crea `Bagron.cmd` y `Bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
-También puedes descargar `Bagron-1.0.3-windows-x86_64.zip` desde el release,
-extraerlo y ejecutar `python installer.py --local` desde la carpeta extraída.
+Desde el release puedes descargar el instalador compilado
+`Bagron-1.0.3-Setup.exe` y ejecutarlo directamente. El archivo
+`Bagron-1.0.3-windows-x86_64.zip` se conserva como paquete manual con las
+fuentes y el runtime AOT para instalaciones sin el instalador gráfico.
 
 ### Linux
 
