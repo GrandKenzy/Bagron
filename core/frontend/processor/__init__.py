@@ -37,6 +37,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
     tools.structure.collect(compiler, nodes)
     tools.enumeration.collect(compiler, nodes)
     tools.opaque.collect(compiler, nodes)
+    tools.imports.bind_type_aliases(compiler)
     tools.function.collect(compiler, nodes)
     for node in nodes:
         compiler.activate_module(compiler.module_for_node(node))

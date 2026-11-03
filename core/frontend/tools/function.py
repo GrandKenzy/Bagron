@@ -996,6 +996,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         if node.name != 'FUNCTION':
             continue
 
+        compiler.activate_module(compiler.module_for_node(node))
         try:
             name, signature = signature_from_node(
                 node,

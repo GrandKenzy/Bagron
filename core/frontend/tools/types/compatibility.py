@@ -319,7 +319,7 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         bounds = _integer_bounds(target)
         return bounds is not None and bounds[0] <= source.value <= bounds[1]
 
-    if source.is_literal and source_type.name in ('int32', 'float'):
+    if source_type.name in INTEGER_TYPES or source_type.name in ('middle', 'float', 'double'):
         if target.name in ('middle', 'float', 'double'):
             return True
 

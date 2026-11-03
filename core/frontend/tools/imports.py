@@ -231,6 +231,33 @@ def public_definition_names(nodes: list[gast.ASTRef]) -> set[str]:
     return names
 
 
+def bind_type_aliases(compiler: Compiler) -> None:
+    """Bind imported type aliases early so function signatures can resolve them."""
+    for request in compiler.import_requests:
+        if request.target is None:
+            continue
+        exports = compiler.module_exports.get(request.target, set())
+        if request.selected:
+            bindings = request.selected
+        else:
+            namespace = request.alias or request.module
+            bindings = tuple(
+                (name, f"{namespace}.{name}") for name in exports
+            )
+        for source_name, local_name in bindings:
+            type_symbol = compiler.resolve_import_symbol(
+                request.target,
+                source_name,
+                'type',
+            )
+            if type_symbol is not None:
+                existing = compiler.storage.type_aliases.get(local_name)
+                if existing is None or existing == source_name:
+                    compiler.storage.type_aliases[local_name] = (
+                        getattr(type_symbol, 'registry_key', None)
+                        or source_name
+                    )
+
 def bind_aliases(compiler: Compiler) -> None:
     """Bind qualified and selective imports after all module symbols collect."""
     for request in compiler.import_requests:
@@ -309,14 +336,19 @@ def bind_aliases(compiler: Compiler) -> None:
             )
             if type_symbol is not None:
                 existing = compiler.storage.type_aliases.get(local_name)
-                if existing is not None and existing != source_name:
+                expected_target = (
+                    getattr(type_symbol, 'registry_key', None)
+                    or source_name
+                )
+                if (
+                    existing is not None
+                    and existing != source_name
+                    and existing != expected_target
+                ):
                     compiler.error(f'El simbolo importado ya existe: {local_name}')
                     continue
                 if local_name != source_name or request.selected:
-                    compiler.storage.type_aliases[local_name] = (
-                        getattr(type_symbol, 'registry_key', None)
-                        or source_name
-                    )
+                    compiler.storage.type_aliases[local_name] = expected_target
                 continue
 
             compiler.error(
