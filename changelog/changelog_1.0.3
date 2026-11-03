@@ -15,6 +15,10 @@
 - El workflow construye el parser AOT de Gram para ambos sistemas; el paquete
   Linux incluye `libbagron_aot.so` y su manifiesto, y el instalador puede
   reconstruirlo cuando esos binarios no están disponibles.
+- Se añade el paquete Windows `Bagron-1.0.3-windows-x86_64.zip` con
+  `bagron_aot.dll` y el instalador rechaza configuraciones incompletas.
+- La instalación siempre genera un `vnma.toml` de producción con Gram desde
+  GitHub y descarta locks o dependencias locales del checkout.
 
 ## Documentación
 

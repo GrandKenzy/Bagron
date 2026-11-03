@@ -173,6 +173,9 @@ python installer.py
 El instalador crea `Bagron.cmd` y `Bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
+También puedes descargar `Bagron-1.0.3-windows-x86_64.zip` desde el release,
+extraerlo y ejecutar `python installer.py --local` desde la carpeta extraída.
+
 ### Linux
 
 El instalador Linux requiere Python 3.14+, `vnma`, Git, LLVM/Clang/LLD y, para

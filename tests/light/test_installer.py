@@ -1,11 +1,13 @@
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 import unittest
 from unittest import mock
 
 import installer
 from tools.package_linux import build_package
+from tools.package_windows import build_package as build_windows_package
 
 
 class InstallerTests(unittest.TestCase):
@@ -73,6 +75,21 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn('Bagron-1.0.3/build/aot/gram_parser_manifest.json', names)
             else:
                 self.assertFalse(any('/build/' in name for name in names))
+
+    def test_windows_package_contains_aot_runtime_when_available(self):
+        source_root = Path(__file__).resolve().parents[2]
+        if not (source_root / 'build' / 'aot' / 'bagron_aot.dll').is_file():
+            self.skipTest('El runner no tiene el artefacto AOT de Windows')
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = build_windows_package(source_root, Path(directory) / 'bagron.zip')
+            with zipfile.ZipFile(output) as archive:
+                names = set(archive.namelist())
+
+            self.assertIn('Bagron-1.0.3/installer.py', names)
+            self.assertIn('Bagron-1.0.3/build/aot/bagron_aot.dll', names)
+            self.assertIn('Bagron-1.0.3/build/aot/gram_parser_manifest.json', names)
+            self.assertFalse(any('/vendor/' in name for name in names))
 
 
 if __name__ == '__main__':
