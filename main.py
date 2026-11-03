@@ -5,6 +5,20 @@ import shutil
 import subprocess
 import sys
 
+# NOTA: Asegurar que la raíz de Bagron encabece sys.path y filtrar cualquier
+# subcarpeta de dependencia vendoreada (como vendor/gram) que colisione con módulos del núcleo (core).
+_PROJECT_ROOT = Path(__file__).resolve().parent
+_VENDOR_GRAM = _PROJECT_ROOT / 'vendor' / 'gram'
+
+sys.path = [
+    str(_PROJECT_ROOT),
+    *(
+        p for p in sys.path
+        if os.path.normcase(os.path.normpath(p)) != os.path.normcase(os.path.normpath(str(_VENDOR_GRAM)))
+        and os.path.normcase(os.path.normpath(p)) != os.path.normcase(os.path.normpath(str(_PROJECT_ROOT)))
+    ),
+]
+
 from core.compiler import CompilationError, Compiler
 from core.library import (
     LibraryError,

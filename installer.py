@@ -1,25 +1,32 @@
 """Instalador y configurador de entorno para Bagron.
 
-Instala Bagron en el directorio de usuario (por defecto: %USERPROFILE%/Bagron),
-crea las carpetas de librerías/módulos, genera los lanzadores de CLI para el PATH
-y permite invocar Bagron directamente desde cualquier terminal.
+Descarga o actualiza Bagron directamente desde GitHub (o sincroniza localmente),
+configura las dependencias en vnma.toml con Gram remoto, resuelve el entorno
+vendor mediante vnma, crea carpetas base y registra la CLI en el PATH de usuario.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import urllib.request
+import zipfile
 
 
 # ============================================================================
-# Constantes y rutas
+# Constantes y repositorios remotos
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
+BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
+BAGRON_ZIP_URL = 'https://github.com/GrandKenzy/Bagron/archive/refs/heads/main.zip'
+GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
+
 SUBDIRS_TO_COPY = ('core', 'tools', 'vendor', 'examples', 'docs', 'badge')
 FILES_TO_COPY = ('main.py', 'vnma.toml', 'vnma.lock', 'README.md', 'LICENSE')
 EMPTY_DIRS = ('libs', 'modules')
@@ -159,7 +166,6 @@ def _create_launchers(bin_dir: Path) -> None:
     """Crea los scripts ejecutables Bagron.cmd y Bagron.ps1 en bin_dir."""
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    # Script Batch / CMD para Windows
     cmd_content = (
         '@echo off\r\n'
         'setlocal\r\n'
@@ -172,7 +178,6 @@ def _create_launchers(bin_dir: Path) -> None:
         'exit /b %EXIT_CODE%\r\n'
     )
 
-    # Script PowerShell
     ps1_content = (
         '$callerDir = (Get-Location).Path\r\n'
         '$bagronHome = (Resolve-Path "$PSScriptRoot\\..").Path\r\n'
@@ -197,11 +202,88 @@ def _create_launchers(bin_dir: Path) -> None:
 
 
 # ============================================================================
-# Instalación y desinstalación
+# Descarga y sincronización desde GitHub
 # ============================================================================
 
-def install(target_dir: Path | None = None) -> int:
-    """Instala Bagron en target_dir (por defecto %USERPROFILE%/Bagron)."""
+def _fetch_from_github(target_dir: Path) -> None:
+    """Descarga o clona Bagron desde GitHub en target_dir."""
+    git_bin = shutil.which('git')
+
+    if git_bin:
+        if (target_dir / '.git').is_dir():
+            print(f'  [Git] Actualizando repositorio existente en {target_dir}...')
+            res = subprocess.run([git_bin, 'pull', 'origin', 'main'], cwd=str(target_dir))
+            if res.returncode == 0:
+                return
+            print('  [Git] Advertencia: git pull falló, intentando fetch limpio...')
+
+        if not any(target_dir.iterdir()) if target_dir.exists() else True:
+            print(f'  [Git] Clonando {BAGRON_REPO_URL}...')
+            subprocess.run(
+                [git_bin, 'clone', '--depth', '1', BAGRON_REPO_URL, str(target_dir)],
+                check=True,
+            )
+            return
+
+    # Descarga directa mediante ZIP (cuando git no está disponible o la carpeta no está vacía)
+    print(f'  [HTTP] Descargando archivo ZIP desde {BAGRON_ZIP_URL}...')
+    try:
+        with urllib.request.urlopen(BAGRON_ZIP_URL) as response:
+            zip_bytes = response.read()
+
+        print('  [HTTP] Extrayendo archivos del release...')
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            prefix = zf.namelist()[0].split('/')[0] + '/'
+            for member in zf.infolist():
+                if member.filename == prefix:
+                    continue
+                relative_path = member.filename[len(prefix):]
+                if not relative_path:
+                    continue
+                out_path = target_dir / relative_path
+                if member.is_dir():
+                    out_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(member) as src, open(out_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+    except Exception as error:
+        print(f'Error al descargar desde GitHub: {error}', file=sys.stderr)
+        raise
+
+
+# ============================================================================
+# Configuración de vnma.toml
+# ============================================================================
+
+def _configure_vnma_toml(target_dir: Path) -> None:
+    """Configura vnma.toml para apuntar a la dependencia remota de Gram."""
+    # NOTA: Se asegura que gram use la URL canónica de GitHub con rama main.
+    vnma_toml_content = (
+        '[project]\n'
+        'name = "Bagron"\n'
+        'version = "1.0.0"\n\n'
+        '[dependencies]\n'
+        f'gram = {{ git = "{GRAM_REPO_URL}", branch = "main" }}\n'
+        'llvmlite = "==0.50.0"\n\n'
+        '[dev-dependencies]\n\n'
+        '[tool.vnma]\n'
+        'vendor_dir = "vendor"\n'
+        'ide_integration = ["vscode", "pycharm"]\n'
+    )
+    (target_dir / 'vnma.toml').write_text(vnma_toml_content, encoding='utf-8')
+
+
+# ============================================================================
+# Proceso principal de instalación
+# ============================================================================
+
+def install(
+    target_dir: Path | None = None,
+    *,
+    from_local: bool = False,
+) -> int:
+    """Instala Bagron en target_dir."""
     source_root = Path(__file__).resolve().parent
 
     if target_dir is None:
@@ -209,16 +291,14 @@ def install(target_dir: Path | None = None) -> int:
 
     target_dir = target_dir.resolve()
     print(f'=== Instalador de Bagron 1.0.0 ===')
-    print(f'Origen:  {source_root}')
+    print(f'Modo:    {"Local (copia directa)" if from_local else "GitHub (" + BAGRON_REPO_URL + ")"}')
     print(f'Destino: {target_dir}')
-
-    is_in_place = (source_root == target_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copia de contenido del proyecto
-    if not is_in_place:
-        print('\n[1/4] Copiando componentes del compilador...')
+    # Paso 1: Obtención de fuentes
+    if from_local:
+        print('\n[1/5] Copiando componentes del compilador desde la copia local...')
         ignore_patterns = shutil.ignore_patterns(
             '__pycache__',
             '*.pyc',
@@ -241,49 +321,66 @@ def install(target_dir: Path | None = None) -> int:
                     ignore=ignore_patterns,
                 )
 
-        # NOTA: build/aot contiene la biblioteca nativa bagron_aot.dll requerida por el frontend FFI.
-        src_aot = source_root / 'build' / 'aot'
-        if src_aot.is_dir():
-            dst_aot = target_dir / 'build' / 'aot'
-            shutil.copytree(src_aot, dst_aot, dirs_exist_ok=True)
-
         for filename in FILES_TO_COPY:
             src_file = source_root / filename
             if src_file.is_file():
                 shutil.copy2(src_file, target_dir / filename)
     else:
-        print('\n[1/4] Instalación en el mismo directorio (omitiendo copia)...')
+        print('\n[1/5] Obteniendo Bagron desde GitHub...')
+        _fetch_from_github(target_dir)
 
-    # Creación de carpetas vacías para librerías y módulos
-    print('[2/4] Creando carpetas base libs/ y modules/...')
+    # NOTA: Si el directorio local o de ejecución contiene build/aot (driver FFI nativo), sincronizarlo.
+    src_aot = source_root / 'build' / 'aot'
+    if src_aot.is_dir():
+        dst_aot = target_dir / 'build' / 'aot'
+        shutil.copytree(src_aot, dst_aot, dirs_exist_ok=True)
+
+    # Sincronizar main.py local si contiene soporte para -o y --execute
+    src_main = source_root / 'main.py'
+    if src_main.is_file():
+        shutil.copy2(src_main, target_dir / 'main.py')
+
+    # Paso 2: Configuración de vnma.toml
+    print('\n[2/5] Configurando vnma.toml con dependencia remota a Gram...')
+    _configure_vnma_toml(target_dir)
+    print(f'  [OK] vnma.toml configurado para apuntar a: {GRAM_REPO_URL}')
+
+    # Paso 3: Resolución de dependencias con vnma
+    print('\n[3/5] Resolviendo e instalando dependencias con vnma...')
+    vnma_bin = shutil.which('vnma')
+    if vnma_bin:
+        install_res = subprocess.run([vnma_bin, 'install'], cwd=str(target_dir))
+        if install_res.returncode != 0:
+            print(
+                '\n# CUIDADO: "vnma install" terminó con código de error.\n'
+                'Puedes reintentar manualmente con: cd %USERPROFILE%/Bagron && vnma install',
+                file=sys.stderr,
+            )
+        else:
+            print('  [OK] Dependencias instaladas y sincronizadas en vendor/.')
+    else:
+        print(
+            '\n# CUIDADO: "vnma" no se detectó en el PATH.\n'
+            'Instala vnma para restaurar las dependencias del compilador.',
+            file=sys.stderr,
+        )
+
+    # Paso 4: Creación de carpetas base libs/ y modules/
+    print('\n[4/5] Creando carpetas base libs/ y modules/...')
     for empty_name in EMPTY_DIRS:
         empty_path = target_dir / empty_name
         empty_path.mkdir(parents=True, exist_ok=True)
 
-    # Creación de lanzadores en bin/
-    print('[3/4] Generando lanzadores CLI en bin/ (Bagron.cmd)...')
+    # Paso 5: Generación de lanzadores y configuración de PATH
+    print('\n[5/5] Generando lanzadores CLI en bin/ y configurando el PATH...')
     bin_dir = target_dir / 'bin'
     _create_launchers(bin_dir)
 
-    # Configuración de PATH
-    print('[4/4] Configurando variables de entorno...')
     added_to_path = _add_to_windows_user_path(bin_dir)
     if added_to_path:
         print(f'  [OK] Ruta anadida al PATH de usuario: {bin_dir}')
     else:
         print(f'  [OK] La ruta ya se encontraba en el PATH: {bin_dir}')
-
-    # Verificación de vnma
-    vnma_path = shutil.which('vnma')
-    if not vnma_path:
-        print(
-            '\n# CUIDADO: "vnma" no se detecto en el PATH actual.\n'
-            'Bagron requiere vnma para resolver el entorno de dependencias.\n'
-            'Asegurate de que la CLI de vnma este instalada y en el PATH.',
-            file=sys.stderr,
-        )
-    else:
-        print(f'  [OK] vnma detectado en: {vnma_path}')
 
     print('\n¡Instalación completada con éxito!')
     print('Ahora puedes abrir una nueva terminal y ejecutar:')
@@ -323,12 +420,17 @@ def uninstall(target_dir: Path | None = None) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Instalador de Bagron')
+    parser = argparse.ArgumentParser(description='Instalador de Bagron 1.0.0')
     parser.add_argument(
         '--target',
         type=Path,
         default=None,
         help='Directorio de destino (por defecto: %%USERPROFILE%%/Bagron)',
+    )
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        help='Instala desde la copia local en lugar de descargar desde GitHub',
     )
     parser.add_argument(
         '--uninstall',
@@ -339,7 +441,7 @@ def main() -> int:
 
     if args.uninstall:
         return uninstall(args.target)
-    return install(args.target)
+    return install(args.target, from_local=args.local)
 
 
 if __name__ == '__main__':
