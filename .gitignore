@@ -30,6 +30,7 @@ dist/
 *.a
 *.lib
 *.vsix
+!tools/vscode/*.vsix
 
 # Cachés y temporales
 .cache/

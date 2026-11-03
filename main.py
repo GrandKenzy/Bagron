@@ -46,10 +46,134 @@ def _main_help() -> str:
         'Uso:\n'
         '  Bagron <archivo.bg> [-o <salida.exe>] [--execute]\n'
         '  vnma run main.py <archivo.bg> [-o <salida.exe>] [--execute]\n\n'
+        'Soporte de editor (VS Code):\n'
+        '  Bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'
         + _library_help() + '\n\n'
         'El frontend Gram FFI produce GIR; semántica y backend LLVM siguen en Bagron.'
     )
+
+
+def _find_code_executable() -> str | None:
+    """Busca el ejecutable del CLI de VS Code ('code' o 'code.cmd')."""
+    code_bin = shutil.which('code') or shutil.which('code.cmd')
+    if code_bin:
+        return code_bin
+
+    if sys.platform == 'win32':
+        candidates = [
+            Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Microsoft VS Code' / 'bin' / 'code.cmd',
+            Path(os.environ.get('ProgramFiles', '')) / 'Microsoft VS Code' / 'bin' / 'code.cmd',
+            Path(os.environ.get('ProgramFiles(x86)', '')) / 'Microsoft VS Code' / 'bin' / 'code.cmd',
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
+
+    return None
+
+
+def _find_bundled_vsix() -> Path | None:
+    """Localiza el archivo .vsix empaquetado en Bagron."""
+    canonical = _PROJECT_ROOT / 'tools' / 'vscode' / 'bagron-language-support.vsix'
+    if canonical.is_file():
+        return canonical
+
+    vscode_dir = _PROJECT_ROOT / 'tools' / 'vscode'
+    if vscode_dir.is_dir():
+        vsix_files = sorted(vscode_dir.glob('*.vsix'), reverse=True)
+        if vsix_files:
+            return vsix_files[0]
+
+    return None
+
+
+def _vscode_command(argv: list[str]) -> int:
+    """Gestiona el comando `Bagron --vscode install`."""
+    subcommand = argv[1] if len(argv) > 1 else 'install'
+    if subcommand in {'-h', '--help'}:
+        print('Uso:\n  Bagron --vscode install    Instala o reinstala limpiamente la extensión oficial en VS Code.')
+        return 0
+
+    if subcommand != 'install':
+        print(
+            f"Error: Subcomando desconocido para --vscode: '{subcommand}'. Uso: Bagron --vscode install",
+            file=sys.stderr,
+        )
+        return 2
+
+    code_bin = _find_code_executable()
+    if not code_bin:
+        print(
+            'Error: No se encontró el ejecutable CLI de VS Code ("code"). '
+            'Asegúrate de que VS Code esté instalado y disponible en el sistema.',
+            file=sys.stderr,
+        )
+        return 1
+
+    vsix_path = _find_bundled_vsix()
+    if not vsix_path or not vsix_path.is_file():
+        print(
+            f'Error: No se encontró el paquete .vsix en {_PROJECT_ROOT / "tools" / "vscode"}.',
+            file=sys.stderr,
+        )
+        return 1
+
+    extension_id = 'bagron-dev.bagron-language-support'
+
+    print('[*] Comprobando extensiones instaladas en VS Code...')
+    try:
+        list_proc = subprocess.run(
+            [code_bin, '--list-extensions'],
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=sys.platform == 'win32',
+        )
+        installed = [
+            line.strip().lower()
+            for line in list_proc.stdout.splitlines()
+            if line.strip()
+        ]
+    except Exception as error:
+        print(f'Advertencia al consultar extensiones: {error}', file=sys.stderr)
+        installed = []
+
+    if extension_id.lower() in installed:
+        print(f'[*] Desinstalando versión anterior de {extension_id} para una instalación limpia...')
+        try:
+            uninst_proc = subprocess.run(
+                [code_bin, '--uninstall-extension', extension_id],
+                capture_output=True,
+                text=True,
+                check=False,
+                shell=sys.platform == 'win32',
+            )
+            if uninst_proc.returncode == 0:
+                print(f'[+] Versión anterior desinstalada correctamente.')
+            else:
+                print(f'Advertencia al desinstalar: {uninst_proc.stderr.strip()}', file=sys.stderr)
+        except Exception as error:
+            print(f'Advertencia al desinstalar: {error}', file=sys.stderr)
+
+    print(f'[*] Instalando paquete {vsix_path.name} en VS Code...')
+    try:
+        inst_proc = subprocess.run(
+            [code_bin, '--install-extension', str(vsix_path), '--force'],
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=sys.platform == 'win32',
+        )
+        if inst_proc.returncode == 0:
+            print(f'[OK] ¡Extensión {extension_id} instalada con éxito en VS Code!')
+            return 0
+        else:
+            print(f'Error al instalar la extensión:\n{inst_proc.stderr}', file=sys.stderr)
+            return inst_proc.returncode
+    except Exception as error:
+        print(f'Error al ejecutar la instalación: {error}', file=sys.stderr)
+        return 1
 
 
 def _parse_compile_args(
@@ -158,6 +282,9 @@ def main(*args):
     if argv[0] in {'-h', '--help'}:
         print(_main_help())
         return 0
+
+    if argv[0] in {'--vscode', 'vscode'}:
+        return _vscode_command(argv)
 
     if argv[0] in {'library', 'inspect', 'verify', 'unpack'}:
         return _library_command(argv)
