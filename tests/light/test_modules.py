@@ -838,6 +838,40 @@ class ModuleTests(unittest.TestCase):
 
             self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_top_val_[^"\s]*"?\(\)')
 
+
+    def test_local_project_module_overrides_bagron_root_module(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'modules').mkdir()
+            (fake_bagron / 'modules' / 'io.bg').write_text(
+                'public func ping() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+
+            root = Path(project_dir)
+            (root / 'modules').mkdir()
+            (root / 'modules' / 'io.bg').write_text(
+                'public func ping() int32:\n'
+                '    return 2\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'import io\n'
+                'func main() int32:\n'
+                '    return io.ping()\n',
+                encoding='utf-8',
+            )
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                compiler = Compiler()
+                output = compiler.compile(main, executable=False)
+
+            loaded_io = [p for p in compiler.storage.loaded_modules if 'io.bg' in p][0]
+            self.assertEqual((root / 'modules' / 'io.bg').resolve(), Path(loaded_io).resolve())
+
 if __name__ == '__main__':
     unittest.main()
 
