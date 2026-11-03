@@ -69,7 +69,7 @@ class ModuleTests(unittest.TestCase):
             compiler = Compiler()
             compiler.compile(main, executable=False)
 
-        self.assertEqual([root / 'bins'], compiler.storage.native_link_dirs)
+        self.assertEqual([(root / 'bins').resolve()], compiler.storage.native_link_dirs)
 
     def test_entry_module_selects_the_optimization_profile(self):
         with tempfile.TemporaryDirectory() as directory:

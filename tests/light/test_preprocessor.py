@@ -110,7 +110,10 @@ class LinkDirectiveTests(unittest.TestCase):
             )
 
         self.assertEqual([], errors)
-        self.assertEqual([root / 'bins', root / 'vendor' / 'other'], links)
+        self.assertEqual(
+            [(root / 'bins').resolve(), (root / 'vendor' / 'other').resolve()],
+            links,
+        )
         self.assertEqual(['\n', 'func main() int32:\n', '    pass\n', '\n'], transformed)
 
     def test_rejects_files_and_paths_outside_the_project(self):
