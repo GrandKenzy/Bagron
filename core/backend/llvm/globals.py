@@ -32,6 +32,8 @@ class GlobalEmitter:
         self.module = module
         self.type_registry = type_registry
         self._resolving: list[str] = []
+        self._global_names: dict[int, str] = {}
+        self._globals_by_source: dict[str, list[Variable]] = {}
         self._string_pool = string_pool or StringPool(module)
 
     def _string_pointer(self, value: str):
@@ -44,7 +46,7 @@ class GlobalEmitter:
             raise GlobalEmissionError(
                 f'El agregado {spec.canonical_name} requiere un registro de tipos'
             )
-        layout = self.type_registry.layout(spec.name)
+        layout = self.type_registry.layout(spec)
         if layout is None or layout.symbol.kind != 'struct':
             raise GlobalEmissionError(
                 f'El agregado {spec.canonical_name} no admite un inicializador '
@@ -72,7 +74,7 @@ class GlobalEmitter:
                 field_values.append(self._string_pointer(field_value.value))
                 continue
             if (
-                self.type_registry.layout(field.type_spec.name) is not None
+                self.type_registry.layout(field.type_spec) is not None
                 and field.type_spec.pointer_level == 0
                 and field.type_spec.array_depth == 0
             ):
@@ -99,11 +101,14 @@ class GlobalEmitter:
         # that appears later in the source file.
         for symbol in storage.namespace.values():
             if isinstance(symbol, Variable):
+                self._global_names[id(symbol)] = symbol.llvm_name or symbol.name
+                self._globals_by_source.setdefault(symbol.name, []).append(symbol)
                 self._declare_symbol(storage, symbol)
 
         for symbol in storage.namespace.values():
             if isinstance(symbol, Variable):
-                self._initialize_symbol(storage, symbol)
+                if not getattr(symbol, 'is_external', False):
+                    self._initialize_symbol(storage, symbol)
 
     def _constant_value(self, storage: Storage, symbol: Variable) -> ValueInfo | None:
         if symbol.name in self._resolving:
@@ -116,7 +121,7 @@ class GlobalEmitter:
                 has_aggregate_default = (
                     self.type_registry is not None
                     and symbol.type_spec is not None
-                    and self.type_registry.layout(symbol.type_spec.name) is not None
+                    and self.type_registry.layout(symbol.type_spec) is not None
                 )
                 if symbol.value_is_const and not has_aggregate_default:
                     raise GlobalEmissionError(
@@ -185,18 +190,20 @@ class GlobalEmitter:
         except LLVMTypeError as error:
             raise GlobalEmissionError(f'{symbol.name}: {error}') from error
 
-        if symbol.name in self.module.globals:
-            raise GlobalEmissionError(f'Simbolo LLVM duplicado: {symbol.name}')
+        llvm_name = self._global_names.get(id(symbol), symbol.llvm_name or symbol.name)
+        if llvm_name in self.module.globals:
+            raise GlobalEmissionError(f'Simbolo LLVM duplicado: {llvm_name}')
 
         from llvmlite import ir
 
         global_value = ir.GlobalVariable(
             self.module,
             target_type,
-            symbol.name,
+            llvm_name,
         )
 
-        global_value.initializer = initializer
+        if not getattr(symbol, 'is_external', False):
+            global_value.initializer = initializer
         global_value.global_constant = symbol.value_is_const
         if symbol.type_spec.name == 'chain':
             # A named chain remains an array global for source/IR
@@ -221,13 +228,15 @@ class GlobalEmitter:
                 f'El inicializador de {symbol.name} no tiene un destino de direccion'
             )
 
-        target = self.module.globals.get(target_name)
+        target = self._global_for_source(storage=None, name=target_name, owner=symbol)
         if target is None:
             raise GlobalEmissionError(
                 f'El destino de la direccion global no existe: {target_name}'
             )
 
-        destination = self.module.globals.get(symbol.name)
+        destination = self.module.globals.get(
+            self._global_names.get(id(symbol), symbol.llvm_name or symbol.name)
+        )
         if destination is None:
             raise GlobalEmissionError(
                 f'El global {symbol.name} no tiene declaracion LLVM'
@@ -320,7 +329,9 @@ class GlobalEmitter:
         return address
 
     def _initialize_symbol(self, storage: Storage, symbol: Variable) -> None:
-        destination = self.module.globals.get(symbol.name)
+        destination = self.module.globals.get(
+            self._global_names.get(id(symbol), symbol.llvm_name or symbol.name)
+        )
         if destination is None:
             raise GlobalEmissionError(
                 f'El global {symbol.name} no tiene declaracion LLVM'
@@ -335,7 +346,7 @@ class GlobalEmitter:
             elif (
                 self.type_registry is not None
                 and getattr(
-                    self.type_registry.aggregate(symbol.type_spec.name),
+                    self.type_registry.aggregate(symbol.type_spec),
                     'initializer_name',
                     None,
                 ) == '__frontend__'
@@ -354,6 +365,24 @@ class GlobalEmitter:
             destination.initializer = initializer
         except LLVMTypeError as error:
             raise GlobalEmissionError(f'{symbol.name}: {error}') from error
+
+    def _global_for_source(
+        self,
+        storage,
+        name: str,
+        owner: Variable,
+    ):
+        candidates = self._globals_by_source.get(name, ())
+        target = next(
+            (
+                item for item in candidates
+                if getattr(item, 'module_path', None)
+                == getattr(owner, 'module_path', None)
+            ),
+            None,
+        )
+        llvm_name = self._global_names.get(id(target)) if target is not None else name
+        return self.module.globals.get(llvm_name)
 
     def emit_symbol(self, storage: Storage, symbol: Variable) -> None:
         """Emit one symbol for callers that use the emitter incrementally."""

@@ -1,0 +1,33 @@
+# changelog_1.0.0
+
+## Limpieza de compatibilidad legacy
+
+- Retirados los comandos CLI `package` y `package2`; la creación de librerías
+  usa únicamente `library --v1` o `library --v2`.
+- Retirados los alias duplicados de dialectos ASM; solo se aceptan `gas-intel`
+  y `att`.
+- Retirado `@order_lsb`; el orden menos significativo ya es el predeterminado y
+  `@order_msb` queda como única alternativa explícita.
+
+## Documentación por casos
+
+- Renombrados los índices de `docs/es/` a `index.md` y ampliadas las secciones
+  de sintaxis y librerías con ejemplos pequeños y numerados.
+- Añadidas guías dedicadas para declaraciones externas (`extern`, `#link`,
+  `opaque` y restricciones ABI) y clases (construcción, privacidad, herencia,
+  hooks, `@frozen` y destrucción).
+- Ampliada la guía de datos expansivos con arrays, matrices, `chain`, `buffer`,
+  `Signed_t`, propagación, `unique`, `Region_t`, ABI y diagnósticos.
+- Ampliada la referencia de decoradores con el inventario completo, contratos
+  de funciones y métodos, ensamblador, clases, layout y diagnósticos; `inline`
+  y `volatile` quedan documentados como especificador y calificador, no como
+  decoradores.
+- Ampliada la guía de ensamblador con extracción, dialectos canónicos,
+  placeholders ABI Windows x64, `return asm`, bloques de módulo,
+  preprocesador y depuración de errores de Clang.
+- Ampliada la referencia de calificadores y especificadores con `const`,
+  `unique`, visibilidad, `inline`, `volatile` e interacciones con decoradores
+  y datos expansivos.
+- Ampliada la documentación de directivas y cláusulas con preprocesador,
+  `#link`, `library`, `#prep`, targets, perfiles y cláusulas auxiliares.
+

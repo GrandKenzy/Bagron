@@ -425,7 +425,15 @@ def collect_in_scope(
     if handle is None:
         return None
 
-    if storage.contains_local(handle.name):
+    existing = storage.namespace.get(handle.name)
+    duplicate_module_global = (
+        kind == 'global'
+        and existing is not None
+        and getattr(existing, 'scope_kind', None) == 'global'
+        and getattr(existing, 'module_path', None)
+        != compiler.module_for_node(node)
+    )
+    if storage.contains_local(handle.name) and not duplicate_module_global:
         compiler.error(
             f'La variable {handle.name} ya fue declarada en el scope '
             f'{storage.scope_name}'

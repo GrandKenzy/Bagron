@@ -1,0 +1,22 @@
+; Muestra de integración dependiente del target. No es parte del recorrido
+; portable: requiere Windows x64 y Clang para ensamblar y enlazar.
+clause System 'windows'
+clause Arch 'amd'
+
+opaque HANDLE: void*
+
+extern windows "kernel32":
+    GetStdHandle(kind: uint32) HANDLE
+
+@assembler
+func constant() int32:
+    #prep assembler "gas-intel"
+        xor eax, eax
+    #end
+    return asm
+
+@unsafe
+func main() int32:
+    handle: HANDLE = GetStdHandle(0)
+    ; HANDLE es un descriptor opaco: no se compara ni se desreferencia aquí.
+    return constant()

@@ -20,6 +20,10 @@ class Variable:
         self.initialized = value is not None
         self.privacy = 'public'
         self.module_path = None
+        self.source_name = name
+        self.llvm_name = None
+        self.package_id = None
+        self.is_external = False
         self.scope_kind = 'global'
         self.is_for_iterator = False
         self.is_receiver = False

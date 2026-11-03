@@ -1,5 +1,11 @@
 # Especificadores y Calificadores
 
+## Guías relacionadas
+
+- [Calificadores de tipo: `const` y `unique`](03a-Calificadores-de-tipo.md)
+- [Especificadores de declaración y almacenamiento](03b-Especificadores-de-declaracion.md)
+- [Interacciones y diagnósticos](03c-Interacciones-y-diagnosticos.md)
+
 Los calificadores modifican la forma en que se puede usar un tipo o un
 valor. Los especificadores modifican una declaración completa, su visibilidad
 o la forma en que el compilador debe tratarla.
@@ -13,6 +19,19 @@ los bits en memoria.
 - Un **especificador** expresa una propiedad de una declaración, como `inline`
   o `volatile`.
 - Un **decorador** añade metadatos con `@`, como `@packed` o `@unsafe`.
+
+La clasificación práctica es esta:
+
+| Elemento | Posición | Ejemplos |
+| --- | --- | --- |
+| Calificador de tipo | delante del tipo | `const int32`, `unique buffer[]` |
+| Especificador de declaración | delante de una declaración | `public func`, `private class`, `inline func` |
+| Calificador de almacenamiento | dentro de la declaración del agregado | `volatile struct` |
+| Decorador | línea `@...` previa | `@frozen`, `@align(8)`, `@unsafe` |
+
+`static` pertenece a los decoradores de métodos; `Len_t`, `Size_t`, `Signed_t`
+y `Region_t` son metadatos expansivos de firma, no calificadores que se puedan
+anteponer libremente a un tipo.
 
 Estas palabras no cambian arbitrariamente el tipo de un valor. Hacen explícitas
 las garantías que el compilador debe conservar.
@@ -176,7 +195,7 @@ final del bloque ASM. También puede existir sin bloque `#prep`, en cuyo caso
 solo admite un `return` normal.
 
 El dialecto `gas-intel` usa la sintaxis Intel del ensamblador integrado de
-GAS/LLVM; no es sintaxis NASM. `intel` se conserva como alias de compatibilidad.
+GAS/LLVM; no es sintaxis NASM.
 El dialecto `att` usa la sintaxis AT&T. Clang valida cada bloque durante la
 compilación y Bagron remite sus diagnósticos al archivo `.bg` y a la función
 `@assembler` que los originó.
@@ -243,11 +262,10 @@ compatibilidad de [Estructuras](02-Estructuras.md).
 |:---|:---|:---|
 | `packed` | `@packed` | Reduce o elimina el padding automático del layout. |
 | `align` | `@align(N)` | Solicita una alineación explícita; `N` debe ser una potencia de dos entre 1 y 64. |
-| `order_lsb` | `@order_lsb` | En `flags`, asigna los campos desde los bits menos significativos. |
 | `order_msb` | `@order_msb` | En `flags`, asigna los campos desde los bits más significativos. |
 
-`@order_lsb` y `@order_msb` son alternativas del orden de bits y no deben
-usarse simultáneamente.
+Los campos sin decorador usan el orden desde los bits menos significativos;
+`@order_msb` selecciona el orden contrario.
 
 ## Decoradores de `class`
 
@@ -299,11 +317,11 @@ Sirve para cumplir contratos de hardware, ABI o instrucciones que requieren
 direcciones alineadas. No cambia el orden de los campos ni convierte un tipo
 en otro.
 
-#### `@order_lsb` y `@order_msb`
+#### `@order_msb`
 
-Estos decoradores solo determinan desde qué extremo del contenedor se asignan
-los campos de `flags`. No son una conversión de endianess y no cambian por sí
-solos el orden de bytes de un entero.
+Este decorador determina desde qué extremo del contenedor se asignan los campos
+de `flags`. No es una conversión de endianess ni cambia por sí solo el orden de
+bytes de un entero. Sin decorador se usa el orden menos significativo.
 
 ## Verificación de `volatile`
 

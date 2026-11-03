@@ -692,7 +692,7 @@ class CallExpressionMixin:
         receiver_value = None
         if method is not None:
             name = method.name
-            callee = self._functions.get(name)
+            callee = self._function_for_symbol(method)
             if callee is None:
                 raise FunctionEmissionError(
                     f'El metodo {name} no tiene emision LLVM'
@@ -721,7 +721,7 @@ class CallExpressionMixin:
         ):
             return self._compile_constructor(name, call_suffix, builder, values)
         if method is None:
-            callee = self._functions.get(name or '')
+            callee = self._function_for_name(name or '')
         if callee is None:
             raise FunctionEmissionError(
                 f'La funcion {name or "<anonima>"} no tiene emision LLVM'
@@ -738,6 +738,15 @@ class CallExpressionMixin:
             container = next(iter(self._children(arguments)), None)
             argument_items = self._children(container)
         symbol = self._symbols.get(name or '')
+        if method is None and name is not None and '.' not in name:
+            symbol = next(
+                (
+                    candidate for candidate in self._symbols_by_source.get(name, ())
+                    if getattr(candidate, 'module_path', None)
+                    == getattr(self._active_function_symbol, 'module_path', None)
+                ),
+                symbol,
+            )
         parameters = list(getattr(symbol.signature, 'parameters', ())) if symbol else []
         if (
             self._optimization_profile in {'prod', 'high'}

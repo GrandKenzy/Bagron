@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from platform import machine, system
 import re
@@ -7,6 +7,24 @@ from core import globvars, storage
 from core.compiler.control import CompilationError, CompilerState, _found_main
 from core.compiler.prep import PrepBlock, PrepError, write_prep_files
 from core.frontend import processor as bagron_processor
+from core.library import (
+    LibraryError,
+    extract_library,
+    _node_from_data,
+    resolve_library_path,
+)
+from core.compiler.mangling import MANGLE_VERSION, symbol_llvm_name
+from core.frontend.objects import (
+    AggregateSymbol,
+    EnumSymbol,
+    FunctionSignature,
+    FunctionSymbol,
+    OpaqueSymbol,
+    ParameterSpec,
+    TypeSpec,
+    ValueInfo,
+    Variable,
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +49,15 @@ class Compiler(CompilerState):
         self._loaded_module_paths: set[Path] = set()
         self._loading_module_paths: list[Path] = []
         self.import_requests = []
+        self.library_requests: dict[Path, list[object]] = {}
+        self.library_source_roots: set[Path] = set()
+        self.library_targets: dict[Path, Path] = {}
+        self.module_package_ids: dict[Path, str] = {}
+        self.module_package_relatives: dict[Path, str] = {}
+        self.library_symbol_names: dict[tuple[str, str, str, str], str] = {}
+        self.library_module_paths: dict[Path, set[Path]] = {}
+        self.package_identity_override: str | None = None
+        self.precompiled_modules: dict[Path, list[object]] = {}
         self.module_exports: dict[Path, set[str]] = {}
         self.module_targets: dict[Path, ModuleTarget] = {}
         self.node_modules: dict[int, Path] = {}
@@ -319,6 +346,9 @@ class Compiler(CompilerState):
 
     def _load_module_tree(self, path: Path):
         path = path.resolve()
+        precompiled = self.precompiled_modules.get(path)
+        if precompiled is not None:
+            return self._load_precompiled_module_tree(path, precompiled)
         if path in self._loading_module_paths:
             cycle = ' -> '.join(
                 str(item) for item in (*self._loading_module_paths, path)
@@ -343,6 +373,8 @@ class Compiler(CompilerState):
                 self.node_modules[id(node)] = path
             self._register_module_target(path, nodes)
             ordered = []
+            for request in self.library_requests.get(path, ()):
+                ordered.extend(self._load_library(request))
             for node in nodes:
                 if node.name != 'IMPORT':
                     continue
@@ -372,7 +404,365 @@ class Compiler(CompilerState):
         finally:
             self._loading_module_paths.pop()
 
-    def compile(self, path: Path | str, executable: bool = True):
+    def _load_precompiled_module_tree(self, path: Path, nodes: list[object]):
+        """Load a validated lib1 frontend module without parsing its source."""
+        from core.frontend.tools import imports
+
+        if path in self._loading_module_paths:
+            cycle = ' -> '.join(
+                str(item) for item in (*self._loading_module_paths, path)
+            )
+            self.error(f'Ciclo de importacion detectado: {cycle}')
+            return []
+        if path in self._loaded_module_paths:
+            return []
+
+        self._loading_module_paths.append(path)
+        try:
+            for node in nodes:
+                self.node_modules[id(node)] = path
+            self._register_module_target(path, nodes)
+            ordered: list[object] = []
+            for node in nodes:
+                if getattr(node, 'name', None) != 'IMPORT':
+                    continue
+                name = imports.module_name(node)
+                if name is None:
+                    self.error(
+                        f'La declaracion import no contiene un modulo valido: {path}'
+                    )
+                    continue
+                imported_path = imports.resolve_module_path(self, name, path)
+                if imported_path is not None:
+                    request = imports.parse_request(
+                        node,
+                        target=imported_path,
+                        source=path,
+                    )
+                    if request is not None:
+                        self.import_requests.append(request)
+                    ordered.extend(self._load_module_tree(imported_path))
+
+            own_nodes = [node for node in nodes if getattr(node, 'name', None) != 'IMPORT']
+            self.module_exports[path] = imports.public_definition_names(own_nodes)
+            self._loaded_module_paths.add(path)
+            self.storage.loaded_modules.append(str(path))
+            return ordered + own_nodes
+        finally:
+            self._loading_module_paths.pop()
+
+    def _load_library(self, request):
+        """Load a lib1 package and bind its public export namespace."""
+        from core.frontend.tools.imports import ImportRequest
+
+        source = Path(request.source).resolve()
+        package_path = resolve_library_path(
+            request.path,
+            source,
+            self.project_root or source.parent,
+        )
+        if package_path is None:
+            self.error(
+                f'No se encontro la libreria Bagron {request.path!r} desde {source}'
+            )
+            return []
+
+        cache_root = (
+            (self.project_root or source.parent) / 'build' / '.bagron' / 'libraries'
+        )
+        try:
+            package, extracted = extract_library(package_path, cache_root)
+        except LibraryError as error:
+            self.error(str(error))
+            return []
+        if package.library_version == 2:
+            self._load_compiled_library(package, extracted, request)
+            return []
+
+        synthetic = self.library_targets.get(package_path)
+        ordered: list[object] = []
+        if synthetic is None:
+            synthetic = extracted / '__lib1__.bg'
+            self.library_targets[package_path] = synthetic
+            source_root = extracted / 'source'
+            self.library_source_roots.add(source_root.resolve())
+            for relative in package.modules:
+                module_path = (extracted / relative).resolve()
+                self.module_package_ids[module_path] = package.package_id
+                self.module_package_relatives[module_path] = str(
+                    Path(relative).relative_to('source').as_posix()
+                )
+                self.library_module_paths.setdefault(synthetic, set()).add(module_path)
+            for item in package.symbols.get('exports', ()):
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('name', ''))
+                module = str(item.get('module', ''))
+                kind = str(item.get('kind', ''))
+                llvm_name = item.get('llvm') or item.get('mangled')
+                if name and module and llvm_name:
+                    self.library_symbol_names[
+                        (package.package_id, module, kind, name)
+                    ] = str(llvm_name)
+            for relative in package.manifest.get('links', ()):
+                link_dir = (extracted / str(relative)).resolve()
+                try:
+                    link_dir.relative_to(extracted.resolve())
+                except ValueError:
+                    self.error(
+                        f'El #link de {package_path} sale de la raiz del paquete: '
+                        f'{relative!r}'
+                    )
+                    continue
+                if link_dir.is_dir() and link_dir not in self.storage.native_link_dirs:
+                    self.storage.native_link_dirs.append(link_dir)
+            for native_dir in (extracted / 'bins', extracted / 'libs'):
+                if native_dir.is_dir() and native_dir.resolve() not in self.storage.native_link_dirs:
+                    self.storage.native_link_dirs.append(native_dir.resolve())
+            for module in package.ir.get('modules', ()):
+                if not isinstance(module, dict):
+                    self.error(f'La IR de {package_path} contiene un modulo invalido')
+                    continue
+                relative = str(module.get('path', ''))
+                module_path = (
+                    extracted / relative
+                    if relative.startswith('source/')
+                    else source_root / relative
+                ).resolve()
+                try:
+                    module_path.relative_to(source_root.resolve())
+                except ValueError:
+                    self.error(
+                        f'El modulo IR {relative!r} sale de source/ en {package_path}'
+                    )
+                    continue
+                try:
+                    module_nodes = [
+                        _node_from_data(item) for item in module.get('nodes', ())
+                    ]
+                except (KeyError, TypeError, ValueError) as error:
+                    self.error(
+                        f'No se pudo cargar la IR del modulo {relative!r}: {error}'
+                    )
+                    continue
+                self.precompiled_modules[module_path] = module_nodes
+            for relative in package.modules:
+                module_path = (extracted / relative).resolve()
+                try:
+                    module_path.relative_to(source_root.resolve())
+                except ValueError:
+                    self.error(
+                        f'El modulo {relative!r} de {package_path} esta fuera de source/'
+                    )
+                    continue
+                if not module_path.is_file():
+                    self.error(
+                        f'Falta el modulo {relative!r} dentro de {package_path}'
+                    )
+                    continue
+                ordered.extend(self._load_module_tree(module_path))
+
+            exports = {
+                str(item.get('name'))
+                for item in package.symbols.get('exports', ())
+                if isinstance(item, dict) and item.get('name')
+            }
+            self.module_exports[synthetic] = exports
+            targets = package.targets
+            self.module_targets[synthetic] = ModuleTarget(
+                system=targets.get('System'),
+                architecture=targets.get('Arch'),
+                boot=targets.get('Boot'),
+            )
+            self._loaded_module_paths.add(synthetic)
+            self.storage.loaded_modules.append(str(package_path))
+
+        self.import_requests.append(ImportRequest(
+            package.name,
+            alias=request.alias,
+            target=synthetic,
+            source=source,
+        ))
+        return ordered
+
+    @staticmethod
+    def _library_type_spec(data: object) -> TypeSpec:
+        values = data if isinstance(data, dict) else {}
+        return TypeSpec(
+            name=str(values.get('name', 'void')),
+            bit_width=values.get('bit_width'),
+            signed=values.get('signed'),
+            pointer_level=int(values.get('pointer_level', 0)),
+            array_depth=int(values.get('array_depth', 0)),
+            value_is_const=bool(values.get('value_is_const', False)),
+            pointer_is_const=bool(values.get('pointer_is_const', False)),
+            array_lengths=tuple(values.get('array_lengths', ()) or ()),
+        )
+
+    @classmethod
+    def _library_signature(cls, data: object) -> FunctionSignature:
+        values = data if isinstance(data, dict) else {}
+        parameters = []
+        for item in values.get('parameters', ()):
+            if not isinstance(item, dict):
+                continue
+            parameters.append(ParameterSpec(
+                name=str(item.get('name', 'arg')),
+                type_spec=cls._library_type_spec(item.get('type', {})),
+                is_length=bool(item.get('is_length', False)),
+                is_size=bool(item.get('is_size', False)),
+                is_signed=bool(item.get('is_signed', False)),
+                is_region=bool(item.get('is_region', False)),
+                is_receiver=bool(item.get('is_receiver', False)),
+                is_unique=bool(item.get('is_unique', False)),
+                length_of=item.get('length_of'),
+                signed_of=item.get('signed_of'),
+                region_of=item.get('region_of'),
+            ))
+        return FunctionSignature(
+            parameters=tuple(parameters),
+            return_type=cls._library_type_spec(values.get('return', {})),
+        )
+
+    def _load_compiled_library(self, package, extracted: Path, request) -> None:
+        """Load lib2 declarations and native artifacts into the final link."""
+        from core.frontend.tools.imports import ImportRequest
+
+        synthetic = self.library_targets.get(package.path)
+        if synthetic is None:
+            synthetic = extracted / '__lib2__.bg'
+            self.library_targets[package.path] = synthetic
+            source_root = extracted / 'source'
+            module_paths: set[Path] = set()
+            for item in package.symbols.get('exports', ()):
+                if not isinstance(item, dict):
+                    continue
+                module = str(item.get('module', ''))
+                if not module:
+                    continue
+                module_path = (source_root / module).resolve()
+                module_paths.add(module_path)
+                self.module_package_ids[module_path] = package.package_id
+                self.module_package_relatives[module_path] = module
+                name = str(item.get('name', ''))
+                kind = str(item.get('kind', ''))
+                llvm_name = item.get('llvm')
+                if name and llvm_name:
+                    self.library_symbol_names[
+                        (package.package_id, module, kind, name)
+                    ] = str(llvm_name)
+            self.library_module_paths[synthetic] = module_paths
+
+            for native_dir in (extracted / 'bins', extracted / 'libs'):
+                if native_dir.is_dir() and native_dir.resolve() not in self.storage.native_link_dirs:
+                    self.storage.native_link_dirs.append(native_dir.resolve())
+            for link in package.manifest.get('native_links', ()):
+                if str(link) not in self.storage.native_links:
+                    self.storage.native_links.append(str(link))
+            artifact_name = str(package.artifacts.get('object', ''))
+            artifact_path = (extracted / artifact_name).resolve()
+            try:
+                artifact_path.relative_to(extracted.resolve())
+            except ValueError as error:
+                self.error(f'El objeto de la lib2 escapa del paquete: {artifact_name!r}')
+            else:
+                if not artifact_path.is_file():
+                    self.error(f'Falta el objeto de la lib2: {artifact_name!r}')
+                elif artifact_path not in self.storage.native_objects:
+                    self.storage.native_objects.append(artifact_path)
+
+            exports = {
+                str(item.get('name'))
+                for item in package.symbols.get('exports', ())
+                if isinstance(item, dict) and item.get('name')
+            }
+            self.module_exports[synthetic] = exports
+            targets = package.targets
+            self.module_targets[synthetic] = ModuleTarget(
+                system=targets.get('System'),
+                architecture=targets.get('Arch'),
+                boot=targets.get('Boot'),
+            )
+            for item in package.symbols.get('exports', ()):
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get('name', ''))
+                module = str(item.get('module', ''))
+                module_path = (extracted / 'source' / module).resolve()
+                kind = str(item.get('kind', ''))
+                if not name or not module:
+                    continue
+                if kind in {'function', 'method'}:
+                    symbol_name = name
+                    owner = None
+                    if kind == 'method':
+                        owner = str(item.get('owner', '')) or None
+                        symbol_name = f'{owner}__{name}' if owner else name
+                    symbol = FunctionSymbol(
+                        symbol_name,
+                        self._library_signature(item.get('signature', {})),
+                        decorators=tuple(item.get('decorators', ()) or ()),
+                        is_inline=bool(item.get('is_inline', False)),
+                        owner_type=owner,
+                        source_name=name,
+                        is_method=kind == 'method',
+                        is_static=bool(item.get('is_static', False)),
+                        module_path=module_path,
+                        privacy='public',
+                        is_compiled=True,
+                    )
+                    symbol.llvm_name = str(item.get('llvm') or symbol_name)
+                    registered = (
+                        self.storage.define_method(symbol)
+                        if kind == 'method'
+                        else self.storage.define_function(symbol)
+                    )
+                    if not registered:
+                        self.error(f'El simbolo lib2 ya existe: {name}')
+                elif kind == 'opaque':
+                    symbol = OpaqueSymbol(
+                        name,
+                        self._library_type_spec(item.get('representation', {})),
+                        module_path=module_path,
+                        llvm_name=str(item.get('llvm') or name),
+                    )
+                    if not self.storage.define_type(symbol):
+                        self.error(f'El tipo lib2 ya existe: {name}')
+                elif kind == 'variable':
+                    type_spec = self._library_type_spec(item.get('type', {}))
+                    value = item.get('value')
+                    symbol = Variable(name, type_spec.name, type_spec.pointer_level, value)
+                    symbol.type_spec = type_spec
+                    symbol.value_is_const = bool(type_spec.value_is_const)
+                    symbol.module_path = module_path
+                    symbol.llvm_name = str(item.get('llvm') or name)
+                    symbol.is_external = True
+                    if value is not None:
+                        symbol.value_info = ValueInfo(
+                            type_spec,
+                            is_literal=True,
+                            value=value,
+                        )
+                    if not self.storage.add(name, symbol):
+                        self.error(f'El global lib2 ya existe: {name}')
+
+            self._loaded_module_paths.add(synthetic)
+            self.storage.loaded_modules.append(str(package.path))
+
+        self.import_requests.append(ImportRequest(
+            package.name,
+            alias=request.alias,
+            target=synthetic,
+            source=Path(request.source).resolve(),
+        ))
+
+    def compile(
+        self,
+        path: Path | str,
+        executable: bool = True,
+        *,
+        require_main: bool = True,
+    ):
         if isinstance(path, str):
             path = Path(path)
 
@@ -403,6 +793,14 @@ class Compiler(CompilerState):
         self._loaded_module_paths.clear()
         self._loading_module_paths.clear()
         self.import_requests.clear()
+        self.library_requests.clear()
+        self.library_source_roots.clear()
+        self.library_targets.clear()
+        self.precompiled_modules.clear()
+        self.module_package_ids.clear()
+        self.module_package_relatives.clear()
+        self.library_symbol_names.clear()
+        self.library_module_paths.clear()
         self.module_exports.clear()
         self.module_targets.clear()
         self.node_modules.clear()
@@ -415,6 +813,7 @@ class Compiler(CompilerState):
         self.storage.prep_metadata.clear()
         self.storage.native_links.clear()
         self.storage.native_link_dirs.clear()
+        self.storage.native_objects.clear()
         self.storage.root = str(path)
 
         AST = self._load_module_tree(path)
@@ -435,22 +834,25 @@ class Compiler(CompilerState):
                 )
 
         main = self.storage.functions.get('main')
-        if main is None:
-            self.error('No se encontro la funcion global main')
-        else:
-            if main.signature.parameters:
-                self.error('La funcion global main no puede recibir parametros')
-            if (
-                main.signature.return_type.name != 'int32'
-                or main.signature.return_type.pointer_level
-                or main.signature.return_type.array_depth
-            ):
-                self.error('La funcion global main debe retornar int32')
-            if 'main' in self.storage.namespace:
-                self.error('El nombre main no puede ser variable y funcion global a la vez')
+        if require_main:
+            if main is None:
+                self.error('No se encontro la funcion global main')
+            else:
+                if main.signature.parameters:
+                    self.error('La funcion global main no puede recibir parametros')
+                if (
+                    main.signature.return_type.name != 'int32'
+                    or main.signature.return_type.pointer_level
+                    or main.signature.return_type.array_depth
+                ):
+                    self.error('La funcion global main debe retornar int32')
+                if 'main' in self.storage.namespace:
+                    self.error('El nombre main no puede ser variable y funcion global a la vez')
 
         if self.semantic_errors:
             raise CompilationError('\n'.join(self.semantic_errors))
+
+        self._assign_llvm_names()
 
         if self.prep_blocks:
             from core.backend.llvm.targets import TargetResolutionError, resolve_target
@@ -494,3 +896,145 @@ class Compiler(CompilerState):
             return backend.emit_module(self.storage)
         except BackendError as error:
             raise CompilationError(str(error)) from error
+
+    def _symbol_identity(self, symbol: object) -> str:
+        module_path = getattr(symbol, 'module_path', None)
+        package_id = self.module_package_ids.get(
+            Path(module_path).resolve() if module_path is not None else None
+        )
+        if package_id:
+            return package_id
+        if self.package_identity_override:
+            return self.package_identity_override
+        project = self.project_root.name if self.project_root is not None else 'project'
+        return f'project:{project}'
+
+    def _stored_llvm_name(self, symbol: object, kind: str) -> str | None:
+        module_path = getattr(symbol, 'module_path', None)
+        if module_path is None:
+            return None
+        resolved = Path(module_path).resolve()
+        package_id = self.module_package_ids.get(resolved)
+        if not package_id:
+            return None
+        module = self.module_package_relatives.get(resolved)
+        if module is None:
+            return None
+        name = getattr(symbol, 'source_name', None) or getattr(symbol, 'name', None)
+        if getattr(symbol, 'is_method', False):
+            name = getattr(symbol, 'source_name', None) or name
+        return self.library_symbol_names.get((package_id, module, kind, str(name)))
+
+    @staticmethod
+    def _patch_spec(spec: TypeSpec, target: object | None) -> TypeSpec:
+        key = getattr(target, 'registry_key', None) if target is not None else None
+        if key is None:
+            return spec
+        return replace(spec, nominal_key=key)
+
+    def _patch_symbol_types(self, symbol: object) -> None:
+        module_path = getattr(symbol, 'module_path', None)
+        if module_path is not None:
+            self.activate_module(Path(module_path))
+
+        def resolve(spec: TypeSpec) -> TypeSpec:
+            target = self.storage.resolve_type(spec.name)
+            return self._patch_spec(spec, target)
+
+        if isinstance(symbol, FunctionSymbol):
+            parameters = tuple(
+                replace(parameter, type_spec=resolve(parameter.type_spec))
+                for parameter in symbol.signature.parameters
+            )
+            symbol.signature = FunctionSignature(
+                parameters=parameters,
+                return_type=resolve(symbol.signature.return_type),
+            )
+            for variable in symbol.local_variables.values():
+                if getattr(variable, 'type_spec', None) is not None:
+                    variable.type_spec = resolve(variable.type_spec)
+            return
+        if isinstance(symbol, Variable):
+            if symbol.type_spec is not None:
+                symbol.type_spec = resolve(symbol.type_spec)
+            return
+        if isinstance(symbol, OpaqueSymbol):
+            symbol.representation = resolve(symbol.representation)
+            return
+        if isinstance(symbol, EnumSymbol):
+            symbol.base_type = resolve(symbol.base_type)
+            return
+        if isinstance(symbol, AggregateSymbol):
+            symbol.fields = tuple(
+                replace(field, type_spec=resolve(field.type_spec))
+                for field in symbol.fields
+            )
+            symbol.inherited_fields = tuple(
+                replace(field, type_spec=resolve(field.type_spec))
+                for field in symbol.inherited_fields
+            )
+            if symbol.base_type is not None:
+                symbol.base_type = resolve(symbol.base_type)
+
+    def _assign_llvm_names(self) -> None:
+        """Assign backend identities once semantic validation is complete."""
+        symbols: list[object] = []
+        seen: set[int] = set()
+        for value in (
+            *self.storage.functions.values(),
+            *self.storage.methods.values(),
+            *self.storage.namespace.values(),
+            *self.storage.types.values(),
+        ):
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            symbols.append(value)
+
+        occupied: dict[str, object] = {}
+        for symbol in symbols:
+            identity = self._symbol_identity(symbol)
+            symbol.package_id = (
+                self.module_package_ids.get(Path(symbol.module_path).resolve())
+                if getattr(symbol, 'module_path', None) is not None
+                else None
+            ) or (identity if identity != f'project:{self.project_root.name}' else None)
+            if isinstance(symbol, FunctionSymbol):
+                kind = 'method' if symbol.is_method else 'function'
+            elif isinstance(symbol, Variable):
+                kind = 'global'
+            elif isinstance(symbol, EnumSymbol):
+                kind = 'enum'
+            elif isinstance(symbol, OpaqueSymbol):
+                kind = 'opaque'
+            else:
+                kind = 'type'
+            stored = self._stored_llvm_name(symbol, kind)
+            symbol.llvm_name = stored or symbol_llvm_name(
+                symbol,
+                identity=identity,
+                project_root=self.project_root,
+            )
+            if symbol.llvm_name in occupied and occupied[symbol.llvm_name] is not symbol:
+                raise CompilationError(
+                    f'Colision de nombre LLVM interno: {symbol.llvm_name}'
+                )
+            occupied[symbol.llvm_name] = symbol
+            self._patch_symbol_types(symbol)
+        self.activate_module(None)
+
+    def resolve_import_symbol(self, target: Path, name: str, kind: str):
+        """Resolve one export against the module requested by an import."""
+        target = target.resolve()
+        module_paths = self.library_module_paths.get(target, {target})
+        if kind == 'function':
+            candidates = self.storage.function_candidates.get(name, ())
+        elif kind == 'variable':
+            candidates = self.storage.variable_candidates.get(name, ())
+        else:
+            candidates = self.storage.type_candidates.get(name, ())
+        for candidate in candidates:
+            origin = getattr(candidate, 'module_path', None)
+            if origin is not None and Path(origin).resolve() in module_paths:
+                return candidate
+        return None

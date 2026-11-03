@@ -448,13 +448,11 @@ def _windows_x64_registers(target_triple: str) -> tuple[dict[str, str], ...]:
 
 def _normalize_dialect(dialect: str) -> str:
     normalized = dialect.strip().lower()
-    if normalized in {'gas-intel', 'gas_intel', 'intel-gas', 'intel'}:
-        # ``intel`` remains a compatibility alias. The emitted syntax is
-        # GAS/LLVM Intel syntax, not NASM syntax.
+    if normalized == 'gas-intel':
         return 'gas-intel'
-    if normalized in {'att', 'at&t', 'att_syntax'}:
+    if normalized == 'att':
         return 'att'
-    if normalized in {'nasm', 'intel-nasm'}:
+    if normalized == 'nasm':
         raise PrepError(
             'El dialecto NASM no es compatible con el ensamblador integrado de '
             'Clang; usa "gas-intel" para Intel-GAS o configura un backend NASM'
@@ -594,7 +592,11 @@ def _render_assembly(
             'El bloque ASM no debe contener ret; return asm agrega el retorno ABI'
         )
 
-    symbol_name = '__bagron_main' if block.function_name == 'main' else block.function_name
+    symbol_name = (
+        '__bagron_main'
+        if block.function_name == 'main'
+        else getattr(function, 'llvm_name', None) or block.function_name
+    )
     syntax = '.intel_syntax noprefix' if dialect == 'gas-intel' else '.att_syntax prefix'
     return_type = getattr(getattr(function, 'signature', None), 'return_type', None)
     is_void = (
@@ -685,6 +687,20 @@ def write_prep_files(
         function_name = _safe_component(block.function_name or 'module')
         destination = module_dir / f'{function_name}__prep_{block_index}.asm'
         function = functions.get(block.function_name) if functions is not None else None
+        if functions is not None and block.function_name:
+            # The flattened frontend can contain equal source names from
+            # different modules/packages.  Select the declaration belonging
+            # to this ASM block instead of whichever one occupies the
+            # compatibility spelling in ``functions``.
+            function = next(
+                (
+                    candidate for candidate in functions.values()
+                    if getattr(candidate, 'name', None) == block.function_name
+                    and getattr(candidate, 'module_path', None) is not None
+                    and Path(candidate.module_path).resolve() == source
+                ),
+                function,
+            )
         if block.is_module:
             content = _render_module_assembly(block)
         elif function is not None and target_triple is not None:

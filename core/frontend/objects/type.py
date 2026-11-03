@@ -18,6 +18,9 @@ class TypeSpec:
     # ``unique`` is parsed as a type qualifier and consumed while building a
     # function parameter. It never becomes part of the runtime value type.
     is_unique: bool = False
+    # Filled after semantic resolution for nominal types.  It is not part of
+    # the source spelling; LLVM uses it to distinguish duplicate package APIs.
+    nominal_key: str | None = None
 
     @property
     def canonical_name(self) -> str:
@@ -43,6 +46,9 @@ class OpaqueSymbol:
     representation: TypeSpec
     privacy: str = 'public'
     module_path: object | None = None
+    llvm_name: str | None = None
+    package_id: str | None = None
+    registry_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,9 @@ class AggregateSymbol:
     parent_initializer_arguments: tuple[object, ...] = ()
     # Module origin used by import visibility checks after type collection.
     module_path: object | None = None
+    llvm_name: str | None = None
+    package_id: str | None = None
+    registry_key: str | None = None
 
     @property
     def all_fields(self) -> tuple[FieldSpec, ...]:
@@ -123,6 +132,9 @@ class EnumSymbol:
     members: tuple[EnumMember, ...] = ()
     privacy: str = 'public'
     module_path: object | None = None
+    llvm_name: str | None = None
+    package_id: str | None = None
+    registry_key: str | None = None
 
 
 @dataclass(frozen=True)

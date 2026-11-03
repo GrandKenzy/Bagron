@@ -102,6 +102,13 @@ class FunctionSymbol:
     # without changing the emitted ABI name for public functions.
     module_path: object | None = None
     privacy: str = 'public'
+    method_key: tuple[str, str] | None = None
+    # Semantic/source identity and backend identity are intentionally separate.
+    llvm_name: str | None = None
+    package_id: str | None = None
+    # A lib2 declaration is backed by a native object already compiled by
+    # Bagron.  It has no source body in the consuming project.
+    is_compiled: bool = False
 
     @property
     def is_external(self) -> bool:

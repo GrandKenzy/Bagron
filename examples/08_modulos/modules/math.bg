@@ -1,0 +1,5 @@
+public func twice(value: int32) int32:
+    return value + value
+
+public func triple(value: int32) int32:
+    return value + value + value

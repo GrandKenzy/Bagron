@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 from typing import Any
 
 from tools import diagnostic
@@ -27,7 +28,25 @@ class FunctionLookup:
         name: str,
         current_function: object | None = None,
     ) -> FunctionSymbol | None:
-        function = self.storage.functions.get(name)
+        target_key = self.storage.function_aliases.get(name)
+        if target_key is not None:
+            function = self.storage.functions.get(target_key)
+        else:
+            candidates = self.storage.function_candidates.get(name, ())
+            active = getattr(current_function, 'module_path', None)
+            if active is None:
+                active = self.storage.active_module_path
+            function = next(
+                (
+                    item for item in candidates
+                    if getattr(item, 'module_path', None) == active
+                ),
+                None,
+            )
+            if function is None:
+                function = self.storage.functions.get(name)
+            if function is None and len(candidates) == 1:
+                function = candidates[0]
         if function is None:
             return None
         origin = getattr(function, 'module_path', None)
@@ -51,6 +70,11 @@ class FunctionLookup:
 
 class Storage(diagnostic.Diagnostics):
     Main: 'Storage | None' = None
+
+    @staticmethod
+    def _module_digest(module: object) -> str:
+        """Return a process-independent suffix for flattened declarations."""
+        return hashlib.sha256(str(module).encode('utf-8')).hexdigest()[:12]
     
     def __init__(
         self,
@@ -106,14 +130,22 @@ class Storage(diagnostic.Diagnostics):
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
         self.methods: dict[tuple[str, str], FunctionSymbol] = {}
+        self.method_candidates: dict[tuple[str, str], list[FunctionSymbol]] = {}
         self.function_scopes: dict[str, Storage] = {}
         self.types: dict[str, EnumSymbol | AggregateSymbol | OpaqueSymbol] = {}
         self.native_links: list[str] = []
+        self.native_objects: list[Path] = []
         # Search paths declared explicitly by #link in the entry module.
         self.native_link_dirs: list[Path] = []
         self.loaded_modules: list[str] = []
         self.function_aliases: dict[str, str] = {}
+        # One source spelling may legitimately occur in several imported
+        # modules/packages.  ``functions`` keeps a compatibility lookup for
+        # the first spelling; this index retains every semantic object.
+        self.function_candidates: dict[str, list[FunctionSymbol]] = {}
+        self.type_candidates: dict[str, list[object]] = {}
         self.variable_aliases: dict[str, Variable] = {}
+        self.variable_candidates: dict[str, list[Variable]] = {}
         self.type_aliases: dict[str, str] = {}
         self.prep_sources: list[Path] = []
         self.prep_objects: list[Path] = []
@@ -170,10 +202,21 @@ class Storage(diagnostic.Diagnostics):
         return origin is None or origin == active
 
     def resolve(self, name: str) -> SemanticObject | None:
-        symbol = self.namespace.get(name)
-        if symbol is not None and self._is_visible(symbol, name):
-            return symbol
         symbol = self.variable_aliases.get(name)
+        candidates = self.variable_candidates.get(name, ())
+        if symbol is None and candidates:
+            active = self._module_root().active_module_path
+            symbol = next(
+                (
+                    item for item in candidates
+                    if getattr(item, 'module_path', None) == active
+                ),
+                None,
+            )
+            if symbol is None and len(candidates) == 1:
+                symbol = candidates[0]
+        if symbol is None:
+            symbol = self.namespace.get(name)
         if symbol is not None and self._is_visible(symbol, name):
             return symbol
         if self.parent is not None:
@@ -181,13 +224,41 @@ class Storage(diagnostic.Diagnostics):
         return None
 
     def add(self, name: str, obj: SemanticObject) -> bool:
-        if self.contains_local(name):
-            return False
+        existing = self.namespace.get(name)
+        if existing is not None:
+            same_module = (
+                getattr(existing, 'module_path', None)
+                == getattr(obj, 'module_path', None)
+            )
+            if not (
+                self is self._module_root()
+                and getattr(existing, 'scope_kind', None) == 'global'
+                and getattr(obj, 'scope_kind', None) == 'global'
+                and not same_module
+            ):
+                return False
+            module = str(getattr(obj, 'module_path', 'module'))
+            storage_key = f'__source_{self._module_digest(module)}_{name}'
+            suffix = 1
+            while storage_key in self.namespace:
+                suffix += 1
+                storage_key = f'__source_{self._module_digest(module)}_{suffix}_{name}'
+            self.namespace[storage_key] = obj
+            self.variable_candidates.setdefault(name, []).append(obj)
+            obj.storage_key = storage_key
+            return True
         self.namespace[name] = obj
+        if getattr(obj, 'scope_kind', None) == 'global':
+            self.variable_candidates.setdefault(name, []).append(obj)
+        obj.storage_key = name
         return True
 
     def define_function(self, symbol: FunctionSymbol) -> bool:
-        if symbol.name in self.functions:
+        candidates = self.function_candidates.setdefault(symbol.name, [])
+        if any(
+            getattr(existing, 'module_path', None) == getattr(symbol, 'module_path', None)
+            for existing in candidates
+        ):
             return False
         if symbol.scope is None:
             symbol.scope = Storage(
@@ -196,9 +267,56 @@ class Storage(diagnostic.Diagnostics):
                 scope_name=f'function:{symbol.name}',
                 function_scope=True,
             )
-        self.functions[symbol.name] = symbol
-        self.function_scopes[symbol.name] = symbol.scope
+        if symbol.name not in self.functions:
+            storage_key = symbol.name
+        else:
+            module = str(getattr(symbol, 'module_path', 'module'))
+            storage_key = f'__source_{self._module_digest(module)}_{symbol.name}'
+            suffix = 1
+            while storage_key in self.functions:
+                suffix += 1
+                storage_key = f'__source_{self._module_digest(module)}_{suffix}_{symbol.name}'
+        self.functions[storage_key] = symbol
+        self.function_scopes[storage_key] = symbol.scope
+        candidates.append(symbol)
+        symbol.storage_key = storage_key
         return True
+
+    def function_key(self, symbol: FunctionSymbol) -> str | None:
+        for key, candidate in self.functions.items():
+            if candidate is symbol:
+                return key
+        return None
+
+    def resolve_variable_for_module(
+        self,
+        name: str,
+        module_path: object | None = None,
+    ) -> Variable | None:
+        candidates = self.variable_candidates.get(name, ())
+        if module_path is not None:
+            resolved = str(module_path)
+            for candidate in candidates:
+                if str(getattr(candidate, 'module_path', '')) == resolved:
+                    return candidate
+        if len(candidates) == 1:
+            return candidates[0]
+        return self.namespace.get(name)
+
+    def resolve_function_for_module(
+        self,
+        name: str,
+        module_path: object | None = None,
+    ) -> FunctionSymbol | None:
+        candidates = self.function_candidates.get(name, ())
+        if module_path is not None:
+            resolved = str(module_path)
+            for candidate in candidates:
+                if str(getattr(candidate, 'module_path', '')) == resolved:
+                    return candidate
+        if len(candidates) == 1:
+            return candidates[0]
+        return self.functions.get(name)
 
     def define_method(self, symbol: FunctionSymbol) -> bool:
         """Register one class method by owner type and source name."""
@@ -206,10 +324,18 @@ class Storage(diagnostic.Diagnostics):
         source_name = symbol.source_name
         if not owner or not source_name:
             return False
-        key = (owner, source_name)
-        if key in self.methods or symbol.name in self.functions:
+        candidates = self.method_candidates.setdefault((owner, source_name), [])
+        if any(
+            getattr(existing, 'module_path', None)
+            == getattr(symbol, 'module_path', None)
+            for existing in candidates
+        ):
             return False
-        if any(existing.name == symbol.name for existing in self.methods.values()):
+        same_module_function = self.resolve_function_for_module(
+            symbol.name,
+            getattr(symbol, 'module_path', None),
+        )
+        if same_module_function is not None:
             return False
         if symbol.scope is None:
             symbol.scope = Storage(
@@ -218,8 +344,21 @@ class Storage(diagnostic.Diagnostics):
                 scope_name=f'method:{owner}.{source_name}',
                 function_scope=True,
             )
+        if not candidates:
+            storage_key = owner
+        else:
+            module = str(getattr(symbol, 'module_path', 'module'))
+            digest = self._module_digest(module)
+            storage_key = f'__source_{digest}_{owner}'
+            suffix = 1
+            while (storage_key, source_name) in self.methods:
+                suffix += 1
+                storage_key = f'__source_{digest}_{suffix}_{owner}'
+        key = (storage_key, source_name)
         self.methods[key] = symbol
-        self.function_scopes[symbol.name] = symbol.scope
+        self.function_scopes[key] = symbol.scope
+        candidates.append(symbol)
+        symbol.method_key = key
         return True
 
     def resolve_method(self, owner: str, name: str) -> FunctionSymbol | None:
@@ -227,7 +366,19 @@ class Storage(diagnostic.Diagnostics):
         current = owner
         while current and current not in visited:
             visited.add(current)
-            symbol = self.methods.get((current, name))
+            candidates = self.method_candidates.get((current, name), ())
+            active = self._module_root().active_module_path
+            symbol = next(
+                (
+                    item for item in candidates
+                    if getattr(item, 'module_path', None) == active
+                ),
+                None,
+            )
+            if symbol is None and len(candidates) == 1:
+                symbol = candidates[0]
+            if symbol is None:
+                symbol = self.methods.get((current, name))
             if self._is_visible(symbol):
                 return symbol
             aggregate = self.resolve_type(current)
@@ -261,21 +412,54 @@ class Storage(diagnostic.Diagnostics):
         symbol: EnumSymbol | AggregateSymbol | OpaqueSymbol,
     ) -> bool:
         """Register a type in the current type namespace."""
-        if symbol.name in self.types:
+        candidates = self.type_candidates.setdefault(symbol.name, [])
+        if any(
+            getattr(existing, 'module_path', None) == getattr(symbol, 'module_path', None)
+            for existing in candidates
+        ):
             return False
-        self.types[symbol.name] = symbol
+        if symbol.name not in self.types:
+            storage_key = symbol.name
+        else:
+            module = str(getattr(symbol, 'module_path', 'module'))
+            storage_key = f'__source_{self._module_digest(module)}_{symbol.name}'
+            suffix = 1
+            while storage_key in self.types:
+                suffix += 1
+                storage_key = f'__source_{self._module_digest(module)}_{suffix}_{symbol.name}'
+        self.types[storage_key] = symbol
+        symbol.registry_key = storage_key
+        candidates.append(symbol)
         return True
 
     def resolve_type(
         self,
         name: str,
     ) -> EnumSymbol | AggregateSymbol | OpaqueSymbol | None:
-        symbol = self.types.get(name)
+        candidates = self.type_candidates.get(name, ())
+        symbol = None
+        if candidates:
+            active = self._module_root().active_module_path
+            symbol = next(
+                (
+                    item for item in candidates
+                    if getattr(item, 'module_path', None) == active
+                ),
+                None,
+            )
+            if symbol is None and len(candidates) == 1:
+                symbol = candidates[0]
+        if symbol is None:
+            symbol = self.types.get(name)
         if symbol is not None and self._is_visible(symbol, name):
             return symbol
         alias = self.type_aliases.get(name)
         if alias is not None:
             symbol = self.types.get(alias)
+            if symbol is None:
+                candidates = self.type_candidates.get(alias, ())
+                if len(candidates) == 1:
+                    symbol = candidates[0]
             if symbol is not None and self._is_visible(symbol, name):
                 return symbol
         if self.parent is not None:

@@ -264,8 +264,13 @@ def bind_aliases(compiler: Compiler) -> None:
                     f'{request.module}'
                 )
                 continue
-            symbol = compiler.storage.functions.get(source_name)
+            symbol = compiler.resolve_import_symbol(
+                request.target,
+                source_name,
+                'function',
+            )
             if symbol is not None:
+                target_key = compiler.storage.function_key(symbol)
                 existing = compiler.storage.functions.get(local_name)
                 existing_alias = compiler.storage.function_aliases.get(local_name)
                 if (
@@ -280,10 +285,14 @@ def bind_aliases(compiler: Compiler) -> None:
                 if existing is None:
                     compiler.storage.functions[local_name] = symbol
                 if local_name != source_name or request.selected:
-                    compiler.storage.function_aliases[local_name] = source_name
+                    compiler.storage.function_aliases[local_name] = target_key or symbol.name
                 continue
 
-            variable = compiler.storage.namespace.get(source_name)
+            variable = compiler.resolve_import_symbol(
+                request.target,
+                source_name,
+                'variable',
+            )
             if variable is not None:
                 existing = compiler.storage.variable_aliases.get(local_name)
                 if existing is not None and existing is not variable:
@@ -293,14 +302,21 @@ def bind_aliases(compiler: Compiler) -> None:
                     compiler.storage.variable_aliases[local_name] = variable
                 continue
 
-            type_symbol = compiler.storage.types.get(source_name)
+            type_symbol = compiler.resolve_import_symbol(
+                request.target,
+                source_name,
+                'type',
+            )
             if type_symbol is not None:
                 existing = compiler.storage.type_aliases.get(local_name)
                 if existing is not None and existing != source_name:
                     compiler.error(f'El simbolo importado ya existe: {local_name}')
                     continue
                 if local_name != source_name or request.selected:
-                    compiler.storage.type_aliases[local_name] = source_name
+                    compiler.storage.type_aliases[local_name] = (
+                        getattr(type_symbol, 'registry_key', None)
+                        or source_name
+                    )
                 continue
 
             compiler.error(
@@ -315,12 +331,21 @@ def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[
 
     relative = Path(name)
     filename = relative.with_suffix('.bg')
-    roots = [
-        current_file.parent,
-        project_root,
-        project_root / 'lib',
-        project_root / 'libs',
-    ]
+    modules_root = project_root / 'modules'
+    roots = [modules_root]
+    try:
+        current_file.relative_to(modules_root)
+    except ValueError:
+        pass
+    else:
+        # Keep sibling and nested-module imports convenient, but only inside
+        # the canonical source tree.  In particular, ``libs`` is never an
+        # implicit source search path.
+        roots.insert(0, current_file.parent)
+
+    # The project root remains a compatibility fallback for older projects.
+    # New projects should put every importable .bg module under modules/.
+    roots.append(project_root)
     candidates: list[Path] = []
     seen: set[Path] = set()
     for root in roots:

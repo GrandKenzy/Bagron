@@ -92,17 +92,17 @@ class BufferTests(unittest.TestCase):
             '    return 0\n'
         )
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn(
-            'define i64 @"consume"(%"__bagron_buffer" %"data", i64 %"length")',
+        self.assertRegex(
             module,
-        )
-        self.assertIn(
-            'define i64 @"relay"(%"__bagron_buffer" %"data", i64 %"length")',
-            module,
+            r'define i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
         )
         self.assertRegex(
             module,
-            r'call i64 @"consume"\(%"__bagron_buffer" %"\.\d+", '
+            r'define i64 @"?__bg_[^"\s]*_relay_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
+        )
+        self.assertRegex(
+            module,
+            r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"\.\d+", '
             r'i64 %"\.\d+"\)',
         )
 
@@ -176,11 +176,15 @@ class BufferTests(unittest.TestCase):
             '    return 0\n'
         )
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn(
-            'define void @"consume"(%"__bagron_buffer" %"data", i64 %"length")',
+        self.assertRegex(
             module,
+            r'define void @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
         )
-        self.assertNotIn('noalias', module.split('define void @"consume"', 1)[1].split('{', 1)[0])
+        header = next(
+            line for line in module.splitlines()
+            if line.startswith('define void') and '_consume_' in line
+        )
+        self.assertNotIn('noalias', header)
 
 
 if __name__ == '__main__':

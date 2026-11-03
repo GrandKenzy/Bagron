@@ -34,10 +34,14 @@ class FunctionEmitterBase:
         self.type_registry = type_registry
         self._functions: dict[str, ir.Function] = {}
         self._symbols: dict[str, FunctionSymbol] = {}
+        self._functions_by_symbol: dict[int, ir.Function] = {}
+        self._symbols_by_source: dict[str, list[FunctionSymbol]] = {}
         self._method_symbols: dict[tuple[str, str], FunctionSymbol] = {}
+        self._method_symbols_by_source: dict[tuple[str, str], list[FunctionSymbol]] = {}
         self._active_specs: dict[str, TypeSpec] = {}
         self._global_specs: dict[str, TypeSpec] = {}
         self._global_symbols: dict[str, str] = {}
+        self._global_variables_by_source: dict[str, list[object]] = {}
         self._active_values: dict[str, object] = {}
         self._global_values: dict[str, object] = {}
         self._active_function_symbol: FunctionSymbol | None = None
@@ -111,23 +115,43 @@ class FunctionEmitterBase:
     def emit_storage(self, storage: Storage) -> None:
         self._pointer_size = getattr(storage, 'pointer_size', 8)
         method_symbols = list(getattr(storage, 'methods', {}).values())
-        all_symbols = [*storage.functions.values(), *method_symbols]
+        all_symbols = []
+        seen_symbols: set[int] = set()
+        for symbol in [*storage.functions.values(), *method_symbols]:
+            if id(symbol) in seen_symbols:
+                continue
+            seen_symbols.add(id(symbol))
+            all_symbols.append(symbol)
+            self._symbols_by_source.setdefault(symbol.name, []).append(symbol)
         self._symbols = {symbol.name: symbol for symbol in all_symbols}
         self._method_symbols = {
             (symbol.owner_type, symbol.source_name): symbol
             for symbol in method_symbols
             if symbol.owner_type and symbol.source_name
         }
+        self._method_symbols_by_source = {}
+        for symbol in method_symbols:
+            if symbol.owner_type and symbol.source_name:
+                self._method_symbols_by_source.setdefault(
+                    (symbol.owner_type, symbol.source_name),
+                    [],
+                ).append(symbol)
         self._global_specs = {
-            name: variable.type_spec
+            getattr(variable, 'name', name): variable.type_spec
             for name, variable in storage.namespace.items()
             if getattr(variable, 'type_spec', None) is not None
         }
         self._global_symbols = {
-            name: name
+            getattr(variable, 'name', name): getattr(variable, 'llvm_name', None) or name
             for name, variable in storage.namespace.items()
             if getattr(variable, 'type_spec', None) is not None
         }
+        self._global_variables_by_source = {}
+        for name, variable in storage.namespace.items():
+            if getattr(variable, 'type_spec', None) is not None:
+                self._global_variables_by_source.setdefault(
+                    getattr(variable, 'name', name), []
+                ).append(variable)
         self._global_values = {
             name: getattr(variable, 'value_info', None)
             for name, variable in storage.namespace.items()
@@ -137,7 +161,9 @@ class FunctionEmitterBase:
             target_name = getattr(variable, 'name', None)
             type_spec = getattr(variable, 'type_spec', None)
             if target_name and type_spec is not None:
-                self._global_symbols[alias] = target_name
+                self._global_symbols[alias] = (
+                    getattr(variable, 'llvm_name', None) or target_name
+                )
                 self._global_specs[alias] = type_spec
                 value_info = getattr(variable, 'value_info', None)
                 if value_info is not None:
@@ -145,13 +171,13 @@ class FunctionEmitterBase:
         for symbol in all_symbols:
             if (
                 symbol.name != 'main'
-                and symbol.name not in self._functions
+                and id(symbol) not in self._functions_by_symbol
                 and self._supports_function(symbol)
             ):
                 function = ir.Function(
                     self.module,
                     self._function_type(symbol),
-                    name=symbol.name,
+                    name=symbol.llvm_name or symbol.name,
                 )
                 self._apply_function_attributes(
                     function,
@@ -161,29 +187,36 @@ class FunctionEmitterBase:
                 )
                 if symbol.calling_convention:
                     function.calling_convention = symbol.calling_convention
-                self._functions[symbol.name] = function
+                self._functions_by_symbol[id(symbol)] = function
+                self._functions.setdefault(symbol.name, function)
 
         # Qualified imports can be used inside an imported module's body, so
         # their LLVM function aliases must exist before the first body emits.
         for alias, target in storage.function_aliases.items():
-            function = self._functions.get(target)
+            target_symbol = storage.functions.get(target)
+            function = (
+                self._functions_by_symbol.get(id(target_symbol))
+                if target_symbol is not None
+                else self._functions.get(target)
+            )
             if function is not None:
                 self._functions[alias] = function
-                symbol = self._symbols.get(target)
+                symbol = target_symbol or self._symbols.get(target)
                 if symbol is not None:
                     self._symbols[alias] = symbol
 
-        emitted: set[str] = set()
+        emitted: set[int] = set()
         for symbol in all_symbols:
             if (
                 symbol.name != 'main'
-                and symbol.name in self._functions
-                and symbol.name not in emitted
+                and id(symbol) in self._functions_by_symbol
+                and id(symbol) not in emitted
                 and not symbol.is_external
+                and not getattr(symbol, 'is_compiled', False)
             ):
                 if symbol.return_asm_node is None and not symbol.has_asm_body:
-                    self._emit_function(symbol, self._functions[symbol.name])
-                emitted.add(symbol.name)
+                    self._emit_function(symbol, self._functions_by_symbol[id(symbol)])
+                emitted.add(id(symbol))
 
         main = storage.functions.get('main')
         if main is not None:
@@ -195,7 +228,25 @@ class FunctionEmitterBase:
             return spec
         return self._global_specs.get(name)
 
+    def _function_for_symbol(self, symbol: FunctionSymbol) -> ir.Function | None:
+        return self._functions_by_symbol.get(id(symbol))
+
+    def _function_for_name(self, name: str) -> ir.Function | None:
+        direct = self._functions.get(name)
+        if '.' in name:
+            return direct
+        active = getattr(self._active_function_symbol, 'module_path', None)
+        for symbol in self._symbols_by_source.get(name, ()):
+            if getattr(symbol, 'module_path', None) == active:
+                return self._functions_by_symbol.get(id(symbol))
+        return direct
+
     def _global_llvm_name(self, name: str) -> str:
+        candidates = self._global_variables_by_source.get(name, ())
+        active = getattr(self._active_function_symbol, 'module_path', None)
+        for variable in candidates:
+            if getattr(variable, 'module_path', None) == active:
+                return getattr(variable, 'llvm_name', None) or name
         return self._global_symbols.get(name, name)
 
     def _resolve_method_symbol(
@@ -208,7 +259,19 @@ class FunctionEmitterBase:
         current = owner
         while current and current not in visited:
             visited.add(current)
-            method = self._method_symbols.get((current, name))
+            candidates = self._method_symbols_by_source.get((current, name), ())
+            active = getattr(self._active_function_symbol, 'module_path', None)
+            method = next(
+                (
+                    item for item in candidates
+                    if getattr(item, 'module_path', None) == active
+                ),
+                None,
+            )
+            if method is None and len(candidates) == 1:
+                method = candidates[0]
+            if method is None:
+                method = self._method_symbols.get((current, name))
             if method is not None:
                 return method
             aggregate = (

@@ -1,0 +1,32 @@
+; Variables globales públicas y una constante explícita.
+contador: int32 = 0
+limite: const int32 = 10
+
+inline func sumar(left: int32, right: int32) int32:
+    return left + right
+
+func signo(value: int32) int32:
+    if value < 0:
+        return -1
+    elif value == 0:
+        return 0
+    else:
+        return 1
+
+func main() int32:
+    signed: int16 = -12
+    widened: int32 = signed
+    unsigned: uint8 = 255
+    raw: byte = 7
+    letter: char = "A"
+    enabled: bool = true
+
+    contador = sumar(widened, 3)
+    if enabled && not (contador == 0):
+        contador += 1
+    else:
+        contador -= 1
+
+    if contador > limite || signo(contador) == -1:
+        return 1
+    return 0

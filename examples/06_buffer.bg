@@ -1,0 +1,19 @@
+func consume(data: buffer[], length: Len_t) usize:
+    index: usize = 0
+    while index < length:
+        data[index] = 1
+        index += 1
+    return length
+
+func main() int32:
+    left: buffer[2] = {10, 20}
+    right: buffer[3] = {30, 40, 50}
+    combined: buffer[] = left + right
+    size: usize = consume(combined)
+
+    Del combined
+    Del left
+    Del right
+    if size > 0:
+        return 1
+    return 0

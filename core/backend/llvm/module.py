@@ -181,6 +181,38 @@ class LLVMBackend:
         output_path.write_text(module_text, encoding='utf-8')
         return output_path
 
+    def emit_object(
+        self,
+        storage,
+        output_dir: str | Path | None = None,
+        stem: str | None = None,
+    ) -> tuple[Path, str]:
+        """Emit a verified native object without linking an executable.
+
+        lib2 uses this path: its payload contains the object and native
+        dependencies, while the consumer performs the final link for its own
+        executable.
+        """
+        context, module_text, verified = self._emit_verified(storage)
+        root = Path(storage.root)
+        build_dir = Path(output_dir) if output_dir is not None else root.parent / 'build'
+        build_dir.mkdir(parents=True, exist_ok=True)
+        object_stem = stem or root.stem
+        suffix = '.o' if 'linux' in context.target.triple.lower() else '.obj'
+        object_path = build_dir / f'{object_stem}{suffix}'
+        ir_path = build_dir / f'{object_stem}.ll'
+        ir_path.write_text(module_text, encoding='utf-8')
+        try:
+            object_path.write_bytes(context.target.machine.emit_object(verified))
+        except (OSError, TypeError, ValueError, RuntimeError) as error:
+            raise BackendError(f'No se pudo generar el objeto LLVM: {error}') from error
+        storage.prep_objects = self._assemble_prep_sources(
+            storage.prep_sources,
+            context.target.triple,
+            getattr(storage, 'prep_metadata', None),
+        )
+        return object_path, context.target.triple
+
     def build(self, storage, output_dir: str | Path | None = None) -> BuildArtifacts:
         context, module_text, verified = self._emit_verified(storage)
         root = Path(storage.root)
@@ -214,7 +246,11 @@ class LLVMBackend:
             raise
 
         storage.prep_objects = prep_objects
-        objects = [object_path, *prep_objects]
+        objects = [
+            object_path,
+            *prep_objects,
+            *(Path(item) for item in getattr(storage, 'native_objects', ())),
+        ]
         raw_image = None
         boot_image = None
         if baremetal:
@@ -581,8 +617,6 @@ SECTIONS
 
         source, function_name, dialect, prep_line = metadata
         normalized = dialect.strip().lower()
-        if normalized == 'intel':
-            normalized = 'gas-intel'
 
         first_line, *rest = detail.splitlines()
         match = re.search(r':(?P<line>\d+):(?P<column>\d+):\s*', first_line)

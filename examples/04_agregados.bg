@@ -1,0 +1,38 @@
+enum Estado int8:
+    INACTIVO,
+    ACTIVO = 4,
+    PAUSADO,
+
+@packed
+struct Punto:
+    x: int32
+    y: int32
+    estado: Estado
+
+@align(8)
+struct Alineado:
+    valor: int64
+
+mold Vista:
+    entero: int32
+    bytes: byte[4]
+
+flags Permisos uint8:
+    leer: uBint<1> = 1
+    escribir: uBint<1> = 0
+    reservado: uBint<6> = 0
+
+volatile struct Registro:
+    estado: uint32
+
+func main() int32:
+    punto: Punto
+    punto.x = 10
+    punto.y = 20
+
+    vista: Vista
+    vista.entero = punto.x
+
+    permisos: Permisos
+    permisos.escribir = 1
+    return punto.x + punto.y + vista.entero

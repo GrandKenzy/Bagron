@@ -69,10 +69,13 @@ elemento `4`, sin que el código fuente tenga que escribirlos.
 Para `import nombre`, el compilador busca `nombre.bg` o `nombre/main.bg` en
 este orden:
 
-1. el directorio del módulo que contiene el import;
-2. la raíz del proyecto, que es el directorio del archivo ejecutable;
-3. `lib/` en la raíz del proyecto;
-4. `libs/` en la raíz del proyecto.
+1. el directorio hermano del módulo importador cuando este vive bajo
+   `modules/`;
+2. `modules/` en la raíz del proyecto;
+3. la raíz del proyecto como fallback para proyectos antiguos.
+
+`libs/` no es una raíz implícita de módulos `.bg`: se reserva para archivos
+`.lib` declarados mediante `library "archivo.lib" as Alias`.
 
 El nombre debe ser un identificador simple ASCII (`A-Z`, `a-z`, `0-9` y `_`,
 sin comenzar por un número). No se aceptan extensiones, separadores, rutas

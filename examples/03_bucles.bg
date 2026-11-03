@@ -1,0 +1,29 @@
+func range_total(limit: uint32) int32:
+    total: int32 = 0
+    for index: uint32 ran (0, limit, 1):
+        if index == 2:
+            continue
+        if index == 8:
+            break
+        total += 1
+    return total
+
+func while_total(limit: int32) int32:
+    value: int32 = 0
+    total: int32 = 0
+    while value < limit:
+        total += value
+        value += 1
+    return total
+
+func nested() int32:
+    total: int32 = 0
+    for outer: uint32 ran (0, 2, 1):
+        for inner: uint32 ran (0, 3, 1):
+            total += 1
+    return total
+
+func main() int32:
+    if range_total(10) == 7 && while_total(4) == 6:
+        return nested()
+    return 0

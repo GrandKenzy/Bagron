@@ -35,7 +35,7 @@ _INTEGER_WIDTHS = {
     'uint64': 64,
     'byte': 8,
 }
-_AGGREGATE_DECORATORS = {'packed', 'align', 'order_lsb', 'order_msb'}
+_AGGREGATE_DECORATORS = {'packed', 'align', 'order_msb'}
 
 
 def _children(node: object) -> list[object]:
@@ -251,11 +251,8 @@ def _declaration_metadata(
         seen.add(decorator)
 
     kind = node.name.lower()
-    orders = [item for item in decorators if item in {'order_lsb', 'order_msb'}]
-    if orders and kind != 'flags':
-        compiler.error(f'@{orders[0]} solo puede usarse con flags ({name})')
-    if len(orders) > 1:
-        compiler.error(f'{name} no puede combinar @order_lsb y @order_msb')
+    if 'order_msb' in decorators and kind != 'flags':
+        compiler.error(f'@order_msb solo puede usarse con flags ({name})')
 
     alignment = _alignment_metadata(compiler, node, name)
     return (

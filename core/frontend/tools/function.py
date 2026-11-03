@@ -1014,7 +1014,10 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         if not name:
             compiler.error('La funcion no tiene nombre')
             continue
-        if name in compiler.storage.functions:
+        if any(
+            getattr(existing, 'module_path', None) == compiler.module_for_node(node)
+            for existing in compiler.storage.function_candidates.get(name, ())
+        ):
             compiler.error(f'La funcion ya fue declarada: {name}')
             continue
 
@@ -1023,6 +1026,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         symbol = FunctionSymbol(
             name,
             signature,
+            source_name=name,
             decorators=decorators,
             is_inline=_is_inline(node),
             module_path=compiler.module_for_node(node),

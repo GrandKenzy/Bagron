@@ -76,7 +76,7 @@ class OperatorExpressionMixin:
         method = self._resolve_method_symbol(owner_type, method_name)
         if method is None:
             return None
-        callee = self._functions.get(method.name)
+        callee = self._function_for_symbol(method)
         if callee is None:
             raise FunctionEmissionError(
                 f'El metodo magico {method.name} no tiene emision LLVM'
@@ -206,7 +206,7 @@ class OperatorExpressionMixin:
                 and spec.pointer_level == 0
                 and spec.array_depth == 0
             ):
-                aggregate = self.type_registry.aggregate(spec.name)
+                aggregate = self.type_registry.aggregate(spec)
                 if aggregate is not None and getattr(aggregate, 'is_class', False):
                     return spec.name
             return None
@@ -328,7 +328,7 @@ class OperatorExpressionMixin:
             raise FunctionEmissionError(
                 f'El metodo magico {type_name}.{method_name} no puede ser @static'
             )
-        callee = self._functions.get(method.name)
+        callee = self._function_for_symbol(method)
         if callee is None:
             raise FunctionEmissionError(
                 f'El metodo magico {method.name} no tiene emision LLVM'

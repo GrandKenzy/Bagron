@@ -1,0 +1,37 @@
+class Base:
+    func __init__(value: int32) void:
+        self.value = value
+
+    func read() int32:
+        return self.value
+
+class Child(Base):
+    func __init__(value: int32) void:
+        super.__init__(value)
+        self.extra = 1
+
+    func total() int32:
+        return self.value + self.extra
+
+@frozen
+class FrozenPoint:
+    func __init__(x: int32) void:
+        self.x = x
+
+    func read() int32:
+        return self.x
+
+class Tools:
+    pass
+
+    @static
+    func twice(value: int32) int32:
+        return value + value
+
+func main() int32:
+    child: Child = Child(4)
+    point: FrozenPoint = FrozenPoint(3)
+    total: int32 = child.total() + point.read() + Tools.twice(1)
+    Del child
+    Del point
+    return total

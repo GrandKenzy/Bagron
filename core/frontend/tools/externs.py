@@ -305,6 +305,7 @@ def _collect_function(
     symbol = FunctionSymbol(
         name,
         FunctionSignature(parameters=parameters, return_type=return_type),
+        source_name=name,
         external_library=library,
         external_domain=domain,
         module_path=compiler.active_module_path,

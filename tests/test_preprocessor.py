@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from core.compiler.links import extract_link_directives
-from core.compiler.prep import preprocess_conditionals
+from core.compiler.prep import PrepError, _normalize_dialect, preprocess_conditionals
 
 
 class ConditionalPreprocessorTests(unittest.TestCase):
@@ -70,14 +70,23 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             'nested\n'
             '#end\n'
             '#end\n'
-            '#prep assembler "intel"\n'
+            '#prep assembler "gas-intel"\n'
             '    nop\n'
             '#end\n'
         )
 
         self.assertIn('no se pueden anidar', '\n'.join(errors))
-        self.assertEqual('#prep assembler "intel"\n', transformed[5])
+        self.assertEqual('#prep assembler "gas-intel"\n', transformed[5])
         self.assertEqual('#end\n', transformed[7])
+
+    def test_accepts_only_canonical_assembler_dialects(self):
+        self.assertEqual('gas-intel', _normalize_dialect('gas-intel'))
+        self.assertEqual('att', _normalize_dialect('att'))
+        for alias in (
+            'intel', 'intel-gas', 'gas_intel', 'intel-nasm', 'at&t', 'att_syntax'
+        ):
+            with self.subTest(alias=alias), self.assertRaises(PrepError):
+                _normalize_dialect(alias)
 
 
 class LinkDirectiveTests(unittest.TestCase):

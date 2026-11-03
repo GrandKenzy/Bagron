@@ -1,0 +1,16 @@
+@unsafe
+func main() int32:
+    value: int32 = 10
+    other: int32 = 20
+
+    pointer *: int32 = $value
+    pointer_pointer **: int32 = $pointer
+    readonly *: const int32 = $other
+    nullable *: int32 = Null
+
+    (pointer) = 11
+    ((pointer_pointer)) = 12
+    result: int32 = (pointer)
+
+    ; La constancia del dato y la del puntero son propiedades separadas.
+    return result + (readonly)

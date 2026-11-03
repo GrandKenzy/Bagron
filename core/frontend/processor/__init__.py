@@ -84,7 +84,10 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         handle = tools.variable.handle_variable(node)
         if handle is None:
             continue
-        symbol = compiler.storage.namespace.get(handle.name)
+        symbol = compiler.storage.resolve_variable_for_module(
+            handle.name,
+            compiler.module_for_node(node),
+        )
         if symbol is not None:
             tools.variable.validate_initializer(
                 compiler,

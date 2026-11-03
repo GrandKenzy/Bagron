@@ -330,6 +330,17 @@ class TypeSemanticTests(unittest.TestCase):
         self.assertEqual('msb', estado.bit_order)
         self.assertEqual([7, 5, 0], [field.bit_offset for field in estado.fields])
 
+    def test_order_lsb_is_rejected_because_lsb_is_the_default(self):
+        with self.assertRaisesRegex(CompilationError, 'decorador @order_lsb no existe'):
+            self.compile_source(
+                '@order_lsb\n'
+                'flags Estado uint8:\n'
+                '    activo: uBint<1> = 1\n'
+                '    reservado: uBint<7> = 0\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
     def test_type_definitions_still_build_minimal_executable(self):
         self.compile_source(
             'enum Estado:\n'

@@ -130,8 +130,6 @@ El compilador se apoya en dos herramientas del mismo ecosistema:
 
 ---
 
----
-
 ## Licencia
 
 Este proyecto está bajo la Licencia MIT. Consulta el archivo de licencia para más detalles.

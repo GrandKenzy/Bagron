@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,49 @@ from core.frontend.tools.imports import resolve_module_path
 
 
 class ModuleTests(unittest.TestCase):
+    def test_modules_directory_is_the_canonical_bg_search_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'modules').mkdir()
+            (root / 'modules' / 'math.bg').write_text(
+                'public func doble(value: int32) int32:\n'
+                '    return value + value\n',
+                encoding='utf-8',
+            )
+            main = root / 'main.bg'
+            main.write_text(
+                'import math\n'
+                'func main() int32:\n'
+                '    return math.doble(3)\n',
+                encoding='utf-8',
+            )
+
+            module = Path(Compiler().compile(main, executable=False)).read_text(
+                encoding='utf-8'
+            )
+
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 3\)')
+
+    def test_libs_directory_is_not_a_bg_module_search_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'libs').mkdir()
+            (root / 'libs' / 'hidden.bg').write_text(
+                'public func hidden() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            main = root / 'main.bg'
+            main.write_text(
+                'import hidden\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'No se encontro el modulo'):
+                Compiler().compile(main, executable=False)
+
     def test_main_link_directories_are_recorded_without_global_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -74,8 +118,8 @@ class ModuleTests(unittest.TestCase):
             output = compiler.compile(main, executable=False)
             module = Path(output).read_text(encoding='utf-8')
 
-        self.assertIn('define i32 @"doble"', module)
-        self.assertIn('call i32 @"doble"(i32 3)', module)
+        self.assertRegex(module, r'define i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(')
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 3\)')
         self.assertEqual(2, len(compiler.storage.loaded_modules))
 
     def test_plain_import_does_not_expose_unqualified_symbol(self):
@@ -130,7 +174,7 @@ class ModuleTests(unittest.TestCase):
             module_path = Compiler().compile(main, executable=False)
             module = Path(module_path).read_text(encoding='utf-8')
 
-        self.assertIn('call i32 @"doble"(i32 3)', module)
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 3\)')
 
     def test_import_selective_alias_calls_function(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -152,7 +196,7 @@ class ModuleTests(unittest.TestCase):
             module_path = Compiler().compile(main, executable=False)
             module = Path(module_path).read_text(encoding='utf-8')
 
-        self.assertIn('call i32 @"doble"(i32 3)', module)
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 3\)')
 
     def test_imported_public_const_global_is_readable_without_global(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -329,8 +373,8 @@ class ModuleTests(unittest.TestCase):
             module_path = Compiler().compile(main, executable=False)
             module = Path(module_path).read_text(encoding='utf-8')
 
-        self.assertIn('call i32 @"doble"(i32 2)', module)
-        self.assertIn('call i32 @"triple"(i32 2)', module)
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 2\)')
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_triple_[^"\s]*"?\(i32 2\)')
 
     def test_selective_import_rejects_private_symbol(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -374,8 +418,8 @@ class ModuleTests(unittest.TestCase):
             module_path = Compiler().compile(main, executable=False)
             module = Path(module_path).read_text(encoding='utf-8')
 
-        self.assertIn('define i32 @"total"', module)
-        self.assertRegex(module, r'call i32 @"total"\([^)]*i64 3, i64 4\)')
+        self.assertRegex(module, r'define i32 @"?__bg_[^"\s]*_total_[^"\s]*"?\(')
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_total_[^"\s]*"?\([^)]*i64 3, i64 4\)')
 
     def test_private_function_is_not_visible_through_flattened_import_storage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -702,9 +746,9 @@ class ModuleTests(unittest.TestCase):
         self.assertEqual(4, len(loaded_names))
         self.assertEqual(4, len(set(loaded_names)))
         self.assertEqual(1, loaded_names.count('shared.bg'))
-        self.assertEqual(1, module.count('define i32 @"leaf"'))
-        self.assertIn('call i32 @"from_left"()', module)
-        self.assertIn('call i32 @"from_right"()', module)
+        self.assertEqual(1, len(re.findall(r'define i32 @"?__bg_[^"\s]*_leaf_[^"\s]*"?', module)))
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_from_left_[^"\s]*"?\(\)')
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_from_right_[^"\s]*"?\(\)')
 
 if __name__ == '__main__':
     unittest.main()

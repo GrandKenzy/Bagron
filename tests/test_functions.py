@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -107,8 +108,8 @@ class FunctionSemanticTests(unittest.TestCase):
         ir_path = Compiler().compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
 
-        self.assertRegex(module, r'call void @signed_data\([^)]*i64 0\)')
-        self.assertRegex(module, r'call void @unsigned_data\([^)]*i64 1\)')
+        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_signed_data_[^"\s]*"?\([^)]*i64 0\)')
+        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_unsigned_data_[^"\s]*"?\([^)]*i64 1\)')
 
     def test_unique_rejects_same_storage_and_missing_region(self):
         with self.assertRaisesRegex(CompilationError, 'debe declarar Region_t'):
@@ -313,7 +314,7 @@ class FunctionSemanticTests(unittest.TestCase):
         self.assertEqual('usize', metadata[1].type_spec.name)
         self.assertEqual(32, metadata[1].type_spec.bit_width)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call void @"consume"\([^)]*i32 16, i32 1\)')
+        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i32 16, i32 1\)')
 
     def test_len_t_is_injected_for_a_static_chain(self):
         source = (
@@ -335,7 +336,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call i64 @"consume"\([^)]*i64 5\)')
+        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i64 5\)')
 
     def test_len_t_can_be_forwarded_for_a_chain_parameter(self):
         source = (
@@ -465,13 +466,13 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertIn(
-            'define void @"mutate"([2 x [3 x i32]]*',
+        self.assertRegex(
             module,
+            r'define void @"?__bg_[^"\s]*_mutate_[^"\s]*"?\(\[2 x \[3 x i32\]\]\*',
         )
         self.assertRegex(
             module,
-            r'call void @"mutate"\([^)]*i\d+ 2, i\d+ 12\)',
+            r'call void @"?__bg_[^"\s]*_mutate_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 12\)',
         )
 
     def test_fixed_one_dimensional_array_parameter_is_a_reference(self):
@@ -495,7 +496,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertIn('define void @"mutate"([3 x i32]*', module)
+        self.assertRegex(module, r'define void @"?__bg_[^"\s]*_mutate_[^"\s]*"?\(\[3 x i32\]\*')
 
     def test_three_dimensional_matrix_size_is_the_outer_element_size(self):
         source = (
@@ -517,13 +518,13 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertIn(
-            'define i64 @"inspect"([2 x [3 x [4 x i16]]]*',
+        self.assertRegex(
             module,
+            r'define i64 @"?__bg_[^"\s]*_inspect_[^"\s]*"?\(\[2 x \[3 x \[4 x i16\]\]\]\*',
         )
         self.assertRegex(
             module,
-            r'call i64 @"inspect"\([^)]*i\d+ 2, i\d+ 24\)',
+            r'call i64 @"?__bg_[^"\s]*_inspect_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 24\)',
         )
 
     def test_three_dimensional_shape_and_metadata_survive_forwarding(self):
@@ -551,15 +552,15 @@ class FunctionSemanticTests(unittest.TestCase):
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
         signature = '[2 x [3 x [4 x i32]]]*'
-        self.assertIn(f'define i64 @"sink"({signature}', module)
-        self.assertIn(f'define i64 @"forward"({signature}', module)
+        self.assertRegex(module, rf'define i64 @"?__bg_[^"\s]*_sink_[^"\s]*"?\({re.escape(signature)}')
+        self.assertRegex(module, rf'define i64 @"?__bg_[^"\s]*_forward_[^"\s]*"?\({re.escape(signature)}')
         self.assertRegex(
             module,
-            r'call i64 @"sink"\([^)]*i64 %"[^\"]+", i64 %"[^\"]+"\)',
+            r'call i64 @"?__bg_[^"\s]*_sink_[^"\s]*"?\([^)]*i64 %"[^\"]+", i64 %"[^\"]+"\)',
         )
         self.assertRegex(
             module,
-            r'call i64 @"forward"\([^)]*i\d+ 2, i\d+ 48\)',
+            r'call i64 @"?__bg_[^"\s]*_forward_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 48\)',
         )
 
     def test_matrix_argument_requires_the_exact_shape(self):
@@ -639,7 +640,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call i64 @"consume"\(i32 10, i64 4\)')
+        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(i32 10, i64 4\)')
 
     def test_size_t_is_injected_as_array_element_bytes(self):
         source = (
@@ -661,7 +662,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call i64 @"consume"\([^)]*i64 4\)')
+        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i64 4\)')
 
     def test_expansion_parameters_cannot_be_const_or_pointers(self):
         with self.assertRaisesRegex(CompilationError, 'Len_t ya es inmutable'):

@@ -1,0 +1,7 @@
+import math
+import { triple as times_three } from math
+
+func main() int32:
+    qualified: int32 = math.twice(4)
+    selected: int32 = times_three(2)
+    return qualified + selected

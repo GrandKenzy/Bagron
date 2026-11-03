@@ -89,9 +89,8 @@ explícita, por ejemplo con un campo `uBint<N>` inicializado en cero.
 |:---|:---|:---|
 | `packed` | `@packed` | Mantiene el almacenamiento del conjunto sin padding adicional. |
 | `align` | `@align(N)` | Solicita una alineación explícita para el contenedor. |
-| `order_lsb` | `@order_lsb` | Asigna los campos comenzando por los bits menos significativos. |
 | `order_msb` | `@order_msb` | Asigna los campos comenzando por los bits más significativos. |
 | `volatile` | `volatile flags Nombre TipoBase:` | Conserva los accesos al contenedor como operaciones volátiles. |
 
-`@order_lsb` y `@order_msb` seleccionan órdenes alternativos y no deben
-declararse juntos.
+Los campos sin decorador se asignan desde los bits menos significativos.
+`@order_msb` selecciona el orden contrario.

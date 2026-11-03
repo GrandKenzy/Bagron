@@ -1,0 +1,15 @@
+clause Optimizations 'dev'
+
+#if OS, "windows"
+func platform_value() int32:
+    return 1
+#elif ARCH, "amd"
+func platform_value() int32:
+    return 2
+#else
+func platform_value() int32:
+    return 0
+#end
+
+func main() int32:
+    return platform_value()

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.links import extract_link_directives
+from core.library import extract_library_directives
 from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
@@ -55,6 +56,24 @@ class CompilerState(Diagnostics):
 
         content = _open_file(self, path)
 
+        content, library_requests, library_errors = extract_library_directives(
+            content,
+            Path(path),
+            allow=(
+                Path(path).resolve() == getattr(self, 'main_module_path', None)
+                or any(
+                    Path(path).resolve().is_relative_to(root)
+                    for root in getattr(self, 'library_source_roots', ())
+                )
+            ),
+        )
+        if hasattr(self, 'library_requests') and library_requests:
+            self.library_requests.setdefault(Path(path).resolve(), []).extend(
+                library_requests
+            )
+        for error in library_errors:
+            self.error(error)
+
         content, conditional_errors = preprocess_conditionals(
             content,
             Path(path),
@@ -102,11 +121,13 @@ class CompilerState(Diagnostics):
 
 
 def _found_main(source: Path):
-    for p in source.iterdir():
-        if p.is_dir():
+    for root in (source, source / 'modules'):
+        if not root.is_dir():
             continue
-        if p.name in ('main.bg', '_main.bg'):
-            return p
+        for name in ('main.bg', '_main.bg'):
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
     return None
 
 

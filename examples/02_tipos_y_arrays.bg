@@ -1,0 +1,26 @@
+; Arrays fijos, inferidos, parciales y multidimensionales.
+values: int32[3] = {1, 2, 3}
+inferred: int32[] = {4, 5, 6}
+partial: int32[5] = {7, 8}
+matrix: int32[2][3] = {
+    {1, 2, 3},
+    {4, 5, 6}
+}
+
+text: char[8] = "Hola"
+mutable_text: char[] = "Bagron"
+constant_text: const char[5] = "Hola"
+message: chain = "muestras"
+copy: char[] = message
+raw: byte[4] = {0, 1, 2, 255}
+
+func sum(values: int32[], length: Len_t, size: Size_t) int32:
+    total: int32 = 0
+    for index: int32 in values:
+        total += values[index]
+    return total
+
+func main() int32:
+    mutable_text[0] = "b"
+    copy[0] = "M"
+    return sum(values)

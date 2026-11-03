@@ -101,6 +101,7 @@ class LLVMTypeRegistry:
         self._symbols: dict[str, AggregateSymbol] = {}
         self._opaque_symbols: dict[str, OpaqueSymbol] = {}
         self._layouts: dict[str, AggregateLayout] = {}
+        self._llvm_name_to_key: dict[str, str] = {}
         self._buffer_type: ir.IdentifiedStructType | None = None
 
         aggregates: list[AggregateSymbol] = []
@@ -113,9 +114,13 @@ class LLVMTypeRegistry:
                 self._types[name] = self.resolve(symbol.representation)
                 self._opaque_symbols[name] = symbol
             elif isinstance(symbol, AggregateSymbol):
-                llvm_type = module.context.get_identified_type(name)
+                llvm_type = module.context.get_identified_type(
+                    symbol.llvm_name or name
+                )
                 self._types[name] = llvm_type
                 self._symbols[name] = symbol
+                symbol.registry_key = symbol.registry_key or name
+                self._llvm_name_to_key[llvm_type.name] = symbol.registry_key
                 aggregates.append(symbol)
 
         for aggregate in self._dependency_order(aggregates):
@@ -125,29 +130,46 @@ class LLVMTypeRegistry:
         self,
         aggregates: Sequence[AggregateSymbol],
     ) -> list[AggregateSymbol]:
-        known = {aggregate.name: aggregate for aggregate in aggregates}
+        known = {
+            (aggregate.registry_key or aggregate.name): aggregate
+            for aggregate in aggregates
+        }
         ordered: list[AggregateSymbol] = []
         visiting: list[str] = []
         visited: set[str] = set()
 
         def visit(aggregate: AggregateSymbol) -> None:
-            if aggregate.name in visiting:
-                cycle = ' -> '.join((*visiting[visiting.index(aggregate.name):], aggregate.name))
+            aggregate_key = aggregate.registry_key or aggregate.name
+            if aggregate_key in visiting:
+                cycle = ' -> '.join((*visiting[visiting.index(aggregate_key):], aggregate_key))
                 raise LLVMTypeError(f'Ciclo de agregados por valor: {cycle}')
-            if aggregate.name in visited:
+            if aggregate_key in visited:
                 return
-            visiting.append(aggregate.name)
-            parent = known.get(aggregate.parent_type or '')
+            visiting.append(aggregate_key)
+            parent_key = aggregate.parent_type or ''
+            parent = known.get(parent_key)
+            if parent is None:
+                parent = next(
+                    (
+                        candidate for candidate in aggregates
+                        if candidate.name == parent_key
+                        and getattr(candidate, 'module_path', None)
+                        == getattr(aggregate, 'module_path', None)
+                    ),
+                    None,
+                )
             if parent is not None:
                 visit(parent)
             for field in aggregate.all_fields:
                 if field.type_spec.pointer_level:
                     continue
-                dependency = known.get(field.type_spec.name)
+                dependency = known.get(
+                    field.type_spec.nominal_key or field.type_spec.name
+                )
                 if dependency is not None:
                     visit(dependency)
             visiting.pop()
-            visited.add(aggregate.name)
+            visited.add(aggregate_key)
             ordered.append(aggregate)
 
         for aggregate in aggregates:
@@ -205,7 +227,8 @@ class LLVMTypeRegistry:
         return 0
 
     def _define_aggregate(self, symbol: AggregateSymbol) -> None:
-        llvm_type = self._types.get(symbol.name)
+        type_key = symbol.registry_key or symbol.name
+        llvm_type = self._types.get(type_key)
         if not isinstance(llvm_type, ir.IdentifiedStructType):
             raise LLVMTypeError(
                 f'El tipo agregado {symbol.name} no tiene una definicion LLVM'
@@ -216,7 +239,9 @@ class LLVMTypeRegistry:
         backing_type: ir.Type | None = None
         if symbol.kind == 'struct':
             layout_fields = symbol.all_fields
-            parent_layout = self._layouts.get(symbol.parent_type or '')
+            parent_layout = self._layouts.get(
+                self._key_for_source(symbol.parent_type or '', symbol)
+            )
             packed = bool(
                 symbol.is_packed
                 or (
@@ -285,7 +310,7 @@ class LLVMTypeRegistry:
         else:
             raise LLVMTypeError(f'Clase de agregado desconocida: {symbol.kind}')
 
-        self._layouts[symbol.name] = AggregateLayout(
+        self._layouts[type_key] = AggregateLayout(
             symbol=symbol,
             llvm_type=llvm_type,
             payload_type=payload,
@@ -297,8 +322,26 @@ class LLVMTypeRegistry:
             size=self._abi_size(llvm_type),
         )
 
-    def layout(self, type_name: str) -> AggregateLayout | None:
-        return self._layouts.get(type_name)
+    def _key(self, type_name: object) -> str:
+        if isinstance(type_name, TypeSpec):
+            return type_name.nominal_key or type_name.name
+        value = str(type_name)
+        return self._llvm_name_to_key.get(value, value)
+
+    def _key_for_source(self, name: str, owner: object | None = None) -> str:
+        if name in self._layouts:
+            return name
+        for key, symbol in self._symbols.items():
+            if symbol.name == name and (
+                owner is None
+                or getattr(symbol, 'module_path', None)
+                == getattr(owner, 'module_path', None)
+            ):
+                return key
+        return name
+
+    def layout(self, type_name: object) -> AggregateLayout | None:
+        return self._layouts.get(self._key(type_name))
 
     def buffer_type(self) -> ir.IdentifiedStructType:
         """Return the private runtime descriptor used by ``buffer[N]``."""
@@ -316,11 +359,11 @@ class LLVMTypeRegistry:
     def is_buffer_type(self, value_type: ir.Type) -> bool:
         return value_type is self._buffer_type
 
-    def aggregate(self, type_name: str) -> AggregateSymbol | None:
-        return self._symbols.get(type_name)
+    def aggregate(self, type_name: object) -> AggregateSymbol | None:
+        return self._symbols.get(self._key(type_name))
 
-    def field_spec(self, type_name: str, field_name: str):
-        symbol = self._symbols.get(type_name)
+    def field_spec(self, type_name: object, field_name: str):
+        symbol = self._symbols.get(self._key(type_name))
         if symbol is None:
             return None
         return next(
@@ -328,8 +371,8 @@ class LLVMTypeRegistry:
             None,
         )
 
-    def field_path(self, type_name: str, field_name: str) -> tuple[int, ...] | None:
-        layout = self._layouts.get(type_name)
+    def field_path(self, type_name: object, field_name: str) -> tuple[int, ...] | None:
+        layout = self._layouts.get(self._key(type_name))
         if layout is None:
             return None
         return layout.field_paths.get(field_name)
@@ -343,22 +386,22 @@ class LLVMTypeRegistry:
         path = self.field_path(type_name, field_name)
         return path[-1] if path else None
 
-    def storage_path(self, type_name: str) -> tuple[int, ...] | None:
-        layout = self._layouts.get(type_name)
+    def storage_path(self, type_name: object) -> tuple[int, ...] | None:
+        layout = self._layouts.get(self._key(type_name))
         return layout.storage_path if layout is not None else None
 
-    def flags_backing_type(self, type_name: str) -> ir.Type | None:
-        layout = self._layouts.get(type_name)
+    def flags_backing_type(self, type_name: object) -> ir.Type | None:
+        layout = self._layouts.get(self._key(type_name))
         return layout.backing_type if layout is not None else None
 
-    def is_volatile(self, type_name: str) -> bool:
-        layout = self._layouts.get(type_name)
+    def is_volatile(self, type_name: object) -> bool:
+        layout = self._layouts.get(self._key(type_name))
         if layout is None:
             return False
         if layout.symbol.is_volatile:
             return True
         parent = layout.symbol.parent_type
-        return bool(parent and self.is_volatile(parent))
+        return bool(parent and self.is_volatile(self._key_for_source(parent, layout.symbol)))
 
     def abi_alignment(self, value_type: ir.Type) -> int:
         return self._abi_alignment(value_type)
@@ -393,7 +436,7 @@ class LLVMTypeRegistry:
             element = self.default_constant(element_spec)
             return ir.Constant(target_type, [element] * target_type.count)
 
-        layout = self._layouts.get(spec.name)
+        layout = self._layouts.get(self._key(spec))
         if layout is None:
             return ir.Constant(target_type, None)
         if layout.symbol.kind == 'mold':
@@ -471,7 +514,7 @@ class LLVMTypeRegistry:
             # static, NUL-terminated bytes.  Locals and globals still use
             # value_type(), which preserves their concrete array storage.
             return ir.IntType(8).as_pointer()
-        value_type = self._types.get(spec.name)
+        value_type = self._types.get(self._key(spec))
         if value_type is None:
             value_type = scalar_type(spec)
 
@@ -667,7 +710,7 @@ def default_value(
 ) -> ir.Constant:
     """Return storage defaults, including declarative ``flags`` bits."""
     if type_registry is not None and not _is_unsized_array(spec) and (
-        spec.array_depth or type_registry.layout(spec.name) is not None
+        spec.array_depth or type_registry.layout(spec) is not None
     ):
         return type_registry.default_constant(spec)
     target_type = value_type(spec, value, type_registry)
@@ -691,9 +734,9 @@ def constant_value(
         type_registry is not None
         and spec.pointer_level == 0
         and spec.array_depth == 0
-        and type_registry.layout(spec.name) is not None
+        and type_registry.layout(spec) is not None
     ):
-        layout = type_registry.layout(spec.name)
+        layout = type_registry.layout(spec)
         if layout is None or layout.symbol.kind != 'struct':
             raise LLVMTypeError(
                 f'El agregado {spec.canonical_name} no admite este inicializador'
