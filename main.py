@@ -1,5 +1,9 @@
-import sys
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
 
 from core.compiler import CompilationError, Compiler
 from core.library import (
@@ -21,6 +25,61 @@ def _library_help() -> str:
         '  vnma run main.py verify <archivo.lib>\n'
         '  vnma run main.py unpack <archivo.lib> <destino>'
     )
+
+
+def _main_help() -> str:
+    return (
+        'Uso:\n'
+        '  Bagron <archivo.bg> [-o <salida.exe>] [--execute]\n'
+        '  vnma run main.py <archivo.bg> [-o <salida.exe>] [--execute]\n\n'
+        'Comandos de librería:\n'
+        + _library_help() + '\n\n'
+        'El frontend Gram FFI produce GIR; semántica y backend LLVM siguen en Bagron.'
+    )
+
+
+def _parse_compile_args(
+    argv: list[str],
+) -> tuple[str | None, str | None, bool, str | None]:
+    """Extrae objetivo, ruta de salida y opción de ejecución.
+
+    Retorna: (source, output_path, execute, error_message)
+    """
+    execute = False
+    output_path = None
+    sources: list[str] = []
+
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg in ('--execute', '-e'):
+            execute = True
+            index += 1
+        elif arg in ('-o', '--output'):
+            if index + 1 >= len(argv):
+                return None, None, False, 'Error: la opción -o requiere especificar una ruta de salida'
+            output_path = argv[index + 1]
+            index += 2
+        elif arg.startswith('-o') and len(arg) > 2:
+            output_path = arg[2:]
+            index += 1
+        elif arg.startswith('-'):
+            return None, None, False, f'Opción no admitida: {arg}'
+        else:
+            sources.append(arg)
+            index += 1
+
+    if not sources:
+        return None, None, False, 'Error: No se especificó el archivo o módulo fuente a compilar'
+    if len(sources) > 1:
+        return (
+            None,
+            None,
+            False,
+            f'Error: Solo se admite un objetivo a la vez (recibidos: {len(sources)})',
+        )
+
+    return sources[0], output_path, execute, None
 
 
 def _library_command(argv: list[str]) -> int:
@@ -79,43 +138,60 @@ def _library_command(argv: list[str]) -> int:
 def main(*args):
     argv = list(args[0])
     if not argv:
-        print(
-            'Uso: vnma run main.py <archivo.bg>\n'
-            'El frontend Gram FFI produce GIR; semántica y backend LLVM '
-            'siguen en Bagron.'
-        )
-        return
+        print(_main_help())
+        return 0
 
     if argv[0] in {'-h', '--help'}:
-        print(
-            'Uso: vnma run main.py <archivo.bg>\n'
-            + _library_help() + '\n'
-            'El frontend Gram FFI produce GIR; semántica y backend LLVM '
-            'siguen en Bagron.'
-        )
+        print(_main_help())
         return 0
+
     if argv[0] in {'library', 'inspect', 'verify', 'unpack'}:
         return _library_command(argv)
-    if len(argv) != 1:
-        print('Uso: vnma run main.py <archivo.bg>', file=sys.stderr)
-        return 2
-    if argv[0].startswith('-'):
-        print(
-            'No se admiten opciones de parser: Bagron requiere el frontend Gram FFI.',
-            file=sys.stderr,
-        )
+
+    source, output_path, execute, parse_error = _parse_compile_args(argv)
+    if parse_error:
+        print(parse_error, file=sys.stderr)
+        print(_main_help(), file=sys.stderr)
         return 2
 
+    caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+    target_path = Path(source)
+    if not target_path.is_absolute():
+        target_path = (caller_dir / target_path).resolve()
+
     compiler = Compiler()
-    target = argv[0]
     try:
-        artifacts = compiler.compile(target)
+        artifacts = compiler.compile(target_path)
     except CompilationError as error:
         print(f'Compilation failed: {error}', file=sys.stderr)
         return 1
+
     for warning in compiler.warnings:
         print(f'Warning: {warning}', file=sys.stderr)
-    print(artifacts.executable)
+
+    final_executable = artifacts.executable
+    if output_path is not None:
+        out_target = Path(output_path)
+        if not out_target.is_absolute():
+            out_target = (caller_dir / out_target).resolve()
+        out_target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(artifacts.executable, out_target)
+            final_executable = out_target
+        except OSError as error:
+            print(f'Error al generar archivo de salida {out_target}: {error}', file=sys.stderr)
+            return 1
+
+    print(final_executable)
+
+    if execute:
+        try:
+            process = subprocess.run([str(final_executable)], cwd=str(caller_dir))
+            return process.returncode
+        except Exception as error:
+            print(f'Execution failed: {error}', file=sys.stderr)
+            return 1
+
     return 0
 
 
