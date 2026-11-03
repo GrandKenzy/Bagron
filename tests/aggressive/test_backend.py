@@ -895,6 +895,29 @@ class GlobalBackendTests(unittest.TestCase):
             )
 
 
+    def test_float_compound_assignment_emits_fadd_and_fsub(self):
+        module = self.compile_source(
+            'func calcular() float:\
+'
+            '    val: float = 10.0\
+'
+            '    val += 5.5\
+'
+            '    val -= 2.0\
+'
+            '    val *= 2.0\
+'
+            '    val /= 3.0\
+'
+            '    return val\
+'
+        )
+        self.assertIn('fadd float', module)
+        self.assertIn('fsub float', module)
+        self.assertIn('fmul float', module)
+        self.assertIn('fdiv float', module)
+
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -587,18 +587,27 @@ class StatementEmitterMixin:
                 unsigned = unsigned or (
                     getattr(type_spec, 'name', None) in UNSIGNED_INTEGER_TYPES
                 )
-            operations = {
-                '+=': builder.add,
-                '-=': builder.sub,
-                '*=': builder.mul,
-                '/=': builder.udiv if unsigned else builder.sdiv,
-                '%=': builder.urem if unsigned else builder.srem,
-                '&=': builder.and_,
-                '|=': builder.or_,
-                '^=': builder.xor,
-                '<<=': builder.shl,
-                '>>=': builder.lshr if unsigned else builder.ashr,
-            }
+            if self._is_float_type(left.type):
+                operations = {
+                    '+=': builder.fadd,
+                    '-=': builder.fsub,
+                    '*=': builder.fmul,
+                    '/=': builder.fdiv,
+                    '%=': builder.frem,
+                }
+            else:
+                operations = {
+                    '+=': builder.add,
+                    '-=': builder.sub,
+                    '*=': builder.mul,
+                    '/=': builder.udiv if unsigned else builder.sdiv,
+                    '%=': builder.urem if unsigned else builder.srem,
+                    '&=': builder.and_,
+                    '|=': builder.or_,
+                    '^=': builder.xor,
+                    '<<=': builder.shl,
+                    '>>=': builder.lshr if unsigned else builder.ashr,
+                }
             operation = operations.get(operator)
             if operation is None:
                 raise FunctionEmissionError(

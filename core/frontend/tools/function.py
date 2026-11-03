@@ -12,6 +12,7 @@ from core.frontend.objects import (
     ValueInfo,
 )
 from core.frontend.tools.types import (
+    FLOAT_TYPES,
     FOR_ITERATOR_TYPES,
     INTEGER_TYPES,
     TypeResolutionError,
@@ -1720,15 +1721,22 @@ def _validate_assignment(
         )
         return
 
-    if operator != '=' and (
-        target_info.type_spec.name not in INTEGER_TYPES
-        or target_info.type_spec.pointer_level
-        or target_info.type_spec.array_depth
-    ):
-        compiler.error(
-            f'La asignacion {operator} solo admite enteros escalares: {name}'
+    if operator != '=':
+        valid_types = (
+            INTEGER_TYPES | FLOAT_TYPES
+            if operator in ('+=', '-=', '*=', '/=')
+            else INTEGER_TYPES
         )
-        return
+        if (
+            target_info.type_spec.name not in valid_types
+            or target_info.type_spec.pointer_level
+            or target_info.type_spec.array_depth
+        ):
+            expected = 'enteros o flotantes' if operator in ('+=', '-=', '*=', '/=') else 'enteros'
+            compiler.error(
+                f'La asignacion {operator} solo admite {expected} escalares: {name}'
+            )
+            return
 
     if (
         binding is not None
