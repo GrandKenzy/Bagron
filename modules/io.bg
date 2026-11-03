@@ -1,0 +1,435 @@
+; io.bg - Entrada y salida de texto y enteros mediante la ABI de Windows.
+; Descripción: Este módulo proporciona funciones para la entrada y salida de texto y enteros en sistemas Windows utilizando la API de Windows. Incluye funciones para imprimir caracteres, cadenas, enteros y leer líneas desde la entrada estándar.
+
+; Salida de texto y enteros mediante la ABI de Windows.
+
+clause System 'windows'
+clause Arch 'amd'
+
+private stdout_handle *: void
+private stdout_initialized: bool = false
+private stdout_buffer: char[4096]
+private stdout_position: usize = 0
+
+import { NumericString } from alphabet
+
+extern windows "kernel32":
+    GetStdHandle(nStdHandle: uint32) *: void
+    WriteFile(
+        hFile *: void,
+        lpBuffer *: const void,
+        nNumberOfBytesToWrite: uint32,
+        lpNumberOfBytesWritten *: uint32,
+        lpOverlapped *: void
+    ) int32
+    ReadFile(
+        hFile *: void,
+        lpBuffer *: void,
+        nNumberOfBytesToRead: uint32,
+        lpNumberOfBytesRead *: uint32,
+        lpOverlapped *: void
+    ) int32
+
+@assembler
+private func _win32_count(value: usize) uint32:
+    #prep assembler "gas-intel"
+        mov rax, {value}
+    #end
+    return asm
+
+@unsafe
+private inline func _flush_stdout() void:
+    if stdout_position == 0:
+        return
+    if not stdout_initialized:
+        stdout_handle = GetStdHandle(4294967285)
+        stdout_initialized = true
+    WriteFile(
+        stdout_handle,
+        $stdout_buffer[0],
+        _win32_count(stdout_position),
+        Null,
+        Null
+    )
+    stdout_position = 0
+    return
+
+@unsafe
+private inline func _append_chain(
+    text: chain,
+    length: Len_t,
+    count: usize
+) void:
+    if count > length:
+        return
+
+    index: usize = 0
+    while index < count:
+        if stdout_position == 4096:
+            _flush_stdout()
+        stdout_buffer[stdout_position] = text[index]
+        stdout_position += 1
+        index += 1
+    return
+
+@unsafe
+private inline func _append_chars(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t,
+    count: usize
+) void:
+    if size != 1 || count > length:
+        return
+
+    index: usize = 0
+    while index < count:
+        if stdout_position == 4096:
+            _flush_stdout()
+        stdout_buffer[stdout_position] = buffer[index]
+        stdout_position += 1
+        index += 1
+    return
+
+@unsafe
+private inline func _append_chars_at(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t,
+    start: usize,
+    count: usize
+) void:
+    if size != 1 || start > length || count > length - start:
+        return
+
+    index: usize = 0
+    while index < count:
+        if stdout_position == 4096:
+            _flush_stdout()
+        stdout_buffer[stdout_position] = buffer[start + index]
+        stdout_position += 1
+        index += 1
+    return
+
+@unsafe
+public inline func write_chars(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t,
+    count: usize
+) void:
+    if size != 1:
+        return
+    if count > length:
+        return
+    if count > 0:
+        _append_chars(buffer, count)
+    return
+
+@unsafe
+public inline func print(text: chain, length: Len_t) void:
+    count: usize = 0
+    if length > 0:
+        count = length
+        count -= 1
+    if count > 0:
+        _append_chain(text, count)
+    return
+
+@unsafe
+public inline func println(text: chain, length: Len_t) void:
+    print(text)
+    print("\n")
+    return
+
+@unsafe
+public inline func newline() void:
+    print("\n")
+    return
+
+@unsafe
+public inline func flush() void:
+    _flush_stdout()
+    return
+
+; Lee una línea desde stdin en un buffer propiedad del caller.
+; Len_t se expande automáticamente desde la capacidad del buffer.
+@unsafe
+public inline func input(target: buffer[], length: Len_t) uint32:
+    if length == 0:
+        return 0
+
+    stdin_handle *: void = GetStdHandle(4294967286)
+    bytes_to_read: usize = length
+    bytes_to_read -= 1
+    if bytes_to_read > 4095:
+        bytes_to_read = 4095
+
+    staging: byte[4096]
+    bytes_read: uint32 = 0
+    result: int32 = ReadFile(
+        stdin_handle,
+        $staging[0],
+        _win32_count(bytes_to_read),
+        $bytes_read,
+        Null
+    )
+    if result == 0:
+        return 0
+
+    if bytes_read > 0 && staging[bytes_read - 1] == 10:
+        bytes_read -= 1
+    if bytes_read > 0 && staging[bytes_read - 1] == 13:
+        bytes_read -= 1
+
+    index: usize = 0
+    while index < bytes_read:
+        target[index] = staging[index]
+        index += 1
+    target[index] = 0
+    return bytes_read
+
+@unsafe
+public inline func print_char(value: char) void:
+    buffer: char[2]
+    buffer[0] = value
+    buffer[1] = "\0"
+    write_chars(buffer, 1)
+    return
+
+@unsafe
+public inline func print_bool(value: bool) void:
+    if value:
+        print("true")
+    else:
+        print("false")
+    return
+
+@unsafe
+public inline func print_chars(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t
+) void:
+    ; Print a array of chars treated as text terminated by zero.
+    ; Len_t is automatically expanded from the buffer capacity.
+    if size != 1:
+        return
+    count: usize = 0
+    while count < length && buffer[count] != 0:
+        count += 1
+    if count > 0:
+        _append_chars(buffer, count)
+    return
+
+@unsafe
+public inline func print_buffer(data: buffer[], length: Len_t) void:
+    ; Print a buffer of bytes treated as text terminated by zero.
+    ; Len_t is automatically expanded from the buffer capacity.
+
+    if length == 0:
+        return
+
+    staging: byte[4096]
+    count: usize = 0
+    while count < length && count < 4095 && data[count] != 0:
+        staging[count] = data[count]
+        count += 1
+
+    _flush_stdout()
+    if not stdout_initialized:
+        stdout_handle = GetStdHandle(4294967285)
+        stdout_initialized = true
+    WriteFile(
+        stdout_handle,
+        $staging[0],
+        _win32_count(count),
+        Null,
+        Null
+    )
+    return
+
+@unsafe
+public inline func write_byte(value: byte) void:
+    ; write a single byte to stdout, including zero.
+
+    raw: byte[1]
+    raw[0] = value
+    _flush_stdout()
+    if not stdout_initialized:
+        stdout_handle = GetStdHandle(4294967285)
+        stdout_initialized = true
+    WriteFile(
+        stdout_handle,
+        $raw[0],
+        1,
+        Null,
+        Null
+    )
+    return
+
+@unsafe
+private inline func _print_int64(value: int64) void:
+    buffer: char[32]
+    cursor: int64 = value
+    digit: int64 = 0
+    position: usize = 31
+    written: usize = 0
+    negative: bool = value < 0
+
+    buffer[position] = "\0"
+    if value == 0:
+        position -= 1
+        buffer[position] = NumericString[0]
+    elif negative:
+        while cursor < 0:
+            digit = 0 - (cursor % 10)
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+        position -= 1
+        buffer[position] = "-"
+    else:
+        while cursor > 0:
+            digit = cursor % 10
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+
+    written = 31 - position
+    _append_chars_at(buffer, position, written)
+    return
+
+@unsafe
+private inline func _print_uint64(value: uint64) void:
+    buffer: char[32]
+    cursor: uint64 = value
+    digit: uint64 = 0
+    position: usize = 31
+    written: usize = 0
+
+    buffer[position] = "\0"
+    if value == 0:
+        position -= 1
+        buffer[position] = NumericString[0]
+    else:
+        while cursor > 0:
+            digit = cursor % 10
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+
+    written = 31 - position
+    _append_chars_at(buffer, position, written)
+    return
+
+@unsafe
+private inline func _print_usize(value: usize) void:
+    buffer: char[32]
+    cursor: usize = value
+    digit: usize = 0
+    position: usize = 31
+    written: usize = 0
+
+    buffer[position] = "\0"
+    if value == 0:
+        position -= 1
+        buffer[position] = NumericString[0]
+    else:
+        while cursor > 0:
+            digit = cursor % 10
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+
+    written = 31 - position
+    _append_chars_at(buffer, position, written)
+    return
+
+@unsafe
+private inline func _print_isize(value: isize) void:
+    buffer: char[32]
+    cursor: isize = value
+    digit: isize = 0
+    position: usize = 31
+    written: usize = 0
+    negative: bool = value < 0
+
+    buffer[position] = "\0"
+    if value == 0:
+        position -= 1
+        buffer[position] = NumericString[0]
+    elif negative:
+        while cursor < 0:
+            digit = 0 - (cursor % 10)
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+        position -= 1
+        buffer[position] = "-"
+    else:
+        while cursor > 0:
+            digit = cursor % 10
+            position -= 1
+            buffer[position] = NumericString[digit]
+            cursor /= 10
+
+    written = 31 - position
+    _append_chars_at(buffer, position, written)
+    return
+
+@unsafe
+private inline func _print_usize_value(value: usize) void:
+    _print_usize(value)
+    return
+
+; Los enteros pequeños se ensanchan de forma segura al tipo común.
+@unsafe
+public inline func print_int(value: isize) void:
+    _print_isize(value)
+    return
+
+@unsafe
+public inline func print_uint(value: usize) void:
+    _print_usize_value(value)
+    return
+
+@unsafe
+public inline func print_size(value: usize, value_size: Size_t) void:
+    if value_size == 4 || value_size == 8:
+        _print_usize_value(value)
+    return
+
+@unsafe
+public inline func println_int(value: isize) void:
+    print_int(value)
+    print("\n")
+    return
+
+@unsafe
+public inline func println_uint(value: usize) void:
+    print_uint(value)
+    print("\n")
+    return
+
+@unsafe
+public inline func println_bool(value: bool) void:
+    print_bool(value)
+    print("\n")
+    return
+
+@unsafe
+public inline func println_chars(
+    buffer: char[],
+    length: Len_t,
+    size: Size_t
+) void:
+    print_chars(buffer)
+    print("\n")
+    return
+
+@unsafe
+public inline func println_buffer(data: buffer[], length: Len_t) void:
+    print_buffer(data)
+    print("\n")
+    return

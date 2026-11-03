@@ -81,22 +81,50 @@ def extract_link_directives(
             transformed.append(_blank_line(line))
             continue
 
-        resolved = (source.parent / candidate).resolve()
-        if not _inside_project(resolved, project_root):
-            errors.append(
-                f'{source}:{index + 1}: la ruta #link queda fuera del proyecto: '
-                f'{raw_path!r}'
-            )
-        elif not resolved.exists():
-            errors.append(
-                f'{source}:{index + 1}: el directorio #link no existe: '
-                f'{resolved}'
-            )
-        elif not resolved.is_dir():
-            errors.append(
-                f'{source}:{index + 1}: #link requiere un directorio, no un '
-                f'archivo: {resolved}'
-            )
+        # NOTA: 1) Probar primero relativo al proyecto local
+        project_target = (source.parent / candidate).resolve()
+        resolved: Path | None = None
+
+        if _inside_project(project_target, project_root):
+            if project_target.is_dir():
+                resolved = project_target
+            elif project_target.is_file():
+                errors.append(
+                    f'{source}:{index + 1}: #link requiere un directorio, no un '
+                    f'archivo: {project_target}'
+                )
+                transformed.append(_blank_line(line))
+                continue
+
+        # NOTA: 2) Si no existe en el proyecto local, buscar en las carpetas de Bagron
+        if resolved is None:
+            from core.globvars import BAGRON_ROOT
+            bagron_root = BAGRON_ROOT.resolve()
+            bagron_candidates = [
+                (bagron_root / 'libs' / candidate).resolve(),
+                (bagron_root / 'modules' / candidate).resolve(),
+                (bagron_root / candidate).resolve(),
+            ]
+            parts = candidate.parts
+            if parts and parts[0].lower() == 'bagron' and len(parts) > 1:
+                bagron_candidates.insert(0, (bagron_root.joinpath(*parts[1:])).resolve())
+
+            for bg_cand in bagron_candidates:
+                if _inside_project(bg_cand, bagron_root) and bg_cand.is_dir():
+                    resolved = bg_cand
+                    break
+
+        if resolved is None:
+            if _inside_project(project_target, project_root):
+                errors.append(
+                    f'{source}:{index + 1}: el directorio #link no existe: '
+                    f'{project_target}'
+                )
+            else:
+                errors.append(
+                    f'{source}:{index + 1}: la ruta #link queda fuera del proyecto: '
+                    f'{raw_path!r}'
+                )
         elif resolved not in directories:
             directories.append(resolved)
 

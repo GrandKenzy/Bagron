@@ -1,0 +1,74 @@
+; asmutils.bg - Utilidades de bajo nivel y control de ejecucion para Windows y Linux.
+
+#if OS, "windows"
+clause System 'windows'
+#elif OS, "linux"
+clause System 'linux'
+#else
+clause System 'auto'
+#end
+
+#if ARCH, "amd"
+clause Arch 'amd'
+#elif ARCH, "x86"
+clause Arch 'x86'
+#elif ARCH, "arm"
+clause Arch 'arm'
+#elif ARCH, "riscv32"
+clause Arch 'riscv32'
+#elif ARCH, "riscv64"
+clause Arch 'riscv64'
+#else
+clause Arch 'auto'
+#end
+
+#if OS, "windows"
+extern windows "kernel32":
+    ExitProcess(uExitCode: uint32) void
+    DebugBreak() void
+
+@unsafe
+public func trap() void:
+    ; Halts process execution immediately on Windows (STATUS_ILLEGAL_INSTRUCTION 0xC000001D).
+    ExitProcess(3221225501)
+    return
+
+@unsafe
+public func breakpoint() void:
+    ; Triggers a software breakpoint exception on Windows.
+    DebugBreak()
+    return
+
+#elif OS, "linux"
+extern c "c":
+    abort() void
+    raise(sig: int32) int32
+
+@unsafe
+public func trap() void:
+    ; Halts process execution immediately on Linux (SIGABRT).
+    abort()
+    return
+
+@unsafe
+public func breakpoint() void:
+    ; Triggers a software breakpoint signal on Linux (SIGTRAP).
+    raise(5)
+    return
+
+#else
+extern c "c":
+    abort() void
+
+@unsafe
+public func trap() void:
+    ; Halts process execution immediately on generic target.
+    abort()
+    return
+
+@unsafe
+public func breakpoint() void:
+    ; Fallback breakpoint on generic target.
+    abort()
+    return
+#end

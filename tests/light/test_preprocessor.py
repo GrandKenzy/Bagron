@@ -162,6 +162,65 @@ class LinkDirectiveTests(unittest.TestCase):
         self.assertIn('ruta de directorio no vacia', errors[0])
 
 
+
+    def test_link_resolves_folder_from_bagron_root_libs(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'libs' / 'SDL3').mkdir(parents=True)
+            root = Path(project_dir)
+            source = root / 'main.bg'
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                transformed, links, errors = extract_link_directives(
+                    ['#link "SDL3"\n'],
+                    source,
+                    project_root=root,
+                    allow=True,
+                )
+
+            self.assertEqual([], errors)
+            self.assertEqual([(fake_bagron / 'libs' / 'SDL3').resolve()], links)
+
+    def test_link_resolves_folder_from_bagron_root_modules(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'modules' / 'shared_bins').mkdir(parents=True)
+            root = Path(project_dir)
+            source = root / 'main.bg'
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                transformed, links, errors = extract_link_directives(
+                    ['#link "shared_bins"\n'],
+                    source,
+                    project_root=root,
+                    allow=True,
+                )
+
+            self.assertEqual([], errors)
+            self.assertEqual([(fake_bagron / 'modules' / 'shared_bins').resolve()], links)
+
+    def test_link_prefers_local_project_over_bagron_root(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'libs' / 'bins').mkdir(parents=True)
+            root = Path(project_dir)
+            (root / 'bins').mkdir(parents=True)
+            source = root / 'main.bg'
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                transformed, links, errors = extract_link_directives(
+                    ['#link "bins"\n'],
+                    source,
+                    project_root=root,
+                    allow=True,
+                )
+
+            self.assertEqual([], errors)
+            self.assertEqual([(root / 'bins').resolve()], links)
+
 if __name__ == '__main__':
     unittest.main()
 

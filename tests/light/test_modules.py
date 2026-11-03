@@ -750,6 +750,94 @@ class ModuleTests(unittest.TestCase):
         self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_from_left_[^"\s]*"?\(\)')
         self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_from_right_[^"\s]*"?\(\)')
 
+
+    def test_import_resolves_module_from_bagron_root_modules(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'modules').mkdir()
+            (fake_bagron / 'modules' / 'shared_tool.bg').write_text(
+                'public func tool() int32:\n'
+                '    return 99\n',
+                encoding='utf-8',
+            )
+
+            root = Path(project_dir)
+            main = root / '_main.bg'
+            main.write_text(
+                'import shared_tool\n'
+                'func main() int32:\n'
+                '    return shared_tool.tool()\n',
+                encoding='utf-8',
+            )
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                compiler = Compiler()
+                output = compiler.compile(main, executable=False)
+                module = Path(output).read_text(encoding='utf-8')
+
+            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_tool_[^"\s]*"?\(\)')
+
+    def test_import_resolves_module_from_bagron_root_libs(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'libs').mkdir()
+            (fake_bagron / 'libs' / 'global_lib.bg').write_text(
+                'public func answer() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+
+            root = Path(project_dir)
+            main = root / '_main.bg'
+            main.write_text(
+                'import global_lib\n'
+                'func main() int32:\n'
+                '    return global_lib.answer()\n',
+                encoding='utf-8',
+            )
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                compiler = Compiler()
+                output = compiler.compile(main, executable=False)
+                module = Path(output).read_text(encoding='utf-8')
+
+            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_answer_[^"\s]*"?\(\)')
+
+    def test_module_inside_bagron_modules_can_import_sibling(self):
+        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
+            fake_bagron = Path(fake_bagron_dir)
+            (fake_bagron / 'modules').mkdir()
+            (fake_bagron / 'modules' / 'dep.bg').write_text(
+                'public func dep_val() int32:\n'
+                '    return 10\n',
+                encoding='utf-8',
+            )
+            (fake_bagron / 'modules' / 'top.bg').write_text(
+                'import dep\n'
+                'public func top_val() int32:\n'
+                '    return dep.dep_val() + 5\n',
+                encoding='utf-8',
+            )
+
+            root = Path(project_dir)
+            main = root / '_main.bg'
+            main.write_text(
+                'import top\n'
+                'func main() int32:\n'
+                '    return top.top_val()\n',
+                encoding='utf-8',
+            )
+
+            from unittest.mock import patch
+            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
+                compiler = Compiler()
+                output = compiler.compile(main, executable=False)
+                module = Path(output).read_text(encoding='utf-8')
+
+            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_top_val_[^"\s]*"?\(\)')
+
 if __name__ == '__main__':
     unittest.main()
 

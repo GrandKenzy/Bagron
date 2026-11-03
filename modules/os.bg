@@ -1,0 +1,397 @@
+; Servicios generales del sistema operativo.
+
+#if OS, "windows"
+clause System 'windows'
+#elif OS, "linux"
+clause System 'linux'
+#else
+clause System 'auto'
+#end
+
+#if ARCH, "amd"
+clause Arch 'amd'
+#elif ARCH, "x86"
+clause Arch 'x86'
+#elif ARCH, "arm"
+clause Arch 'arm'
+#elif ARCH, "riscv32"
+clause Arch 'riscv32'
+#elif ARCH, "riscv64"
+clause Arch 'riscv64'
+#else
+clause Arch 'auto'
+#end
+
+; Acceso de archivos para la ABI de Windows.
+; Son enteros porque se pasan directamente a CreateFile y APIs relacionadas.
+
+
+public R: const uint32 = 2147483648
+public W: const uint32 = 1073741824
+public RW: const uint32 = 3221225472
+
+public ShareNone: const uint32 = 0
+public ShareR: const uint32 = 1
+public ShareW: const uint32 = 2
+public ShareRW: const uint32 = 3
+
+public CreateNew: const uint32 = 1
+public CreateAlways: const uint32 = 2
+public OpenExisting: const uint32 = 3
+public OpenAlways: const uint32 = 4
+public TruncateExisting: const uint32 = 5
+
+public AttrReadOnly: const uint32 = 1
+public AttrHidden: const uint32 = 2
+public AttrSystem: const uint32 = 4
+public AttrDirectory: const uint32 = 16
+public AttrArchive: const uint32 = 32
+public AttrNormal: const uint32 = 128
+public AttrTemporary: const uint32 = 256
+public AttrDeleteOnClose: const uint32 = 67108864
+public InvalidFileAttributes: const uint32 = 4294967295
+
+public FileBegin: const uint32 = 0
+public FileCurrent: const uint32 = 1
+public FileEnd: const uint32 = 2
+
+public opaque WINDOWS_FILE_DESCRIPTOR: void*
+public opaque LINUX_FILE_DESCRIPTOR: int32
+
+#if OS, "windows"
+extern windows "kernel32":
+    CreateFileA(
+        file_name *: const char,
+        desired_access: uint32,
+        share_mode: uint32,
+        security_attributes *: void,
+        creation_disposition: uint32,
+        flags_and_attributes: uint32,
+        template_file *: void
+    ) WINDOWS_FILE_DESCRIPTOR
+    CloseHandle(handle: WINDOWS_FILE_DESCRIPTOR) int32
+    DeleteFileA(file_name *: const char) int32
+    GetFileSizeEx(
+        file_handle: WINDOWS_FILE_DESCRIPTOR,
+        file_size *: int64
+    ) int32
+    GetFileAttributesA(file_name *: const char) uint32
+    MoveFileA(source *: const char, target *: const char) int32
+    CreateDirectoryA(path *: const char, security_attributes *: void) int32
+    RemoveDirectoryA(path *: const char) int32
+    Sleep(milliseconds: uint32) void
+    SwitchToThread() int32
+    GetCurrentProcessId() uint32
+    ExitProcess(code: int32) void
+    GetLastError() int32
+
+@unsafe
+private func create_file(
+    path: char[],
+    length: Len_t,
+    size: Size_t,
+    desired_access: uint32,
+    share_mode: uint32,
+    creation_disposition: uint32,
+    flags_and_attributes: uint32
+) WINDOWS_FILE_DESCRIPTOR:
+    return CreateFileA(
+        $path[0],
+        desired_access,
+        share_mode,
+        Null,
+        creation_disposition,
+        flags_and_attributes,
+        Null
+    )
+
+@unsafe
+private func close_file(handle: WINDOWS_FILE_DESCRIPTOR) int32:
+    if CloseHandle(handle) != 0:
+        return 0
+    return 1
+
+@unsafe
+public func remove_file(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    if DeleteFileA($path[0]) != 0:
+        return 0
+    return 1
+
+@unsafe
+public func file_exists(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) bool:
+    return GetFileAttributesA($path[0]) != InvalidFileAttributes
+
+@unsafe
+public func rename_file(
+    source: char[],
+    source_length: Len_t,
+    source_size: Size_t,
+    target: char[],
+    target_length: Len_t,
+    target_size: Size_t
+) int32:
+    if MoveFileA($source[0], $target[0]) != 0:
+        return 0
+    return 1
+
+@unsafe
+public func create_directory(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    if CreateDirectoryA($path[0], Null) != 0:
+        return 0
+    return 1
+
+@unsafe
+public func remove_directory(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    if RemoveDirectoryA($path[0]) != 0:
+        return 0
+    return 1
+
+@unsafe
+public func sleep_ms(milliseconds: uint32) void:
+    Sleep(milliseconds)
+    return
+
+@unsafe
+public func yield_thread() void:
+    SwitchToThread()
+    return
+
+@unsafe
+public func process_id() uint32:
+    return GetCurrentProcessId()
+
+@unsafe
+public func exit_process(code: int32) void:
+    ExitProcess(code)
+    return
+
+@unsafe
+public func file_size(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int64:
+    handle: WINDOWS_FILE_DESCRIPTOR = CreateFileA(
+        $path[0],
+        R,
+        ShareRW,
+        Null,
+        OpenExisting,
+        AttrNormal,
+        Null
+    )
+    result: int64 = 0
+    if GetFileSizeEx(handle, $result) == 0:
+        CloseHandle(handle)
+        return -1
+    CloseHandle(handle)
+    return result
+
+@unsafe
+public func last_error() int32:
+    return GetLastError()
+
+; Recurso de archivo con ownership del descriptor. `Del` invoca
+; __deletion__ y cierra el handle si todavía está abierto.
+public class File:
+    @unsafe
+    func __init__(
+        path: char[],
+        length: Len_t,
+        size: Size_t,
+        desired_access: uint32,
+        share_mode: uint32,
+        creation_disposition: uint32,
+        flags_and_attributes: uint32
+    ) void:
+        self.resource = CreateFileA(
+            $path[0],
+            desired_access,
+            share_mode,
+            Null,
+            creation_disposition,
+            flags_and_attributes,
+            Null
+        )
+        self.closed = false
+
+    @unsafe
+    func close() void:
+        if not self.closed:
+            close_file(self.resource)
+            self.closed = true
+        return
+
+    @unsafe
+    func __deletion__() void:
+        self.close()
+        return
+
+#elif OS, "linux"
+public O_RDONLY: const int32 = 0
+public O_WRONLY: const int32 = 1
+public O_RDWR: const int32 = 2
+public O_CREAT: const int32 = 64
+public O_TRUNC: const int32 = 512
+public O_APPEND: const int32 = 1024
+public MODE_USER_READ_WRITE: const uint32 = 420
+public MODE_USER_READ_WRITE_EXEC: const uint32 = 493
+
+extern c "c":
+    open(
+        file_name *: const char,
+        open_flags: int32,
+        mode: uint32
+    ) LINUX_FILE_DESCRIPTOR
+    close(file_descriptor: LINUX_FILE_DESCRIPTOR) int32
+    unlink(file_name *: const char) int32
+    access(file_name *: const char, mode: int32) int32
+    rename(source *: const char, target *: const char) int32
+    mkdir(path *: const char, mode: uint32) int32
+    rmdir(path *: const char) int32
+    usleep(microseconds: uint32) int32
+    sched_yield() int32
+    getpid() uint32
+    exit(code: int32) void
+    lseek(
+        file_descriptor: LINUX_FILE_DESCRIPTOR,
+        offset: int64,
+        origin: int32
+    ) int64
+    __errno_location() *: int32
+
+@unsafe
+private func create_file(
+    path: char[],
+    length: Len_t,
+    size: Size_t,
+    open_flags: int32,
+    mode: uint32
+) LINUX_FILE_DESCRIPTOR:
+    return open($path[0], open_flags, mode)
+
+@unsafe
+private func close_file(file_descriptor: LINUX_FILE_DESCRIPTOR) int32:
+    return close(file_descriptor)
+
+@unsafe
+public func remove_file(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    return unlink($path[0])
+
+@unsafe
+public func file_exists(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) bool:
+    return access($path[0], 0) == 0
+
+@unsafe
+public func rename_file(
+    source: char[],
+    source_length: Len_t,
+    source_size: Size_t,
+    target: char[],
+    target_length: Len_t,
+    target_size: Size_t
+) int32:
+    return rename($source[0], $target[0])
+
+@unsafe
+public func create_directory(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    return mkdir($path[0], 493)
+
+@unsafe
+public func remove_directory(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int32:
+    return rmdir($path[0])
+
+@unsafe
+public func sleep_ms(milliseconds: uint32) void:
+    usleep(milliseconds * 1000)
+    return
+
+@unsafe
+public func yield_thread() void:
+    sched_yield()
+    return
+
+@unsafe
+public func process_id() uint32:
+    return getpid()
+
+@unsafe
+public func exit_process(code: int32) void:
+    exit(code)
+    return
+
+@unsafe
+public func file_size(
+    path: char[],
+    length: Len_t,
+    size: Size_t
+) int64:
+    file_descriptor: LINUX_FILE_DESCRIPTOR = open($path[0], 0, 0)
+    result: int64 = lseek(file_descriptor, 0, 2)
+    lseek(file_descriptor, 0, 0)
+    close(file_descriptor)
+    return result
+
+@unsafe
+public func last_error() int32:
+    error_pointer *: int32 = __errno_location()
+    return (error_pointer)
+
+; Recurso de archivo con ownership del descriptor para Linux.
+public class File:
+    @unsafe
+    func __init__(
+        path: char[],
+        length: Len_t,
+        size: Size_t,
+        open_flags: int32,
+        mode: uint32
+    ) void:
+        self.resource = open($path[0], open_flags, mode)
+        self.closed = false
+
+    @unsafe
+    func close() void:
+        if not self.closed:
+            close_file(self.resource)
+            self.closed = true
+        return
+
+    @unsafe
+    func __deletion__() void:
+        self.close()
+        return
+
+#end

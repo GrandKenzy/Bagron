@@ -358,26 +358,46 @@ def bind_aliases(compiler: Compiler) -> None:
 
 
 def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[Path]:
+    # NOTA: Devuelve posibles rutas para el modulo respetando prioridad de busqueda:
+    # 1) Modulos hermanos si el archivo esta dentro de un arbol de modulos reconocido.
+    # 2) Carpeta modules/ del proyecto local.
+    # 3) Raiz del proyecto local (compatibilidad legacy).
+    # 4) Carpeta modules/ de la instalacion de Bagron.
+    # 5) Carpeta libs/ de la instalacion de Bagron.
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
+
+    from core.globvars import BAGRON_ROOT
 
     relative = Path(name)
     filename = relative.with_suffix('.bg')
     modules_root = project_root / 'modules'
-    roots = [modules_root]
-    try:
-        current_file.relative_to(modules_root)
-    except ValueError:
-        pass
-    else:
-        # Keep sibling and nested-module imports convenient, but only inside
-        # the canonical source tree.  In particular, ``libs`` is never an
-        # implicit source search path.
-        roots.insert(0, current_file.parent)
+    bagron_modules = BAGRON_ROOT / 'modules'
+    bagron_libs = BAGRON_ROOT / 'libs'
 
-    # The project root remains a compatibility fallback for older projects.
-    # New projects should put every importable .bg module under modules/.
+    roots: list[Path] = [modules_root]
+
+    # Permitir importaciones relativas entre hermanos si estamos dentro de modules/
+    # del proyecto o en las carpetas modules/ o libs/ de Bagron.
+    for parent_root in (modules_root, bagron_modules, bagron_libs):
+        try:
+            current_file.relative_to(parent_root)
+        except ValueError:
+            continue
+        else:
+            if current_file.parent not in roots:
+                roots.insert(0, current_file.parent)
+            break
+
+    # La raiz del proyecto como fallback retrocompatible.
     roots.append(project_root)
+
+    # Carpetas globales de Bagron: modules/ y libs/.
+    if bagron_modules not in roots:
+        roots.append(bagron_modules)
+    if bagron_libs not in roots:
+        roots.append(bagron_libs)
+
     candidates: list[Path] = []
     seen: set[Path] = set()
     for root in roots:
@@ -402,11 +422,15 @@ def resolve_module_path(
     name: str,
     current_file: Path,
 ) -> Path | None:
+    # NOTA: Resuelve un nombre de modulo en una ruta fisica dentro del proyecto o Bagron.
+    from core.globvars import BAGRON_ROOT
+
     project_root = compiler.project_root
     if project_root is None:
         project_root = current_file.parent
     project_root = project_root.resolve()
     current_file = current_file.resolve()
+    bagron_root = BAGRON_ROOT.resolve()
 
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         compiler.error(
@@ -414,7 +438,9 @@ def resolve_module_path(
             'simple sin rutas ni extensiones'
         )
         return None
-    if not _is_within(current_file, project_root):
+
+    allowed_roots = [project_root, bagron_root]
+    if not any(_is_within(current_file, root) for root in allowed_roots):
         compiler.error(
             f'El modulo importador esta fuera de la raiz del proyecto: '
             f'{current_file}'
@@ -425,7 +451,7 @@ def resolve_module_path(
         candidate = candidate.resolve()
         if (
             candidate.suffix == '.bg'
-            and _is_within(candidate, project_root)
+            and any(_is_within(candidate, root) for root in allowed_roots)
             and candidate.is_file()
         ):
             return candidate

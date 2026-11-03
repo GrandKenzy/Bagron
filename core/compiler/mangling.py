@@ -26,6 +26,7 @@ def _part(value: object) -> str:
 
 
 def module_key(module_path: object | None, project_root: object | None = None) -> str:
+    # NOTA: Produce una clave canonica del modulo relativa a la raiz del proyecto o de Bagron.
     if module_path is None:
         return 'module'
     path = str(module_path).replace('\\', '/')
@@ -33,6 +34,10 @@ def module_key(module_path: object | None, project_root: object | None = None) -
         root = str(project_root).replace('\\', '/').rstrip('/') + '/'
         if path.startswith(root):
             path = path[len(root):]
+    from core.globvars import BAGRON_ROOT
+    bagron_root_str = str(BAGRON_ROOT).replace('\\', '/').rstrip('/') + '/'
+    if path.startswith(bagron_root_str):
+        path = path[len(bagron_root_str):]
     return _part(PurePath(path).with_suffix('').as_posix())
 
 

@@ -1,0 +1,73 @@
+
+
+; Tiempo UTC del sistema mediante la ABI de Windows.
+; GetSystemTimeAsFileTime escribe FILETIME: intervalos de 100 ns desde 1601.
+
+clause System 'windows'
+clause Arch 'amd'
+
+extern windows "kernel32":
+    GetSystemTimeAsFileTime(lpSystemTimeAsFileTime *: int64) void
+    QueryPerformanceCounter(lpPerformanceCount *: int64) int32
+    QueryPerformanceFrequency(lpFrequency *: int64) int32
+
+; Devuelve el tiempo Unix actual en segundos UTC.
+@unsafe
+public func time_unix_seconds() int64:
+    file_time: int64 = 0
+    GetSystemTimeAsFileTime($file_time)
+    if file_time < 116444736000000000:
+        return 0
+    file_time -= 116444736000000000
+    return file_time / 10000000
+
+; Devuelve el tiempo Unix actual en milisegundos UTC.
+@unsafe
+public func time_unix_milliseconds() int64:
+    file_time: int64 = 0
+    GetSystemTimeAsFileTime($file_time)
+    if file_time < 116444736000000000:
+        return 0
+    file_time -= 116444736000000000
+    return file_time / 10000
+
+; Wrappers cortos para el uso habitual.
+@unsafe
+public inline func now() int64:
+    return time_unix_seconds()
+
+@unsafe
+public inline func now_ms() int64:
+    return time_unix_milliseconds()
+
+; Reloj monotónico de alta resolución para mediciones de duración.
+@unsafe
+public func time_ticks() int64:
+    ticks: int64 = 0
+    if QueryPerformanceCounter($ticks) == 0:
+        return 0
+    return ticks
+
+@unsafe
+public func time_frequency() int64:
+    frequency: int64 = 0
+    if QueryPerformanceFrequency($frequency) == 0:
+        return 0
+    return frequency
+
+@unsafe
+public func time_microseconds(start: int64, end: int64) int64:
+    if end < start:
+        return 0
+
+    frequency: int64 = time_frequency()
+    if frequency <= 0:
+        return 0
+
+    elapsed: int64 = end
+    elapsed -= start
+    seconds: int64 = elapsed / frequency
+    remainder: int64 = elapsed % frequency
+    microseconds: int64 = seconds * 1000000
+    microseconds += (remainder * 1000000) / frequency
+    return microseconds

@@ -1,0 +1,57 @@
+; Operaciones matemáticas básicas.
+
+#if OS, "windows"
+clause System 'windows'
+#elif OS, "linux"
+clause System 'linux'
+#else
+clause System 'auto'
+#end
+
+#if ARCH, "amd"
+clause Arch 'amd'
+#elif ARCH, "x86"
+clause Arch 'x86'
+#elif ARCH, "arm"
+clause Arch 'arm'
+#elif ARCH, "riscv32"
+clause Arch 'riscv32'
+#elif ARCH, "riscv64"
+clause Arch 'riscv64'
+#else
+clause Arch 'auto'
+#end
+
+; Raíz cuadrada real por Newton-Raphson. No cruza la ABI del runtime C.
+public func sqrt(value: double) double:
+    if value <= 0.0:
+        return 0.0
+
+    guess: double = value
+    if guess < 1.0:
+        guess = 1.0
+
+    for iteration: uint32 ran (0, 32, 1):
+        guess = (guess + value / guess) / 2.0
+
+    return guess
+
+; Raíz cuadrada entera sin convertir a double.
+; Devuelve la raíz truncada: usqrt(15) = 3.
+public func usqrt(value: uint64) uint64:
+    if value < 2:
+        return value
+
+    low: uint64 = 1
+    high: uint64 = value
+    result: uint64 = 1
+
+    while low <= high:
+        midpoint: uint64 = (low + high) / 2
+        if midpoint <= value / midpoint:
+            result = midpoint
+            low = midpoint + 1
+        else:
+            high = midpoint - 1
+
+    return result
