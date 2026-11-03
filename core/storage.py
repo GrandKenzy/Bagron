@@ -188,6 +188,7 @@ class Storage(diagnostic.Diagnostics):
                 origin is None
                 or active is None
                 or origin == active
+                or getattr(symbol, 'is_method', False)
                 or (
                     name is not None
                     and (
