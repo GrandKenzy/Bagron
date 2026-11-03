@@ -31,3 +31,9 @@
 - Ampliada la documentación de directivas y cláusulas con preprocesador,
   `#link`, `library`, `#prep`, targets, perfiles y cláusulas auxiliares.
 
+## Instalador y CLI
+
+- Añadido `installer.py` para instalación automatizada de Bagron en `%USERPROFILE%/Bagron/` con descarga desde GitHub y dependencias gestionadas por `vnma`.
+- Añadido soporte para `-o <salida.exe>` y `--execute` (`-e`) en la CLI de Bagron (`main.py` y lanzador `Bagron.cmd`).
+- Creación automática de directorios `libs/` y `modules/` en la instalación del usuario.
+
