@@ -1,10 +1,11 @@
 from gram import combinators as cmb
+from gram import lexer
 
 from core.frontend.syntax.items.value import TYPE
 
 
-# IDENT = NUMBER,
-# IDENT
+# Miembros de enumeraciones nominales.
+# El delimitador entre miembros es la coma ',', pero la coma final en el último miembro es opcional.
 class ENUM_ITEM(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('IDENT'),
@@ -14,7 +15,6 @@ class ENUM_ITEM(cmb.RuleItem):
                 cmb.MatchToken('NUMBER'),
             )
         ),
-        cmb.MatchToken('COMMA')
     )
     nodeable = True
 
@@ -22,11 +22,14 @@ class ENUM_ITEM(cmb.RuleItem):
 class ENUM_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
-        cmb.Some(
-            cmb.Alt(
-                cmb.Ref(ENUM_ITEM),
-                cmb.MatchKeyword('pass'),
-            )
+        cmb.Alt(
+            cmb.Separator(
+                values=cmb.Ref(ENUM_ITEM),
+                sep=lexer.Token.COMMA,
+                min=1,
+                allow_trailing=True,
+            ),
+            cmb.MatchKeyword('pass'),
         ),
         cmb.MatchToken('DEDENT'),
     )

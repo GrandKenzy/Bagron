@@ -76,6 +76,13 @@ class DEL(cmb.RuleItem):
     )
 
 
+class GLOBAL(cmb.RuleItem):
+    nodeable = True
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('global'),
+        cmb.MatchToken('IDENT'),
+    )
+    
 # for i: uint32 ran (inicio, limite, paso):
 # for i: int32 in values:
 class FOR_SIGNATURE(cmb.RuleItem):
@@ -109,37 +116,29 @@ class FOR_SIGNATURE(cmb.RuleItem):
     
 # CUERPOS
 
-class BLOCK_STATEMENT(cmb.RuleItem):
-    nodeable = False
-    entrypoint = cmb.Alt(
-        cmb.Ref(ENUM), cmb.Ref(FLAGS), cmb.Ref(STRUCT), cmb.Ref(MOLD),
-        cmb.Ref(WHILE), cmb.Ref(FOR), cmb.Ref(IF),
-        cmb.Ref(VAR_ASSIGNATION), cmb.Ref(CALL), cmb.Ref(DEL),
-        cmb.Ref(VAR), cmb.Ref(RETURN),
-        cmb.MatchGroup('skipers'), cmb.MatchKeyword('pass')
-    )
-
-
-class NEXT_BLOCK_STATEMENT(cmb.RuleItem):
-    nodeable = False
-    entrypoint = cmb.Alt(
-        cmb.Seq(
-            cmb.Many(cmb.MatchToken('NEWLINE')),
-            cmb.Not(cmb.SameLine(cmb.Peek(cmb.Ref(BLOCK_STATEMENT)))),
-            cmb.Ref(BLOCK_STATEMENT),
-        ),
-        cmb.Seq(cmb.Expected.newline(), cmb.Ref(BLOCK_STATEMENT)),
-    )
-
-
 class STATEMENT_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
-        cmb.MatchToken('NEWLINE'),
         cmb.MatchToken('INDENT'),
-        cmb.Ref(BLOCK_STATEMENT),
-        cmb.Many(cmb.Ref(NEXT_BLOCK_STATEMENT)),
-        cmb.Many(cmb.MatchToken('NEWLINE')),
+        cmb.Some(
+            cmb.Alt(
+                cmb.Ref(ENUM),
+                cmb.Ref(FLAGS),
+                cmb.Ref(STRUCT),
+                cmb.Ref(MOLD),
+                cmb.Ref(WHILE),
+                cmb.Ref(FOR),
+                cmb.Ref(IF),
+                cmb.Ref(VAR_ASSIGNATION),
+                cmb.Ref(CALL),
+                cmb.Ref(DEL),
+                cmb.Ref(GLOBAL),
+                cmb.Ref(VAR),
+                cmb.Ref(RETURN),
+                cmb.MatchGroup('skipers'),
+                cmb.MatchKeyword('pass')
+            )
+        ),
         cmb.MatchToken('DEDENT')
     )
     
@@ -176,4 +175,5 @@ __all__ = [
     'IF',
     'WHILE',
     'DEL',
+    'GLOBAL',
 ]

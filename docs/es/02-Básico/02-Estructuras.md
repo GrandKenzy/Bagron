@@ -109,12 +109,13 @@ cualquier tipo entero escalar (`int8`/`int16`/`int32`/`int64`, `uint8`/`uint16`/
 enum Estado uint8:
     INACTIVO,
     ACTIVO = 4,
-    PAUSADO,
+    PAUSADO
     ; valores: 0, 4 y 5
 ```
 
 Los miembros automáticos comienzan en `0`; un valor explícito fija el miembro y
-el siguiente automático continúa desde ese valor más uno. Los miembros
+el siguiente automático continúa desde ese valor más uno. La coma final en el
+último miembro es opcional. Los miembros
 duplicados y los valores fuera del rango del tipo base se rechazan. En el
 backend, el `enum` conserva su nombre nominal, pero usa la representación y el
 ancho del tipo base.

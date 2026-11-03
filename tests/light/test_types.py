@@ -256,6 +256,34 @@ class TypeSemanticTests(unittest.TestCase):
         self.assertEqual([1, 0, 0], [field.value_info.value for field in flags.fields])
         self.assertEqual([0, 1, 2], [field.bit_offset for field in flags.fields])
 
+    def test_enum_trailing_comma_is_optional(self):
+        compiler = self.compile_source(
+            'enum Single uint8:\n'
+            '    IDENT = 0\n'
+            'enum Multi int8:\n'
+            '    INACTIVO,\n'
+            '    ACTIVO = 4,\n'
+            '    PAUSADO\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+        single = compiler.storage.types['Single']
+        self.assertEqual([0], [m.value for m in single.members])
+        self.assertEqual(['IDENT'], [m.name for m in single.members])
+
+        multi = compiler.storage.types['Multi']
+        self.assertEqual([0, 4, 5], [m.value for m in multi.members])
+        self.assertEqual(['INACTIVO', 'ACTIVO', 'PAUSADO'], [m.name for m in multi.members])
+
+        with self.assertRaises(CompilationError):
+            self.compile_source(
+                'enum SinComas:\n'
+                '    A = 0\n'
+                '    B = 1\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
     def test_rejects_duplicate_members_and_fields(self):
         with self.assertRaisesRegex(CompilationError, 'miembro Estado.ACTIVO'):
             self.compile_source(
