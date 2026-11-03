@@ -98,6 +98,7 @@ class InstallerTests(unittest.TestCase):
         linux_job = workflow.split('  package-linux:', 1)[1].split('  package-windows:', 1)[0]
         windows_job = workflow.split('  package-windows:', 1)[1].split('  publish:', 1)[0]
         publish_job = workflow.split('  publish:', 1)[1]
+        self.assertTrue((Path(__file__).resolve().parents[2] / 'bagron-installer.spec').is_file())
 
         self.assertNotIn('package_linux.py', workflow)
         self.assertNotIn('package_windows.py', workflow)
