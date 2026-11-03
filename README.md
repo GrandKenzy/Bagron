@@ -45,9 +45,10 @@ El comportamiento estricto forma parte del flujo normal. La CLI actual no
 expone un modo global `strict`; `@unsafe` es una excepción localizada por
 función y no elimina las reglas de tipos, ABI ni de `main`.
 
-Las suites históricas de pruebas, los ejemplos ejecutables y los benchmarks
-anteriores se retiraron para reconstruirlos con una cobertura nueva. En este
-momento el repositorio no incluye una suite automatizada de regresión activa.
+Las pruebas existentes se conservan provisionalmente bajo `tests/light/` y
+`tests/aggressive/`, con los antiguos ejemplos de integración en
+`tests/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>` y serán
+reemplazadas por una batería moderna y más agresiva.
 
 ---
 
