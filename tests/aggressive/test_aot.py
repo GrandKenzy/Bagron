@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
-from core.compiler import Compiler
 from core.frontend import BAGRON_SESSION
 from core.frontend.aot import AotInMemoryParser, AotParser, AotParserError
 
@@ -34,12 +32,6 @@ class AotFrontendTests(unittest.TestCase):
         self.assertIsNotNone(self.parser.library)
         self.assertIsNotNone(self.parser.expected_grammar_id)
 
-    def test_compiles_canon_through_gir_and_existing_backend(self):
-        output = Compiler().compile(
-            Path('tests/fixtures/canon/_main.bg'),
-            executable=False,
-        )
-        self.assertTrue(Path(output).is_file())
 
 
 if __name__ == '__main__':

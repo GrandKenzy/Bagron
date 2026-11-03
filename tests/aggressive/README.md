@@ -29,6 +29,3 @@ La compilación y las pruebas fallan si la biblioteca FFI no está disponible.
 El artefacto esperado es `build/aot/bagron_aot.dll` en Windows o su equivalente
 compartido en Linux/macOS. No existe una ruta CLI ni un parser Python alternativo.
 
-El corpus de integración utilizado por `test_aot.py` está en
-`tests/fixtures/canon/`.
-

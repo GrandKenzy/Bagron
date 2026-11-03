@@ -46,8 +46,8 @@ expone un modo global `strict`; `@unsafe` es una excepción localizada por
 función y no elimina las reglas de tipos, ABI ni de `main`.
 
 Las pruebas existentes se conservan provisionalmente bajo `tests/light/` y
-`tests/aggressive/`, con los antiguos ejemplos de integración en
-`tests/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>` y serán
+`tests/aggressive/`, con los archivos de soporte de integración en
+`tests/aggressive/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>` y serán
 reemplazadas por una batería moderna y más agresiva.
 
 ---
