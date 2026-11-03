@@ -346,7 +346,15 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             target.name in UNSIGNED_INTEGER_TYPES
             and source_type.name in UNSIGNED_INTEGER_TYPES
         )
-        return same_sign and target_width > source_width
+        if same_sign and target_width > source_width:
+            return True
+        # NOTA: Los enteros sin signo escalan de forma segura a usize cuando caben en el ancho
+        # de palabra del target, y de forma analoga los enteros con signo hacia isize.
+        if target.name == 'usize' and source_type.name in UNSIGNED_INTEGER_TYPES:
+            return target_width >= source_width
+        if target.name == 'isize' and source_type.name in SIGNED_INTEGER_TYPES:
+            return target_width >= source_width
+        return False
 
     return _same_shape(target, source_type)
 
@@ -380,4 +388,9 @@ def _integer_common_type(left: ValueInfo, right: ValueInfo) -> TypeSpec | None:
         return left_type
     if right_width > left_width:
         return right_type
+    if left_width == right_width:
+        if left_type.name in {'usize', 'isize'}:
+            return left_type
+        if right_type.name in {'usize', 'isize'}:
+            return right_type
     return None
