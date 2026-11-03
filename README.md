@@ -174,9 +174,8 @@ El instalador crea `Bagron.cmd` y `Bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.0.3-Setup.exe` y ejecutarlo directamente. El archivo
-`Bagron-1.0.3-windows-x86_64.zip` se conserva como paquete manual con las
-fuentes y el runtime AOT para instalaciones sin el instalador gráfico.
+`Bagron-1.0.3-Setup.exe` y ejecutarlo directamente. La release solo publica
+este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
 ### Linux
 
@@ -196,11 +195,9 @@ chmod +x Bagron-1.0.3-linux-x86_64
 ./Bagron-1.0.3-linux-x86_64
 ```
 
-El archivo `Bagron-1.0.3-linux-x86_64.tar.gz` se conserva como paquete manual;
-extráelo y ejecuta `./install.sh` cuando necesites inspeccionar o modificar las
-fuentes antes de instalar. En ambos casos el instalador coloca los lanzadores
-`bagron` y `Bagron` en `~/.local/bin`; si esa carpeta no está en el PATH,
-añádela en el perfil de tu shell:
+La release solo publica este ejecutable Linux. El instalador coloca los
+lanzadores `bagron` y `Bagron` en `~/.local/bin`; si esa carpeta no está en el
+PATH, añádela en el perfil de tu shell:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -214,7 +211,7 @@ python3 "$HOME/Bagron/installer.py" --uninstall
 
 ## Extensión para VS Code
 
-La distribución incluye el paquete [`bagron-language-support.vsix`](tools/vscode/bagron-language-support.vsix).
+El repositorio incluye el paquete [`bagron-language-support.vsix`](tools/vscode/bagron-language-support.vsix).
 Consulta la [guía de instalación del VSIX](docs/es/01-Arquitectura/03-instalacion-vscode.md)
 para instalarlo manualmente o mediante `Bagron --vscode install`.
 

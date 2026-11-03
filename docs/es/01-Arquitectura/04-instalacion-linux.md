@@ -1,7 +1,8 @@
 # Instalación de Bagron en Linux
 
-La distribución Linux de Bagron se entrega como un paquete fuente reproducible
-que instala sus dependencias mediante `vnma` y genera lanzadores POSIX.
+La distribución Linux de Bagron se entrega como un instalador ELF compilado.
+El instalador coloca los lanzadores POSIX en la instalación del usuario y la
+release no publica paquetes fuente comprimidos.
 
 ## Requisitos
 
@@ -46,15 +47,14 @@ bagron --help
 bagron --execute examples/01_basico.bg -o build/ejemplo
 ```
 
-## Instalación desde el paquete
+## Instalación desde el ejecutable compilado
 
-Descarga `Bagron-1.0.3-linux-x86_64.tar.gz` desde el release, extráelo y
-ejecuta:
+Descarga `Bagron-1.0.3-linux-x86_64` desde el release, hazlo ejecutable y
+ejecútalo:
 
 ```bash
-tar -xzf Bagron-1.0.3-linux-x86_64.tar.gz
-cd Bagron-1.0.3
-./install.sh
+chmod +x Bagron-1.0.3-linux-x86_64
+./Bagron-1.0.3-linux-x86_64
 ```
 
 Para desinstalar:

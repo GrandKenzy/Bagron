@@ -91,22 +91,40 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('Bagron-1.0.3/build/aot/gram_parser_manifest.json', names)
             self.assertFalse(any('/vendor/' in name for name in names))
 
-    def test_windows_release_publishes_compiled_installer(self):
+    def test_release_publishes_only_compiled_installers(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml').read_text(
             encoding='utf-8'
         )
         linux_job = workflow.split('  package-linux:', 1)[1].split('  package-windows:', 1)[0]
         windows_job = workflow.split('  package-windows:', 1)[1].split('  publish:', 1)[0]
+        publish_job = workflow.split('  publish:', 1)[1]
 
+        self.assertNotIn('package_linux.py', workflow)
+        self.assertNotIn('package_windows.py', workflow)
+        self.assertNotIn('.tar.gz', workflow)
+        self.assertNotIn('.zip', workflow)
+        self.assertNotIn('.vsix', workflow)
         self.assertIn('python -m pip install pyinstaller', linux_job)
         self.assertIn('python -m PyInstaller --clean --noconfirm', linux_job)
         self.assertIn('Bagron-${GITHUB_REF_NAME}-linux-x86_64', linux_job)
-        self.assertIn('path: dist/*', linux_job)
+        self.assertIn('path: dist/Bagron-${{ github.ref_name }}-linux-x86_64', linux_job)
         self.assertIn('python -m pip install pyinstaller', windows_job)
         self.assertIn('python -m PyInstaller --clean --noconfirm', windows_job)
         self.assertIn('bagron-installer.spec', windows_job)
         self.assertIn('Bagron-${env:GITHUB_REF_NAME}-Setup.exe', windows_job)
-        self.assertIn('path: dist/*', windows_job)
+        self.assertIn('path: dist/Bagron-${{ github.ref_name }}-Setup.exe', windows_job)
+        self.assertIn('gh release delete-asset', publish_job)
+        self.assertIn('--notes-file "$notes_file"', publish_job)
+
+    def test_canonical_changelog_is_english_and_unique(self):
+        changelog_dir = Path(__file__).resolve().parents[2] / 'changelog'
+        canonical = changelog_dir / 'changelog_1.0.3.md'
+        content = canonical.read_text(encoding='utf-8')
+
+        self.assertTrue(content.startswith('# Changelog 1.0.3\n'))
+        self.assertIn('## Modules and Linking', content)
+        self.assertNotIn('Distribución Linux', content)
+        self.assertEqual(['changelog_1.0.3.md'], sorted(path.name for path in changelog_dir.iterdir()))
 
 
 if __name__ == '__main__':

@@ -26,8 +26,9 @@ code --install-extension .\tools\vscode\bagron-language-support.vsix --force
 También puedes abrir VS Code, seleccionar `Extensions: Install from VSIX...`
 en la paleta de comandos y elegir `tools/vscode/bagron-language-support.vsix`.
 
-En una versión publicada, descarga el archivo `.vsix` desde los assets del
-release correspondiente y ejecuta el mismo comando con la ruta descargada.
+Las releases de Bagron publican únicamente los instaladores ejecutables. Para
+instalar la extensión desde una copia del repositorio, usa la ruta local
+`tools/vscode/bagron-language-support.vsix` con el mismo comando.
 
 Para comprobar la instalación, abre un archivo `.bg` y verifica que VS Code
 muestre el modo de lenguaje de Bagron en la barra de estado. Para reinstalar

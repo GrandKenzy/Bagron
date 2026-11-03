@@ -1,32 +1,32 @@
 # Changelog 1.0.3
 
-## Distribución Linux
+## Modules and Linking
 
-- El instalador de Bagron ahora genera lanzadores POSIX (`bagron` y `Bagron`)
-  con permisos ejecutables.
-- Las instalaciones Linux crean enlaces en `~/.local/bin` y la desinstalación
-  retira únicamente los enlaces asociados a esa instalación.
-- Las descargas del instalador están fijadas al tag de la versión en lugar de
-  seguir silenciosamente la rama `main`.
-- Se añade `install.sh` para instalar desde Internet o desde un paquete
-  extraído.
-- Se añade el paquete reproducible `Bagron-1.0.3-linux-x86_64.tar.gz` y un
-  workflow de GitHub Actions que prueba Windows/Linux y publica sus artefactos.
-- El workflow construye el parser AOT de Gram para ambos sistemas; el paquete
-  Linux incluye `libbagron_aot.so` y su manifiesto, y el instalador puede
-  reconstruirlo cuando esos binarios no están disponibles.
-- Se añade el paquete Windows `Bagron-1.0.3-windows-x86_64.zip` con
-  `bagron_aot.dll` y el instalador rechaza configuraciones incompletas.
-- La release Windows publica también `Bagron-1.0.3-Setup.exe`, generado con
-  PyInstaller desde `bagron-installer.spec`; el ZIP queda como paquete manual.
-- La release Linux publica `Bagron-1.0.3-linux-x86_64` como instalador ELF
-  compilado; el `.tar.gz` queda como paquete manual.
-- La instalación siempre genera un `vnma.toml` de producción con Gram desde
-  GitHub y descarta locks o dependencias locales del checkout.
+- **Search in base Bagron directories (`modules/` and `libs/`)**:
+  - `import`: Now checks the canonical `modules/` and `libs/` directories located in the Bagron installation root (`BAGRON_ROOT`), allowing external projects to consume standard modules (`string`, `asmutils`, `io`, etc.) without copying them locally.
+  - Standard imported modules can in turn import sibling modules within Bagron without triggering out-of-root module errors.
+  - `#link`: The `#link "<path>"` directive now checks within the local project and, if not found locally, searches in `BAGRON_ROOT / 'libs'`, `BAGRON_ROOT / 'modules'`, or the Bagron root (including `bagron/<subfolder>` prefixes).
+  - `mangling`: Internal symbol keys for modules originating from `BAGRON_ROOT` are normalized canonically and deterministically relative to the installation root.
 
-## Documentación
+## Standard Library
 
-- README y documentación de arquitectura incluyen requisitos, instalación y
-  desinstalación en Linux.
-- La documentación conserva la instalación del VSIX de VS Code para ambos
-  sistemas.
+- Standard modules added to `modules/` in the Bagron repository:
+  - `string.bg` (safe and cross-platform chain utilities with execution trap validation)
+  - `asmutils.bg` (cross-platform abstractions for execution traps and breakpoints)
+  - `alphabet.bg`, `io.bg`, `math.bg`, `mem.bg`, `mmap.bg`, `os.bg`, `time.bg`
+
+## Semantic Resolution and Methods
+
+- **Module function calls from homonymous methods**:
+  - Fixed call resolution so that when a class method invokes a free or external function with the same name (such as `connect(...)` inside `Socket.connect`), the call resolves to the module-level function instead of being intercepted as implicit recursion on the method.
+  - `Storage.resolve_function_for_module` and `Storage.resolve_variable_for_module` now consistently query the root module storage (`_module_root()`) and canonicalize paths across Windows and Linux.
+
+## Packaging and Documentation
+
+- Installer and project template metadata are aligned with version `1.0.2`.
+- Added documentation for installing the bundled VS Code extension with `Bagron --vscode install`, the VS Code command palette, or `code --install-extension`.
+- The bundled VSIX metadata now reports version `1.0.2`.
+
+## Diagnostics
+
+- Compiler and Gram telemetry no longer persist lexer, parser, or compiler logs during normal builds; diagnostics remain available in memory for error reporting.
