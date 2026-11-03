@@ -95,8 +95,13 @@ class InstallerTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[2] / '.github' / 'workflows' / 'release.yml').read_text(
             encoding='utf-8'
         )
+        linux_job = workflow.split('  package-linux:', 1)[1].split('  package-windows:', 1)[0]
         windows_job = workflow.split('  package-windows:', 1)[1].split('  publish:', 1)[0]
 
+        self.assertIn('python -m pip install pyinstaller', linux_job)
+        self.assertIn('python -m PyInstaller --clean --noconfirm', linux_job)
+        self.assertIn('Bagron-${GITHUB_REF_NAME}-linux-x86_64', linux_job)
+        self.assertIn('path: dist/*', linux_job)
         self.assertIn('python -m pip install pyinstaller', windows_job)
         self.assertIn('python -m PyInstaller --clean --noconfirm', windows_job)
         self.assertIn('bagron-installer.spec', windows_job)

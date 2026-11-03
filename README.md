@@ -188,10 +188,19 @@ desde el release publicado:
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
 ```
 
-También puede descargarse `Bagron-1.0.3-linux-x86_64.tar.gz`, extraerse y
-ejecutar `./install.sh`. El instalador coloca los lanzadores `bagron` y
-`Bagron` en `~/.local/bin`; si esa carpeta no está en el PATH, añádela en el
-perfil de tu shell:
+Desde el release puedes descargar el instalador compilado
+`Bagron-1.0.3-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+
+```bash
+chmod +x Bagron-1.0.3-linux-x86_64
+./Bagron-1.0.3-linux-x86_64
+```
+
+El archivo `Bagron-1.0.3-linux-x86_64.tar.gz` se conserva como paquete manual;
+extráelo y ejecuta `./install.sh` cuando necesites inspeccionar o modificar las
+fuentes antes de instalar. En ambos casos el instalador coloca los lanzadores
+`bagron` y `Bagron` en `~/.local/bin`; si esa carpeta no está en el PATH,
+añádela en el perfil de tu shell:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"

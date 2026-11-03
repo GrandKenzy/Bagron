@@ -19,6 +19,8 @@
   `bagron_aot.dll` y el instalador rechaza configuraciones incompletas.
 - La release Windows publica también `Bagron-1.0.3-Setup.exe`, generado con
   PyInstaller desde `bagron-installer.spec`; el ZIP queda como paquete manual.
+- La release Linux publica `Bagron-1.0.3-linux-x86_64` como instalador ELF
+  compilado; el `.tar.gz` queda como paquete manual.
 - La instalación siempre genera un `vnma.toml` de producción con Gram desde
   GitHub y descarta locks o dependencias locales del checkout.
 
