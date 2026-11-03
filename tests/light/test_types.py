@@ -137,6 +137,43 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_signed_integers_widen_safely_to_isize(self):
+        self.compile_source(
+            'func inspect(size: isize) isize:\n'
+            '    return size\n'
+            'func main() int32:\n'
+            '    val8: int8 = -1\n'
+            '    val16: int16 = -2\n'
+            '    val32: int32 = -3\n'
+            '    val64: int64 = -4\n'
+            '    s1: isize = val8\n'
+            '    s2: isize = val16\n'
+            '    s3: isize = val32\n'
+            '    s4: isize = val64\n'
+            '    inspect(val8)\n'
+            '    inspect(val16)\n'
+            '    inspect(val32)\n'
+            '    inspect(val64)\n'
+            '    return 0\n'
+        )
+
+        # isize no puede degradarse (narrowing) a enteros menores ni a int64
+        with self.assertRaisesRegex(CompilationError, 'no coincide con int32'):
+            self.compile_source(
+                'func main() int32:\n'
+                '    s: isize = 10\n'
+                '    i: int32 = s\n'
+                '    return 0\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'no coincide con int64'):
+            self.compile_source(
+                'func main() int32:\n'
+                '    s: isize = 10\n'
+                '    i: int64 = s\n'
+                '    return 0\n'
+            )
+
     def test_bit_width_types_are_restricted_to_flags(self):
         with self.assertRaisesRegex(CompilationError, 'solo pueden usarse como campos de flags'):
             self.compile_source(
