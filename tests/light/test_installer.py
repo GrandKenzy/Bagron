@@ -48,7 +48,12 @@ class InstallerTests(unittest.TestCase):
                 any(name.rstrip('/') == 'Bagron-1.0.3/modules' for name in names)
             )
             self.assertNotIn('Bagron-1.0.3/vendor/', names)
-            self.assertFalse(any('/build/' in name for name in names))
+            aot_library = Path(__file__).resolve().parents[2] / 'build' / 'aot' / 'libbagron_aot.so'
+            if aot_library.is_file():
+                self.assertIn('Bagron-1.0.3/build/aot/libbagron_aot.so', names)
+                self.assertIn('Bagron-1.0.3/build/aot/gram_parser_manifest.json', names)
+            else:
+                self.assertFalse(any('/build/' in name for name in names))
 
 
 if __name__ == '__main__':

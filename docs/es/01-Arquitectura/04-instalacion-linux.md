@@ -7,6 +7,8 @@ que instala sus dependencias mediante `vnma` y genera lanzadores POSIX.
 
 - Python 3.14 o superior.
 - `vnma`, instalable con `python3 -m pip install vnma`.
+- Git, para descargar las fuentes nativas de Gram cuando el paquete no incluya
+  la biblioteca AOT.
 - LLVM, Clang y LLD disponibles en el PATH.
 - `libcurl.so.4` si el proyecto usa el módulo `net` con `https://`.
 
@@ -14,7 +16,7 @@ En Debian o Ubuntu, las herramientas base pueden instalarse con:
 
 ```bash
 sudo apt update
-sudo apt install python3 python3-pip clang lld libcurl4
+sudo apt install python3 python3-pip git clang lld libcurl4
 python3 -m pip install vnma
 ```
 
@@ -24,7 +26,8 @@ python3 -m pip install vnma
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.3/install.sh | bash
 ```
 
-El comando instala Bagron en `~/Bagron`, resuelve Gram y llvmlite, y crea:
+El comando instala Bagron en `~/Bagron`, resuelve Gram y llvmlite, construye el
+parser AOT/FFI de Gram cuando es necesario y crea:
 
 - `~/.local/bin/bagron`
 - `~/.local/bin/Bagron`

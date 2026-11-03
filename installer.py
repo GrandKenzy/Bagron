@@ -15,6 +15,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 import zipfile
 
@@ -324,7 +325,16 @@ def _fetch_from_github(target_dir: Path) -> None:
         if not any(target_dir.iterdir()) if target_dir.exists() else True:
             print(f'  [Git] Clonando {BAGRON_REPO_URL}...')
             subprocess.run(
-                [git_bin, 'clone', '--depth', '1', BAGRON_REPO_URL, str(target_dir)],
+                [
+                    git_bin,
+                    'clone',
+                    '--depth',
+                    '1',
+                    '--branch',
+                    BAGRON_VERSION,
+                    BAGRON_REPO_URL,
+                    str(target_dir),
+                ],
                 check=True,
             )
             return
@@ -378,6 +388,78 @@ def _configure_vnma_toml(target_dir: Path) -> None:
     (target_dir / 'vnma.toml').write_text(vnma_toml_content, encoding='utf-8')
 
 
+def _aot_library_names() -> tuple[str, ...]:
+    """Devuelve los nombres de biblioteca AOT esperados en la plataforma actual."""
+    if sys.platform == 'win32':
+        return ('bagron_aot.dll',)
+    if sys.platform == 'darwin':
+        return ('bagron_aot.dylib', 'libbagron_aot.dylib')
+    return ('libbagron_aot.so', 'bagron_aot.so')
+
+
+def _has_aot_parser(target_dir: Path) -> bool:
+    """Comprueba si la instalación ya contiene la biblioteca AOT y su manifiesto."""
+    output_dir = target_dir / 'build' / 'aot'
+    return (
+        any((output_dir / name).is_file() for name in _aot_library_names())
+        and (output_dir / 'gram_parser_manifest.json').is_file()
+    )
+
+
+def _build_aot_parser(target_dir: Path, vnma_bin: str | None) -> bool:
+    """Genera la biblioteca FFI de Gram cuando el paquete no trae un binario."""
+    if _has_aot_parser(target_dir):
+        print('  [OK] Biblioteca AOT de Gram incluida en la distribución.')
+        return True
+
+    if not vnma_bin:
+        print(
+            '  [CUIDADO] No se puede generar el parser AOT porque falta vnma.',
+            file=sys.stderr,
+        )
+        return False
+
+    git_bin = shutil.which('git')
+    if not git_bin:
+        print(
+            '  [CUIDADO] No se puede generar el parser AOT porque falta git.',
+            file=sys.stderr,
+        )
+        return False
+
+    print('\n[4/6] Construyendo la biblioteca AOT/FFI de Gram...')
+    output_dir = target_dir / 'build' / 'aot'
+    with tempfile.TemporaryDirectory(prefix='bagron-gram-') as temporary:
+        gram_dir = Path(temporary) / 'Gram'
+        clone = subprocess.run(
+            [git_bin, 'clone', '--depth', '1', '--branch', 'main', GRAM_REPO_URL, str(gram_dir)],
+            check=False,
+        )
+        if clone.returncode != 0:
+            print('  [CUIDADO] No se pudo descargar Gram para generar el parser AOT.', file=sys.stderr)
+            return False
+
+        build = subprocess.run(
+            [
+                vnma_bin,
+                'run',
+                'tools/build_aot_parser.py',
+                '--gram-path',
+                str(gram_dir),
+                '--output-dir',
+                str(output_dir),
+            ],
+            cwd=str(target_dir),
+            check=False,
+        )
+        if build.returncode != 0 or not _has_aot_parser(target_dir):
+            print('  [CUIDADO] No se pudo construir la biblioteca AOT de Gram.', file=sys.stderr)
+            return False
+
+    print('  [OK] Biblioteca AOT de Gram construida.')
+    return True
+
+
 # ============================================================================
 # Proceso principal de instalación
 # ============================================================================
@@ -402,7 +484,7 @@ def install(
 
     # Paso 1: Obtención de fuentes
     if from_local:
-        print('\n[1/5] Copiando componentes del compilador desde la copia local...')
+        print('\n[1/6] Copiando componentes del compilador desde la copia local...')
         ignore_patterns = shutil.ignore_patterns(
             '__pycache__',
             '*.pyc',
@@ -430,7 +512,7 @@ def install(
             if src_file.is_file():
                 shutil.copy2(src_file, target_dir / filename)
     else:
-        print('\n[1/5] Obteniendo Bagron desde GitHub...')
+        print('\n[1/6] Obteniendo Bagron desde GitHub...')
         _fetch_from_github(target_dir)
 
     # NOTA: Si el directorio local o de ejecución contiene build/aot (driver FFI nativo), sincronizarlo.
@@ -445,12 +527,12 @@ def install(
         shutil.copy2(src_main, target_dir / 'main.py')
 
     # Paso 2: Configuración de vnma.toml
-    print('\n[2/5] Configurando vnma.toml con dependencia remota a Gram...')
+    print('\n[2/6] Configurando vnma.toml con dependencia remota a Gram...')
     _configure_vnma_toml(target_dir)
     print(f'  [OK] vnma.toml configurado para apuntar a: {GRAM_REPO_URL}')
 
     # Paso 3: Resolución de dependencias con vnma
-    print('\n[3/5] Resolviendo e instalando dependencias con vnma...')
+    print('\n[3/6] Resolviendo e instalando dependencias con vnma...')
     vnma_bin = shutil.which('vnma')
     if vnma_bin:
         install_res = subprocess.run([vnma_bin, 'install'], cwd=str(target_dir))
@@ -469,14 +551,18 @@ def install(
             file=sys.stderr,
         )
 
-    # Paso 4: Creación de carpetas base libs/ y modules/
-    print('\n[4/5] Creando carpetas base libs/ y modules/...')
+    # Paso 4: El frontend AOT no tiene un fallback Python; debe estar incluido
+    # en el paquete o generarse con las fuentes nativas de Gram y Clang.
+    _build_aot_parser(target_dir, vnma_bin)
+
+    # Paso 5: Creación de carpetas base libs/ y modules/
+    print('\n[5/6] Creando carpetas base libs/ y modules/...')
     for empty_name in EMPTY_DIRS:
         empty_path = target_dir / empty_name
         empty_path.mkdir(parents=True, exist_ok=True)
 
-    # Paso 5: Generación de lanzadores y configuración de PATH
-    print('\n[5/5] Generando lanzadores CLI en bin/ y configurando el PATH...')
+    # Paso 6: Generación de lanzadores y configuración de PATH
+    print('\n[6/6] Generando lanzadores CLI en bin/ y configurando el PATH...')
     bin_dir = target_dir / 'bin'
     _create_launchers(bin_dir)
 

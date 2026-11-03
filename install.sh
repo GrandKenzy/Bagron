@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Instalador POSIX: puede ejecutarse desde un paquete extraído o directamente
 # desde GitHub sin exigir que el usuario clone el repositorio.
+# NOTA: El instalador Python construye el parser AOT si el paquete no lo trae.
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! command -v python3 >/dev/null 2>&1; then

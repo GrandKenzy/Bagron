@@ -12,6 +12,9 @@
   extraído.
 - Se añade el paquete reproducible `Bagron-1.0.3-linux-x86_64.tar.gz` y un
   workflow de GitHub Actions que prueba Windows/Linux y publica sus artefactos.
+- El workflow construye el parser AOT de Gram para ambos sistemas; el paquete
+  Linux incluye `libbagron_aot.so` y su manifiesto, y el instalador puede
+  reconstruirlo cuando esos binarios no están disponibles.
 
 ## Documentación
 

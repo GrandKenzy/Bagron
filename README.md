@@ -175,7 +175,7 @@ en el PATH del usuario.
 
 ### Linux
 
-El instalador Linux requiere Python 3.14+, `vnma`, LLVM/Clang/LLD y, para
+El instalador Linux requiere Python 3.14+, `vnma`, Git, LLVM/Clang/LLD y, para
 proyectos que usen `net` con HTTPS, `libcurl.so.4`. Puede ejecutarse directamente
 desde el release publicado:
 
