@@ -31,5 +31,8 @@ func main() int32:
 Una función de clase llamada `main` no es entrypoint. Una llamada a una función
 `Never` termina el flujo y no puede usarse como expresión.
 
+Para instalar el soporte de VS Code, consulta [Instalación de la extensión
+para VS Code](03-instalacion-vscode.md).
+
 La suite rápida cubre estas fases en `tests/test_modules.py`,
 `tests/test_functions.py`, `tests/test_types.py` y `tests/test_buffer.py`.

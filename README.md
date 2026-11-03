@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.0.2-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
-  <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="Licencia">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
 </p>
 
@@ -160,11 +160,18 @@ El compilador se apoya en dos herramientas del mismo ecosistema:
   * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios, para builds reproducibles.
   * Instalación: `pip install vnma`.
 
+## Extensión para VS Code
+
+La distribución incluye el paquete [`bagron-language-support.vsix`](tools/vscode/bagron-language-support.vsix).
+Consulta la [guía de instalación del VSIX](docs/es/01-Arquitectura/03-instalacion-vscode.md)
+para instalarlo manualmente o mediante `Bagron --vscode install`.
+
 ---
 
 ## Licencia
 
-Este proyecto está bajo la Licencia MIT. Consulta el archivo de licencia para más detalles.
+Este proyecto está bajo la Licencia Apache 2.0 con el rider de no-derivados y uso comercial.
+Consulta el archivo `LICENSE` para más detalles.
 
 <p align="center">
   <img src="badge/footer.jpeg"/>

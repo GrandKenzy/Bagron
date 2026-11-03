@@ -20,3 +20,9 @@
 - **Module function calls from homonymous methods**:
   - Fixed call resolution so that when a class method invokes a free or external function with the same name (such as `connect(...)` inside `Socket.connect`), the call resolves to the module-level function instead of being intercepted as implicit recursion on the method.
   - `Storage.resolve_function_for_module` and `Storage.resolve_variable_for_module` now consistently query the root module storage (`_module_root()`) and canonicalize paths across Windows and Linux.
+
+## Packaging and Documentation
+
+- Installer and project template metadata are aligned with version `1.0.2`.
+- Added documentation for installing the bundled VS Code extension with `Bagron --vscode install`, the VS Code command palette, or `code --install-extension`.
+- The bundled VSIX metadata now reports version `1.0.2`.

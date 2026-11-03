@@ -1,6 +1,6 @@
 [project]
 # name = "bagron"
-# version = "0.3.0"
+# version = "1.0.2"
 
 [dependencies]
 

@@ -23,6 +23,7 @@ import zipfile
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
+BAGRON_VERSION = '1.0.2'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = 'https://github.com/GrandKenzy/Bagron/archive/refs/heads/main.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
@@ -262,7 +263,7 @@ def _configure_vnma_toml(target_dir: Path) -> None:
     vnma_toml_content = (
         '[project]\n'
         'name = "Bagron"\n'
-        'version = "1.0.0"\n\n'
+        f'version = "{BAGRON_VERSION}"\n\n'
         '[dependencies]\n'
         f'gram = {{ git = "{GRAM_REPO_URL}", branch = "main" }}\n'
         'llvmlite = "==0.50.0"\n\n'
@@ -290,7 +291,7 @@ def install(
         target_dir = Path.home() / DEFAULT_INSTALL_NAME
 
     target_dir = target_dir.resolve()
-    print(f'=== Instalador de Bagron 1.0.0 ===')
+    print(f'=== Instalador de Bagron {BAGRON_VERSION} ===')
     print(f'Modo:    {"Local (copia directa)" if from_local else "GitHub (" + BAGRON_REPO_URL + ")"}')
     print(f'Destino: {target_dir}')
 
@@ -420,7 +421,7 @@ def uninstall(target_dir: Path | None = None) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Instalador de Bagron 1.0.0')
+    parser = argparse.ArgumentParser(description=f'Instalador de Bagron {BAGRON_VERSION}')
     parser.add_argument(
         '--target',
         type=Path,
