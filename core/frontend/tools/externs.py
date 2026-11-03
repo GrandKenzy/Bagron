@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from core.compiler import Compiler
 
 
-_UNSUPPORTED_ABI_TYPES = {'chain', 'callptr', 'Null'}
+_UNSUPPORTED_ABI_TYPES = {'chain', 'Null'}
 
 
 def _children(node: object) -> list[object]:
@@ -383,3 +383,4 @@ def collect(compiler: Compiler, node: gast.ASTRef) -> None:
 
 
 __all__ = ['collect']
+

@@ -39,6 +39,7 @@ dist/
 log/
 
 # Bibliotecas pesadas y de terceros (SDL3, dependencias C instaladas)
+/libs/
 **/SDL3/
 *SDL3*.dll
 *SDL3*.a

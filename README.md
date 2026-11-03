@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>Bagron es un lenguaje de programación moderno, limpio y estáticamente tipado, compilado directamente a LLVM IR.</b>
+  <b>Bagron es un lenguaje compilado y estáticamente tipado cuya implementación actual genera código nativo mediante LLVM.</b>
 </p>
 
 <p align="center">
@@ -19,18 +19,36 @@
 
 ## ¿Qué es Bagron?
 
-**Bagron** combina la elegancia sintáctica, la orientación a objetos y la legibilidad de lenguajes de alto nivel con la velocidad, el control de bajo nivel y el alto rendimiento.
+**Bagron** recibe archivos `.bg`, valida tipos, ámbitos, flujo, ownership y
+reglas de acceso, y genera LLVM IR antes de producir objetos y enlazar el
+artefacto para el target elegido. El parser de la ruta actual es Gram mediante
+su interfaz AOT/FFI.
 
-En lugar de depender de una máquina virtual pesada o de un runtime complejo con recolección de basura, el compilador de **Bagron** procesa el código fuente, valida tipos y ámbitos estáticamente y emite **LLVM IR** directamente. No existe ningún paso intermedio que genere código intermedio superfluo: LLVM se encarga de la optimización y la generación de código nativo para la arquitectura de destino.
+No usa una máquina virtual de Bagron ni un recolector de basura integrado. Los
+`buffer` siguen reglas explícitas de ownership y liberación; los punteros
+crudos, `extern` y el ensamblador son fronteras que pueden salir de las
+comprobaciones estáticas.
+
+La explicación completa del flujo y de los límites de seguridad está en
+[Cómo funciona Bagron](docs/es/01-Funcionamiento.md).
 
 ---
 
 ## Estado actual
 
-Bagron se encuentra en la versión **1.0.0** y en estado activo. El flujo
-principal de análisis estático, emisión de LLVM IR y generación de artefactos
-nativos para los targets soportados está implementado. La documentación
-práctica y los ejemplos ampliados se desarrollarán en `docs/`.
+La ruta principal de análisis estático, emisión de LLVM IR y generación de
+artefactos nativos para los targets implementados está disponible. La
+compilación requiere la biblioteca AOT/FFI de Gram configurada; el frontend no
+activa silenciosamente un parser alternativo si falta.
+
+El comportamiento estricto forma parte del flujo normal. La CLI actual no
+expone un modo global `strict`; `@unsafe` es una excepción localizada por
+función y no elimina las reglas de tipos, ABI ni de `main`.
+
+Las pruebas existentes se conservan provisionalmente bajo `tests/light/` y
+`tests/aggressive/`, con los archivos de soporte de integración en
+`tests/aggressive/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>` y serán
+reemplazadas por una batería moderna y más agresiva.
 
 ---
 
@@ -40,7 +58,7 @@ práctica y los ejemplos ampliados se desarrollarán en `docs/`.
 
 * **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida, salvo que el flujo termine mediante una llamada `Never`. Los métodos de clase no cuentan como entrypoint.
 
-* **Sintaxis Minimalista e Intuitiva:** Basada en indentación limpia (`.bg`), sin puntos y coma obligatorios ni sobrecarga de paréntesis innecesarios.
+* **Sintaxis indentada:** Los fuentes usan archivos `.bg` y bloques delimitados por indentación.
 
 * **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
 
@@ -101,7 +119,21 @@ práctica y los ejemplos ampliados se desarrollarán en `docs/`.
   * Bucles condicionales: `while condicion:`.
   * Iteración numérica tipada con `ran` y recorrido de arrays con `for i: int32 in values:`.
 
-* **Toolchain Integrada:** Compilador, analizador sintáctico y herramientas para el flujo de trabajo de desarrollo.
+* **Herramientas del proyecto:** El compilador usa Gram para el parseo y vnma para gestionar dependencias y binarios.
+
+## Seguridad y límites
+
+El código seguro no puede realizar ciertas operaciones cuya corrección no
+puede probarse, como desreferenciar punteros de procedencia desconocida,
+acceder dinámicamente a arrays sin una prueba de rango o llamar a una función
+insegura. Los `buffer` tienen comprobaciones de capacidad y los accesos nulos
+detectados por el backend producen una trampa.
+
+Esto no convierte a Bagron en un lenguaje formalmente memory-safe. `@unsafe`,
+`@assembler` y `extern` permiten cruzar la frontera estática; la validez de
+direcciones, lifetimes, ABI y código extranjero queda fuera de esa garantía.
+Los perfiles `dev`, `prod` y `high` cambian optimización, no las reglas de
+seguridad.
 
 ---
 
@@ -137,3 +169,4 @@ Este proyecto está bajo la Licencia MIT. Consulta el archivo de licencia para m
 <p align="center">
   <img src="badge/footer.jpeg"/>
 </p>
+

@@ -11,7 +11,6 @@ class Variable:
         self.is_const = False
         self.value_is_const = False
         self.pointer_is_const = False
-        self.call_signature = None
         self.pointer_size = None
         self.bit_width = None
         self.signed = None
@@ -34,3 +33,4 @@ class Variable:
         # Opaque descriptor ownership is compile-time-only and never enters
         # the raw LLVM representation.
         self.opaque_state = None
+

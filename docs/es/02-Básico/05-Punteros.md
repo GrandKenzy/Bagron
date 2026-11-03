@@ -474,7 +474,3 @@ Bagron aplica estas reglas para mantener los punteros trazables:
 - un descriptor `opaque` es nominal y conserva su estado `owned`/`borrowed`/`closed`
   solo durante el análisis estático.
 
-`callptr` es una categoría distinta de puntero destinada a referencias a
-funciones. No debe confundirse con un puntero a datos: su firma debe coincidir
-con la función asociada y su emisión LLVM/ABI todavía no forma parte del
-contrato de punteros de datos de esta versión.

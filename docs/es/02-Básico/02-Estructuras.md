@@ -5,6 +5,8 @@
 | `struct` | `struct Nombre:` | Agrupación nominal de campos con almacenamiento independiente. |
 | `mold` | `mold Nombre:` | Vista nominal de almacenamiento superpuesto, similar a una unión. |
 | `flags` | `flags Nombre TipoBase:` | Conjunto nominal de campos empaquetados por bits sobre un tipo base entero sin signo. |
+| `enum` | `enum Nombre [TipoBase]:` | Conjunto nominal de miembros enteros con valores constantes. |
+| `class` | `class Nombre [Padre]:` | Agregado nominal respaldado por un `struct`, con inicialización y métodos. |
 
 Los campos se declaran con la forma `nombre: Tipo`.
 
@@ -94,3 +96,47 @@ explícita, por ejemplo con un campo `uBint<N>` inicializado en cero.
 
 Los campos sin decorador se asignan desde los bits menos significativos.
 `@order_msb` selecciona el orden contrario.
+
+## `enum`
+
+Un `enum` es un tipo nominal cuyos miembros tienen valores enteros constantes.
+Si no se indica un tipo base, se usa `int32`; también puede declararse
+cualquier tipo entero escalar (`int8`/`int16`/`int32`/`int64`, `uint8`/`uint16`/
+`uint32`/`uint64`, `byte`, `isize` o `usize`). El tipo base no puede ser
+`const`, puntero ni array.
+
+```bg
+enum Estado uint8:
+    INACTIVO,
+    ACTIVO = 4,
+    PAUSADO,
+    ; valores: 0, 4 y 5
+```
+
+Los miembros automáticos comienzan en `0`; un valor explícito fija el miembro y
+el siguiente automático continúa desde ese valor más uno. Los miembros
+duplicados y los valores fuera del rango del tipo base se rechazan. En el
+backend, el `enum` conserva su nombre nominal, pero usa la representación y el
+ancho del tipo base.
+
+## `class`
+
+Una `class` es un agregado nominal respaldado por un `struct`. Sus atributos
+se infieren de asignaciones `self.campo = valor` dentro de un único
+`__init__` o `__frontend__`; no se declaran como campos sueltos en el cuerpo de
+la clase. El inicializador debe devolver `void`. Una clase sin inicializador no
+se puede construir, y declarar dos inicializadores es un error.
+
+`__frontend__` recibe exactamente un parámetro visible y sirve como conversión
+implícita de entrada. La herencia es simple y estática: una clase hija puede
+tener un único padre, debe llamar a `super.__init__`, y el layout resultante
+aplana los campos del padre y de la hija; no hay vtables ni despacho dinámico.
+Los métodos de instancia reciben `self` de forma implícita, mientras que los
+métodos `@static` se llaman a través de la clase y no reciben `self`.
+
+Los nombres que empiezan por `_` son privados para la clase que los declara y
+no quedan visibles para sus subclases. Las clases se retornan por valor. Los
+hooks `__deletion__`, `__eq__` y los hooks de acceso/magia forman parte de la
+semántica de clases; `@frozen` restringe las asignaciones posteriores según lo
+descrito en [Especificadores y Calificadores](03-Especificadores%20y%20Calificadores.md).
+

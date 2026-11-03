@@ -101,7 +101,6 @@ INTRINSIC_TYPES = {
     'Len_t': '#3B82F6', # hidden compile-time array length parameter
     'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
     'Region_t': '#3B82F6', # hidden immutable provenance parameter
-    'callptr': '#3B82F6',
     'Bint': '#3B82F6',
     'uBint': '#3B82F6',
 
@@ -216,3 +215,4 @@ __all__ = [
     'KEYWORDS_BY_GROUP',
     'register_keywords',
 ]
+
