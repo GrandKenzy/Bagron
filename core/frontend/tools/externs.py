@@ -219,9 +219,9 @@ def _normalize_library(name: str) -> str:
 
 def _normalize_domain(name: str) -> str:
     domain = name.strip().lower()
-    if domain not in {'windows', 'c'}:
+    if domain not in {'windows', 'c', 'bagron'}:
         raise TypeResolutionError(
-            f'El dominio extern {name!r} no esta soportado; usa windows o c'
+            f'El dominio extern {name!r} no esta soportado; usa windows, c o bagron'
         )
     return domain
 
@@ -377,8 +377,10 @@ def collect(compiler: Compiler, node: gast.ASTRef) -> None:
             )
         ) is not None
     ]
+    # `bagron` es la frontera de intrínsecos que el backend define dentro del
+    # módulo final; no debe convertirse en una dependencia de linker.
     link_name = f'{domain}:{library}' if domain is not None else library
-    if symbols and link_name not in compiler.storage.native_links:
+    if symbols and domain != 'bagron' and link_name not in compiler.storage.native_links:
         compiler.storage.native_links.append(link_name)
 
 

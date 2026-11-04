@@ -5,7 +5,12 @@ import re
 
 from core import globvars, storage
 from core.compiler.control import CompilationError, CompilerState, _found_main
-from core.compiler.prep import PrepBlock, PrepError, write_prep_files
+from core.compiler.prep import (
+    PrepBlock,
+    PrepError,
+    preprocess_conditionals,
+    write_prep_files,
+)
 from core.frontend import processor as bagron_processor
 from core.library import (
     LibraryError,
@@ -122,8 +127,15 @@ class Compiler(CompilerState):
             r'^\s*clause\s+(?P<name>System|Arch)\s+'
             r'(?P<quote>["\'])(?P<value>.*?)\2\s*$'
         )
+        raw_lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+        selected_lines, _ = preprocess_conditionals(
+            raw_lines,
+            path,
+            system=system().lower(),
+            architecture=str(machine() or 'unknown').strip().lower(),
+        )
         values: dict[str, str] = {}
-        for line in path.read_text(encoding='utf-8').splitlines():
+        for line in selected_lines:
             match = clause_re.match(line)
             if match is not None and match.group('name') not in values:
                 values[match.group('name')] = match.group('value')
@@ -187,6 +199,11 @@ class Compiler(CompilerState):
         raw_architecture: str | None,
     ) -> None:
         """Reject target combinations that cannot describe one platform."""
+        if system_name in {'darwin', 'macos'}:
+            raise ValueError(
+                f'El modulo {path} declara System {system_name!r}; '
+                'Bagron AOT solo soporta Windows y Linux actualmente'
+            )
         if system_name != 'baremetal' and boot != 'none':
             cls_error = (
                 f'El modulo {path} declara Boot {boot!r}, pero System '

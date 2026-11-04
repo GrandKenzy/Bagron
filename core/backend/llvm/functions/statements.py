@@ -1498,6 +1498,145 @@ class StatementEmitterMixin:
                 f'La funcion {symbol.name} no termina con return'
             )
 
+    def _ensure_process_abi(self) -> tuple[ir.GlobalVariable, ir.GlobalVariable] | None:
+        """Materialize the compiler-owned process argument intrinsics.
+
+        Bagron source keeps ``func main() int32``.  The native wrapper receives
+        the platform arguments and stores them in these globals; the two
+        ``extern bagron`` declarations used by the generated Gram CLI expose
+        a safe, target-independent view of that state.
+        """
+        if not any(
+            name in self.module.globals
+            for name in ('__bagron_argc', '__bagron_arg_copy')
+        ):
+            return None
+
+        i8 = ir.IntType(8)
+        i32 = ir.IntType(32)
+        i8_ptr = i8.as_pointer()
+        argv_type = i8_ptr.as_pointer()
+
+        argc_global = self.module.globals.get('__bagron_argc_value')
+        if argc_global is None:
+            argc_global = ir.GlobalVariable(
+                self.module,
+                i32,
+                name='__bagron_argc_value',
+            )
+            argc_global.initializer = ir.Constant(i32, 0)
+        elif not isinstance(argc_global, ir.GlobalVariable):
+            raise FunctionEmissionError(
+                'El simbolo __bagron_argc_value no es un global LLVM'
+            )
+
+        argv_global = self.module.globals.get('__bagron_argv_value')
+        if argv_global is None:
+            argv_global = ir.GlobalVariable(
+                self.module,
+                argv_type,
+                name='__bagron_argv_value',
+            )
+            argv_global.initializer = ir.Constant(argv_type, None)
+        elif not isinstance(argv_global, ir.GlobalVariable):
+            raise FunctionEmissionError(
+                'El simbolo __bagron_argv_value no es un global LLVM'
+            )
+
+        argc_fn = self._runtime_function('__bagron_argc', i32, [])
+        if not argc_fn.blocks:
+            block = argc_fn.append_basic_block(name='entry')
+            builder = ir.IRBuilder(block)
+            builder.ret(builder.load(argc_global))
+
+        copy_fn = self._runtime_function(
+            '__bagron_arg_copy',
+            i32,
+            [i32, i8_ptr, i32],
+        )
+        if copy_fn.blocks:
+            return argc_global, argv_global
+
+        entry = copy_fn.append_basic_block(name='entry')
+        invalid = copy_fn.append_basic_block(name='invalid')
+        capacity_ok = copy_fn.append_basic_block(name='capacity.ok')
+        buffer_ok = copy_fn.append_basic_block(name='buffer.ok')
+        argument_ok = copy_fn.append_basic_block(name='argument.ok')
+        loop = copy_fn.append_basic_block(name='copy.loop')
+        read_char = copy_fn.append_basic_block(name='copy.read')
+        write_char = copy_fn.append_basic_block(name='copy.write')
+        finish = copy_fn.append_basic_block(name='copy.finish')
+
+        builder = ir.IRBuilder(entry)
+        index, buffer, capacity = copy_fn.args
+        argc = builder.load(argc_global)
+        nonnegative = builder.icmp_signed('>=', index, ir.Constant(i32, 0))
+        in_range = builder.icmp_unsigned('<', index, argc)
+        valid_index = builder.and_(nonnegative, in_range)
+        builder.cbranch(valid_index, capacity_ok, invalid)
+
+        builder.position_at_end(invalid)
+        builder.ret(ir.Constant(i32, 0))
+
+        builder.position_at_end(capacity_ok)
+        has_capacity = builder.icmp_unsigned('!=', capacity, ir.Constant(i32, 0))
+        builder.cbranch(has_capacity, buffer_ok, invalid)
+
+        builder.position_at_end(buffer_ok)
+        has_buffer = builder.icmp_unsigned(
+            '!=',
+            buffer,
+            ir.Constant(i8_ptr, None),
+        )
+        builder.cbranch(has_buffer, argument_ok, invalid)
+
+        builder.position_at_end(argument_ok)
+        argv = builder.load(argv_global)
+        argv_slot = builder.gep(argv, [index])
+        argument = builder.load(argv_slot)
+        has_argument = builder.icmp_unsigned(
+            '!=',
+            argument,
+            ir.Constant(i8_ptr, None),
+        )
+        builder.cbranch(has_argument, loop, invalid)
+
+        builder.position_at_end(loop)
+        copied = builder.phi(i32, name='copied')
+        copied.add_incoming(ir.Constant(i32, 0), argument_ok)
+        max_chars = builder.sub(capacity, ir.Constant(i32, 1))
+        within_capacity = builder.icmp_unsigned('<', copied, max_chars)
+        builder.cbranch(within_capacity, read_char, finish)
+
+        builder.position_at_end(read_char)
+        source_char_ptr = builder.gep(argument, [copied])
+        source_char = builder.load(source_char_ptr)
+        at_end = builder.icmp_unsigned('==', source_char, ir.Constant(i8, 0))
+        builder.cbranch(at_end, finish, write_char)
+
+        builder.position_at_end(write_char)
+        target_char_ptr = builder.gep(buffer, [copied])
+        builder.store(source_char, target_char_ptr)
+        next_copied = builder.add(copied, ir.Constant(i32, 1))
+        copied.add_incoming(next_copied, write_char)
+        builder.branch(loop)
+
+        builder.position_at_end(finish)
+        terminator_ptr = builder.gep(buffer, [copied])
+        builder.store(ir.Constant(i8, 0), terminator_ptr)
+        builder.ret(copied)
+        return argc_global, argv_global
+
+    @staticmethod
+    def _store_process_arguments(
+        builder: ir.IRBuilder,
+        native_function: ir.Function,
+        argc_global: ir.GlobalVariable,
+        argv_global: ir.GlobalVariable,
+    ) -> None:
+        builder.store(native_function.args[0], argc_global)
+        builder.store(native_function.args[1], argv_global)
+
     def emit_main(self, symbol: FunctionSymbol) -> None:
         self._active_function_symbol = symbol
         if symbol.signature.parameters:
@@ -1526,6 +1665,7 @@ class StatementEmitterMixin:
             )
 
         int_type = ir.IntType(32)
+        process_globals = self._ensure_process_abi()
         source_type = ir.FunctionType(int_type, [])
         source_function = ir.Function(
             self.module,
@@ -1539,10 +1679,17 @@ class StatementEmitterMixin:
             self.type_registry,
         )
         if symbol.return_asm_node is not None:
-            native_type = ir.FunctionType(int_type, [])
+            byte_ptr = ir.IntType(8).as_pointer()
+            native_type = ir.FunctionType(int_type, [int_type, byte_ptr.as_pointer()])
             native_function = ir.Function(self.module, native_type, name='main')
             native_block = native_function.append_basic_block(name='entry')
             native_builder = ir.IRBuilder(native_block)
+            if process_globals is not None:
+                self._store_process_arguments(
+                    native_builder,
+                    native_function,
+                    *process_globals,
+                )
             result = native_builder.call(source_function, [])
             native_builder.ret(result)
             return
@@ -1579,10 +1726,17 @@ class StatementEmitterMixin:
                 'El entrypoint main no termina con return'
             )
 
-        native_type = ir.FunctionType(int_type, [])
+        byte_ptr = ir.IntType(8).as_pointer()
+        native_type = ir.FunctionType(int_type, [int_type, byte_ptr.as_pointer()])
         native_function = ir.Function(self.module, native_type, name='main')
         native_block = native_function.append_basic_block(name='entry')
         native_builder = ir.IRBuilder(native_block)
+        if process_globals is not None:
+            self._store_process_arguments(
+                native_builder,
+                native_function,
+                *process_globals,
+            )
         result = native_builder.call(source_function, [])
         native_builder.ret(result)
 
