@@ -58,6 +58,25 @@ def _integer_bounds(type_spec: TypeSpec) -> tuple[int, int] | None:
     return 0, 2 ** width - 1
 
 
+def _wrap_unsigned_literal(type_spec: TypeSpec, value: int) -> int:
+    """Normalize fixed-width unsigned arithmetic to its runtime bit width.
+
+    LLVM integer operations already wrap at the destination width.  Keeping
+    constant folding on the same modulo-2^N contract prevents a compile-time
+    literal from disagreeing with the generated code.
+    """
+    if (
+        type_spec.pointer_level != 0
+        or type_spec.array_depth != 0
+        or type_spec.name not in {'uint8', 'uint16', 'uint32', 'uint64'}
+    ):
+        return value
+    width = _integer_width(type_spec)
+    if width is None:
+        return value
+    return value & ((1 << width) - 1)
+
+
 def _string_bytes(value: object, *, ascii_only: bool = False) -> bytes | None:
     if not isinstance(value, str):
         return None

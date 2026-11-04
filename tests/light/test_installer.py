@@ -199,7 +199,10 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(content.startswith('# Changelog 1.0.3\n'))
         self.assertIn('## Modules and Linking', content)
         self.assertNotIn('Distribución Linux', content)
-        self.assertEqual(['changelog_1.0.3.md'], sorted(path.name for path in changelog_dir.iterdir()))
+        self.assertEqual(
+            ['changelog_1.0.3.md', 'changelog_1.0.4.md'],
+            sorted(path.name for path in changelog_dir.iterdir()),
+        )
 
 
 if __name__ == '__main__':

@@ -19,6 +19,50 @@ from .resolution import (
 from .compatibility import is_chain_to_char_array_conversion, is_compatible
 
 
+SECURE_CLEAR_INTRINSIC = 'secure_clear'
+
+
+def _infer_secure_clear_call(
+    argument_items: list[object],
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo:
+    """Validate the compiler-owned, typed secret-wipe intrinsic."""
+    from .values import infer_value
+
+    if len(argument_items) != 1:
+        raise ValueResolutionError(
+            'secure_clear requiere exactamente un array byte o un buffer'
+        )
+    argument = infer_value(
+        argument_items[0],
+        namespace,
+        functions,
+        current_function=current_function,
+    )
+    spec = argument.type_spec
+    valid = (
+        spec.name == 'byte'
+        and spec.pointer_level == 0
+        and spec.array_depth == 1
+    ) or is_buffer_type(spec)
+    if not valid:
+        raise ValueResolutionError(
+            'secure_clear solo acepta byte[] o buffer; no es un memset general'
+        )
+    if not argument.is_lvalue or not argument.is_addressable:
+        raise ValueResolutionError(
+            'secure_clear requiere almacenamiento mutable y direccionable'
+        )
+    if spec.value_is_const:
+        raise ValueResolutionError(
+            'secure_clear no puede borrar almacenamiento const'
+        )
+    return ValueInfo(TypeSpec('void'))
+
+
 def _record_function_call(
     current_function: object | None,
     target: object,
@@ -594,6 +638,14 @@ def infer_call(
         return _infer_constructor_call(
             name or aggregate.name,
             aggregate,
+            _call_arguments(call_suffix),
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+
+    if name == SECURE_CLEAR_INTRINSIC:
+        return _infer_secure_clear_call(
             _call_arguments(call_suffix),
             namespace,
             functions,

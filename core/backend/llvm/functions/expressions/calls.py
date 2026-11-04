@@ -17,6 +17,86 @@ from ..errors import FunctionEmissionError
 
 
 class CallExpressionMixin:
+    def _compile_secure_clear(
+        self,
+        argument: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> None:
+        """Erase a typed byte array/buffer through volatile byte stores."""
+        source_name = self._identifier(argument)
+        source_spec = (
+            self._active_type_spec(source_name)
+            if source_name is not None
+            else None
+        )
+        if source_spec is None and source_name is not None:
+            source_spec = self._global_specs.get(source_name)
+        if source_spec is None:
+            raise FunctionEmissionError(
+                'secure_clear no pudo resolver el tipo del almacenamiento'
+            )
+
+        if getattr(source_spec, 'name', None) == 'buffer':
+            descriptor = self._compile_expression(argument, builder, values)
+            data, length = self._buffer_data_and_length(descriptor, builder)
+        else:
+            address = self._compile_address(argument, builder, values)
+            pointee = address.type.pointee
+            if isinstance(pointee, ir.ArrayType):
+                data = builder.gep(
+                    address,
+                    [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)],
+                    inbounds=True,
+                )
+            elif isinstance(pointee, ir.PointerType):
+                data = builder.load(address)
+            else:
+                raise FunctionEmissionError(
+                    'secure_clear requiere un array de bytes o un buffer'
+                )
+            length = self._compile_length_argument(
+                argument,
+                source_spec,
+                builder,
+                values,
+            )
+
+        if not (
+            isinstance(data.type, ir.PointerType)
+            and isinstance(data.type.pointee, ir.IntType)
+            and data.type.pointee.width == 8
+        ):
+            raise FunctionEmissionError(
+                'secure_clear solo puede borrar elementos byte'
+            )
+        function = builder.function
+        block_id = len(function.blocks)
+        loop = function.append_basic_block(name=f'secure.clear.loop.{block_id}')
+        body = function.append_basic_block(name=f'secure.clear.body.{block_id}')
+        done = function.append_basic_block(name=f'secure.clear.done.{block_id}')
+        preheader = builder.block
+        builder.branch(loop)
+        builder.position_at_end(loop)
+        index = builder.phi(length.type, name='secure.clear.index')
+        index.add_incoming(ir.Constant(length.type, 0), preheader)
+        active = builder.icmp_unsigned('<', index, length)
+        builder.cbranch(active, body, done)
+        builder.position_at_end(body)
+        destination = builder.gep(data, [index], inbounds=False)
+        self._store_address(
+            ir.Constant(ir.IntType(8), 0),
+            destination,
+            builder,
+            alignment=1,
+            volatile=True,
+        )
+        next_index = builder.add(index, ir.Constant(length.type, 1))
+        body_block = builder.block
+        builder.branch(loop)
+        index.add_incoming(next_index, body_block)
+        builder.position_at_end(done)
+
     @classmethod
     def _call_name(cls, primary: object, suffixes: list[object]) -> str | None:
         name = cls._identifier(primary)
@@ -738,12 +818,7 @@ class CallExpressionMixin:
             ) is not None
         ):
             return self._compile_constructor(name, call_suffix, builder, values)
-        if method is None:
-            callee = self._function_for_name(name or '')
-        if callee is None:
-            raise FunctionEmissionError(
-                f'La funcion {name or "<anonima>"} no tiene emision LLVM'
-            )
+
         arguments = next(
             (
                 child for child in self._children(call_suffix)
@@ -755,6 +830,19 @@ class CallExpressionMixin:
         if arguments is not None:
             container = next(iter(self._children(arguments)), None)
             argument_items = self._children(container)
+        if method is None and name == 'secure_clear':
+            if len(argument_items) != 1:
+                raise FunctionEmissionError(
+                    'secure_clear requiere exactamente un argumento'
+                )
+            self._compile_secure_clear(argument_items[0], builder, values)
+            return None
+        if method is None:
+            callee = self._function_for_name(name or '')
+        if callee is None:
+            raise FunctionEmissionError(
+                f'La funcion {name or "<anonima>"} no tiene emision LLVM'
+            )
         symbol = self._symbols.get(name or '')
         if method is None and name is not None and '.' not in name:
             symbol = next(

@@ -13,9 +13,10 @@ from .common import (
     _children, _token, _token_kind, _token_value,
 )
 from .resolution import (
-    _buffer_index_value, _identifier_from_node, _resolve_aggregate,
+    _buffer_index_value, _identifier_from_node, _namespace_owner,
+    _resolve_aggregate,
     _resolve_function, _resolve_symbol, _unsafe_context, _validate_array_index,
-    _validate_chain_index, is_buffer_type,
+    _validate_chain_index, is_buffer_type, resolve_type,
 )
 from .compatibility import (
     _is_integer_scalar,
@@ -25,6 +26,7 @@ from .compatibility import (
 from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
     _record_function_call,
+    SECURE_CLEAR_INTRINSIC,
     _validate_array_argument_storage, _validate_expansion_parameters,
     _validate_external_buffer_argument,
     _validate_unique_arguments,
@@ -120,6 +122,7 @@ def _qualified_import_name(
         for suffix in suffixes
     ):
         return None
+
     name = _identifier_from_node(primary)
     if name is None:
         return None
@@ -129,6 +132,48 @@ def _qualified_import_name(
             return None
         name = f'{name}.{member}'
     return name
+
+
+def _cast_target_node(suffix: object) -> object | None:
+    children = _children(suffix)
+    # TYPE is deliberately non-nodeable in the shared grammar, so AOT/GIR
+    # flattens the target into the suffix instead of preserving a TYPE ref.
+    return children[-1] if len(children) > 1 else None
+
+
+def _apply_scalar_cast(
+    value: ValueInfo,
+    suffix: object,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+) -> ValueInfo:
+    target_node = _cast_target_node(suffix)
+    if target_node is None:
+        raise ValueResolutionError('la conversion explicita requiere un tipo')
+    owner = _namespace_owner(namespace)
+    target = resolve_type(
+        target_node,
+        pointer_size=getattr(owner, 'pointer_size', 8),
+    )
+    source = value.type_spec
+    allowed = {'byte', 'uint8'}
+    if (
+        source.pointer_level != 0
+        or source.array_depth != 0
+        or target.pointer_level != 0
+        or target.array_depth != 0
+        or source.name not in allowed
+        or target.name not in allowed
+        or source.name == target.name
+    ):
+        raise ValueResolutionError(
+            'solo se permite la conversion explicita byte <-> uint8; '
+            'no es un cast general'
+        )
+    return ValueInfo(
+        target,
+        is_literal=value.is_literal,
+        value=value.value,
+    )
 
 
 def _imported_global_value(
@@ -192,6 +237,10 @@ def _infer_postfix(
                 namespace,
                 functions,
                 current_function=current_function,
+            )
+        if name == SECURE_CLEAR_INTRINSIC:
+            raise ValueResolutionError(
+                'secure_clear solo puede usarse como sentencia'
             )
         function = _resolve_method_call(
             namespace,
@@ -381,6 +430,8 @@ def _infer_postfix(
                     namespace,
                     current_function=current_function,
                 )
+            elif getattr(suffix, 'name', None) == 'CAST_SUFFIX':
+                result = _apply_scalar_cast(result, suffix, namespace)
         return result
 
     qualified_name = _qualified_import_name(primary, suffixes)
@@ -463,4 +514,6 @@ def _infer_postfix(
                 namespace,
                 current_function=current_function,
             )
+        elif name == 'CAST_SUFFIX':
+            result = _apply_scalar_cast(result, suffix, namespace)
     return result

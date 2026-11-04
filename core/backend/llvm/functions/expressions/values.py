@@ -16,6 +16,35 @@ from .memory import _MemoryPlace
 
 
 class ValueExpressionMixin:
+    def _guard_shift_count(
+        self,
+        shift: ir.Value,
+        width: int,
+        builder: ir.IRBuilder,
+    ) -> None:
+        """Reject dynamic LLVM shifts whose count is outside ``[0, width)``."""
+        constant = getattr(shift, 'constant', None)
+        if isinstance(constant, int):
+            if 0 <= constant < width:
+                return
+            raise FunctionEmissionError(
+                f'la cantidad de desplazamiento debe estar entre 0 y {width - 1}'
+            )
+        if not isinstance(shift.type, ir.IntType):
+            raise FunctionEmissionError('la cantidad de desplazamiento debe ser entera')
+        function = builder.function
+        valid_block = function.append_basic_block(name='shift.valid')
+        invalid_block = function.append_basic_block(name='shift.invalid')
+        valid = builder.icmp_unsigned(
+            '<',
+            shift,
+            ir.Constant(shift.type, width),
+        )
+        builder.cbranch(valid, valid_block, invalid_block)
+        builder.position_at_end(invalid_block)
+        self._emit_trap(builder)
+        builder.position_at_end(valid_block)
+
     def _compile_static_chain_index(
         self,
         node: object,
@@ -309,6 +338,12 @@ class ValueExpressionMixin:
                     'SHL': builder.shl,
                     'SHR': builder.lshr if unsigned else builder.ashr,
                 }
+            if operator in {'SHL', 'SHR'}:
+                if not isinstance(left.type, ir.IntType):
+                    raise FunctionEmissionError(
+                        'los desplazamientos requieren un operando entero'
+                    )
+                self._guard_shift_count(right, left.type.width, builder)
             operation = operations.get(operator)
             if operation is None:
                 raise FunctionEmissionError(
@@ -333,6 +368,18 @@ class ValueExpressionMixin:
             )
             if call_suffix is not None:
                 return self._compile_call(current, builder, values)
+            cast_suffixes = [
+                suffix for suffix in suffixes
+                if getattr(suffix, 'name', None) == 'CAST_SUFFIX'
+            ]
+            if cast_suffixes:
+                if len(suffixes) != 1 or primary is None:
+                    raise FunctionEmissionError(
+                        'la conversion byte <-> uint8 debe ser el unico sufijo'
+                    )
+                # byte and uint8 share the exact LLVM representation (i8).
+                # The frontend has already restricted this no-op to the pair.
+                return self._compile_expression(primary, builder, values)
             static_chain_index = self._compile_static_chain_index(current)
             if static_chain_index is not None:
                 return static_chain_index

@@ -20,7 +20,11 @@ from .resolution import (
     _require_known_pointer, _resolve_aggregate, _resolve_symbol,
     buffer_capacity, is_buffer_type, is_condition_type, _is_float_scalar,
 )
-from .compatibility import _integer_common_type
+from .compatibility import (
+    _integer_common_type,
+    _integer_width,
+    _wrap_unsigned_literal,
+)
 from .postfix import (
     _address_type, _deref_value, _infer_postfix, _unwrap_value,
 )
@@ -319,6 +323,18 @@ def infer_value(
                     'los operandos bitwise deben conservar el signo y permitir '
                     'un ensanchamiento seguro'
                 )
+            if operator in {'SHL', 'SHR'} and right.is_literal:
+                width = _integer_width(result_type)
+                if (
+                    width is None
+                    or not isinstance(right.value, int)
+                    or right.value < 0
+                    or right.value >= width
+                ):
+                    raise ValueResolutionError(
+                        f'la cantidad de desplazamiento debe estar entre 0 y '
+                        f'{(width or 0) - 1}'
+                    )
             if left.is_literal and right.is_literal:
                 operations = {
                     'AND': lambda: left.value & right.value,
@@ -336,7 +352,7 @@ def infer_value(
                 return ValueInfo(
                     result_type,
                     is_literal=True,
-                    value=value,
+                    value=_wrap_unsigned_literal(result_type, value),
                 )
             return ValueInfo(result_type)
 
@@ -420,7 +436,11 @@ def infer_value(
                 raise ValueResolutionError(
                     'la operacion aritmetica no es valida'
                 ) from error
-            return ValueInfo(result_type, is_literal=True, value=value)
+            return ValueInfo(
+                result_type,
+                is_literal=True,
+                value=_wrap_unsigned_literal(result_type, value),
+            )
         return ValueInfo(result_type)
 
     if isinstance(current, gast.ASTRef) and current.name == 'POSTFIX_EXPR':

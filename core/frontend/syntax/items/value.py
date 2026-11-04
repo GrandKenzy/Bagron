@@ -195,6 +195,16 @@ class INDEX_ACCESS(cmb.RuleItem):
     nodeable = True
 
 
+class CAST_SUFFIX(cmb.RuleItem):
+    """Explicit scalar conversion suffix, for example ``raw as uint8``."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchKeyword('as'),
+        cmb.Ref(TYPE),
+    )
+    nodeable = True
+
+
 class CALL_SUFFIX(cmb.RuleItem):
     entrypoint = cmb.Ref(ARGUMENTS)
     nodeable = True
@@ -222,6 +232,7 @@ class POSTFIX_EXPR(cmb.RuleItem):
                 cmb.SameLine(cmb.Ref(CALL_SUFFIX)),
                 cmb.SameLine(cmb.Ref(MEMBER_ACCESS)),
                 cmb.SameLine(cmb.Ref(INDEX_ACCESS)),
+                cmb.SameLine(cmb.Ref(CAST_SUFFIX)),
             )
         ),
     )
@@ -265,6 +276,7 @@ __all__ = [
     'ARRAY_SUFFIX',
     'ARRAY_VALUE',
     'BITINT_TYPE',
+    'CAST_SUFFIX',
     'CALL_SUFFIX',
     'DECLARATOR',
     'DEREF_ASSIGN_TARGET',
