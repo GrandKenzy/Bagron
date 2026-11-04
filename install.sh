@@ -2,11 +2,22 @@
 set -euo pipefail
 
 # Bootstrap POSIX: el instalador ELF contiene su propio Python portable.
-# Desde una copia del repositorio se conserva la ruta de desarrollo con Python
-# del sistema; desde GitHub se descarga directamente el ejecutable compilado.
-script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Solo se conserva la ruta de desarrollo cuando este archivo se ejecuta desde
+# un checkout real y el usuario la solicita explícitamente. Si llega por
+# `curl | bash`, o no se define BAGRON_LOCAL_INSTALL=1, siempre debe
+# descargarse el instalador portable.
+script_source="${BASH_SOURCE[0]:-}"
+script_dir=""
+if [[ -n "$script_source" && -f "$script_source" ]]; then
+    script_dir="$(CDPATH= cd -- "$(dirname -- "$script_source")" && pwd)"
+fi
 
-if [[ -f "$script_dir/installer.py" ]]; then
+if [[ "${BAGRON_LOCAL_INSTALL:-0}" == "1" \
+    && -n "$script_dir" \
+    && -f "$script_dir/installer.py" \
+    && -f "$script_dir/main.py" \
+    && -d "$script_dir/core" \
+    && -d "$script_dir/tools" ]]; then
     local_python="$script_dir/.runtime/bin/python"
     if [[ -x "$local_python" ]]; then
         exec "$local_python" "$script_dir/installer.py" --local "$@"
@@ -16,7 +27,7 @@ if [[ -f "$script_dir/installer.py" ]]; then
     fi
 fi
 
-version="${BAGRON_VERSION:-1.0.4}"
+version="${BAGRON_VERSION:-1.0.5}"
 installer_url="${BAGRON_INSTALLER_URL:-https://github.com/GrandKenzy/Bagron/releases/download/${version}/Bagron-${version}-linux-x86_64}"
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT

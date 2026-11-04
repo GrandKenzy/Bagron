@@ -443,7 +443,7 @@ def infer_value(
             )
         return ValueInfo(result_type)
 
-    if isinstance(current, gast.ASTRef) and current.name == 'POSTFIX_EXPR':
+    if isinstance(current, gast.ASTRef) and current.name in ('POSTFIX_EXPR', 'MEMBER_ACCESS_TARGET'):
         return _infer_postfix(
             current,
             namespace,

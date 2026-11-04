@@ -1,35 +1,89 @@
-# 04. Parámetros y ABI Windows x64
+# 04. Parámetros y ABI (Windows x64 y System V AMD64)
 
-En esta fase, las plantillas de funciones `@assembler` requieren target Windows
-x64. Los cuatro primeros argumentos enteros o punteros se asocian a `RCX`,
-`RDX`, `R8` y `R9`; Bagron elige el alias de ancho según el tipo:
+## 1. ¿Qué es una convención de llamada (ABI)?
 
-| Posición | 64 bits | 32 bits | 16 bits | 8 bits |
-| --- | --- | --- | --- | --- |
-| 1 | `rcx` | `ecx` | `cx` | `cl` |
-| 2 | `rdx` | `edx` | `dx` | `dl` |
-| 3 | `r8` | `r8d` | `r8w` | `r8b` |
-| 4 | `r9` | `r9d` | `r9w` | `r9b` |
+Una convención de llamada o **ABI** (*Application Binary Interface*) define el estándar a bajo nivel sobre cómo se transfieren los datos entre el llamador (*caller*) y la función llamada (*callee*):
+- En qué registros de la CPU se colocan los argumentos de entrada.
+- En qué orden y con qué alineación se empujan los argumentos adicionales a la pila (*stack*).
+- Qué registros deben ser preservados por la función llamada (*callee-saved / non-volatile*) y cuáles pueden sobreescribirse (*caller-saved / volatile*).
+- En qué registro se entrega el valor de retorno (`RAX` / `EAX`).
 
-Los argumentos desde la quinta posición se leen en la pila: `[rsp + 0x28]` en
-`gas-intel` y `0x28(%rsp)` en `att`, con ocho bytes por posición posterior.
+Bagron selecciona automáticamente la convención de llamada correcta según el target del módulo:
+- **Microsoft x64 ABI** cuando se compila para **Windows x64**.
+- **System V AMD64 ABI** cuando se compila para **Linux**, **ELF** o **Bare-metal x86_64**.
 
-Los nombres de parámetros se interpolan con `{nombre}`:
+---
+
+## 2. ABI Windows x64 (Microsoft x64)
+
+En el target Windows x64, los **cuatro primeros** argumentos enteros o punteros se asignan a cuatro registros dedicados. Bagron elige automáticamente el alias de ancho según el tipo declarado en la firma:
+
+| Posición | Registro x86_64 | Propósito / Pertenencia | 64 bits (`int64`, `uint64`, `*T`) | 32 bits (`int32`, `uint32`) | 16 bits (`int16`, `uint16`) | 8 bits (`int8`, `uint8`, `byte`, `bool`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1.º | `RCX` | *Counter Register* (1.er argumento) | `rcx` | `ecx` | `cx` | `cl` |
+| 2.º | `RDX` | *Data Register* (2.º argumento) | `rdx` | `edx` | `dx` | `dl` |
+| 3.er | `R8` | *General Purpose Register 8* (3.er argumento) | `r8` | `r8d` | `r8w` | `r8b` |
+| 4.º | `R9` | *General Purpose Register 9* (4.º argumento) | `r9` | `r9d` | `r9w` | `r9b` |
+
+### Paso por pila y *Shadow Space* en Windows x64 (argumentos 5 en adelante)
+- La convención de Microsoft x64 exige que el llamador reserve siempre **32 bytes** (`0x20`) en la cima de la pila conocidos como **Shadow Space** o *Home Space* (`[rsp + 0x00]` a `[rsp + 0x18]`).
+- Encima del Shadow Space se encuentran los **8 bytes** de la dirección de retorno insertada por `call`.
+- Por lo tanto, el **5.º argumento** se ubica en el offset `32 + 8 = 40` bytes (`0x28`):
+  - En `gas-intel`: `[rsp + 0x28]`
+  - En `att`: `40(%rsp)`
+- Cada argumento posterior suma 8 bytes adicionales (`0x30`, `0x38`, etc.).
+
+---
+
+## 3. ABI System V AMD64 (Linux, glibc, BSD, Bare-metal ELF)
+
+En targets Linux (`clause System "linux"` o triples `x86_64-unknown-linux-gnu`) y ELF, Bagron aplica el estándar **System V AMD64 ABI**.
+
+Los **seis primeros** argumentos enteros o punteros se pasan por registros:
+
+| Posición | Registro x86_64 | Propósito / Pertenencia | 64 bits (`int64`, `uint64`, `*T`) | 32 bits (`int32`, `uint32`) | 16 bits (`int16`, `uint16`) | 8 bits (`int8`, `uint8`, `byte`, `bool`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1.º | `RDI` | *Destination Index* (1.er argumento) | `rdi` | `edi` | `di` | `dil` |
+| 2.º | `RSI` | *Source Index* (2.º argumento) | `rsi` | `esi` | `si` | `sil` |
+| 3.er | `RDX` | *Data Register* (3.er argumento) | `rdx` | `edx` | `dx` | `dl` |
+| 4.º | `RCX` | *Counter Register* (4.º argumento) | `rcx` | `ecx` | `cx` | `cl` |
+| 5.º | `R8` | *General Purpose Register 8* (5.º argumento) | `r8` | `r8d` | `r8w` | `r8b` |
+| 6.º | `R9` | *General Purpose Register 9* (6.º argumento) | `r9` | `r9d` | `r9w` | `r9b` |
+
+### Paso por pila en System V AMD64 (argumentos 7 en adelante)
+- En System V **no existe el Shadow Space** de 32 bytes.
+- Al entrar a la función, `[rsp]` contiene únicamente los 8 bytes de la dirección de retorno puesta por `call`.
+- Por lo tanto, el **7.º argumento** comienza inmediatamente en el offset `0x08` (8 bytes):
+  - En `gas-intel`: `[rsp + 0x8]`
+  - En `att`: `8(%rsp)`
+- El 8.º argumento se ubica en `[rsp + 0x10]` / `16(%rsp)`, y así sucesivamente.
+
+### Nota importante sobre `syscall` del Kernel Linux
+Al invocar la instrucción `syscall` en Linux x86_64:
+- El número de llamada al sistema se coloca en `RAX` (`%rax`).
+- Los primeros 3 argumentos de función (`RDI`, `RSI`, `RDX`) y los argumentos 5.º y 6.º (`R8`, `R9`) **ya coinciden exactamente** con los registros que espera el kernel.
+- Únicamente el **4.º argumento** difiere: la ABI de funciones lo recibe en `RCX`, pero la instrucción `syscall` usa `R10` (porque la propia instrucción `syscall` del procesador pisa `RCX` para guardar `RIP`). Si tu syscall usa 4 o más parámetros, basta con hacer `movq %rcx, %r10` antes de `syscall`.
+
+---
+
+## 4. Interpolación de parámetros en el código
+
+Dentro del cuerpo del bloque `#prep assembler`, puedes referenciar cualquier parámetro de la firma mediante `{nombre_parametro}`:
 
 ```bg
+clause System "linux"
+
 @assembler
-func equal(left: int32, right: int32) int32:
-    #prep assembler "gas-intel"
-        cmp {left}, {right}
-        jne different
-        mov eax, 1
-    different:
-        xor eax, eax
+public func exit(code: int32) Never:
+    #prep assembler "att"
+        movl {code}, %edi
+        movq $60, %rax
+        syscall
     #end
-    return asm
 ```
 
-El placeholder se reemplaza antes de ensamblar. Debe ser un identificador que
-exista en la firma; `{{` y `}}` producen llaves literales. Los parámetros deben
-tener nombre, no pueden ser arrays y deben tener tipos enteros compatibles de
-hasta 64 bits o punteros.
+### Reglas de expansión:
+1. **Reemplazo automático:** Bagron sustituye `{code}` por `%edi` en System V (`"att"`) o por `ecx` en Windows (`"gas-intel"`) antes de ensamblar con Clang.
+2. **Prefijo en AT&T:** En el dialecto `"att"`, el compilador antepone automáticamente el prefijo `%` a todos los registros resueltos.
+3. **Llaves literales:** Para escribir llaves literales en el código ensamblador, usa `{{` y `}}`.
+4. **Tipos válidos:** Los parámetros interpolados deben tener nombre, no pueden ser arrays ni agregados, y deben ser enteros escalares (de 8 a 64 bits) o punteros (`*T`).

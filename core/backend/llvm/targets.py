@@ -84,10 +84,16 @@ def _triple_for_request(
     host_triple: str,
     system_request: str | None = None,
 ) -> str:
+    sys_req = str(system_request or '').strip().lower()
     if request == 'auto':
-        if str(system_request or '').strip().lower() != 'baremetal':
+        if sys_req == 'baremetal':
+            request = host_triple.split('-', 1)[0]
+        elif sys_req == 'linux' and 'linux' not in host_triple.lower():
+            request = host_triple.split('-', 1)[0]
+        elif sys_req == 'windows' and 'windows' not in host_triple.lower():
+            request = host_triple.split('-', 1)[0]
+        else:
             return host_triple
-        request = host_triple.split('-', 1)[0]
 
     if '-' in request:
         return request
@@ -99,11 +105,14 @@ def _triple_for_request(
             "'arm', 'riscv32', 'riscv64' o un triple LLVM."
         )
 
-    if str(system_request or '').strip().lower() == 'baremetal':
+    if sys_req == 'baremetal':
         return f'{architecture}-unknown-none-elf'
 
-    if str(system_request or '').strip().lower() == 'linux':
+    if sys_req == 'linux':
         return f'{architecture}-unknown-linux-gnu'
+
+    if sys_req == 'windows' and 'windows' not in host_triple.lower():
+        return f'{architecture}-pc-windows-msvc'
 
     parts = host_triple.split('-')
     parts[0] = architecture

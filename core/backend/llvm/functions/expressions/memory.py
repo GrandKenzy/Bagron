@@ -530,7 +530,7 @@ class MemoryExpressionMixin:
                 alignment=1,
             )
 
-        if getattr(current, 'name', None) == 'POSTFIX_EXPR':
+        if getattr(current, 'name', None) in {'POSTFIX_EXPR', 'MEMBER_ACCESS_TARGET'}:
             children = self._children(current)
             primary = children[0] if children else None
             suffixes: list[object] = []

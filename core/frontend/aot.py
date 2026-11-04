@@ -326,10 +326,11 @@ def _group_transparent_type(rule_name: str, children: list[Any]) -> list[Any]:
         'EXTERN_RETURN',
         'ENUM',
         'FOR_SIGNATURE',
+        'FIELD_DECLARATION',
     }:
         return children
 
-    if rule_name in {'VAR_DECLARATION', 'VAR_INITIALIZATION', 'PAIR_PARAM'}:
+    if rule_name in {'VAR_DECLARATION', 'VAR_INITIALIZATION', 'PAIR_PARAM', 'FIELD_DECLARATION'}:
         start = _after_token(children, 'COLON')
         if start is None:
             return children

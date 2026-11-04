@@ -26,7 +26,7 @@ import zipfile
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
-BAGRON_VERSION = '1.0.4'
+BAGRON_VERSION = '1.0.5'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
@@ -176,6 +176,20 @@ def _bootstrap_vnma(target_dir: Path) -> Path | None:
         print('Error: el runtime local no contiene un ejecutable Python.', file=sys.stderr)
         return None
 
+    runtime_probe = subprocess.run(
+        [str(runtime_python), '--version'],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if runtime_probe.returncode != 0:
+        print(
+            'Error: el runtime de Python de Bagron no se puede ejecutar. '
+            f'{runtime_probe.stderr.strip()}',
+            file=sys.stderr,
+        )
+        return None
+
     pip_probe = subprocess.run(
         [str(runtime_python), '-m', 'pip', '--version'],
         stdout=subprocess.DEVNULL,
@@ -190,6 +204,19 @@ def _bootstrap_vnma(target_dir: Path) -> Path | None:
         )
         if ensurepip.returncode != 0:
             print('Error: el runtime no contiene un pip utilizable.', file=sys.stderr)
+            return None
+
+        pip_probe = subprocess.run(
+            [str(runtime_python), '-m', 'pip', '--version'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if pip_probe.returncode != 0:
+            print(
+                'Error: pip no quedó disponible dentro del runtime de Bagron.',
+                file=sys.stderr,
+            )
             return None
 
     if not vnma_bin.is_file():

@@ -11,7 +11,7 @@ errores habituales son:
 | dialecto desconocido | usa `gas-intel` o `att` |
 | placeholder inexistente | el parámetro no existe en la firma |
 | `ret` dentro del cuerpo | `return asm` agrega el retorno ABI |
-| función ASM en otro target | esta fase requiere Windows x64 |
+| función ASM en arquitectura no soportada | esta fase requiere arquitectura x86_64 (Windows x64 o System V AMD64) |
 
 Si Clang rechaza una instrucción, el backend conserva el archivo generado y
 relaciona la línea del `.asm` con la fuente `.bg`, la función, el dialecto y la

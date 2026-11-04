@@ -1549,7 +1549,8 @@ def _assignment_target(node: gast.ASTRef) -> gast.ASTRef | None:
     return next(
         (
             child for child in _children(node)
-            if isinstance(child, gast.ASTRef) and child.name == 'ASSIGN_TARGET'
+            if isinstance(child, gast.ASTRef)
+            and child.name in ('ASSIGN_TARGET', 'MEMBER_ACCESS_TARGET')
         ),
         None,
     )
@@ -1835,18 +1836,29 @@ def _validate_assembler_body(
             'un bloque de ensamblador opcional y return'
         )
 
+    is_void = (
+        symbol.signature.return_type.name == 'void'
+        and symbol.signature.return_type.pointer_level == 0
+        and symbol.signature.return_type.array_depth == 0
+    )
+    is_never = (
+        symbol.signature.return_type.name == 'Never'
+        and symbol.signature.return_type.pointer_level == 0
+        and symbol.signature.return_type.array_depth == 0
+    )
+
     if prep_count:
         if return_count:
-            compiler.error(
-                f'La funcion @assembler {symbol.name} debe usar return asm '
-                'cuando contiene ensamblador'
-            )
-        is_void = (
-            symbol.signature.return_type.name == 'void'
-            and symbol.signature.return_type.pointer_level == 0
-            and symbol.signature.return_type.array_depth == 0
-        )
-        if not is_void and return_asm_count != 1:
+            if is_never:
+                compiler.error(
+                    f'La funcion Never @assembler {symbol.name} no puede usar return'
+                )
+            else:
+                compiler.error(
+                    f'La funcion @assembler {symbol.name} debe usar return asm '
+                    'cuando contiene ensamblador'
+                )
+        if not is_void and not is_never and return_asm_count != 1:
             compiler.error(
                 f'La funcion @assembler {symbol.name} requiere un unico return asm'
             )
@@ -1854,15 +1866,23 @@ def _validate_assembler_body(
             compiler.error(
                 f'La funcion void @assembler {symbol.name} no puede usar return asm'
             )
+        if is_never and return_asm_count:
+            compiler.error(
+                f'La funcion Never @assembler {symbol.name} no puede usar return asm'
+            )
     elif return_asm_count:
         compiler.error(
             f'La funcion @assembler {symbol.name} no puede usar return asm '
             'sin un bloque de ensamblador'
         )
 
-    if not prep_count and return_count != 1:
+    if not prep_count and not is_never and return_count != 1:
         compiler.error(
             f'La funcion @assembler {symbol.name} requiere un unico return'
+        )
+    if not prep_count and is_never and return_count:
+        compiler.error(
+            f'La funcion Never @assembler {symbol.name} no puede usar return'
         )
 
     # A raw helper whose complete body is ``mov rax, {parameter}`` is a
@@ -2216,7 +2236,16 @@ def _process_body_node(
         if variable is not None:
             symbol.local_variables[handle.name] = variable
         return
-    if node.name == 'VAR_ASSIGNATION':
+    if node.name in ('VAR_ASSIGNATION', 'FIELD_DECLARATION'):
+        if node.name == 'FIELD_DECLARATION' and (
+            getattr(symbol, 'owner_type', None) is None
+            or getattr(symbol, 'source_name', None) not in ('__init__', '__frontend__')
+        ):
+            compiler.error(
+                'Las declaraciones tipadas de atributos solo se permiten en el '
+                'iniciador de una clase'
+            )
+            return
         _validate_assignment(compiler, symbol, node, scope)
         return
     if node.name == 'DEL':

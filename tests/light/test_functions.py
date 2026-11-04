@@ -969,6 +969,138 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_assembler_never_does_not_require_return(self):
+        compiler = self.compile_source(
+            '@assembler\n'
+            'public func exit_proc(code: int32) Never:\n'
+            '    #prep assembler "att"\n'
+            '        movq $60, %rax\n'
+            '        syscall\n'
+            '    #end\n'
+        )
+        self.assertIn('exit_proc', compiler.storage.functions)
+        func = compiler.storage.functions['exit_proc']
+        self.assertEqual('Never', func.signature.return_type.name)
+
+    def test_assembler_never_rejects_return_and_return_asm(self):
+        with self.assertRaisesRegex(CompilationError, 'Never.*no puede usar return'):
+            self.compile_source(
+                '@assembler\n'
+                'public func exit_proc(code: int32) Never:\n'
+                '    #prep assembler "att"\n'
+                '        movq $60, %rax\n'
+                '        syscall\n'
+                '    #end\n'
+                '    return\n'
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'Never.*no puede usar return asm'):
+            self.compile_source(
+                '@assembler\n'
+                'public func exit_proc(code: int32) Never:\n'
+                '    #prep assembler "att"\n'
+                '        movq $60, %rax\n'
+                '        syscall\n'
+                '    #end\n'
+                '    return asm\n'
+            )
+
+    def test_assembler_never_omits_status_setup(self):
+        from core.compiler.prep import _render_assembly, PrepBlock
+        from core.frontend.objects.function import FunctionSymbol
+        from core.frontend.objects.function import FunctionSignature
+        from core.frontend.objects.type import TypeSpec
+
+        block = PrepBlock(
+            source=Path('dummy.bg'),
+            function_name='exit_proc',
+            dialect='att',
+            body='    movq $60, %rax\n    syscall',
+            line=1,
+        )
+        func = FunctionSymbol(
+            name='exit_proc',
+            signature=FunctionSignature(
+                parameters=[],
+                return_type=TypeSpec(name='Never'),
+            ),
+        )
+        rendered = _render_assembly(block, func, 'x86_64-pc-windows-msvc')
+        self.assertNotIn('%eax', rendered)
+        self.assertIn('exit_proc:', rendered)
+        self.assertIn('movq $60, %rax', rendered)
+
+    def test_assembler_sysv_abi_registers_and_stack(self):
+        from core.compiler.prep import _render_assembly, PrepBlock
+        from core.frontend.objects.function import (
+            ParameterSpec,
+            FunctionSignature,
+            FunctionSymbol,
+        )
+        from core.frontend.objects.type import TypeSpec
+
+        params = [
+            ParameterSpec(name='a', type_spec=TypeSpec(name='int64')),
+            ParameterSpec(name='b', type_spec=TypeSpec(name='int32')),
+            ParameterSpec(name='c', type_spec=TypeSpec(name='int16')),
+            ParameterSpec(name='d', type_spec=TypeSpec(name='int8')),
+            ParameterSpec(name='e', type_spec=TypeSpec(name='uint8')),
+            ParameterSpec(name='f', type_spec=TypeSpec(name='uint64')),
+            ParameterSpec(name='g', type_spec=TypeSpec(name='int64')),
+        ]
+        func = FunctionSymbol(
+            name='sysv_fn',
+            signature=FunctionSignature(
+                parameters=params,
+                return_type=TypeSpec(name='void'),
+            ),
+        )
+        block_att = PrepBlock(
+            source=Path('dummy.bg'),
+            function_name='sysv_fn',
+            dialect='att',
+            body='    # {a} {b} {c} {d} {e} {f} {g}',
+            line=1,
+        )
+        rendered_att = _render_assembly(
+            block_att,
+            func,
+            'x86_64-unknown-linux-gnu',
+        )
+        self.assertIn('# %rdi %esi %dx %cl %r8b %r9 8(%rsp)', rendered_att)
+
+        block_intel = PrepBlock(
+            source=Path('dummy.bg'),
+            function_name='sysv_fn',
+            dialect='gas-intel',
+            body='    # {a} {b} {c} {d} {e} {f} {g}',
+            line=1,
+        )
+        rendered_intel = _render_assembly(
+            block_intel,
+            func,
+            'x86_64-unknown-linux-gnu',
+        )
+        self.assertIn('# rdi esi dx cl r8b r9 [rsp + 0x8]', rendered_intel)
+
+    def test_assembler_linux_system_clause_compiles_never_exit(self):
+        compiler = self.compile_source(
+            'clause System "linux"\n'
+            '@assembler\n'
+            'public func exit(code: int32) Never:\n'
+            '    #prep assembler "att"\n'
+            '        movl {code}, %edi\n'
+            '        movq $60, %rax\n'
+            '        syscall\n'
+            '    #end\n'
+        )
+        self.assertIn('exit', compiler.storage.functions)
+        asm_files = list(compiler.storage.prep_sources)
+        self.assertEqual(1, len(asm_files))
+        asm_content = asm_files[0].read_text(encoding='utf-8')
+        self.assertIn('movl %edi, %edi', asm_content)
+        self.assertIn('movq $60, %rax', asm_content)
+
 
 if __name__ == '__main__':
     unittest.main()

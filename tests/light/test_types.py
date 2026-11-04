@@ -663,6 +663,49 @@ class TypeSemanticTests(unittest.TestCase):
             )
 
 
+    def test_class_field_explicit_type_declaration(self):
+        compiler = self.compile_source(
+            'class CRC32:\n'
+            '    func __init__() void:\n'
+            '        self.state: uint32 = 0xFFFFFFFF\n'
+            '    func get() uint32:\n'
+            '        return self.state\n'
+            'func main() int32:\n'
+            '    crc: CRC32 = CRC32()\n'
+            '    if crc.get() == 0xFFFFFFFF:\n'
+            '        return 0\n'
+            '    return 1\n',
+            executable=True,
+        )
+        symbol = compiler.storage.types['CRC32']
+        self.assertTrue(symbol.is_class)
+        field = next(f for f in symbol.fields if f.name == 'state')
+        self.assertIsNotNone(field)
+        self.assertEqual('uint32', field.type_spec.name)
+
+    def test_rejects_incompatible_class_field_type_declaration(self):
+        with self.assertRaisesRegex(CompilationError, 'no coincide con'):
+            self.compile_source(
+                'class Box:\n'
+                '    func __init__() void:\n'
+                '        self.value: int32 = "invalid"\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+    def test_rejects_class_field_type_declaration_outside_initializer(self):
+        with self.assertRaisesRegex(CompilationError, 'iniciador de una clase'):
+            self.compile_source(
+                'class Box:\n'
+                '    func __init__() void:\n'
+                '        self.value: int32 = 1\n'
+                '    func reset() void:\n'
+                '        self.value: int32 = 0\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+
 if __name__ == '__main__':
     unittest.main()
 

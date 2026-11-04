@@ -12,7 +12,7 @@ from core.frontend.syntax.items.value import (
     RETURN_ASM,
     TYPE,
 )
-from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
+from core.frontend.syntax.items.var_decl import FIELD_DECLARATION, VAR, VAR_ASSIGNATION
 
 
 class DECORATOR(cmb.RuleItem):
@@ -59,6 +59,7 @@ class FUNCTION_BODY(cmb.RuleItem):
                 cmb.Ref(WHILE),
                 cmb.Ref(ENUM),
                 cmb.Ref(FOR),
+                cmb.Ref(FIELD_DECLARATION),
                 cmb.Ref(VAR_ASSIGNATION),
                 cmb.Ref(CALL),
                 cmb.Ref(DEL),

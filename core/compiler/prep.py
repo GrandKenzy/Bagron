@@ -432,18 +432,46 @@ def _safe_component(value: str) -> str:
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', value) or '_'
 
 
-def _windows_x64_registers(target_triple: str) -> tuple[dict[str, str], ...]:
+_WINDOWS_X64_REGISTERS: tuple[dict[str, str], ...] = (
+    {'full': 'rcx', 'dword': 'ecx', 'word': 'cx', 'byte': 'cl'},
+    {'full': 'rdx', 'dword': 'edx', 'word': 'dx', 'byte': 'dl'},
+    {'full': 'r8', 'dword': 'r8d', 'word': 'r8w', 'byte': 'r8b'},
+    {'full': 'r9', 'dword': 'r9d', 'word': 'r9w', 'byte': 'r9b'},
+)
+
+_SYSV_X64_REGISTERS: tuple[dict[str, str], ...] = (
+    {'full': 'rdi', 'dword': 'edi', 'word': 'di', 'byte': 'dil'},
+    {'full': 'rsi', 'dword': 'esi', 'word': 'si', 'byte': 'sil'},
+    {'full': 'rdx', 'dword': 'edx', 'word': 'dx', 'byte': 'dl'},
+    {'full': 'rcx', 'dword': 'ecx', 'word': 'cx', 'byte': 'cl'},
+    {'full': 'r8', 'dword': 'r8d', 'word': 'r8w', 'byte': 'r8b'},
+    {'full': 'r9', 'dword': 'r9d', 'word': 'r9w', 'byte': 'r9b'},
+)
+
+
+def _x64_abi_spec(target_triple: str) -> tuple[tuple[dict[str, str], ...], int]:
+    """Return (register_table, stack_base_offset) for the target x86_64 ABI."""
     normalized = target_triple.lower()
-    if not normalized.startswith(('x86_64-', 'amd64-')) or 'windows' not in normalized:
+    if not normalized.startswith(('x86_64-', 'amd64-')):
         raise PrepError(
-            'Las funciones @assembler requieren el target Windows x64 en esta fase'
+            'Las funciones @assembler requieren arquitectura x86_64 en esta fase'
         )
-    return (
-        {'full': 'rcx', 'dword': 'ecx', 'word': 'cx', 'byte': 'cl'},
-        {'full': 'rdx', 'dword': 'edx', 'word': 'dx', 'byte': 'dl'},
-        {'full': 'r8', 'dword': 'r8d', 'word': 'r8w', 'byte': 'r8b'},
-        {'full': 'r9', 'dword': 'r9d', 'word': 'r9w', 'byte': 'r9b'},
+    if any(token in normalized for token in ('windows', 'win32', 'msvc', 'mingw')):
+        # NOTA: Windows x64 ABI reserva 32 bytes de shadow space + 8 bytes de
+        # direccion de retorno (0x28).
+        return _WINDOWS_X64_REGISTERS, 0x28
+    if any(token in normalized for token in ('linux', 'gnu', 'musl', 'elf', 'none', 'freebsd')):
+        # NOTA: System V AMD64 ABI pasa 6 registros y el 7.o argumento inicia
+        # tras los 8 bytes de la direccion de retorno (0x08), sin shadow space.
+        return _SYSV_X64_REGISTERS, 0x08
+    raise PrepError(
+        f'Target ABI no soportado para @assembler: {target_triple!r}'
     )
+
+
+def _windows_x64_registers(target_triple: str) -> tuple[dict[str, str], ...]:
+    registers, _ = _x64_abi_spec(target_triple)
+    return registers
 
 
 def _normalize_dialect(dialect: str) -> str:
@@ -513,10 +541,13 @@ def _register_for_width(register: dict[str, str], width: int) -> str:
     return register['full']
 
 
-def _stack_operand(index: int, dialect: str) -> str:
-    # At function entry, Windows x64 places the fifth argument after the
-    # return address and the 32-byte shadow space: rsp + 0x28.
-    offset = 0x28 + (index - 4) * 8
+def _stack_operand(
+    index: int,
+    dialect: str,
+    register_count: int = 4,
+    stack_base: int = 0x28,
+) -> str:
+    offset = stack_base + (index - register_count) * 8
     if dialect == 'gas-intel':
         return f'[rsp + 0x{offset:x}]'
     return f'{offset}(%rsp)'
@@ -528,7 +559,7 @@ def _expand_template(
     target_triple: str,
     dialect: str,
 ) -> str:
-    registers = _windows_x64_registers(target_triple)
+    registers, stack_base = _x64_abi_spec(target_triple)
     bindings: dict[str, str] = {}
     for index, parameter in enumerate(parameters):
         name = str(getattr(parameter, 'name', ''))
@@ -538,7 +569,7 @@ def _expand_template(
             if dialect == 'att':
                 value = f'%{value}'
         else:
-            value = _stack_operand(index, dialect)
+            value = _stack_operand(index, dialect, len(registers), stack_base)
         bindings[name] = value
     if any(not name for name in bindings):
         raise PrepError('Todos los parametros de @assembler deben tener nombre')
@@ -604,7 +635,13 @@ def _render_assembly(
         and getattr(return_type, 'pointer_level', 0) == 0
         and getattr(return_type, 'array_depth', 0) == 0
     )
-    status_setup = None if is_void else (
+    is_never = (
+        getattr(return_type, 'name', None) == 'Never'
+        and getattr(return_type, 'pointer_level', 0) == 0
+        and getattr(return_type, 'array_depth', 0) == 0
+    )
+    # NOTA: Las funciones void y Never no retornan codigo de estado ABI.
+    status_setup = None if (is_void or is_never) else (
         'mov eax, 1' if dialect == 'gas-intel' else 'movl $1, %eax'
     )
     lines = [
@@ -657,7 +694,7 @@ def write_prep_files(
 
     if not blocks:
         if root.exists():
-            for pattern in ('*__prep_*.asm', '*__prep_*.obj'):
+            for pattern in ('*__prep_*.asm', '*__prep_*.obj', '*__prep_*.o'):
                 for previous in root.rglob(pattern):
                     previous.unlink()
         return written
@@ -676,7 +713,7 @@ def write_prep_files(
         module_dir = root.joinpath(*module_parts)
         module_dir.mkdir(parents=True, exist_ok=True)
         if module_dir not in cleaned_directories:
-            for pattern in ('*__prep_*.asm', '*__prep_*.obj'):
+            for pattern in ('*__prep_*.asm', '*__prep_*.obj', '*__prep_*.o'):
                 for previous in module_dir.glob(pattern):
                     previous.unlink()
             cleaned_directories.add(module_dir)

@@ -539,7 +539,7 @@ class StatementEmitterMixin:
         target = next(
             (
                 child for child in self._children(node)
-                if getattr(child, 'name', None) == 'ASSIGN_TARGET'
+                if getattr(child, 'name', None) in {'ASSIGN_TARGET', 'MEMBER_ACCESS_TARGET'}
             ),
             None,
         )
@@ -1426,7 +1426,7 @@ class StatementEmitterMixin:
             name = getattr(child, 'name', None)
             if name == 'VAR':
                 self._emit_local_declaration(child, builder, values)
-            elif name == 'VAR_ASSIGNATION':
+            elif name in {'VAR_ASSIGNATION', 'FIELD_DECLARATION'}:
                 self._emit_assignment(child, builder, values, symbol)
             elif name == 'DEL':
                 self._emit_deletion(child, builder, values)

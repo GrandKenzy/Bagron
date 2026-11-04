@@ -17,6 +17,7 @@ from core.frontend.tools.types import (
     ValueResolutionError,
     infer_value,
     is_compatible,
+    resolve_type,
 )
 from core.frontend.tools.variable import build_symbol
 from core.storage import Storage
@@ -192,7 +193,8 @@ def _assignment_parts(
     target = next(
         (
             child for child in _children(node)
-            if isinstance(child, gast.ASTRef) and child.name == 'ASSIGN_TARGET'
+            if isinstance(child, gast.ASTRef)
+            and child.name in ('ASSIGN_TARGET', 'MEMBER_ACCESS_TARGET')
         ),
         None,
     )
@@ -233,7 +235,7 @@ def _self_field_name(target: object) -> str | None:
         children = _children(current)
         current = children[0] if children else None
 
-    if getattr(current, 'name', None) != 'POSTFIX_EXPR':
+    if getattr(current, 'name', None) not in ('POSTFIX_EXPR', 'MEMBER_ACCESS_TARGET'):
         return None
     children = _children(current)
     primary = children[0] if children else None
@@ -249,6 +251,25 @@ def _self_field_name(target: object) -> str | None:
     if getattr(suffix, 'name', None) != 'MEMBER_ACCESS':
         return None
     return _identifier(suffix)
+
+
+def _type_from_declaration(statement: gast.ASTRef) -> object | None:
+    children = _children(statement)
+    colon_index = next(
+        (i for i, child in enumerate(children) if _token_kind(child) == 'COLON'),
+        None,
+    )
+    assign_index = next(
+        (i for i, child in enumerate(children) if _token_kind(child) == 'ASSIGN'),
+        None,
+    )
+    if (
+        colon_index is not None
+        and assign_index is not None
+        and colon_index + 1 < assign_index
+    ):
+        return children[colon_index + 1]
+    return None
 
 
 def _initializer_fields(
@@ -349,7 +370,10 @@ def _initializer_fields(
                 parent_call = parsed_parent_call
             continue
 
-        if not isinstance(statement, gast.ASTRef) or statement.name != 'VAR_ASSIGNATION':
+        if not isinstance(statement, gast.ASTRef) or statement.name not in (
+            'VAR_ASSIGNATION',
+            'FIELD_DECLARATION',
+        ):
             compiler.error(
                 f'El {initializer_name} de {class_name} solo admite '
                 'super.<iniciador>(...) y asignaciones directas a self.<campo>'
@@ -392,10 +416,36 @@ def _initializer_fields(
             compiler.error(f'{class_name}.{field_name}: {error}')
             continue
 
-        if value_info.type_spec.name in {'void', 'Never'} and not value_info.type_spec.pointer_level:
+        if statement.name == 'FIELD_DECLARATION':
+            type_node = _type_from_declaration(statement)
+            if type_node is None:
+                compiler.error(
+                    f'La declaracion del atributo {class_name}.{field_name} requiere un tipo'
+                )
+                continue
+            try:
+                declared_type = resolve_type(
+                    type_node,
+                    pointer_size=getattr(compiler, 'pointer_size', 8),
+                )
+            except TypeResolutionError as error:
+                compiler.error(f'{class_name}.{field_name}: {error}')
+                continue
+
+            if not is_compatible(declared_type, value_info):
+                compiler.error(
+                    f'El valor inicial de {class_name}.{field_name} no coincide con '
+                    f'{declared_type.canonical_name}'
+                )
+                continue
+            field_type = declared_type
+        else:
+            field_type = value_info.type_spec
+
+        if field_type.name in {'void', 'Never'} and not field_type.pointer_level:
             compiler.error(
                 f'El atributo {class_name}.{field_name} no puede ser '
-                f'{value_info.type_spec.name}'
+                f'{field_type.name}'
             )
             continue
 
@@ -403,7 +453,7 @@ def _initializer_fields(
         fields.append(
             FieldSpec(
                 field_name,
-                value_info.type_spec,
+                field_type,
                 value_info,
                 initializer_node=value_node,
                 declaring_type=class_name,

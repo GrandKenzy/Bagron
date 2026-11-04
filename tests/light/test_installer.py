@@ -29,6 +29,17 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
                 self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
 
+    def test_bootstrap_script_does_not_use_stdin_as_a_local_checkout(self):
+        install_script = (
+            Path(__file__).resolve().parents[2] / 'install.sh'
+        ).read_text(encoding='utf-8')
+        self.assertIn('script_source="${BASH_SOURCE[0]:-}"', install_script)
+        self.assertIn('BAGRON_LOCAL_INSTALL:-0', install_script)
+        self.assertIn('&& -n "$script_dir"', install_script)
+        self.assertIn('&& -f "$script_dir/main.py"', install_script)
+        self.assertIn('&& -d "$script_dir/core"', install_script)
+        self.assertIn('&& -d "$script_dir/tools"', install_script)
+
     def test_bootstrap_vnma_uses_a_private_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'Bagron'
@@ -38,18 +49,22 @@ class InstallerTests(unittest.TestCase):
             runtime_python = installer._runtime_python_path(runtime_dir)
             vnma_path = installer._vnma_path(runtime_dir)
             calls = []
+            pip_enabled = False
 
             def fake_run(command, **kwargs):
+                nonlocal pip_enabled
                 text_command = [str(part) for part in command]
                 calls.append(text_command)
                 if '-m' in text_command and 'venv' in text_command:
                     runtime_python.parent.mkdir(parents=True, exist_ok=True)
                     runtime_python.touch()
+                elif '-m' in text_command and 'ensurepip' in text_command:
+                    pip_enabled = True
                 elif text_command[-2:] == ['--upgrade', 'vnma']:
                     vnma_path.parent.mkdir(parents=True, exist_ok=True)
                     vnma_path.touch()
                 if text_command[-2:] == ['pip', '--version']:
-                    return mock.Mock(returncode=1)
+                    return mock.Mock(returncode=0 if pip_enabled else 1)
                 return mock.Mock(returncode=0)
 
             with mock.patch.object(installer, '_find_system_python', return_value=['python']), mock.patch.object(
@@ -89,7 +104,7 @@ class InstallerTests(unittest.TestCase):
             (target / 'vnma.lock').write_text('{"gram": "local"}', encoding='utf-8')
             installer._configure_vnma_toml(target)
             content = (target / 'vnma.toml').read_text(encoding='utf-8')
-            self.assertIn('version = "1.0.4"', content)
+            self.assertIn('version = "1.0.5"', content)
             self.assertIn('https://github.com/GrandKenzy/Gram.git', content)
             self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
@@ -133,16 +148,16 @@ class InstallerTests(unittest.TestCase):
             with tarfile.open(output, 'r:gz') as archive:
                 names = set(archive.getnames())
 
-            self.assertIn('Bagron-1.0.4/installer.py', names)
-            self.assertIn('Bagron-1.0.4/install.sh', names)
+            self.assertIn('Bagron-1.0.5/installer.py', names)
+            self.assertIn('Bagron-1.0.5/install.sh', names)
             self.assertTrue(
-                any(name.rstrip('/') == 'Bagron-1.0.4/modules' for name in names)
+                any(name.rstrip('/') == 'Bagron-1.0.5/modules' for name in names)
             )
-            self.assertNotIn('Bagron-1.0.4/vendor/', names)
+            self.assertNotIn('Bagron-1.0.5/vendor/', names)
             aot_library = Path(__file__).resolve().parents[2] / 'build' / 'aot' / 'libbagron_aot.so'
             if aot_library.is_file():
-                self.assertIn('Bagron-1.0.4/build/aot/libbagron_aot.so', names)
-                self.assertIn('Bagron-1.0.4/build/aot/gram_parser_manifest.json', names)
+                self.assertIn('Bagron-1.0.5/build/aot/libbagron_aot.so', names)
+                self.assertIn('Bagron-1.0.5/build/aot/gram_parser_manifest.json', names)
             else:
                 self.assertFalse(any('/build/' in name for name in names))
 
@@ -156,9 +171,9 @@ class InstallerTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
 
-            self.assertIn('Bagron-1.0.4/installer.py', names)
-            self.assertIn('Bagron-1.0.4/build/aot/bagron_aot.dll', names)
-            self.assertIn('Bagron-1.0.4/build/aot/gram_parser_manifest.json', names)
+            self.assertIn('Bagron-1.0.5/installer.py', names)
+            self.assertIn('Bagron-1.0.5/build/aot/bagron_aot.dll', names)
+            self.assertIn('Bagron-1.0.5/build/aot/gram_parser_manifest.json', names)
             self.assertFalse(any('/vendor/' in name for name in names))
 
     def test_release_publishes_only_compiled_installers(self):
@@ -195,17 +210,19 @@ class InstallerTests(unittest.TestCase):
 
     def test_canonical_changelog_is_english_and_unique(self):
         changelog_dir = Path(__file__).resolve().parents[2] / 'changelog'
-        canonical = changelog_dir / 'changelog_1.0.4.md'
+        canonical = changelog_dir / 'changelog_1.0.5.md'
         content = canonical.read_text(encoding='utf-8')
 
-        self.assertTrue(content.startswith('# Changelog 1.0.4\n'))
-        self.assertIn('## Compiler Safety Contract', content)
-        self.assertIn('Released as Bagron `1.0.4`', content)
+        self.assertTrue(content.startswith('# Changelog 1.0.5\n'))
+        self.assertIn('## Explicitly-Typed Class Attributes', content)
+        self.assertIn('## Linux Installer Hardening', content)
+        self.assertIn('Released as Bagron `1.0.5`', content)
         names = sorted(path.name for path in changelog_dir.iterdir())
         self.assertIn('changelog_1.0.3.md', names)
         self.assertIn('changelog_1.0.4.md', names)
+        self.assertIn('changelog_1.0.5.md', names)
         self.assertEqual(
-            2,
+            3,
             sum(name.startswith('changelog_') for name in names),
         )
 

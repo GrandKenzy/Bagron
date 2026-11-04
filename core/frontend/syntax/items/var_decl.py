@@ -98,7 +98,32 @@ class VAR_ASSIGNATION(cmb.RuleItem):
     nodeable = True
 
 
+class MEMBER_ACCESS_TARGET(cmb.RuleItem):
+    """Target for direct attribute operations, e.g. ``self.state``."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.Some(cmb.Ref(MEMBER_ACCESS)),
+    )
+    nodeable = True
+
+
+class FIELD_DECLARATION(cmb.RuleItem):
+    """Explicitly-typed instance attribute declaration, e.g. ``self.state: uint32 = 0xFFFFFFFF``."""
+
+    entrypoint = cmb.Seq(
+        cmb.Ref(MEMBER_ACCESS_TARGET),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(TYPE),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
 __all__ = [
+    'FIELD_DECLARATION',
+    'MEMBER_ACCESS_TARGET',
     'VAR',
     'VAR_ASSIGNATION',
     'VAR_DECLARATION',

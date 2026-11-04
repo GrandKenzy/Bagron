@@ -16,16 +16,18 @@ El bloque se extrae antes del parser de Bagron. Los dialectos activos son
 `gas-intel` y `att`; los alias ASM legacy no forman parte de la sintaxis.
 
 Una función `@assembler` con bloque solo puede contener ese bloque y el retorno
-correspondiente. Para un resultado escalar no `void` debe haber exactamente un
-`return asm`; una función `void` no puede usar `return asm`:
+correspondiente:
+- Para un resultado escalar entero no `void` debe haber exactamente un `return asm`.
+- Una función `void` no puede usar `return asm` (el `return` estándar es opcional con `#prep`).
+- Una función `Never` no puede usar ni `return` ni `return asm`:
 
 ```bg
 @assembler
-func fence() void:
+public func exit(code: int32) Never:
     #prep assembler "att"
-        mfence
+        movq $60, %rax
+        syscall
     #end
-    return
 ```
 
 `return asm` también exige que la función sea `@assembler` y retorne un entero

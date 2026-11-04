@@ -11,9 +11,9 @@ release no publica paquetes fuente comprimidos.
 - LLVM, Clang y LLD disponibles en el PATH.
 - `libcurl.so.4` si el proyecto usa el módulo `net` con `https://`.
 
-El instalador ELF incluye un runtime portable de Python 3.14 con `pip`, por lo
-que no necesita Python instalado globalmente. La ejecución de `installer.py`
-desde una copia del repositorio sí requiere Python 3.14+ como herramienta de
+El instalador ELF incluye un runtime portable de Python con `pip`, por lo que
+no necesita Python instalado globalmente. La ejecución de `installer.py` desde
+una copia del repositorio sí usa un Python local compatible como herramienta de
 desarrollo.
 
 En Debian o Ubuntu, las herramientas base pueden instalarse con:
@@ -26,12 +26,22 @@ sudo apt install git clang lld libcurl4
 ## Instalación desde Internet
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.5/install.sh | bash
 ```
 
 El comando descarga el instalador ELF, que instala Bagron en `~/Bagron`,
 extrae su Python portable en `.runtime/`, instala vnma, resuelve Gram y
 llvmlite, construye el parser AOT/FFI de Gram cuando es necesario y crea:
+
+Aunque se ejecute desde una carpeta que contenga otra copia de Bagron, el
+script descargado por `curl | bash` no reutiliza ese checkout ni el Python del
+sistema: siempre descarga el instalador ELF portable.
+
+El modo de desarrollo desde un checkout es opt-in:
+
+```bash
+BAGRON_LOCAL_INSTALL=1 ./install.sh
+```
 
 - `~/.local/bin/bagron`
 - `~/.local/bin/Bagron`
@@ -52,12 +62,12 @@ bagron --execute examples/01_basico.bg -o build/ejemplo
 
 ## Instalación desde el ejecutable compilado
 
-Descarga `Bagron-1.0.4-linux-x86_64` desde el release, hazlo ejecutable y
+Descarga `Bagron-1.0.5-linux-x86_64` desde el release, hazlo ejecutable y
 ejecútalo:
 
 ```bash
-chmod +x Bagron-1.0.4-linux-x86_64
-./Bagron-1.0.4-linux-x86_64
+chmod +x Bagron-1.0.5-linux-x86_64
+./Bagron-1.0.5-linux-x86_64
 ```
 
 Para desinstalar usando el Python portable incluido:
