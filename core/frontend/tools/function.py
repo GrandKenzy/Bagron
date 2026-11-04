@@ -187,6 +187,18 @@ def _decorator_names(node: gast.ASTRef) -> tuple[str, ...]:
     names: list[str] = []
     for decorator in _children(decorators):
         name = _identifier(decorator)
+        if name is None:
+            def decorator_keyword(value_node: object) -> str | None:
+                value = _token_value(value_node)
+                if value in {'align', 'packed'}:
+                    return str(value)
+                for child in _children(value_node):
+                    found = decorator_keyword(child)
+                    if found is not None:
+                        return found
+                return None
+
+            name = decorator_keyword(decorator)
         if name is not None:
             names.append(name)
     return tuple(names)

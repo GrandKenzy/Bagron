@@ -21,6 +21,10 @@ opening a general unchecked-cast or raw-memory escape hatch.
 - Add a restricted `secure_clear(data)` compiler intrinsic for mutable
   `byte[]` and `buffer[]` storage. It emits volatile byte stores and preserves
   bounds, ownership, and borrow-checker rules.
+- Formalize `@packed` and `@align(N)` for `class` declarations. Classes keep
+  their method, inheritance, and hook semantics while using the existing
+  struct-backed layout rules; packed inheritance remains restricted to packed
+  parents.
 
 ## Existing Language-Level Scope
 

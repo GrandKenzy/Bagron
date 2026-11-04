@@ -24,7 +24,9 @@ func bad() void:                      # no hay decoradores arbitrarios
 En una clase, `@static`, `@unsafe`, `@assembler`, `@recursive` y `@after` se
 validan como decoradores de método. En una función de nivel superior solo son
 válidos `@unsafe`, `@assembler` y `@recursive`. `@frozen` solo pertenece a la
-declaración `class`; `@packed`, `@align(N)` y `@order_msb` solo a agregados.
+declaración `class`; `@packed` y `@align(N)` también pueden aplicarse a una
+clase porque su almacenamiento es struct-backed. `@order_msb` sigue reservado
+a `flags`.
 
 No repitas un decorador:
 

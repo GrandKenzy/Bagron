@@ -4,6 +4,7 @@ from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
 from core.frontend.syntax.items.statements import DEL, FOR, GLOBAL, IF, WHILE
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
+from core.frontend.syntax.items.struct_decl import AGGREGATE_DECORATOR
 from core.frontend.syntax.items.value import (
     PARAMETERS,
     POINTER,
@@ -15,9 +16,15 @@ from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
 
 class DECORATOR(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchToken('AT'),
-        cmb.MatchToken('IDENT')
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.MatchToken('AT'),
+            cmb.MatchToken('IDENT'),
+        ),
+        # Aggregate decorators are also valid on class declarations. Keeping
+        # them in the shared decorator sequence lets class decorators mix with
+        # @frozen without introducing a second AST shape.
+        cmb.Ref(AGGREGATE_DECORATOR),
     )
     nodeable = True
     

@@ -19,8 +19,8 @@ El inventario válido es:
 | `@static` | método de clase |
 | `@after` | `__ongetter__` y `__onsetter__` |
 | `@frozen` | clase |
-| `@packed` | `struct`, `mold` y `flags` |
-| `@align(N)` | `struct`, `mold` y `flags` |
+| `@packed` | `class`, `struct`, `mold` y `flags` |
+| `@align(N)` | `class`, `struct`, `mold` y `flags` |
 | `@order_msb` | `flags` |
 
 Un decorador repetido o desconocido produce un diagnóstico. `@order_lsb` no

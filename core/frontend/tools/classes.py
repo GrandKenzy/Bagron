@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 _INITIALIZER_NAMES = frozenset({'__init__', '__frontend__'})
-_CLASS_DECORATORS = frozenset({'frozen'})
+_CLASS_DECORATORS = frozenset({'frozen', 'packed', 'align'})
 
 
 def _children(node: object) -> list[object]:

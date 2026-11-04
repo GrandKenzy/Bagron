@@ -2,13 +2,25 @@
 
 ## `@packed`
 
-`@packed` reduce el padding de un `struct`, `mold` o `flags`:
+`@packed` reduce el padding de una `class`, `struct`, `mold` o `flags`:
 
 ```bg
 @packed
 struct Header:
     tag: byte
     length: uint32
+```
+
+Las clases usan el mismo layout de almacenamiento que un `struct`, pero
+conservan sus métodos, herencia y hooks:
+
+```bg
+@packed
+@align(8)
+class UInt128:
+    func __init__(low: uint64, high: uint64) void:
+        self.low = low
+        self.high = high
 ```
 
 Úsalo cuando el formato externo define offsets compactos. No lo uses como

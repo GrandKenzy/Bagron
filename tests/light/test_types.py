@@ -631,6 +631,37 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_packed_and_aligned_classes_use_struct_layout_rules(self):
+        compiler = self.compile_source(
+            '@packed\n'
+            '@align(8)\n'
+            'class UInt128:\n'
+            '    func __init__(low: uint64, high: uint64) void:\n'
+            '        self.low = low\n'
+            '        self.high = high\n'
+            'func main() int32:\n'
+            '    value: UInt128 = UInt128(1, 2)\n'
+            '    return 0\n'
+        )
+        symbol = compiler.storage.types['UInt128']
+        self.assertTrue(symbol.is_class)
+        self.assertTrue(symbol.is_packed)
+        self.assertEqual(8, symbol.alignment)
+
+    def test_packed_class_inheritance_cannot_break_parent_layout(self):
+        with self.assertRaisesRegex(CompilationError, 'no puede ser @packed'):
+            self.compile_source(
+                'class Plain:\n'
+                '    func __init__(value: uint8) void:\n'
+                '        self.value = value\n'
+                '@packed\n'
+                'class PackedChild(Plain):\n'
+                '    func __init__(value: uint8) void:\n'
+                '        super.__init__(value)\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
 
 if __name__ == '__main__':
     unittest.main()
