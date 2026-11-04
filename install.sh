@@ -16,7 +16,7 @@ if [[ -f "$script_dir/installer.py" ]]; then
     fi
 fi
 
-version="${BAGRON_VERSION:-1.0.3}"
+version="${BAGRON_VERSION:-1.0.4}"
 installer_url="${BAGRON_INSTALLER_URL:-https://github.com/GrandKenzy/Bagron/releases/download/${version}/Bagron-${version}-linux-x86_64}"
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT

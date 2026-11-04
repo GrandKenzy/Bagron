@@ -26,7 +26,7 @@ import zipfile
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
-BAGRON_VERSION = '1.0.3'
+BAGRON_VERSION = '1.0.4'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
@@ -429,6 +429,7 @@ exec "$python_bin" -m vnma run main.py "$@"
         'set "BAGRON_CALLER_DIR=%CD%"\r\n'
         'set "BAGRON_HOME=%~dp0.."\r\n'
         'set "PYTHON=%BAGRON_HOME%\\.runtime\\python.exe"\r\n'
+        'if not exist "%PYTHON%" set "PYTHON=%BAGRON_HOME%\\.runtime\\Scripts\\python.exe"\r\n'
         'if not exist "%PYTHON%" (echo Error: falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo. 1>&2 & exit /b 1)\r\n'
         'pushd "%BAGRON_HOME%"\r\n'
         '"%PYTHON%" -m vnma run main.py %*\r\n'
@@ -441,6 +442,7 @@ exec "$python_bin" -m vnma run main.py "$@"
         '$callerDir = (Get-Location).Path\r\n'
         '$bagronHome = (Resolve-Path "$PSScriptRoot\\..").Path\r\n'
         '$python = Join-Path $bagronHome ".runtime\\python.exe"\r\n'
+        'if (-not (Test-Path -LiteralPath $python)) { $python = Join-Path $bagronHome ".runtime\\Scripts\\python.exe" }\r\n'
         'if (-not (Test-Path -LiteralPath $python)) { Write-Error "Falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo."; exit 1 }\r\n'
         '$env:BAGRON_CALLER_DIR = $callerDir\r\n'
         'Push-Location $bagronHome\r\n'

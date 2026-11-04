@@ -1,4 +1,4 @@
-# Changelog 1.0.4 (Unreleased)
+# Changelog 1.0.4
 
 ## Compiler Safety Contract
 
@@ -25,6 +25,18 @@ opening a general unchecked-cast or raw-memory escape hatch.
   their method, inheritance, and hook semantics while using the existing
   struct-backed layout rules; packed inheritance remains restricted to packed
   parents.
+- Make the Gram AOT frontend select `System` and `Arch` clauses after target
+  preprocessing, avoiding textual first-clause selection on Linux and adding
+  an explicit diagnostic for unsupported macOS targets.
+- Add the compiler-owned `extern bagron` process ABI for `__bagron_argc()` and
+  `__bagron_arg_copy(...)`. The native wrapper stores `argc`/`argv` in private
+  globals, validates indices and destination capacity, and does not add a
+  linker dependency.
+- Regenerate and ship the Gram AOT parser with the current class and aggregate
+  decorator grammar, including `@packed class` support.
+- Fix Windows source-mode launchers to resolve both portable runtimes at
+  `.runtime\python.exe` and virtual-environment runtimes at
+  `.runtime\Scripts\python.exe`.
 
 ## Existing Language-Level Scope
 
@@ -55,3 +67,7 @@ new native escape hatches:
   library.
 - Rotations, endian helpers, and ordinary byte utilities remain source-level
   building blocks rather than compiler intrinsics.
+
+## Release
+
+Released as Bagron `1.0.4` on 2026-11-03.
