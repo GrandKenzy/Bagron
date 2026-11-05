@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import re
 import unittest
 import subprocess
 from pathlib import Path
@@ -9,6 +10,13 @@ from core.compiler import CompilationError, Compiler
 
 
 class GlobalBackendTests(unittest.TestCase):
+    def assert_ir_function(self, module: str, return_type: str, source_name: str):
+        self.assertRegex(
+            module,
+            rf'define {re.escape(return_type)} @"?__bg_[^"\s]*_fn_'
+            rf'{re.escape(source_name)}_[^"\s]*"?\(',
+        )
+
     def compile_source(
         self,
         source: str,
@@ -59,13 +67,13 @@ class GlobalBackendTests(unittest.TestCase):
             add_main=False,
         )
 
-        self.assertIn('define half @"add_middle"', module)
+        self.assert_ir_function(module, 'half', 'add_middle')
         self.assertIn('fadd half', module)
-        self.assertIn('define float @"add_float"', module)
+        self.assert_ir_function(module, 'float', 'add_float')
         self.assertIn('fmul float', module)
-        self.assertIn('define double @"add_double"', module)
+        self.assert_ir_function(module, 'double', 'add_double')
         self.assertIn('fdiv double', module)
-        self.assertIn('define i1 @"less_than"', module)
+        self.assert_ir_function(module, 'i1', 'less_than')
         self.assertIn('fcmp', module)
 
     def test_emits_inline_hint_for_inline_function(self):
@@ -74,7 +82,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    return value\n'
         )
 
-        self.assertIn('define i32 @"helper"', module)
+        self.assert_ir_function(module, 'i32', 'helper')
         self.assertIn('inlinehint', module)
 
     def test_prod_expands_bagron_inline_calls_before_codegen(self):
@@ -181,15 +189,27 @@ class GlobalBackendTests(unittest.TestCase):
             'octeto: byte = 255\n'
         )
 
-        self.assertIn('@"nombre" = global [10 x i8]', module)
-        self.assertIn('@"inferido" = global [5 x i8]', module)
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_nombre_[^"\s]*"? = global \[10 x i8\]',
+        )
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_inferido_[^"\s]*"? = global \[5 x i8\]',
+        )
         self.assertIn(
-            '@"inferido" = global [5 x i8] '
+            'global [5 x i8] '
             '[i8 72, i8 111, i8 108, i8 97, i8 0]',
             module,
         )
-        self.assertIn('@"bytes" = global [6 x i8]', module)
-        self.assertIn('@"mensaje" = unnamed_addr constant [5 x i8]', module)
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_bytes_[^"\s]*"? = global \[6 x i8\]',
+        )
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_mensaje_[^"\s]*"? = unnamed_addr constant \[5 x i8\]',
+        )
         self.assertIn('global i8 65', module)
         self.assertIn('global i8 255', module)
 
@@ -253,9 +273,11 @@ class GlobalBackendTests(unittest.TestCase):
             optimization_profile='prod',
         )
 
-        signature = module.split('define i8 @inspect', 1)[1].split('{', 1)[0]
-        self.assertIn('ptr nonnull dereferenceable(4) %data', signature)
-        self.assertNotIn('noalias', signature)
+        self.assertRegex(module, r'ptr nonnull dereferenceable\(4\) %data')
+        self.assertNotRegex(
+            module,
+            r'define i8 @"?__bg_[^"\s]*_fn_inspect_[^"\s]*"?\([^)]*noalias',
+        )
 
     def test_prod_for_buffer_uses_one_loop_range_proof(self):
         source = (
@@ -327,12 +349,12 @@ class GlobalBackendTests(unittest.TestCase):
             'permisos: Permisos\n'
         )
 
-        self.assertIn('"Punto" = type {{i32, i32}}', module)
-        self.assertIn('"Base" = type {[0 x <4 x i8>], {[8 x i8]}}', module)
-        self.assertIn('"Permisos" = type {{i8}}', module)
-        self.assertIn('@"punto" = global %"Punto" {{i32, i32}', module)
-        self.assertIn('@"base" = global %"Base" zeroinitializer', module)
-        self.assertIn('@"permisos" = global %"Permisos" {{i8} {i8 5}}', module)
+        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Punto_[^"\s]*"? = type \{\{i32, i32\}\}')
+        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Base_[^"\s]*"? = type \{\[0 x <4 x i8>\], \{\[8 x i8\]\}\}')
+        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Permisos_[^"\s]*"? = type \{\{i8\}\}')
+        self.assertRegex(module, r'@"?__bg_[^"\s]*_global_punto_[^"\s]*"? = global')
+        self.assertRegex(module, r'@"?__bg_[^"\s]*_global_base_[^"\s]*"? = global')
+        self.assertRegex(module, r'@"?__bg_[^"\s]*_global_permisos_[^"\s]*"? = global')
 
     def test_builds_and_runs_struct_mold_and_flags_member_access(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -402,8 +424,11 @@ class GlobalBackendTests(unittest.TestCase):
             add_main=False,
         )
 
-        self.assertIn('"Paquete" = type {[0 x <8 x i8>], <{i8, i32}>}', module)
-        self.assertIn('alloca %"Paquete", align 8', module)
+        self.assertRegex(
+            module,
+            r'%"?__bg_[^"\s]*_type_Paquete_[^"\s]*"? = type \{\[0 x <8 x i8>\], <\{i8, i32\}>\}',
+        )
+        self.assertRegex(module, r'alloca %"?__bg_[^"\s]*_type_Paquete_[^"\s]*"?, align 8')
         self.assertIn('store i32 7, i32*', module)
         self.assertIn('align 1', module)
         self.assertIn('load volatile i8', module)
@@ -459,13 +484,13 @@ class GlobalBackendTests(unittest.TestCase):
             'estado: Estado\n'
         )
 
-        self.assertIn('@"estado" = global i8 0', module)
+        self.assertRegex(module, r'@"?__bg_[^"\s]*_global_estado_[^"\s]*"? = global i8 0')
 
     def test_emits_int_main_as_llvm_entrypoint(self):
         module = self.compile_source('value: int32 = 1\n')
 
         self.assertIn('define internal i32 @"__bagron_main"()', module)
-        self.assertIn('define i32 @"main"()', module)
+        self.assertIn('define i32 @"main"(i32', module)
         self.assertIn('ret i32 0', module)
 
     def test_builds_and_runs_main_exit_codes(self):
@@ -499,11 +524,17 @@ class GlobalBackendTests(unittest.TestCase):
             add_main=False,
         )
 
-        self.assertIn('define i32 @"sumar"(i32 %"a", i32 %"b")', module)
+        self.assertRegex(
+            module,
+            r'define i32 @"?__bg_[^"\s]*_fn_sumar_[^"\s]*"?\(i32 %"a", i32 %"b"\)',
+        )
         self.assertIn('load i32, i32* %"a.addr"', module)
         self.assertIn('load i32, i32* %"b.addr"', module)
         self.assertIn('add i32', module)
-        self.assertIn('call i32 @"sumar"(i32 2, i32 3)', module)
+        self.assertRegex(
+            module,
+            r'call i32 @"?__bg_[^"\s]*_fn_sumar_[^"\s]*"?\(i32 2, i32 3\)',
+        )
 
     def test_runs_function_return_sum_and_call(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -549,8 +580,8 @@ class GlobalBackendTests(unittest.TestCase):
             module = artifacts.ir.read_text(encoding='utf-8')
 
         self.assertEqual(0, result.returncode)
-        self.assertIn('define void @"touch"(i32', module)
-        self.assertIn('call void @"touch"(i32', module)
+        self.assertRegex(module, r'define void @"?__bg_[^"\s]*_fn_touch_[^"\s]*"?\(i32')
+        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_fn_touch_[^"\s]*"?\(i32')
 
     def test_builds_and_runs_local_declarations_and_assignments(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -876,20 +907,13 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_float_compound_assignment_emits_fadd_and_fsub(self):
         module = self.compile_source(
-            'func calcular() float:\
-'
-            '    val: float = 10.0\
-'
-            '    val += 5.5\
-'
-            '    val -= 2.0\
-'
-            '    val *= 2.0\
-'
-            '    val /= 3.0\
-'
-            '    return val\
-'
+            'func calcular() float:\n'
+            '    value: float = 10.0\n'
+            '    value += 5.5\n'
+            '    value -= 2.0\n'
+            '    value *= 2.0\n'
+            '    value /= 3.0\n'
+            '    return value\n'
         )
         self.assertIn('fadd float', module)
         self.assertIn('fsub float', module)

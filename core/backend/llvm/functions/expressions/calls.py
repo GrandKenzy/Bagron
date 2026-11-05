@@ -749,9 +749,12 @@ class CallExpressionMixin:
         constructor_values[parameter.name] = compiled
         constructor_specs = dict(self._active_specs)
         constructor_specs[parameter.name] = parameter.type_spec
-        result = self.type_registry.default_constant(TypeSpec(name))
+        # ``name`` may be the LLVM registry key; nominal defaults must use the
+        # source class name so the type registry can resolve its layout.
+        source_name = getattr(aggregate, 'name', name)
+        result = self.type_registry.default_constant(TypeSpec(source_name))
         return self._compile_aggregate_initializer(
-            name,
+            source_name,
             aggregate,
             constructor_values,
             constructor_specs,

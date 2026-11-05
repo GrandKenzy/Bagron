@@ -60,7 +60,7 @@ class PointerAndAddressTests(unittest.TestCase):
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn('define i32 @"read"(i32*', module)
+        self.assertRegex(module, r'define i32 @"?__bg_[^"\s]*_fn_read_[^"\s]*"?\(i32\*')
 
         with self.assertRaisesRegex(CompilationError, 'no puede retornar punteros'):
             self._compile(
@@ -85,7 +85,7 @@ class PointerAndAddressTests(unittest.TestCase):
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn('define void @"consume"(i8*', module)
+        self.assertRegex(module, r'define void @"?__bg_[^"\s]*_fn_consume_[^"\s]*"?\(i8\*')
 
     def test_global_address_and_constant_gep(self):
         module_path = self._compile(
@@ -102,7 +102,7 @@ class PointerAndAddressTests(unittest.TestCase):
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn('getelementptr (%"Point",', module)
+        self.assertRegex(module, r'getelementptr \(%"?__bg_[^"\s]*_type_Point_[^"\s]*"?,')
         self.assertIn('getelementptr ([3 x i32],', module)
 
     def test_null_dereference_is_trapped_and_local_address_cannot_escape(self):

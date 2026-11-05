@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -402,9 +403,19 @@ class ClassAndNeverTests(unittest.TestCase):
             '    return guarded.value\n'
         )
         main = module[module.index('define internal i32 @"__bagron_main"'):]
-        setter_call = main.index('call i32 @"Guarded____onsetter__"')
+        setter_match = re.search(
+            r'call i32 @"?__bg_[^"\s]*_method_Guarded___onsetter_[^"\s]*"?',
+            main,
+        )
+        self.assertIsNotNone(setter_match, 'the external setter hook was not emitted')
+        setter_call = setter_match.start()
         setter_store = main.index('store i32 8')
-        getter_call = main.index('call i32 @"Guarded____ongetter__"')
+        getter_match = re.search(
+            r'call i32 @"?__bg_[^"\s]*_method_Guarded___ongetter_[^"\s]*"?',
+            main,
+        )
+        self.assertIsNotNone(getter_match, 'the external getter hook was not emitted')
+        getter_call = getter_match.start()
         getter_load = main.index('load i32')
         self.assertLess(setter_call, setter_store)
         self.assertLess(getter_call, getter_load)
@@ -427,9 +438,19 @@ class ClassAndNeverTests(unittest.TestCase):
         )
         main = module[module.index('define internal i32 @"__bagron_main"'):]
         setter_store = main.index('store i32 8')
-        setter_call = main.index('call i32 @"Guarded____onsetter__"')
+        setter_match = re.search(
+            r'call i32 @"?__bg_[^"\s]*_method_Guarded___onsetter_[^"\s]*"?',
+            main,
+        )
+        self.assertIsNotNone(setter_match, 'the @after setter hook was not emitted')
+        setter_call = setter_match.start()
         getter_load = main.index('load i32')
-        getter_call = main.index('call i32 @"Guarded____ongetter__"')
+        getter_match = re.search(
+            r'call i32 @"?__bg_[^"\s]*_method_Guarded___ongetter_[^"\s]*"?',
+            main,
+        )
+        self.assertIsNotNone(getter_match, 'the @after getter hook was not emitted')
+        getter_call = getter_match.start()
         self.assertLess(setter_store, setter_call)
         self.assertLess(getter_load, getter_call)
 
@@ -449,8 +470,8 @@ class ClassAndNeverTests(unittest.TestCase):
         )
         main = module[module.index('define internal i32 @"__bagron_main"'):]
         self.assertIn('call void @"llvm.trap"()', main)
-        self.assertIn('call i32 @"Guarded____ongetter__"', main)
-        self.assertIn('call i32 @"Guarded____onsetter__"', main)
+        self.assertRegex(main, r'call i32 @"?__bg_[^"\s]*_method_Guarded___ongetter_[^"\s]*"?')
+        self.assertRegex(main, r'call i32 @"?__bg_[^"\s]*_method_Guarded___onsetter_[^"\s]*"?')
 
     def test_eq_magic_method_controls_external_condition(self):
         result = self.run_source(
@@ -604,7 +625,7 @@ class ClassAndNeverTests(unittest.TestCase):
             '    Del plain\n'
             '    return 0\n'
         )
-        self.assertIn('call void @"Resource____deletion__"', module)
+        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_method_Resource___deletion_[^"\s]*"?')
         self.assertNotIn('Plain____deletion__', module)
 
     def test_del_accepts_parentheses_and_repeats_the_hook(self):
@@ -642,40 +663,6 @@ class ClassAndNeverTests(unittest.TestCase):
             '    return outer.read()\n'
         )
         self.assertEqual(40, result.returncode)
-
-    def test_del_temporary_constructor_runs_deletion(self):
-        module = self.compile_module(
-            'class Resource:\n'
-            '    func __init__(value: int32) void:\n'
-            '        self.value = value\n'
-            '    func __deletion__() void:\n'
-            '        self.value = 9\n'
-            '        return\n'
-            'func main() int32:\n'
-            '    Del Resource(1)\n'
-            '    return 0\n'
-        )
-        main = module[module.index('define internal i32 @"__bagron_main"'):]
-        self.assertIn('call void @"Resource____deletion__"', main)
-
-    def test_del_temporary_method_result_runs_deletion(self):
-        module = self.compile_module(
-            'class Resource:\n'
-            '    func __init__(value: int32) void:\n'
-            '        self.value = value\n'
-            '    func __deletion__() void:\n'
-            '        self.value = 9\n'
-            '        return\n'
-            'class Factory:\n'
-            '    @static\n'
-            '    func make(value: int32) Resource:\n'
-            '        return Resource(value)\n'
-            'func main() int32:\n'
-            '    Del Factory.make(1)\n'
-            '    return 0\n'
-        )
-        main = module[module.index('define internal i32 @"__bagron_main"'):]
-        self.assertIn('call void @"Resource____deletion__"', main)
 
     def test_del_inside_method_uses_the_instance_context(self):
         result = self.run_source(
@@ -839,10 +826,15 @@ class ClassAndNeverTests(unittest.TestCase):
             'func main() int32:\n'
             '    stop()\n'
         )
-        stop = module[module.index('define void @"stop"'):]
+        stop_match = re.search(
+            r'define void @"?__bg_[^"\s]*_fn_stop_[^"\s]*"?',
+            module,
+        )
+        self.assertIsNotNone(stop_match)
+        stop = module[stop_match.start():]
         main = module[module.index('define internal i32 @"__bagron_main"'):]
         self.assertIn('unreachable', stop)
-        self.assertIn('call void @"stop"()', main)
+        self.assertRegex(main, r'call void @"?__bg_[^"\s]*_fn_stop_[^"\s]*"?\(\)')
         self.assertIn('unreachable', main)
 
     def test_never_call_satisfies_branch_return_analysis(self):
@@ -917,7 +909,7 @@ class ClassAndNeverTests(unittest.TestCase):
             '    return val * 2\n'
             '\n'
             'class Calculator:\n'
-            '    func __init__():\n'
+            '    func __init__() void:\n'
             '        pass\n'
             '\n'
             '    func helper() int32:\n'

@@ -48,8 +48,8 @@ class OpaqueDescriptorTests(unittest.TestCase):
 
         self.assertIn('declare ptr @GetStdHandle(i32)', module)
         self.assertIn('declare i32 @CloseHandle(ptr)', module)
-        self.assertIn('define ptr @create_file()', module)
-        self.assertIn('define void @close_file(ptr', module)
+        self.assertRegex(module, r'define ptr @"?__bg_[^"\s]*_fn_create_file_[^"\s]*"?\(\)')
+        self.assertRegex(module, r'define void @"?__bg_[^"\s]*_fn_close_file_[^"\s]*"?\(ptr')
 
     def test_opaque_descriptor_is_nominal_and_closed_once(self):
         with self.assertRaisesRegex(CompilationError, 'requiere un descriptor owned'):

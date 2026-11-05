@@ -44,8 +44,14 @@ class StandardLibraryTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual(b'Hola / DOLLARAdiosHola\x00', result.stdout)
         self.assertEqual(5, module.count('call i32 @WriteFile'))
-        self.assertRegex(module, r'call void @print\([^)]*i64 5\)')
-        self.assertRegex(module, r'call void @printa\([^)]*i64 5, i64 1\)')
+        self.assertRegex(
+            module,
+            r'call void @"?__bg_[^"\s]*_fn_print_[^"\s]*"?\(ptr [^)]*i64 5\)',
+        )
+        self.assertRegex(
+            module,
+            r'call void @"?__bg_[^"\s]*_fn_printa_[^"\s]*"?\(ptr [^)]*i64 5, i64 1\)',
+        )
 
     def test_print_writes_immutable_global_chains(self):
         project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'
@@ -84,8 +90,14 @@ class StandardLibraryTests(unittest.TestCase):
             b'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
             result.stdout,
         )
-        self.assertIn('@NumericString = unnamed_addr constant [11 x i8]', module)
-        self.assertIn('@AlphabetString = unnamed_addr constant [53 x i8]', module)
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_NumericString_[^"\s]*"? = unnamed_addr constant \[11 x i8\]',
+        )
+        self.assertRegex(
+            module,
+            r'@"?__bg_[^"\s]*_global_AlphabetString_[^"\s]*"? = unnamed_addr constant \[53 x i8\]',
+        )
 
     def test_printa_rejects_scalar_char(self):
         project_source = Path(__file__).resolve().parent / 'fixtures' / 'standard.bg'

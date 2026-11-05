@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import re
 import unittest
 from pathlib import Path
 
@@ -61,8 +62,8 @@ class RecursionTests(unittest.TestCase):
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        self.assertIn('call i32 @second', module)
-        self.assertIn('call i32 @first', module)
+        self.assertRegex(module, r'call i32 @__bg_[^\s]*_fn_second_[^\s]*\(i32')
+        self.assertRegex(module, r'call i32 @__bg_[^\s]*_fn_first_[^\s]*\(i32')
 
     def test_tail_recursion_reuses_one_llvm_frame(self):
         module_path = self.compile_source(
@@ -75,8 +76,13 @@ class RecursionTests(unittest.TestCase):
         )
 
         module = Path(module_path).read_text(encoding='utf-8')
-        countdown = module.split('define i32 @countdown', 1)[1]
-        countdown = countdown.split('define ', 1)[0]
+        match = re.search(
+            r'define i32 @__bg_[^\s]*_fn_countdown_[^\s]*\([^)]*\).*',
+            module,
+        )
+        self.assertIsNotNone(match)
+        countdown = module[match.start():]
+        countdown = countdown.split('\ndefine ', 1)[0]
         self.assertIn('tail.recursive', countdown)
         self.assertNotIn('call i32 @countdown', countdown)
 

@@ -16,6 +16,8 @@
   `aarch64-linux-android<api>` or `x86_64-linux-android<api>` triples. The LLVM
   backend produces native ELF executables through the configured Android NDK;
   APK packaging and automatic emulator execution are not included yet.
+- LLVM class access hooks and `__frontend__` initializers now resolve source-
+  level nominal names after LLVM mangling, restoring their backend emission.
 - Updated the related tests, project map, and documentation to describe the
   inheritance and compatibility rules formally.
 

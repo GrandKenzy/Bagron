@@ -121,18 +121,21 @@ class MemoryExpressionMixin:
         aggregate = self.type_registry.aggregate(type_name)
         if aggregate is None or not getattr(aggregate, 'is_class', False):
             return None
+        # LLVM carries the mangled identified-type name, while method lookup
+        # is indexed by the Bagron source class name.
+        owner_type = getattr(aggregate, 'name', type_name)
         method_name = (
             '__onsetter__'
             if hook_mode == 'write'
             else '__ongetter__'
         )
-        method = self._resolve_method_symbol(type_name, method_name)
+        method = self._resolve_method_symbol(owner_type, method_name)
         if method is None or not self._access_hooks_enabled():
             return None
         if 'after' in getattr(method, 'decorators', ()):
-            return (type_name, place.address, member_name)
+            return (owner_type, place.address, member_name)
         self._emit_magic_method_call(
-            type_name,
+            owner_type,
             place.address,
             method_name,
             builder,
