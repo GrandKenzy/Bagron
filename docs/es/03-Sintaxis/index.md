@@ -43,7 +43,9 @@ clause Optimizations 'prod'
 ```
 
 `System`, `Arch`, `Boot` y `Optimizations` se validan antes de generar LLVM.
-Los módulos importados no cambian el target global.
+Los módulos importados heredan el target del módulo de entrada cuando no
+declaran sus propias cláusulas. Una cláusula explícita incompatible detiene la
+compilación; los imports nunca cambian el target global.
 
 ## Formas retiradas
 

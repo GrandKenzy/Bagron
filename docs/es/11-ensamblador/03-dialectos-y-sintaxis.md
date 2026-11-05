@@ -24,6 +24,9 @@ mnemonics, valida registros ni traduce la semántica entre dialectos; escribe la
 directiva de sintaxis adecuada y deja la validación final a Clang.
 
 ```bg
+clause System "windows"
+clause Arch "amd"
+
 @assembler
 func add_one(value: int32) int32:
     #assembler "intel"
@@ -31,3 +34,6 @@ func add_one(value: int32) int32:
     #end
     return asm
 ```
+
+Este ejemplo usa el primer registro entero de Windows x64 (`ecx`). En System V
+AMD64, el operando equivalente sería `edi`.

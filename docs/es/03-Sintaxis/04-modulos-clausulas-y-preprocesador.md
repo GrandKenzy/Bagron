@@ -36,7 +36,10 @@ clause Arch 'amd'
 clause Boot 'none'
 ```
 
-Los módulos importados se comparan con el target del módulo de entrada.
+Los módulos importados heredan las cláusulas de target del módulo de entrada
+cuando no declaran una propia. Si declaran `System`, `Arch` o `Boot`, Bagron
+comprueba que cada valor sea compatible con el target principal y detiene la
+compilación ante cualquier incompatibilidad.
 
 ## Preprocesador
 

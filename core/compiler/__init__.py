@@ -36,8 +36,8 @@ from core.frontend.objects import (
 class ModuleTarget:
     """Target clauses declared by one source module.
 
-    ``None`` is intentional: an omitted dimension is agnostic and must not
-    constrain the target selected by the project entry module.
+    ``None`` is intentional: an omitted dimension inherits the target selected
+    by the project entry module and does not declare a separate constraint.
     """
 
     system: str | None = None
@@ -252,9 +252,9 @@ class Compiler(CompilerState):
     def _validate_module_targets(self) -> None:
         """Validate every loaded module against the entry module target.
 
-        The entry module selects the compilation target.  Imported modules may
-        omit either dimension and are then agnostic for that dimension, but
-        every omission is deliberately reported as a warning.
+        The entry module selects the compilation target. Imported modules use
+        that target for every omitted dimension. Explicit clauses remain local
+        declarations and must be compatible with the entry target.
         """
         main_path = self.main_module_path
         if main_path is None:
@@ -284,19 +284,6 @@ class Compiler(CompilerState):
             self.error(str(error))
 
         for path, module_target in self.module_targets.items():
-            missing: list[str] = []
-            if module_target.system is None:
-                missing.append('System')
-            if module_target.architecture is None:
-                missing.append('Arch')
-            if target_boot != 'none' and module_target.boot is None:
-                missing.append('Boot')
-            if missing:
-                self.warning(
-                    f'El modulo {path} no define {" ni ".join(missing)}; '
-                    'se considera agnostico para esas dimensiones del target'
-                )
-
             if (
                 module_target.system is not None
                 and self._normalize_target_system(module_target.system)
@@ -329,10 +316,14 @@ class Compiler(CompilerState):
                     f'proyecto {target_boot!r}'
                 )
 
-            if module_target.system is not None or module_target.architecture is not None:
-                # An omitted dimension is agnostic, so validate it using the
-                # entry target instead of the host target.  This matters for
-                # modules that declare an ELF triple but omit System.
+            if (
+                module_target.system is not None
+                or module_target.architecture is not None
+                or module_target.boot is not None
+            ):
+                # An omitted dimension inherits the entry target, so validate
+                # partial declarations against the effective target instead of
+                # falling back to the host target.
                 module_system = (
                     target_system
                     if module_target.system is None

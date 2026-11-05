@@ -43,17 +43,31 @@ enteros usan `RCX`, `RDX`, `R8` y `R9`; en System V AMD64, los seis primeros usa
 `RDI`, `RSI`, `RDX`, `RCX`, `R8` y `R9`.
 
 ```bg
+clause System "windows"
+clause Arch "amd"
+
 @assembler
 func equal(left: int32, right: int32) int32:
     #assembler "intel"
         cmp ecx, edx
         jne different
         mov eax, 1
+        jmp done
         different:
         xor eax, eax
+        done:
     #end
     return asm
 ```
+
+El ejemplo declara Windows x64 porque usa `ecx` y `edx`. En un target System V
+la misma función debe usar `edi` y `esi` para sus dos parámetros.
+
+Usa `@assembler` cuando la implementación completa de una función deba ser
+nativa, por ejemplo para una instrucción o una frontera ABI concreta. Para una
+API que ya existe en una biblioteca del sistema, declara su firma con
+[`extern`](../05-externos/index.md) y deja que Bagron valide la declaración ABI
+y el enlace sin duplicar la implementación en ASM.
 
 Los bloques ASM solo pueden pertenecer a funciones `@assembler`; no existe un
 bloque ASM independiente a nivel de módulo.

@@ -2,7 +2,12 @@
 
 ## 1. Instrucción `return asm`
 
-`return asm` no es un salto ASM libre ni una llamada a función. Indica que el bloque de ensamblador dejó el resultado listo en el registro de retorno (`EAX` / `RAX`) y que Bagron añadirá la epílogo y retorno ABI correspondiente.
+`return asm` no es un salto ASM libre ni una llamada a función. Indica que el bloque de ensamblador dejó el resultado listo en el registro de retorno (`EAX` / `RAX`) y que Bagron añadirá el epílogo y retorno ABI correspondiente.
+
+Para retornos escalares, el archivo ASM generado empieza con un estado de
+fallo (`mov eax, 1` en Intel o `movl $1, %eax` en AT&T) antes del cuerpo escrito.
+El cuerpo debe sobrescribir `EAX`/`RAX` en todos los caminos que deban devolver
+otro valor. En funciones `void` y `Never` no se inyecta ese estado inicial.
 
 No escribas instrucciones `ret` dentro del bloque de ensamblador:
 

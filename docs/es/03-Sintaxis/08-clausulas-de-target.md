@@ -24,10 +24,12 @@ Las cláusulas principales son:
 Linux o Windows. `multiboot2` solo está soportado actualmente para x86/i386 y
 x86-64; `opensbi` requiere RISC-V y `uefi` una arquitectura compatible.
 
-El módulo de entrada selecciona un único target. Los módulos importados pueden
-omitir dimensiones y quedan agnósticos, pero una cláusula explícita incompatible
-con el target principal rechaza la compilación. Una cláusula `System`, `Arch`,
-`Boot` u `Optimizations` repetida también es un error.
+El módulo de entrada selecciona un único target. Los módulos importados que no
+declaran una cláusula de target heredan el valor del módulo de entrada; no son
+un caso especial ni generan warnings. Si un módulo importado declara `System`,
+`Arch` o `Boot`, su valor debe ser compatible con el target principal. Una
+declaración explícita incompatible rechaza la compilación. Una cláusula
+`System`, `Arch`, `Boot` u `Optimizations` repetida también es un error.
 
 ## Cláusulas aceptadas de almacenamiento
 

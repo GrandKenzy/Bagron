@@ -636,10 +636,10 @@ class ModuleTests(unittest.TestCase):
             ):
                 Compiler().compile(main, executable=False)
 
-    def test_target_agnostic_import_emits_warning(self):
+    def test_import_inherits_entry_target_without_warning(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'agnostic.bg').write_text(
+            (root / 'inherited.bg').write_text(
                 'func value() int32:\n'
                 '    return 1\n',
                 encoding='utf-8',
@@ -648,16 +648,18 @@ class ModuleTests(unittest.TestCase):
             main.write_text(
                 "clause System 'windows'\n"
                 "clause Arch 'amd'\n"
-                'import agnostic\n'
+                'import inherited\n'
                 'func main() int32:\n'
-                '    return agnostic.value()\n',
+                '    return inherited.value()\n',
                 encoding='utf-8',
             )
 
             compiler = Compiler()
             compiler.compile(main, executable=False)
 
-        self.assertTrue(any('agnostico' in warning for warning in compiler.warnings))
+        self.assertEqual([], compiler.warnings)
+        self.assertEqual('windows', compiler.storage.system)
+        self.assertEqual('amd', compiler.storage.architecture)
 
     def test_import_reports_cycles(self):
         with tempfile.TemporaryDirectory() as directory:

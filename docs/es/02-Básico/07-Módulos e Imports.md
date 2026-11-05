@@ -125,18 +125,15 @@ WSL, la compilación termina con un error explícito.
 declaración depende del runtime y linker del sistema operativo; para símbolos
 propios del kernel se debe usar un módulo ASM.
 
-Cada módulo importado se comprueba contra el target seleccionado por el módulo
-de entrada. Un `System` o `Arch` explícito incompatible rechaza la compilación
-antes de validar firmas y cuerpos. Las cláusulas de target de un import no
-pueden cambiar el target global del backend.
+Cada módulo importado hereda el target seleccionado por el módulo de entrada
+para cualquier cláusula que no declare. Por tanto, un módulo sin `System`,
+`Arch` o `Boot` no necesita una declaración adicional ni produce warnings: usa
+directamente la configuración efectiva del módulo de entrada.
 
-Si un módulo omite `System`, queda agnóstico para el sistema; si omite `Arch`,
-queda agnóstico para la arquitectura; y si omite `Boot` dentro de un proyecto
-bare-metal, queda agnóstico para el protocolo de arranque. El import se permite
-en esos casos, pero el compilador emite un warning para dejar constancia de la
-dimensión omitida.
-El módulo de entrada sin una de esas cláusulas también recibe el warning y usa
-`auto` para esa dimensión.
+Si un módulo declara explícitamente `System`, `Arch` o `Boot`, Bagron compara
+cada valor con el target principal antes de validar firmas y cuerpos. Una
+incompatibilidad detiene la compilación. Las cláusulas de target de un import
+no pueden cambiar el target global del backend.
 
 ## Perfil de optimización
 

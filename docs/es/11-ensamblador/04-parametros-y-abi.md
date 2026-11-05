@@ -64,8 +64,6 @@ Al invocar la instrucción `syscall` en Linux x86_64:
 - Los primeros 3 argumentos de función (`RDI`, `RSI`, `RDX`) y los argumentos 5.º y 6.º (`R8`, `R9`) **ya coinciden exactamente** con los registros que espera el kernel.
 - Únicamente el **4.º argumento** difiere: la ABI de funciones lo recibe en `RCX`, pero la instrucción `syscall` usa `R10` (porque la propia instrucción `syscall` del procesador pisa `RCX` para guardar `RIP`). Si tu syscall usa 4 o más parámetros, basta con hacer `movq %rcx, %r10` antes de `syscall`.
 
----
-
 ## 4. Parámetros en el cuerpo ASM
 
 Los parámetros no se interpolan en el cuerpo ASM. Bagron conserva la firma de la
@@ -78,7 +76,6 @@ clause System "linux"
 @assembler
 public func exit(code: int32) Never:
     #assembler "att"
-        movl %edi, %edi
         movq $60, %rax
         syscall
     #end
@@ -93,3 +90,65 @@ public func exit(code: int32) Never:
    compilador valida que sus anchos y posiciones sean representables por la ABI.
 4. **Validación de instrucciones:** Bagron no comprueba si las instrucciones
    usan correctamente esos registros; Clang valida el ensamblador resultante.
+
+## 5. System V AMD64 frente a la convención `syscall` de Linux
+
+Estas dos convenciones están relacionadas, pero no son la misma interfaz:
+
+| Contexto | 1.º | 2.º | 3.º | 4.º | 5.º | 6.º | Retorno |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Llamada a una función Bagron/C | `RDI` | `RSI` | `RDX` | `RCX` | `R8` | `R9` | `RAX` |
+| Instrucción Linux `syscall` | `RDI` | `RSI` | `RDX` | `R10` | `R8` | `R9` | `RAX` |
+
+Al entrar en una función llamada con System V, el primer parámetro `int32`
+está en `%edi`, un puntero en `%rdi` y un parámetro `uint64` en `%rdi` o en el
+registro correspondiente a su posición. Bagron no sustituye nombres de
+parámetros dentro de un bloque ASM: el cuerpo debe usar estos registros
+directamente.
+
+La instrucción `syscall` destruye `%rcx` y `%r11`. Linux devuelve el resultado
+en `%rax`; un valor negativo representa `-errno`. Por tanto, un wrapper que
+devuelve `int64` debe usar `return asm`, mientras que una función `Never`, como
+`exit`, no debe usar ningún `return`.
+
+### Registros preservados y temporales
+
+Una función System V puede destruir los registros temporales siguientes, salvo
+que su propio contrato indique otra cosa:
+
+| Caller-saved | Callee-saved |
+| --- | --- |
+| `RAX`, `RCX`, `RDX`, `RSI`, `RDI`, `R8`–`R11` | `RBX`, `RBP`, `R12`–`R15`, `RSP` |
+
+Los registros `XMM0`–`XMM15` son también caller-saved en la ABI System V AMD64.
+`RSP` debe conservarse y la pila debe respetar alineación de 16 bytes en las
+llamadas normales. Los argumentos enteros que superan el sexto se encuentran
+en la pila; al entrar a la función, el séptimo empieza en `8(%rsp)`.
+
+### Syscalls Linux x86_64 usadas por `gnulibrary`
+
+El número se carga en `%rax` antes de `syscall`:
+
+| Función | Número | Argumentos relevantes | Retorno |
+| --- | ---: | --- | --- |
+| `read` | `0` | `%rdi=fd`, `%rsi=buf`, `%rdx=size` | bytes leídos o `-errno` |
+| `write` | `1` | `%rdi=fd`, `%rsi=buf`, `%rdx=size` | bytes escritos o `-errno` |
+| `close` | `3` | `%rdi=fd` | `0` o `-errno` |
+| `getpid` | `39` | ninguno | PID o `-errno` |
+| `exit` | `60` | `%rdi=code` | no retorna |
+
+Ejemplo mínimo de `write`:
+
+```bg
+@assembler
+public func write(fd: int32, buf *: byte, size: uint64) int64:
+    #assembler "att"
+        movq $1, %rax
+        syscall
+    #end
+    return asm
+```
+
+El cuarto argumento de una syscall no se coloca directamente en `%rcx`:
+si la función Bagron recibe cuatro parámetros, el cuarto llega en `%rcx` por
+System V y debe copiarse a `%r10` antes de ejecutar `syscall`.

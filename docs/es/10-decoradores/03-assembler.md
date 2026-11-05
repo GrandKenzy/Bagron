@@ -34,3 +34,8 @@ public func exit(code: int32) Never:
 escalar. La función puede tener como máximo un bloque de ensamblador. El
 compilador no verifica que las instrucciones respeten la ABI; los registros,
 clobbers y restricciones son responsabilidad del autor.
+
+`@assembler` representa una implementación completa escrita en ASM. Para
+funciones que solo exponen una API nativa ya implementada por una biblioteca,
+usa [`extern`](../05-externos/index.md): así se valida la firma ABI y el enlace
+sin mantener un archivo ASM separado por cada función externa.
