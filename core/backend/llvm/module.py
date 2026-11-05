@@ -11,6 +11,11 @@ from typing import Sequence
 from llvmlite import binding as llvm
 from llvmlite import ir
 
+from core.backend.llvm.android_toolchain import (
+    AndroidToolchain,
+    AndroidToolchainError,
+    resolve_android_toolchain,
+)
 from core.backend.llvm.context import LLVMContextHandle
 from core.backend.llvm.functions import FunctionEmitter
 from core.backend.llvm.globals import GlobalEmitter
@@ -46,6 +51,16 @@ class BuildArtifacts:
 
 class LLVMBackend:
     """First-stage LLVM backend for validated global symbols."""
+
+    @staticmethod
+    def _android_toolchain_for(triple: str) -> AndroidToolchain | None:
+        """Resolve the NDK only for explicit Android LLVM triples."""
+        if 'android' not in str(triple).lower():
+            return None
+        try:
+            return resolve_android_toolchain(triple)
+        except AndroidToolchainError as error:
+            raise BackendError(str(error)) from error
 
     @staticmethod
     def _has_large_stack_aggregate(function) -> bool:
@@ -306,11 +321,19 @@ class LLVMBackend:
         if not sources:
             return []
 
-        clang = shutil.which('clang')
-        if clang is None:
-            raise BackendError(
-                'No se encontro clang para ensamblar funciones @assembler'
-            )
+        toolchain = LLVMBackend._android_toolchain_for(triple)
+        if toolchain is None:
+            clang = shutil.which('clang')
+            if clang is None:
+                raise BackendError(
+                    'No se encontro clang para ensamblar funciones @assembler'
+                )
+            target_args = [f'--target={triple}']
+            tool_args: list[str] = []
+        else:
+            clang = str(toolchain.clang)
+            target_args = list(toolchain.clang_target_args)
+            tool_args = ['-B', str(toolchain.prebuilt_root / 'bin')]
 
         objects: list[Path] = []
         for source in sources:
@@ -319,7 +342,8 @@ class LLVMBackend:
             object_path = source.with_suffix(object_suffix)
             command = [
                 clang,
-                f'--target={triple}',
+                *target_args,
+                *tool_args,
                 '-c',
                 '-x',
                 'assembler',
@@ -659,12 +683,25 @@ SECTIONS
         link_directories: Sequence[Path] = (),
         link_plan: NativeLinkPlan | None = None,
     ) -> None:
-        clang = shutil.which('clang')
-        if clang is None:
-            raise BackendError(
-                'No se encontro clang para enlazar el ejecutable. '
-                'Instala LLVM y agrega clang al PATH.'
-            )
+        toolchain = LLVMBackend._android_toolchain_for(triple)
+        if toolchain is None:
+            clang = shutil.which('clang')
+            if clang is None:
+                raise BackendError(
+                    'No se encontro clang para enlazar el ejecutable. '
+                    'Instala LLVM y agrega clang al PATH.'
+                )
+            target_args = [f'--target={triple}']
+            linker_args = ['-fuse-ld=lld']
+        else:
+            clang = str(toolchain.clang)
+            target_args = list(toolchain.clang_target_args)
+            linker_args = [
+                '-B',
+                str(toolchain.prebuilt_root / 'bin'),
+                f'-fuse-ld={toolchain.ld_lld}',
+                f'-L{toolchain.api_library_dir}',
+            ]
 
         objects = [object_path] if isinstance(object_path, Path) else list(object_path)
         if link_plan is None:
@@ -684,8 +721,8 @@ SECTIONS
         )
         command = [
             clang,
-            f'--target={triple}',
-            '-fuse-ld=lld',
+            *target_args,
+            *linker_args,
             *(str(path) for path in objects),
             *link_plan.search_args,
             *link_plan.library_args,
