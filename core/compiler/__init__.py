@@ -1,10 +1,18 @@
 from dataclasses import dataclass, replace
 from pathlib import Path
-from platform import machine, system
 import re
 
 from core import globvars, storage
 from core.compiler.control import CompilationError, CompilerState, _found_main
+from core.compiler.platforms import (
+    architecture_name,
+    detect_host_platform,
+    detect_host_system,
+    normalize_architecture,
+    normalize_system,
+    validate_architecture_option,
+    validate_system_option,
+)
 from core.compiler.prep import (
     PrepBlock,
     PrepError,
@@ -117,10 +125,9 @@ class Compiler(CompilerState):
 
     @staticmethod
     def _normalize_target_system(value: str | None) -> str:
-        normalized = str(value or 'auto').strip().lower()
-        if normalized == 'auto':
-            return system().lower()
-        return normalized
+        if value is None or str(value).strip().lower() == 'auto':
+            return detect_host_system()
+        return normalize_system(value)
 
     @staticmethod
     def _read_source_target_clauses(path: Path) -> dict[str, str]:
@@ -130,11 +137,12 @@ class Compiler(CompilerState):
             r'(?P<quote>["\'])(?P<value>.*?)\2\s*$'
         )
         raw_lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+        host = detect_host_platform()
         selected_lines, _ = preprocess_conditionals(
             raw_lines,
             path,
-            system=system().lower(),
-            architecture=str(machine() or 'unknown').strip().lower(),
+            system=host.system,
+            architecture=host.architecture,
         )
         values: dict[str, str] = {}
         for line in selected_lines:
@@ -145,35 +153,12 @@ class Compiler(CompilerState):
 
     @staticmethod
     def _host_architecture() -> str:
-        try:
-            from core.backend.llvm.targets import resolve_target
-
-            return resolve_target('auto').triple.split('-', 1)[0].lower()
-        except (ImportError, RuntimeError, TypeError, ValueError):
-            return str(machine() or 'unknown').strip().lower()
+        return detect_host_platform().architecture
 
     @classmethod
     def _normalize_target_architecture(cls, value: str | None) -> str:
-        normalized = str(value or 'auto').strip().lower()
-        if normalized == 'auto':
-            normalized = cls._host_architecture()
-        else:
-            normalized = normalized.split('-', 1)[0]
-
-        aliases = {
-            'amd': 'x86_64',
-            'amd64': 'x86_64',
-            'x86_64': 'x86_64',
-            'x86': 'i386',
-            'i386': 'i386',
-            'i686': 'i386',
-            'arm': 'aarch64',
-            'arm64': 'aarch64',
-            'aarch64': 'aarch64',
-            'riscv32': 'riscv32',
-            'riscv64': 'riscv64',
-        }
-        return aliases.get(normalized, normalized)
+        raw = cls._host_architecture() if value is None else value
+        return architecture_name(normalize_architecture(raw))
 
     @staticmethod
     def _normalize_boot(value: str | None) -> str:
@@ -187,9 +172,12 @@ class Compiler(CompilerState):
         parts = [part.lower() for part in str(value).split('-')[1:]]
         known = {
             'linux', 'gnu', 'musl', 'windows', 'win32', 'mingw', 'msvc',
-            'darwin', 'macos', 'ios', 'none', 'elf', 'uefi',
+            'android', 'darwin', 'macos', 'ios', 'none', 'elf', 'uefi',
         }
-        return {part for part in parts if part in known}
+        environment = {part for part in parts if part in known}
+        if any(part.startswith('android') for part in parts):
+            environment.add('android')
+        return environment
 
     @classmethod
     def _validate_target_configuration(
@@ -201,6 +189,12 @@ class Compiler(CompilerState):
         raw_architecture: str | None,
     ) -> None:
         """Reject target combinations that cannot describe one platform."""
+        try:
+            validate_system_option(system_name)
+            validate_architecture_option(raw_architecture or architecture)
+        except ValueError as error:
+            raise ValueError(str(error)) from error
+
         if system_name in {'darwin', 'macos'}:
             raise ValueError(
                 f'El modulo {path} declara System {system_name!r}; '
@@ -232,6 +226,12 @@ class Compiler(CompilerState):
                 )
 
         environment = cls._triple_environment(raw_architecture)
+        if 'android' in environment:
+            raise ValueError(
+                f'El modulo {path} declara el triple Android '
+                f'{raw_architecture!r}; Android es reconocido, pero aun no '
+                'esta soportado por Bagron'
+            )
         if system_name == 'baremetal' and environment & {
             'linux', 'gnu', 'musl', 'windows', 'win32', 'mingw', 'msvc',
             'darwin', 'macos', 'ios',

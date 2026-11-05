@@ -1,16 +1,13 @@
-import platform
-
 from gram import ast as gast
 
 from core import globvars
+from core.compiler.platforms import (
+    validate_architecture_option,
+    validate_system_option,
+)
 
 
 def _visibility(var: str): return var in ('public', 'private')
-def _architecture(var: str):
-    return str(var).strip().lower() in {
-        'auto', 'amd', 'amd64', 'x86_64', 'x86', 'i386', 'i686',
-        'arm', 'arm64', 'aarch64', 'riscv32', 'riscv64',
-    } or '-' in str(var)
 def _optimizations(var: str): return var in ('dev', 'prod', 'high')
 def _stack_limit(var: str | int): return isinstance(var, int)
 def _boot(var: str):
@@ -26,12 +23,6 @@ def _boot(var: str):
 def _abi(var: str):
     return str(var).strip().lower() == 'sysv_amd64'
 
-def _system(var: str):
-    if var == 'auto':
-        var = platform.system().lower()
-    return var in ('linux', 'windows', 'baremetal')
-
-
 def validate(clause: gast.ASTRef):
     clause_name = clause.nodes[1].token.value # type: ignore
     clause_value = clause.nodes[2].token.value # type: ignore
@@ -41,10 +32,10 @@ def validate(clause: gast.ASTRef):
         
     if clause_name == 'Privacy' and _visibility(clause_value):  # noqa: SIM114
         pass
-    elif clause_name == 'Arch' and _architecture(clause_value):  # noqa: SIM114
-        pass
-    elif clause_name == 'System' and _system(clause_value):  # noqa: SIM114
-        pass
+    elif clause_name == 'Arch':
+        validate_architecture_option(clause_value)
+    elif clause_name == 'System':
+        validate_system_option(clause_value)
     elif clause_name == 'Boot' and _boot(clause_value):  # noqa: SIM114
         pass
     elif clause_name == 'ABI' and _abi(clause_value):  # noqa: SIM114
