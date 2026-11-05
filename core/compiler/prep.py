@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import re
 import textwrap
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, MutableMapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -17,6 +16,20 @@ class PrepBlock:
     dialect: str
     body: str
     line: int
+
+
+@dataclass(frozen=True)
+class PrepBlockMetadata:
+    """Map a generated assembly range back to one Bagron ASM block."""
+
+    source: Path
+    function_name: str | None
+    dialect: str
+    line: int
+    generated_start: int
+    generated_body_start: int
+    generated_body_end: int
+    generated_end: int
 
 
 class PrepError(ValueError):
@@ -51,6 +64,9 @@ _FUNCTION_RE = re.compile(
     r'^(?P<indent>[ \t]*)(?:(?:public|private)[ \t]+)?'
     r'(?:(?:inline)[ \t]+)?func[ \t]+'
     r'(?P<name>[A-Za-z_]\w*)\b.*:[ \t]*$'
+)
+_LABEL_DEFINITION_RE = re.compile(
+    r'^\s*(?P<label>[A-Za-z_.$][A-Za-z0-9_.$]*):(?:\s*.*)?$'
 )
 _CONDITIONAL_DIRECTIVE_RE = re.compile(
     r'^(?P<indent>[ \t]*)#(?P<directive>if|elif|else|end)\b(?P<rest>.*)$',
@@ -563,12 +579,20 @@ def _validate_parameter_abi(
             _stack_operand(index, dialect, len(registers), stack_base)
 
 
-def _render_assembly(
+def _assembly_symbol_name(block: PrepBlock, function: object) -> str:
+    return (
+        '__bagron_main'
+        if block.function_name == 'main'
+        else getattr(function, 'llvm_name', None) or block.function_name
+    )
+
+
+def _render_assembly_lines(
     block: PrepBlock,
     function: object,
     target_triple: str,
     abi: str | None = None,
-) -> str:
+) -> tuple[list[str], int, int]:
     dialect = _normalize_dialect(block.dialect)
 
     signature = getattr(function, 'signature', None)
@@ -581,11 +605,7 @@ def _render_assembly(
             'El bloque ASM no debe contener ret; return asm agrega el retorno ABI'
         )
 
-    symbol_name = (
-        '__bagron_main'
-        if block.function_name == 'main'
-        else getattr(function, 'llvm_name', None) or block.function_name
-    )
+    symbol_name = _assembly_symbol_name(block, function)
     syntax = '.intel_syntax noprefix' if dialect == 'intel' else '.att_syntax prefix'
     return_type = getattr(getattr(function, 'signature', None), 'return_type', None)
     is_void = (
@@ -610,13 +630,149 @@ def _render_assembly(
     ]
     if status_setup is not None:
         lines.append(f'    {status_setup}')
-    if body:
-        lines.extend(
-            f'    {line}' if line else ''
-            for line in body.rstrip('\r\n').splitlines()
-        )
-    lines.extend(('    ret', ''))
+    header_count = len(lines)
+    body_lines = body.rstrip('\r\n').splitlines() if body else []
+    lines.extend(f'    {line}' if line else '' for line in body_lines)
+    # Never functions must not receive an implicit return. The ASM body is
+    # responsible for guaranteeing that control never falls through into the
+    # next symbol; void and value-returning functions keep their ABI return.
+    if not is_never:
+        lines.append('    ret')
+    lines.append('')
+    return lines, header_count, len(body_lines)
+
+
+def _render_assembly(
+    block: PrepBlock,
+    function: object,
+    target_triple: str,
+    abi: str | None = None,
+) -> str:
+    """Render one block while preserving the legacy single-block API."""
+    lines, _, _ = _render_assembly_lines(block, function, target_triple, abi)
     return '\n'.join(lines)
+
+
+def _function_for_block(
+    block: PrepBlock,
+    functions: Mapping[str, object] | None,
+    source: Path,
+) -> object | None:
+    if functions is None or not block.function_name:
+        return None
+    function = functions.get(block.function_name)
+    # The flattened frontend can contain equal source names from different
+    # modules. Select the declaration belonging to this ASM block.
+    return next(
+        (
+            candidate for candidate in functions.values()
+            if getattr(candidate, 'name', None) == block.function_name
+            and getattr(candidate, 'module_path', None) is not None
+            and Path(candidate.module_path).resolve() == source
+        ),
+        function,
+    )
+
+
+def _label_definitions(block: PrepBlock) -> list[tuple[str, int]]:
+    definitions: list[tuple[str, int]] = []
+    for offset, line in enumerate(block.body.splitlines(), start=1):
+        match = _LABEL_DEFINITION_RE.match(line)
+        if match is None:
+            continue
+        label = match.group('label')
+        if label.startswith('.L'):
+            continue
+        definitions.append((label, block.line + offset))
+    return definitions
+
+
+def _validate_unit_labels(
+    blocks: Sequence[PrepBlock],
+    functions: Mapping[str, object] | None,
+) -> None:
+    """Reject non-local labels that collide inside one generated ASM unit."""
+    seen: dict[str, tuple[PrepBlock, int]] = {}
+    generated_symbols: dict[str, PrepBlock] = {}
+    for block in blocks:
+        function = _function_for_block(block, functions, block.source.resolve())
+        if function is not None:
+            symbol = _assembly_symbol_name(block, function)
+            previous = generated_symbols.get(symbol)
+            if previous is not None:
+                raise PrepError(
+                    f'{block.source}:{block.line}: el simbolo ASM generado '
+                    f'{symbol!r} se repite en las funciones '
+                    f'{previous.function_name!r} y {block.function_name!r}'
+                )
+            generated_symbols[symbol] = block
+
+        for label, line in _label_definitions(block):
+            previous = seen.get(label)
+            if previous is not None:
+                previous_block, previous_line = previous
+                raise PrepError(
+                    f'{block.source}:{line}: la etiqueta ASM no local '
+                    f'{label!r} de la funcion {block.function_name!r} colisiona '
+                    f'con {previous_block.source}:{previous_line} en la funcion '
+                    f'{previous_block.function_name!r}; usa una etiqueta .L... '
+                    'o un nombre unico'
+                )
+            seen[label] = (block, line)
+
+    for label, (block, line) in seen.items():
+        if label in generated_symbols:
+            owner = generated_symbols[label]
+            raise PrepError(
+                f'{block.source}:{line}: la etiqueta ASM {label!r} '
+                f'colisiona con el simbolo generado de la funcion '
+                f'{owner.function_name!r}; usa un nombre de etiqueta unico'
+            )
+
+
+def _render_assembly_unit(
+    blocks: Sequence[PrepBlock],
+    functions: Mapping[str, object] | None,
+    target_triple: str | None,
+    abi: str | None,
+) -> tuple[str, tuple[PrepBlockMetadata, ...]]:
+    _validate_unit_labels(blocks, functions)
+    lines: list[str] = []
+    metadata: list[PrepBlockMetadata] = []
+
+    for block in blocks:
+        source = block.source.resolve()
+        function = _function_for_block(block, functions, source)
+        start = len(lines) + 1
+        if function is not None and target_triple is not None:
+            block_lines, header_count, body_count = _render_assembly_lines(
+                block,
+                function,
+                target_triple,
+                abi,
+            )
+        else:
+            block_lines = block.body.rstrip('\r\n').splitlines()
+            header_count = 0
+            body_count = len(block_lines)
+
+        lines.extend(block_lines)
+        body_start = start + header_count if body_count else start
+        body_end = body_start + body_count - 1 if body_count else body_start - 1
+        metadata.append(
+            PrepBlockMetadata(
+                source=block.source,
+                function_name=block.function_name,
+                dialect=block.dialect,
+                line=block.line,
+                generated_start=start,
+                generated_body_start=body_start,
+                generated_body_end=body_end,
+                generated_end=len(lines),
+            )
+        )
+
+    return '\n'.join(lines), tuple(metadata)
 
 
 def write_prep_files(
@@ -626,22 +782,37 @@ def write_prep_files(
     functions: Mapping[str, object] | None = None,
     target_triple: str | None = None,
     abi: str | None = None,
+    metadata: MutableMapping[Path, tuple[PrepBlockMetadata, ...]] | None = None,
 ) -> list[Path]:
-    """Write extracted assembler blocks to unique `.asm` files."""
+    """Write one grouped `.asm` unit for every source file containing ASM."""
     root = build_root or project_root / 'build' / 'prep'
-    counters: defaultdict[tuple[Path, str], int] = defaultdict(int)
     written: list[Path] = []
     cleaned_directories: set[Path] = set()
+    grouped: dict[Path, list[PrepBlock]] = {}
+
+    if metadata is not None:
+        metadata.clear()
+
+    for block in blocks:
+        grouped.setdefault(block.source.resolve(), []).append(block)
+
+    cleanup_patterns = (
+        '*__prep_*.asm',
+        '*__prep_*.obj',
+        '*__prep_*.o',
+        '*__prep.asm',
+        '*__prep.obj',
+        '*__prep.o',
+    )
 
     if not blocks:
         if root.exists():
-            for pattern in ('*__prep_*.asm', '*__prep_*.obj', '*__prep_*.o'):
+            for pattern in cleanup_patterns:
                 for previous in root.rglob(pattern):
                     previous.unlink()
         return written
 
-    for block in blocks:
-        source = block.source.resolve()
+    for source, source_blocks in grouped.items():
         try:
             relative = source.relative_to(project_root.resolve())
         except ValueError:
@@ -654,43 +825,29 @@ def write_prep_files(
         module_dir = root.joinpath(*module_parts)
         module_dir.mkdir(parents=True, exist_ok=True)
         if module_dir not in cleaned_directories:
-            for pattern in ('*__prep_*.asm', '*__prep_*.obj', '*__prep_*.o'):
+            for pattern in cleanup_patterns:
                 for previous in module_dir.glob(pattern):
                     previous.unlink()
             cleaned_directories.add(module_dir)
 
-        key = (source, block.function_name)
-        block_index = counters[key]
-        counters[key] += 1
-        function_name = _safe_component(block.function_name)
-        destination = module_dir / f'{function_name}__prep_{block_index}.asm'
-        function = functions.get(block.function_name) if functions is not None else None
-        if functions is not None and block.function_name:
-            # The flattened frontend can contain equal source names from
-            # different modules/packages.  Select the declaration belonging
-            # to this ASM block instead of whichever one occupies the
-            # compatibility spelling in ``functions``.
-            function = next(
-                (
-                    candidate for candidate in functions.values()
-                    if getattr(candidate, 'name', None) == block.function_name
-                    and getattr(candidate, 'module_path', None) is not None
-                    and Path(candidate.module_path).resolve() == source
-                ),
-                function,
-            )
-        if function is not None and target_triple is not None:
-            content = _render_assembly(block, function, target_triple, abi)
-        else:
-            content = block.body
+        destination = module_dir / f'{_safe_component(source.stem)}__prep.asm'
+        content, block_metadata = _render_assembly_unit(
+            source_blocks,
+            functions,
+            target_triple,
+            abi,
+        )
         destination.write_text(content, encoding='utf-8')
         written.append(destination)
+        if metadata is not None:
+            metadata[destination] = block_metadata
 
     return written
 
 
 __all__ = [
     'PrepBlock',
+    'PrepBlockMetadata',
     'PrepError',
     'extract_prep_blocks',
     'preprocess_conditionals',

@@ -4,8 +4,11 @@ import tempfile
 import unittest
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
+from core.backend.llvm.module import LLVMBackend
 from core.compiler import CompilationError, Compiler
+from core.compiler.prep import PrepBlockMetadata
 
 
 class PrepTests(unittest.TestCase):
@@ -36,7 +39,7 @@ class PrepTests(unittest.TestCase):
 
         self.assertTrue(ir_path.exists())
 
-    def test_extracts_raw_assembler_to_function_file(self):
+    def test_extracts_raw_assembler_to_source_file(self):
         ir_path = self._compile(
             '@assembler\n'
             'func main() int32:\n'
@@ -47,7 +50,7 @@ class PrepTests(unittest.TestCase):
             '    return asm\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'main__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         self.assertTrue(asm_path.exists())
         self.assertEqual(
             '.intel_syntax noprefix\n'
@@ -60,6 +63,221 @@ class PrepTests(unittest.TestCase):
             '    ret\n',
             asm_path.read_text(encoding='utf-8'),
         )
+
+    def test_groups_assembler_functions_from_one_source(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func first() int32:\n'
+            '    #assembler "intel"\n'
+            '        mov eax, 11\n'
+            '    #end\n'
+            '    return asm\n'
+            '@assembler\n'
+            'func second() int32:\n'
+            '    #assembler "att"\n'
+            '        movl $22, %eax\n'
+            '    #end\n'
+            '    return asm\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        compiler = Compiler()
+        artifacts = compiler.compile(path)
+
+        self.assertEqual(1, len(compiler.storage.prep_sources))
+        self.assertEqual(1, len(artifacts.prep_objects))
+        asm_path = compiler.storage.prep_sources[0]
+        self.assertEqual('_main__prep.asm', asm_path.name)
+        self.assertEqual(
+            ['first', 'second'],
+            [item.function_name for item in compiler.storage.prep_metadata[asm_path]],
+        )
+        asm_text = asm_path.read_text(encoding='utf-8')
+        self.assertEqual(2, asm_text.count('.globl '))
+        self.assertIn('mov eax, 11', asm_text)
+        self.assertIn('movl $22, %eax', asm_text)
+        self.assertLess(asm_text.index('mov eax, 11'), asm_text.index('movl $22, %eax'))
+
+    def test_assembles_once_per_grouped_source_unit(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        main_source = root / '_main__prep.asm'
+        helper_source = root / 'helper__prep.asm'
+        main_source.write_text('nop\n', encoding='utf-8')
+        helper_source.write_text('nop\n', encoding='utf-8')
+
+        result = subprocess.CompletedProcess([], 0, stdout='', stderr='')
+        with patch(
+            'core.backend.llvm.module.subprocess.run',
+            return_value=result,
+        ) as run:
+            objects = LLVMBackend._assemble_prep_sources(
+                [main_source, helper_source],
+                'x86_64-pc-windows-msvc',
+            )
+
+        self.assertEqual(2, run.call_count)
+        self.assertEqual([main_source.with_suffix('.obj'), helper_source.with_suffix('.obj')], objects)
+
+    def test_cleans_grouped_and_legacy_prep_artifacts_without_assembler(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func helper() int32:\n'
+            '    #assembler "intel"\n'
+            '        mov eax, 1\n'
+            '    #end\n'
+            '    return asm\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        Compiler().compile(path, executable=False)
+        prep_root = path.parent / 'build' / 'prep'
+        prep_dir = prep_root / '_main'
+        for name in (
+            'old__prep_0.asm',
+            'old__prep_0.obj',
+            'old__prep_0.o',
+            'stale__prep.asm',
+            'stale__prep.obj',
+            'stale__prep.o',
+        ):
+            (prep_dir / name).write_text('stale', encoding='utf-8')
+
+        path.write_text('func main() int32:\n    return 0\n', encoding='utf-8')
+        Compiler().compile(path, executable=False)
+
+        self.assertFalse(any(prep_root.rglob('*__prep*')))
+
+    def test_rejects_repeated_non_local_assembler_labels(self):
+        with self.assertRaisesRegex(CompilationError, 'etiqueta ASM no local.*shared.*first'):
+            self._compile(
+                '@assembler\n'
+                'func first() int32:\n'
+                '    #assembler "intel"\n'
+                '        shared:\n'
+                '        mov eax, 1\n'
+                '    #end\n'
+                '    return asm\n'
+                '@assembler\n'
+                'func second() int32:\n'
+                '    #assembler "intel"\n'
+                '        shared:\n'
+                '        mov eax, 2\n'
+                '    #end\n'
+                '    return asm\n'
+                'func main() int32:\n'
+                '    return 0\n'
+            )
+
+    def test_allows_repeated_local_assembler_labels(self):
+        compiler = Compiler()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func first() int32:\n'
+            '    #assembler "intel"\n'
+            '        .Ldone:\n'
+            '        mov eax, 1\n'
+            '    #end\n'
+            '    return asm\n'
+            '@assembler\n'
+            'func second() int32:\n'
+            '    #assembler "intel"\n'
+            '        .Ldone:\n'
+            '        mov eax, 2\n'
+            '    #end\n'
+            '    return asm\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        compiler.compile(path, executable=False)
+        self.assertEqual(1, len(compiler.storage.prep_sources))
+
+    def test_keeps_imported_assembler_sources_in_separate_units(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / 'modules').mkdir()
+        (root / 'modules' / 'helper.bg').write_text(
+            '@assembler\n'
+            'public func helper() int32:\n'
+            '    #assembler "intel"\n'
+            '        mov eax, 7\n'
+            '    #end\n'
+            '    return asm\n',
+            encoding='utf-8',
+        )
+        main = root / '_main.bg'
+        main.write_text(
+            'import helper\n'
+            '@assembler\n'
+            'func main() int32:\n'
+            '    #assembler "att"\n'
+            '        xorl %eax, %eax\n'
+            '    #end\n'
+            '    return asm\n',
+            encoding='utf-8',
+        )
+
+        compiler = Compiler()
+        compiler.compile(main, executable=False)
+
+        self.assertEqual(2, len(compiler.storage.prep_sources))
+        self.assertEqual(
+            {'_main__prep.asm', 'helper__prep.asm'},
+            {path.name for path in compiler.storage.prep_sources},
+        )
+
+    def test_maps_clang_error_to_second_grouped_assembler_function(self):
+        metadata = (
+            PrepBlockMetadata(
+                source=Path('first.bg'),
+                function_name='first',
+                dialect='intel',
+                line=4,
+                generated_start=1,
+                generated_body_start=5,
+                generated_body_end=5,
+                generated_end=7,
+            ),
+            PrepBlockMetadata(
+                source=Path('second.bg'),
+                function_name='second',
+                dialect='att',
+                line=12,
+                generated_start=8,
+                generated_body_start=12,
+                generated_body_end=12,
+                generated_end=14,
+            ),
+        )
+
+        detail = 'unit__prep.asm:12:3: error: invalid instruction'
+        formatted = LLVMBackend._format_assembler_diagnostic(
+            Path('unit__prep.asm'),
+            detail,
+            metadata,
+        )
+
+        self.assertIn('second.bg:13:', formatted)
+        self.assertIn('funcion @assembler second', formatted)
+        self.assertIn('dialecto att', formatted)
+        self.assertIn('generado desde unit__prep.asm', formatted)
 
     def test_rejects_multiple_assembler_blocks_in_function(self):
         with self.assertRaisesRegex(CompilationError, 'solo puede contener un bloque'):
@@ -123,10 +341,57 @@ class PrepTests(unittest.TestCase):
             '    return 0\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'helper__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('.intel_syntax noprefix\n.text\n.globl ', asm_text)
         self.assertIn('    nop\n    ret\n', asm_text)
+
+    def test_never_assembler_function_does_not_get_implicit_return(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func stop() Never:\n'
+            '    #assembler "intel"\n'
+            '        ud2\n'
+            '    #end\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        compiler = Compiler()
+        ir_path = Path(compiler.compile(path, executable=False))
+        asm_text = compiler.storage.prep_sources[0].read_text(encoding='utf-8')
+
+        self.assertRegex(asm_text, r'\.globl .*_fn_stop_.*\n.*_fn_stop_.*:')
+        self.assertIn('    ud2\n', asm_text)
+        self.assertNotIn('\n    ret\n', asm_text)
+        self.assertNotIn('mov eax, 1', asm_text)
+        self.assertIn('declare void', ir_path.read_text(encoding='utf-8'))
+
+    def test_never_assembler_call_emits_void_unreachable_in_llvm(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            '@assembler\n'
+            'func stop() Never:\n'
+            '    #assembler "intel"\n'
+            '        ud2\n'
+            '    #end\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    stop()\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+
+        ir_path = Path(Compiler().compile(path, executable=False))
+        ir_text = ir_path.read_text(encoding='utf-8')
+
+        self.assertRegex(ir_text, r'call void .*stop.*\n\s*unreachable')
 
     def test_runs_void_assembler_function_without_return_asm(self):
         directory = tempfile.TemporaryDirectory()
@@ -199,7 +464,7 @@ class PrepTests(unittest.TestCase):
             '    return asm\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'main__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('.att_syntax prefix', asm_text)
         self.assertIn('movl $1, %eax', asm_text)
@@ -242,7 +507,7 @@ class PrepTests(unittest.TestCase):
             '    return 0\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'widths__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('mov al, cl', asm_text)
         self.assertIn('mov dx, dx', asm_text)
@@ -261,7 +526,7 @@ class PrepTests(unittest.TestCase):
             '    return 0\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'read__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         self.assertIn('mov eax, [rcx]', asm_path.read_text(encoding='utf-8'))
 
     def test_assembler_defaults_to_failure_status(self):
@@ -312,7 +577,7 @@ class PrepTests(unittest.TestCase):
             'func main() int32:\n'
             '    return 0\n'
         )
-        asm_path = ir_path.parent / 'prep' / '_main' / 'bad__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         self.assertIn('# {missing}', asm_path.read_text(encoding='utf-8'))
 
     def test_rejects_unsupported_assembler_dialect(self):
@@ -341,7 +606,7 @@ class PrepTests(unittest.TestCase):
             '    return stack(1, 2, 3, 4, 5)\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'stack__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('mov eax, [rsp + 0x28]', asm_text)
 
@@ -421,7 +686,7 @@ class PrepTests(unittest.TestCase):
             '    return 0\n'
         )
 
-        asm_path = ir_path.parent / 'prep' / '_main' / 'identity__prep_0.asm'
+        asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('.att_syntax prefix', asm_text)
         self.assertIn('movl %edi, %eax', asm_text)

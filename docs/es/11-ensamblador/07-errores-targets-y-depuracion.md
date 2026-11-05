@@ -15,9 +15,12 @@ errores habituales son:
 | `ABI` fuera de Baremetal | la cláusula solo se permite con `System "baremetal"` |
 | `ret` dentro del cuerpo | `return asm` agrega el retorno ABI |
 | función ASM en arquitectura no soportada | esta fase requiere arquitectura x86_64 (Windows x64 o System V AMD64) |
+| etiquetas no locales repetidas | cada etiqueta `nombre:` debe ser única dentro del archivo `.bg`; usa `.L...` o nombres distintos |
 
 Si Clang rechaza una instrucción, el backend conserva el archivo generado y
-relaciona la línea del `.asm` con la fuente `.bg`, la función y el dialecto.
+relaciona el rango correspondiente del `.asm` agrupado con la fuente `.bg`, la
+función y el dialecto. Las etiquetas locales `.L...` y las etiquetas numéricas
+de GAS no participan en la detección de colisiones del agrupamiento.
 Revisa primero el archivo bajo `build/prep/` para distinguir un error del
 backend de un error de sintaxis ASM.
 

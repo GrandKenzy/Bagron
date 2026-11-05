@@ -917,25 +917,16 @@ class Compiler(CompilerState):
                     self.storage.system,
                     self.storage.optimizers,
                 )
+                prep_metadata = {}
                 self.storage.prep_sources = write_prep_files(
                     self.prep_blocks,
                     self.project_root or path.parent,
                     functions=self.storage.functions,
                     target_triple=target.triple,
                     abi=self.storage.abi,
+                    metadata=prep_metadata,
                 )
-                self.storage.prep_metadata = {
-                    generated: (
-                        block.source,
-                        block.function_name,
-                        block.dialect,
-                        block.line,
-                    )
-                    for generated, block in zip(
-                        self.storage.prep_sources,
-                        self.prep_blocks,
-                    )
-                }
+                self.storage.prep_metadata = prep_metadata
             except (PrepError, TargetResolutionError) as error:
                 raise CompilationError(str(error)) from error
         else:

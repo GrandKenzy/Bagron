@@ -1,6 +1,6 @@
 from pathlib import Path
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tools import diagnostic
 
@@ -11,6 +11,9 @@ from core.frontend.objects import (
     OpaqueSymbol,
     Variable,
 )
+
+if TYPE_CHECKING:
+    from core.compiler.prep import PrepBlockMetadata
 
 from platform import system, architecture
 
@@ -151,8 +154,8 @@ class Storage(diagnostic.Diagnostics):
         self.type_aliases: dict[str, str] = {}
         self.prep_sources: list[Path] = []
         self.prep_objects: list[Path] = []
-        # Generated ASM path -> source metadata used to improve Clang errors.
-        self.prep_metadata: dict[Path, tuple[Path, str, str, int]] = {}
+        # Generated ASM path -> ordered metadata for every source block.
+        self.prep_metadata: dict[Path, tuple['PrepBlockMetadata', ...]] = {}
         
     def define_clause(self, name: str, value: int | str | bool):
         if      name == 'Privacy': self.privacy = str(value)

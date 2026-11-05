@@ -26,6 +26,7 @@ from core.backend.llvm.targets import (
     optimization_speed_level,
 )
 from core.backend.llvm.types import LLVMTypeRegistry
+from core.compiler.prep import PrepBlockMetadata
 
 
 class BackendError(RuntimeError):
@@ -300,7 +301,7 @@ class LLVMBackend:
     def _assemble_prep_sources(
         sources: Sequence[Path],
         triple: str,
-        metadata: dict[Path, tuple[Path, str, str, int]] | None = None,
+        metadata: dict[Path, tuple[PrepBlockMetadata, ...]] | None = None,
     ) -> list[Path]:
         if not sources:
             return []
@@ -609,38 +610,40 @@ SECTIONS
     def _format_assembler_diagnostic(
         generated_source: Path,
         detail: str,
-        metadata: tuple[Path, str, str, int] | None,
+        metadata: tuple[PrepBlockMetadata, ...] | None,
     ) -> str:
         """Map Clang's generated-file location back to the Bagron source."""
-        if metadata is None:
+        if not metadata:
             return f'Clang: {detail}'
-
-        source, function_name, dialect, prep_line = metadata
-        normalized = dialect.strip().lower()
 
         first_line, *rest = detail.splitlines()
         match = re.search(r':(?P<line>\d+):(?P<column>\d+):\s*', first_line)
         if match is None:
+            first = metadata[0]
             return (
-                f'{source}:{prep_line}: en la funcion @assembler '
-                f'{function_name} (dialecto {normalized}): {detail}'
+                f'{first.source}:{first.line}: en la funcion @assembler '
+                f'{first.function_name} (dialecto {first.dialect.strip().lower()}): '
+                f'{detail}'
             )
 
         generated_line = int(match.group('line'))
-        # Generated header: syntax, .text, .globl, symbol, optional status.
-        try:
-            generated_lines = generated_source.read_text(encoding='utf-8').splitlines()
-        except OSError:
-            generated_lines = []
-        header_lines = 5 if (
-            len(generated_lines) > 4
-            and generated_lines[4].strip() in {'mov eax, 1', 'movl $1, %eax'}
-        ) else 4
-        source_line = prep_line + max(generated_line - header_lines, 0)
+        block = next(
+            (
+                candidate for candidate in metadata
+                if candidate.generated_start <= generated_line <= candidate.generated_end
+            ),
+            metadata[0],
+        )
+        normalized = block.dialect.strip().lower()
+        if block.generated_body_start <= generated_line <= block.generated_body_end:
+            source_line = block.line + generated_line - block.generated_body_start + 1
+        else:
+            source_line = block.line
         message = first_line[match.end():].strip()
         formatted = (
-            f'{source}:{source_line}: en la funcion @assembler {function_name} '
-            f'(dialecto {normalized}, generado desde {generated_source}): '
+            f'{block.source}:{source_line}: en la funcion @assembler '
+            f'{block.function_name} (dialecto {normalized}, generado desde '
+            f'{generated_source}): '
             f'{message}'
         )
         if rest:

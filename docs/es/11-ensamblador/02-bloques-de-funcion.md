@@ -17,6 +17,11 @@ por función `@assembler` y se cierra con `#end`. La función debe tener la
 declaración `@assembler`; si el bloque existe sin el decorador, el frontend lo
 rechaza.
 
+Los bloques de varias funciones del mismo archivo `.bg` se escriben en una sola
+unidad `.asm`. Esto no cambia su independencia semántica ni su contrato ABI:
+cada función conserva su símbolo, dialecto y retorno. Los módulos `.bg` distintos
+siguen generando unidades ASM y objetos separados.
+
 La función solo puede contener el bloque ASM y el retorno que corresponda. No
 añadas variables, condiciones, llamadas Bagron ni otro bloque dentro de ese
 cuerpo. Para funciones sin bloque ASM, `@assembler` sigue exigiendo un único
