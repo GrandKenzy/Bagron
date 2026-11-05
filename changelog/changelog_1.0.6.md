@@ -28,3 +28,7 @@
 
 - Updated fast and aggressive tests for the new directive syntax, valid dialects, legacy syntax rejection, block closure, return rules, direct ABI registers, raw-body preservation, target validation, and emitted GAS syntax directives.
 - Removed module-level assembler coverage and obsolete placeholder-expansion and assembler-intrinsic tests.
+
+## Release
+
+Released as Bagron `1.0.6` on 2026-11-05.

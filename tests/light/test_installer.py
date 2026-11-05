@@ -104,7 +104,7 @@ class InstallerTests(unittest.TestCase):
             (target / 'vnma.lock').write_text('{"gram": "local"}', encoding='utf-8')
             installer._configure_vnma_toml(target)
             content = (target / 'vnma.toml').read_text(encoding='utf-8')
-            self.assertIn('version = "1.0.5"', content)
+            self.assertIn('version = "1.0.6"', content)
             self.assertIn('https://github.com/GrandKenzy/Gram.git', content)
             self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
@@ -148,16 +148,16 @@ class InstallerTests(unittest.TestCase):
             with tarfile.open(output, 'r:gz') as archive:
                 names = set(archive.getnames())
 
-            self.assertIn('Bagron-1.0.5/installer.py', names)
-            self.assertIn('Bagron-1.0.5/install.sh', names)
+            self.assertIn('Bagron-1.0.6/installer.py', names)
+            self.assertIn('Bagron-1.0.6/install.sh', names)
             self.assertTrue(
-                any(name.rstrip('/') == 'Bagron-1.0.5/modules' for name in names)
+                any(name.rstrip('/') == 'Bagron-1.0.6/modules' for name in names)
             )
-            self.assertNotIn('Bagron-1.0.5/vendor/', names)
+            self.assertNotIn('Bagron-1.0.6/vendor/', names)
             aot_library = Path(__file__).resolve().parents[2] / 'build' / 'aot' / 'libbagron_aot.so'
             if aot_library.is_file():
-                self.assertIn('Bagron-1.0.5/build/aot/libbagron_aot.so', names)
-                self.assertIn('Bagron-1.0.5/build/aot/gram_parser_manifest.json', names)
+                self.assertIn('Bagron-1.0.6/build/aot/libbagron_aot.so', names)
+                self.assertIn('Bagron-1.0.6/build/aot/gram_parser_manifest.json', names)
             else:
                 self.assertFalse(any('/build/' in name for name in names))
 
@@ -171,9 +171,9 @@ class InstallerTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
 
-            self.assertIn('Bagron-1.0.5/installer.py', names)
-            self.assertIn('Bagron-1.0.5/build/aot/bagron_aot.dll', names)
-            self.assertIn('Bagron-1.0.5/build/aot/gram_parser_manifest.json', names)
+            self.assertIn('Bagron-1.0.6/installer.py', names)
+            self.assertIn('Bagron-1.0.6/build/aot/bagron_aot.dll', names)
+            self.assertIn('Bagron-1.0.6/build/aot/gram_parser_manifest.json', names)
             self.assertFalse(any('/vendor/' in name for name in names))
 
     def test_release_publishes_only_compiled_installers(self):
@@ -210,19 +210,20 @@ class InstallerTests(unittest.TestCase):
 
     def test_canonical_changelog_is_english_and_unique(self):
         changelog_dir = Path(__file__).resolve().parents[2] / 'changelog'
-        canonical = changelog_dir / 'changelog_1.0.5.md'
+        canonical = changelog_dir / 'changelog_1.0.6.md'
         content = canonical.read_text(encoding='utf-8')
 
-        self.assertTrue(content.startswith('# Changelog 1.0.5\n'))
-        self.assertIn('## Explicitly-Typed Class Attributes', content)
-        self.assertIn('## Linux Installer Hardening', content)
-        self.assertIn('Released as Bagron `1.0.5`', content)
+        self.assertTrue(content.startswith('# Changelog 1.0.6\n'))
+        self.assertIn('## Assembler Function Contract', content)
+        self.assertIn('## ABI and Backend Integration', content)
+        self.assertIn('Released as Bagron `1.0.6`', content)
         names = sorted(path.name for path in changelog_dir.iterdir())
         self.assertIn('changelog_1.0.3.md', names)
         self.assertIn('changelog_1.0.4.md', names)
         self.assertIn('changelog_1.0.5.md', names)
+        self.assertIn('changelog_1.0.6.md', names)
         self.assertEqual(
-            3,
+            4,
             sum(name.startswith('changelog_') for name in names),
         )
 

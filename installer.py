@@ -26,7 +26,7 @@ import zipfile
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
-BAGRON_VERSION = '1.0.5'
+BAGRON_VERSION = '1.0.6'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
