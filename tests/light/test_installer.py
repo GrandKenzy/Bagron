@@ -1,3 +1,6 @@
+import os
+import shutil
+import subprocess
 import tarfile
 import tempfile
 import zipfile
@@ -26,8 +29,59 @@ class InstallerTests(unittest.TestCase):
                 content = launcher.read_text(encoding='utf-8')
                 self.assertIn('#!/usr/bin/env bash', content)
                 self.assertIn('BAGRON_CALLER_DIR="$PWD"', content)
+                self.assertIn('while [[ -L "$launcher_path" ]]', content)
+                self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
                 self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
                 self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
+
+    @unittest.skipUnless(os.name == 'posix', 'requiere un entorno POSIX')
+    def test_posix_launcher_resolves_installation_symlink(self):
+        if shutil.which('bash') is None or shutil.which('readlink') is None:
+            self.skipTest('requiere bash y readlink')
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            bin_dir = target / 'bin'
+            runtime_python = target / '.runtime' / 'bin' / 'python'
+            caller_dir = Path(directory) / 'caller'
+            link_dir = Path(directory) / 'local' / 'bin'
+            log_path = Path(directory) / 'launcher.log'
+
+            installer._create_launchers(bin_dir)
+            runtime_python.parent.mkdir(parents=True)
+            caller_dir.mkdir()
+            link_dir.mkdir(parents=True)
+            runtime_python.write_text(
+                '#!/usr/bin/env bash\n'
+                'printf "%s\\n" "$PWD" > "$FAKE_BAGRON_LOG"\n'
+                'printf "%s\\n" "$BAGRON_CALLER_DIR" >> "$FAKE_BAGRON_LOG"\n'
+                'printf "%s\\n" "$*" >> "$FAKE_BAGRON_LOG"\n',
+                encoding='utf-8',
+            )
+            runtime_python.chmod(0o755)
+            link = link_dir / 'bagron'
+            link.symlink_to(bin_dir / 'bagron')
+
+            environment = os.environ.copy()
+            environment['FAKE_BAGRON_LOG'] = str(log_path)
+            result = subprocess.run(
+                [str(link), '--probe'],
+                cwd=caller_dir,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(
+                [
+                    str(target.resolve()),
+                    str(caller_dir.resolve()),
+                    '-m vnma run main.py --probe',
+                ],
+                log_path.read_text(encoding='utf-8').splitlines(),
+            )
 
     def test_bootstrap_script_does_not_use_stdin_as_a_local_checkout(self):
         install_script = (

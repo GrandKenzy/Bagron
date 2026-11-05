@@ -433,7 +433,13 @@ def _create_launchers(bin_dir: Path) -> None:
         shell_content = '''#!/usr/bin/env bash
 set -euo pipefail
 
-launcher_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+launcher_path="${BASH_SOURCE[0]}"
+while [[ -L "$launcher_path" ]]; do
+    launcher_dir="$(CDPATH= cd -- "$(dirname -- "$launcher_path")" && pwd)"
+    launcher_path="$(readlink "$launcher_path")"
+    [[ "$launcher_path" = /* ]] || launcher_path="$launcher_dir/$launcher_path"
+done
+launcher_dir="$(CDPATH= cd -- "$(dirname -- "$launcher_path")" && pwd)"
 bagron_home="$(CDPATH= cd -- "$launcher_dir/.." && pwd)"
 python_bin="$bagron_home/.runtime/bin/python"
 if [[ ! -x "$python_bin" ]]; then
