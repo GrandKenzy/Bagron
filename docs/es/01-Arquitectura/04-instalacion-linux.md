@@ -6,8 +6,7 @@ release no publica paquetes fuente comprimidos.
 
 ## Requisitos
 
-- Git, para descargar las fuentes nativas de Gram cuando el paquete no incluya
-  la biblioteca AOT.
+- Git, para descargar las fuentes nativas de Gram durante la instalación.
 - LLVM, Clang y LLD disponibles en el PATH.
 - `libcurl.so.4` si el proyecto usa el módulo `net` con `https://`.
 
@@ -31,7 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.0.6/install.sh 
 
 El comando descarga el instalador ELF, que instala Bagron en `~/Bagron`,
 extrae su Python portable en `.runtime/`, instala vnma, resuelve Gram y
-llvmlite, construye el parser AOT/FFI de Gram cuando es necesario y crea:
+llvmlite y reconstruye siempre el parser AOT/FFI de Gram para la plataforma
+actual usando Clang. Las bibliotecas AOT no se distribuyen precompiladas.
 
 Aunque se ejecute desde una carpeta que contenga otra copia de Bagron, el
 script descargado por `curl | bash` no reutiliza ese checkout ni el Python del

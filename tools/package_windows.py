@@ -28,10 +28,6 @@ PACKAGE_FILES = (
     'LICENSE',
     'vnma.toml.example',
 )
-AOT_PACKAGE_FILES = (
-    'build/aot/bagron_aot.dll',
-    'build/aot/gram_parser_manifest.json',
-)
 EXCLUDED_PARTS = {
     '.git',
     '.ia',
@@ -72,20 +68,14 @@ def _add_tree(archive: zipfile.ZipFile, source_root: Path, relative: str, packag
 
 
 def build_package(source_root: Path, output: Path) -> Path:
-    """Empaqueta fuentes, AOT y configuración sin incluir dependencias locales."""
+    """Empaqueta fuentes y configuración sin incluir dependencias locales ni AOT."""
     package_root = f'Bagron-{BAGRON_VERSION}'
     output.parent.mkdir(parents=True, exist_ok=True)
-    missing_aot = [str(source_root / relative) for relative in AOT_PACKAGE_FILES
-                   if not (source_root / relative).is_file()]
-    if missing_aot:
-        raise FileNotFoundError(
-            'Faltan artefactos AOT de Windows: ' + ', '.join(missing_aot)
-        )
 
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for relative in PACKAGE_DIRECTORIES:
             _add_tree(archive, source_root, relative, package_root)
-        for relative in PACKAGE_FILES + AOT_PACKAGE_FILES:
+        for relative in PACKAGE_FILES:
             _add_file(archive, source_root / relative, f'{package_root}/{relative}')
 
         for relative in ('libs', 'modules'):

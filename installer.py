@@ -610,7 +610,7 @@ def _aot_library_names() -> tuple[str, ...]:
 
 
 def _has_aot_parser(target_dir: Path) -> bool:
-    """Comprueba si la instalación ya contiene la biblioteca AOT y su manifiesto."""
+    """Comprueba que la reconstrucción AOT produjo la biblioteca y el manifiesto."""
     output_dir = target_dir / 'build' / 'aot'
     return (
         any((output_dir / name).is_file() for name in _aot_library_names())
@@ -619,11 +619,7 @@ def _has_aot_parser(target_dir: Path) -> bool:
 
 
 def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
-    """Genera la biblioteca FFI de Gram cuando el paquete no trae un binario."""
-    if _has_aot_parser(target_dir):
-        print('  [OK] Biblioteca AOT de Gram incluida en la distribución.')
-        return True
-
+    """Reconstruye la biblioteca FFI de Gram para la plataforma actual."""
     if not vnma_bin:
         print(
             '  [CUIDADO] No se puede generar el parser AOT porque falta vnma.',
@@ -642,6 +638,11 @@ def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
     print('\n[5/7] Construyendo la biblioteca AOT/FFI de Gram...')
     output_dir = target_dir / 'build' / 'aot'
     try:
+        # El AOT y su manifiesto deben proceder de la misma reconstrucción.
+        # Limpiar solo esta salida evita reutilizar pares incompatibles de Gram.
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+
         with tempfile.TemporaryDirectory(prefix='bagron-gram-') as temporary:
             gram_dir = Path(temporary) / 'Gram'
             clone = subprocess.run(
@@ -734,12 +735,6 @@ def install(
     except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
         print(f'\nError: no se pudieron obtener las fuentes de Bagron: {error}', file=sys.stderr)
         return 1
-
-    # NOTA: Si el directorio local o de ejecución contiene build/aot (driver FFI nativo), sincronizarlo.
-    src_aot = source_root / 'build' / 'aot'
-    if src_aot.is_dir():
-        dst_aot = target_dir / 'build' / 'aot'
-        shutil.copytree(src_aot, dst_aot, dirs_exist_ok=True)
 
     # Sincronizar main.py local si contiene soporte para -o y --execute
     src_main = source_root / 'main.py'

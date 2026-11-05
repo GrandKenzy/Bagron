@@ -137,6 +137,44 @@ class InstallerTests(unittest.TestCase):
                 )
             )
 
+    def test_aot_parser_rebuilds_instead_of_reusing_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            output_dir = target / 'build' / 'aot'
+            output_dir.mkdir(parents=True)
+            stale_library = output_dir / installer._aot_library_names()[0]
+            stale_manifest = output_dir / 'gram_parser_manifest.json'
+            stale_library.write_bytes(b'stale library')
+            stale_manifest.write_text('{"grammar_id": "0xdeadbeef"}', encoding='utf-8')
+
+            calls = []
+
+            def fake_run(command, **kwargs):
+                command = [str(part) for part in command]
+                calls.append(command)
+                if any('build_aot_parser.py' in part for part in command):
+                    output = Path(command[command.index('--output-dir') + 1])
+                    output.mkdir(parents=True, exist_ok=True)
+                    (output / installer._aot_library_names()[0]).write_bytes(b'fresh library')
+                    (output / 'gram_parser_manifest.json').write_text(
+                        '{"grammar_id": "0x1234"}',
+                        encoding='utf-8',
+                    )
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(installer.shutil, 'which', return_value='git'), mock.patch.object(
+                installer.subprocess,
+                'run',
+                side_effect=fake_run,
+            ):
+                result = installer._build_aot_parser(target, Path('vnma'))
+
+            self.assertTrue(result)
+            self.assertEqual(b'fresh library', stale_library.read_bytes())
+            self.assertEqual(2, len(calls))
+            self.assertEqual('clone', calls[0][1])
+            self.assertTrue(any('build_aot_parser.py' in part for part in calls[1]))
+
     def test_windows_launchers_use_portable_python_root(self):
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory) / 'bin'
@@ -208,26 +246,17 @@ class InstallerTests(unittest.TestCase):
                 any(name.rstrip('/') == 'Bagron-1.0.6/modules' for name in names)
             )
             self.assertNotIn('Bagron-1.0.6/vendor/', names)
-            aot_library = Path(__file__).resolve().parents[2] / 'build' / 'aot' / 'libbagron_aot.so'
-            if aot_library.is_file():
-                self.assertIn('Bagron-1.0.6/build/aot/libbagron_aot.so', names)
-                self.assertIn('Bagron-1.0.6/build/aot/gram_parser_manifest.json', names)
-            else:
-                self.assertFalse(any('/build/' in name for name in names))
+            self.assertFalse(any('/build/' in name for name in names))
 
-    def test_windows_package_contains_aot_runtime_when_available(self):
+    def test_windows_package_excludes_aot_runtime(self):
         source_root = Path(__file__).resolve().parents[2]
-        if not (source_root / 'build' / 'aot' / 'bagron_aot.dll').is_file():
-            self.skipTest('El runner no tiene el artefacto AOT de Windows')
-
         with tempfile.TemporaryDirectory() as directory:
             output = build_windows_package(source_root, Path(directory) / 'bagron.zip')
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
 
             self.assertIn('Bagron-1.0.6/installer.py', names)
-            self.assertIn('Bagron-1.0.6/build/aot/bagron_aot.dll', names)
-            self.assertIn('Bagron-1.0.6/build/aot/gram_parser_manifest.json', names)
+            self.assertFalse(any('/build/' in name for name in names))
             self.assertFalse(any('/vendor/' in name for name in names))
 
     def test_release_publishes_only_compiled_installers(self):
@@ -276,8 +305,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.0.4.md', names)
         self.assertIn('changelog_1.0.5.md', names)
         self.assertIn('changelog_1.0.6.md', names)
+        self.assertIn('changelog_1.1.0.md', names)
         self.assertEqual(
-            4,
+            5,
             sum(name.startswith('changelog_') for name in names),
         )
 

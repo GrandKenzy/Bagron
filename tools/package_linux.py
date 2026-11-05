@@ -30,10 +30,6 @@ PACKAGE_FILES = (
     'README.md',
     'LICENSE',
 )
-AOT_PACKAGE_FILES = (
-    'build/aot/libbagron_aot.so',
-    'build/aot/gram_parser_manifest.json',
-)
 EXCLUDED_PARTS = {
     '.git',
     '.ia',
@@ -55,18 +51,6 @@ def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
         return None
     if info.name.endswith('/install.sh'):
         info.mode = 0o755
-    info.mtime = SOURCE_DATE_EPOCH
-    info.uid = 0
-    info.gid = 0
-    info.uname = ''
-    info.gname = ''
-    return info
-
-
-def _tar_aot_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-    """Normaliza los dos artefactos AOT permitidos en el paquete Linux."""
-    if info.name.endswith(('.pyc', '.pyo')):
-        return None
     info.mtime = SOURCE_DATE_EPOCH
     info.uid = 0
     info.gid = 0
@@ -107,20 +91,6 @@ def build_package(source_root: Path, output: Path) -> Path:
                             recursive=False,
                             filter=_tar_filter,
                         )
-
-                # El paquete Linux lleva solo la biblioteca AOT y su manifiesto;
-                # los fuentes C intermedios siguen fuera de la distribución.
-                linux_aot_library = source_root / AOT_PACKAGE_FILES[0]
-                if linux_aot_library.is_file():
-                    for relative in AOT_PACKAGE_FILES:
-                        source = source_root / relative
-                        if source.is_file():
-                            archive.add(
-                                source,
-                                arcname=f'{package_root}/{relative}',
-                                recursive=False,
-                                filter=_tar_aot_filter,
-                            )
 
                 # Las carpetas vacías son creadas también por installer.py, pero
                 # mantenerlas en el paquete hace más claro su layout para inspección.

@@ -29,3 +29,7 @@
   portable Python runtime, so `~/.local/bin/bagron` works correctly.
 - Added a regression test that invokes the launcher through a symlink and
   verifies the caller directory, runtime location, and forwarded arguments.
+- Installations now rebuild the Gram AOT/FFI parser for the current platform
+  instead of reusing or distributing precompiled `build/aot` artifacts.
+- Rebuilds clear only the installation's AOT output directory, preventing
+  stale libraries and manifests from being mixed across Gram versions.
