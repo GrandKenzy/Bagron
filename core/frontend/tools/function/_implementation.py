@@ -1924,6 +1924,15 @@ def _statement_body_guarantees_return(
     return _statement_sequence_guarantees_return(_children(body), symbol)
 
 
+def _inline_void_call_terminates(body: object) -> bool:
+    """Recognize the single-call inline form permitted for ``void`` functions."""
+    statements = _body_statements(body)
+    return len(statements) == 1 and (
+        isinstance(statements[0], gast.ASTRef)
+        and statements[0].name == 'CALL'
+    )
+
+
 def _statement_sequence_guarantees_return(
     nodes: list[object],
     symbol: FunctionSymbol | None = None,
@@ -2294,6 +2303,13 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
         and return_type.name == 'void'
         and return_type.pointer_level == 0
         and return_type.array_depth == 0
+    ):
+        body_terminates = True
+    if (
+        return_type.name == 'void'
+        and return_type.pointer_level == 0
+        and return_type.array_depth == 0
+        and _inline_void_call_terminates(body)
     ):
         body_terminates = True
     symbol.body_terminates = body_terminates or (

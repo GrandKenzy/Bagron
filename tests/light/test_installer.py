@@ -314,8 +314,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.0.5.md', names)
         self.assertIn('changelog_1.0.6.md', names)
         self.assertIn('changelog_1.1.0.md', names)
+        self.assertIn('changelog_1.1.1.md', names)
         self.assertEqual(
-            5,
+            6,
             sum(name.startswith('changelog_') for name in names),
         )
 

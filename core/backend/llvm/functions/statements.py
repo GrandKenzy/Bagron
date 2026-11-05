@@ -1487,6 +1487,14 @@ class StatementEmitterMixin:
             self._tail_loop_block = None
         self._emit_body(symbol.body_node, builder, values, function, symbol)
         self._tail_loop_block = None
+        if (
+            builder.block.terminator is None
+            and symbol.body_terminates
+            and symbol.signature.return_type.name == 'void'
+            and symbol.signature.return_type.pointer_level == 0
+            and symbol.signature.return_type.array_depth == 0
+        ):
+            builder.ret_void()
         if builder.block.terminator is None and (
             symbol.signature.return_type.name == 'Never'
             and symbol.signature.return_type.pointer_level == 0

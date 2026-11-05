@@ -59,8 +59,8 @@ class FUNCTION_STATEMENT(cmb.RuleItem):
 
     nodeable = False
     entrypoint = cmb.Alt(
-        cmb.Ref(SIMPLE_STATEMENT),
         cmb.Ref(RETURN_ASM),
+        cmb.Ref(SIMPLE_STATEMENT),
     )
 
 

@@ -1,5 +1,27 @@
 # Control y funciones
 
+## Cuerpos de función en una línea
+
+Una función normal también puede contener una única sentencia después de los
+dos puntos, en la misma línea:
+
+```bg
+func identity(value: int32) int32: return value
+func notify() void: send_notification()
+```
+
+La forma inline conserva el mismo nodo `FUNCTION_BODY` y las mismas reglas de
+retorno que la forma indentada. Solo admite una llamada, `return`, `pass` o
+`Del`; no admite declaraciones, condicionales, bucles, bloques ASM ni una
+segunda sentencia. No existe un `return` implícito para funciones con valor.
+
+Una función `void` puede terminar con una única llamada inline. `pass` no
+crea un retorno implícito, por lo que una función `void` que solo use `pass`
+debe añadir un `return` en la forma indentada si necesita ser válida.
+
+Los métodos de clase pueden usar la misma forma. Las funciones `@assembler`
+mantienen sus reglas actuales y deben usar un cuerpo ASM indentado.
+
 ## Condicionales
 
 Una condición debe ser `bool`; `elif` y `else` pertenecen al mismo bloque:

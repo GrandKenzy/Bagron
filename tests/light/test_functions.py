@@ -290,6 +290,45 @@ class FunctionSemanticTests(unittest.TestCase):
         )
         self.assertTrue(compiler.storage.functions['helper'].is_inline)
 
+    def test_function_body_accepts_one_line_call(self):
+        compiler = self.compile_source(
+            'func helper() void:\n'
+            '    return\n'
+            'func notify() void: helper()\n'
+        )
+        self.assertIn('notify', compiler.storage.functions)
+
+    def test_function_body_accepts_one_line_return(self):
+        compiler = self.compile_source(
+            'func identity(value: int32) int32: return value\n'
+        )
+        self.assertIn('identity', compiler.storage.functions)
+
+    def test_function_body_parses_one_line_pass_without_implicit_return(self):
+        with self.assertRaisesRegex(CompilationError, 'void noop.*return'):
+            self.compile_source('func noop() void: pass\n')
+
+    def test_function_body_rejects_one_line_control_flow(self):
+        with self.assertRaises(CompilationError):
+            self.compile_source('func bad() void: if true:\n')
+
+    def test_function_body_rejects_multiple_one_line_statements(self):
+        with self.assertRaises(CompilationError):
+            self.compile_source('func bad() void: pass pass\n')
+
+    def test_class_method_accepts_one_line_body(self):
+        self.compile_source(
+            'class Box:\n'
+            '    func value() int32: return 1\n'
+        )
+
+    def test_assembler_rejects_one_line_body(self):
+        with self.assertRaises(CompilationError):
+            self.compile_source(
+                '@assembler\n'
+                'public func bad() void: pass\n'
+            )
+
     def test_len_t_is_injected_for_a_concrete_array(self):
         source = (
             "clause Optimizations 'dev'\n"

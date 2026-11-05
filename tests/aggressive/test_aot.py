@@ -32,6 +32,15 @@ class AotFrontendTests(unittest.TestCase):
         self.assertIsNotNone(self.parser.library)
         self.assertIsNotNone(self.parser.expected_grammar_id)
 
+    def test_accepts_one_line_function_body(self):
+        nodes = self.parser.parse(
+            'func identity(value: int32) int32: return value\n',
+            session=BAGRON_SESSION,
+            name='inline_body_aot.bg',
+        )
+        self.assertEqual('FUNCTION', nodes[0].name)
+        self.assertEqual('FUNCTION_BODY', nodes[0].nodes[-1].name)
+
 
 
 if __name__ == '__main__':
