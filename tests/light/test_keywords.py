@@ -21,18 +21,19 @@ class KeywordRegistryTests(unittest.TestCase):
             'macro',
             'sizeof',
             'Visibility',
+            'prep',
         }
 
         self.assertTrue(removed.isdisjoint(registered))
 
-    def test_privacy_clause_and_assembler_keywords_remain_available(self):
+    def test_privacy_clause_and_assembler_keyword_remain_available(self):
         registered = set(KEYWORDS)
         for words in KEYWORDS_BY_GROUP.values():
             registered.update(words)
 
         self.assertIn('Privacy', CLAUSES)
         self.assertIn('asm', registered)
-        self.assertIn('prep', registered)
+        self.assertNotIn('prep', registered)
 
     def test_bagron_lexicon_is_owned_by_its_gram_session(self):
         self.assertIn('func', BAGRON_SESSION.keywords)
