@@ -2,7 +2,7 @@
 
 ## Clauses
 
-- Added `Bagron --version` (and `Bagron -V`) to report the compiler version
+- Added `bagron --version` (and `bagron -V`) to report the compiler version
   directly from the canonical project metadata.
 
 - Imported modules now inherit omitted target clauses from the entry module.

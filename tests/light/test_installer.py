@@ -21,18 +21,18 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(installer.os, 'name', 'posix'):
                 installer._create_launchers(bin_dir)
 
-            for name in ('bagron', 'Bagron'):
-                launcher = bin_dir / name
-                self.assertTrue(launcher.is_file())
-                if installer.os.name == 'posix':
-                    self.assertTrue(launcher.stat().st_mode & 0o111)
-                content = launcher.read_text(encoding='utf-8')
-                self.assertIn('#!/usr/bin/env bash', content)
-                self.assertIn('BAGRON_CALLER_DIR="$PWD"', content)
-                self.assertIn('while [[ -L "$launcher_path" ]]', content)
-                self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
-                self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
-                self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
+            launcher = bin_dir / 'bagron'
+            self.assertEqual(['bagron'], sorted(path.name for path in bin_dir.iterdir()))
+            self.assertTrue(launcher.is_file())
+            if installer.os.name == 'posix':
+                self.assertTrue(launcher.stat().st_mode & 0o111)
+            content = launcher.read_text(encoding='utf-8')
+            self.assertIn('#!/usr/bin/env bash', content)
+            self.assertIn('BAGRON_CALLER_DIR="$PWD"', content)
+            self.assertIn('while [[ -L "$launcher_path" ]]', content)
+            self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
+            self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
+            self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
 
     @unittest.skipUnless(os.name == 'posix', 'requiere un entorno POSIX')
     def test_posix_launcher_resolves_installation_symlink(self):
@@ -181,8 +181,12 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(installer.os, 'name', 'nt'):
                 installer._create_launchers(bin_dir)
 
-            cmd_content = (bin_dir / 'Bagron.cmd').read_text(encoding='utf-8')
-            ps1_content = (bin_dir / 'Bagron.ps1').read_text(encoding='utf-8')
+            cmd_content = (bin_dir / 'bagron.cmd').read_text(encoding='utf-8')
+            ps1_content = (bin_dir / 'bagron.ps1').read_text(encoding='utf-8')
+            self.assertEqual(
+                ['bagron.cmd', 'bagron.ps1'],
+                sorted(path.name for path in bin_dir.iterdir()),
+            )
             self.assertIn(r'.runtime\python.exe', cmd_content)
             self.assertIn(r'.runtime\Scripts\python.exe', cmd_content)
             self.assertIn('"%PYTHON%" -m vnma run main.py %*', cmd_content)

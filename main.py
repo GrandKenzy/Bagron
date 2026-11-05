@@ -45,11 +45,11 @@ def _library_help() -> str:
 def _main_help() -> str:
     return (
         'Uso:\n'
-        '  Bagron <archivo.bg> [-o <salida>] [--execute]\n'
-        '  Bagron --version\n'
+        '  bagron <archivo.bg> [-o <salida>] [--execute]\n'
+        '  bagron --version\n'
         '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
         'Soporte de editor (VS Code):\n'
-        '  Bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
+        '  bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'
         + _library_help() + '\n\n'
         'El frontend Gram FFI produce GIR; semántica y backend LLVM siguen en Bagron.'
@@ -91,15 +91,15 @@ def _find_bundled_vsix() -> Path | None:
 
 
 def _vscode_command(argv: list[str]) -> int:
-    """Gestiona el comando `Bagron --vscode install`."""
+    """Gestiona el comando `bagron --vscode install`."""
     subcommand = argv[1] if len(argv) > 1 else 'install'
     if subcommand in {'-h', '--help'}:
-        print('Uso:\n  Bagron --vscode install    Instala o reinstala limpiamente la extensión oficial en VS Code.')
+        print('Uso:\n  bagron --vscode install    Instala o reinstala limpiamente la extensión oficial en VS Code.')
         return 0
 
     if subcommand != 'install':
         print(
-            f"Error: Subcomando desconocido para --vscode: '{subcommand}'. Uso: Bagron --vscode install",
+            f"Error: Subcomando desconocido para --vscode: '{subcommand}'. Uso: bagron --vscode install",
             file=sys.stderr,
         )
         return 2

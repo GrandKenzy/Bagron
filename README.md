@@ -170,7 +170,7 @@ Desde una copia del repositorio:
 python installer.py
 ```
 
-El instalador crea `Bagron.cmd` y `Bagron.ps1` y registra la carpeta `bin/`
+El instalador crea `bagron.cmd` y `bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
 Desde el release puedes descargar el instalador compilado
@@ -209,7 +209,7 @@ chmod +x Bagron-1.1.0-linux-x86_64
 ```
 
 La release solo publica este ejecutable Linux. El instalador coloca los
-lanzadores `bagron` y `Bagron` en `~/.local/bin`; si esa carpeta no está en el
+lanzador `bagron` en `~/.local/bin`; si esa carpeta no está en el
 PATH, añádela en el perfil de tu shell:
 
 ```bash
@@ -226,7 +226,7 @@ Para desinstalar una instalación Linux usando el Python incluido:
 
 El repositorio incluye el paquete [`bagron-language-support.vsix`](tools/vscode/bagron-language-support.vsix).
 Consulta la [guía de instalación del VSIX](docs/es/01-Arquitectura/03-instalacion-vscode.md)
-para instalarlo manualmente o mediante `Bagron --vscode install`.
+para instalarlo manualmente o mediante `bagron --vscode install`.
 
 ---
 

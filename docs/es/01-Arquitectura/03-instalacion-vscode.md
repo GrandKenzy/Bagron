@@ -9,7 +9,7 @@ Code.
 Con Bagron instalado y `code` disponible en el `PATH`, ejecuta:
 
 ```powershell
-Bagron --vscode install
+bagron --vscode install
 ```
 
 El comando desinstala la versión anterior de la extensión, si existe, e

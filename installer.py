@@ -378,7 +378,7 @@ def _add_to_posix_user_path(bin_path: Path) -> bool:
         print(f'Advertencia: no se pudo crear {user_bin}: {error}', file=sys.stderr)
         return False
 
-    for name in ('bagron', 'Bagron'):
+    for name in ('bagron',):
         launcher = bin_path / name
         link = user_bin / name
         if link.exists() or link.is_symlink():
@@ -409,7 +409,7 @@ def _remove_from_posix_user_path(bin_path: Path) -> bool:
 
     user_bin = Path.home() / '.local' / 'bin'
     removed = False
-    for name in ('bagron', 'Bagron'):
+    for name in ('bagron',):
         link = user_bin / name
         if not link.is_symlink():
             continue
@@ -451,7 +451,7 @@ export BAGRON_CALLER_DIR="$PWD"
 cd "$bagron_home"
 exec "$python_bin" -m vnma run main.py "$@"
 '''
-        for name in ('bagron', 'Bagron'):
+        for name in ('bagron',):
             launcher = bin_dir / name
             launcher.write_text(shell_content, encoding='utf-8')
             launcher.chmod(0o755)
@@ -490,12 +490,9 @@ exec "$python_bin" -m vnma run main.py "$@"
         'exit $code\r\n'
     )
 
-    # NOTA: Se generan variantes con mayúscula y minúscula para compatibilidad de invocación.
-    for name in ('Bagron.cmd', 'bagron.cmd'):
-        (bin_dir / name).write_text(cmd_content, encoding='utf-8')
-
-    for name in ('Bagron.ps1', 'bagron.ps1'):
-        (bin_dir / name).write_text(ps1_content, encoding='utf-8')
+    # NOTA: El nombre de CLI es canónico y único; la marca sigue usando ``Bagron``.
+    (bin_dir / 'bagron.cmd').write_text(cmd_content, encoding='utf-8')
+    (bin_dir / 'bagron.ps1').write_text(ps1_content, encoding='utf-8')
 
 
 # ============================================================================
@@ -807,8 +804,8 @@ def install(
         print('  bagron --execute "ruta/a/archivo.bg" -o programa\n')
     else:
         print('Ahora puedes abrir una nueva terminal y ejecutar:')
-        print('  Bagron "ruta/a/archivo.bg" -o programa.exe')
-        print('  Bagron --execute "ruta/a/archivo.bg" -o programa.exe\n')
+        print('  bagron "ruta/a/archivo.bg" -o programa.exe')
+        print('  bagron --execute "ruta/a/archivo.bg" -o programa.exe\n')
     return 0
 
 
