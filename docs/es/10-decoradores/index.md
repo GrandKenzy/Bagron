@@ -14,7 +14,7 @@ Los decoradores cambian reglas que el compilador valida.
 | Decorador | Se aplica a | Efecto |
 | --- | --- | --- |
 | `@unsafe` | funciones | permite procedencia o indexación no demostrable |
-| `@assembler` | funciones | habilita `#prep assembler`; implica `unsafe` |
+| `@assembler` | funciones | habilita `#assembler`; implica `unsafe` |
 | `@recursive` | funciones | acepta ciclos no convertibles a tail recursion |
 | `inline` | funciones | especificador de firma, no decorador `@`; solicita expansión en perfiles optimizados |
 | `@packed` | agregados | reduce padding |

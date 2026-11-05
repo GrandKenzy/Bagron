@@ -973,7 +973,7 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = self.compile_source(
             '@assembler\n'
             'public func exit_proc(code: int32) Never:\n'
-            '    #prep assembler "att"\n'
+            '    #assembler "att"\n'
             '        movq $60, %rax\n'
             '        syscall\n'
             '    #end\n'
@@ -987,7 +987,7 @@ class FunctionSemanticTests(unittest.TestCase):
             self.compile_source(
                 '@assembler\n'
                 'public func exit_proc(code: int32) Never:\n'
-                '    #prep assembler "att"\n'
+                '    #assembler "att"\n'
                 '        movq $60, %rax\n'
                 '        syscall\n'
                 '    #end\n'
@@ -998,7 +998,7 @@ class FunctionSemanticTests(unittest.TestCase):
             self.compile_source(
                 '@assembler\n'
                 'public func exit_proc(code: int32) Never:\n'
-                '    #prep assembler "att"\n'
+                '    #assembler "att"\n'
                 '        movq $60, %rax\n'
                 '        syscall\n'
                 '    #end\n'
@@ -1059,7 +1059,7 @@ class FunctionSemanticTests(unittest.TestCase):
             source=Path('dummy.bg'),
             function_name='sysv_fn',
             dialect='att',
-            body='    # {a} {b} {c} {d} {e} {f} {g}',
+            body='    # %rdi %esi %dx %cl %r8b %r9 8(%rsp)',
             line=1,
         )
         rendered_att = _render_assembly(
@@ -1072,8 +1072,8 @@ class FunctionSemanticTests(unittest.TestCase):
         block_intel = PrepBlock(
             source=Path('dummy.bg'),
             function_name='sysv_fn',
-            dialect='gas-intel',
-            body='    # {a} {b} {c} {d} {e} {f} {g}',
+            dialect='intel',
+            body='    # rdi esi dx cl r8b r9 [rsp + 0x8]',
             line=1,
         )
         rendered_intel = _render_assembly(
@@ -1088,8 +1088,8 @@ class FunctionSemanticTests(unittest.TestCase):
             'clause System "linux"\n'
             '@assembler\n'
             'public func exit(code: int32) Never:\n'
-            '    #prep assembler "att"\n'
-            '        movl {code}, %edi\n'
+            '    #assembler "att"\n'
+            '        movl %edi, %edi\n'
             '        movq $60, %rax\n'
             '        syscall\n'
             '    #end\n'

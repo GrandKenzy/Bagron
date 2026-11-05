@@ -10,7 +10,7 @@ extern windows "kernel32":
 
 @assembler
 func constant() int32:
-    #prep assembler "gas-intel"
+    #assembler "intel"
         xor eax, eax
     #end
     return asm

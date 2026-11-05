@@ -257,27 +257,6 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertIn('ptr nonnull dereferenceable(4) %data', signature)
         self.assertNotIn('noalias', signature)
 
-    def test_assembler_integer_narrowing_is_lowered_to_trunc(self):
-        source = (
-            "clause System 'windows'\n"
-            "clause Arch 'amd'\n"
-            '@assembler\n'
-            'func narrow(value: usize) uint32:\n'
-            '    #prep assembler "intel"\n'
-            '        mov rax, {value}\n'
-            '    #end\n'
-            '    return asm\n'
-            '@unsafe\n'
-            'func use(value: usize) uint32:\n'
-            '    return narrow(value)\n'
-        )
-        module = self.compile_source(source, optimization_profile='prod')
-        development = self.compile_source(source, optimization_profile='dev')
-
-        self.assertNotIn('call i32 @narrow', module)
-        self.assertIn('trunc i64 %value to i32', module)
-        self.assertIn('call i32 @"narrow"', development)
-
     def test_prod_for_buffer_uses_one_loop_range_proof(self):
         source = (
             'func sum(data: buffer[], length: Len_t) byte:\n'

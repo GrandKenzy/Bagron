@@ -69,8 +69,6 @@ KEYWORDS = {
     'unique': '#FFFFFF',
     'asm': '#AD0997',
 
-    # preprocesadores
-    "prep": "#AD0997"
 }
 
 INTRINSIC_TYPES = {
@@ -159,9 +157,7 @@ KEYWORDS_BY_GROUP = {
         'false',
         'asm',
     ],
-    'preprocessors': [
-        'prep'
-    ]
+    'preprocessors': []
 }
 
 

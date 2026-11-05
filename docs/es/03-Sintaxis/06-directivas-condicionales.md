@@ -29,5 +29,5 @@ No se permiten bloques anidados, condiciones compuestas ni argumentos después
 de `#else` o `#end`. Un `#elif` debe aparecer antes de `#else` y cada bloque
 debe cerrarse.
 
-`#end` también cierra bloques `#prep`; por esa ambigüedad no anides un bloque
+`#end` también cierra bloques `#assembler`; por esa ambigüedad no anides un bloque
 de ensamblador dentro de un `#if`. Separa las fuentes o módulos por target.

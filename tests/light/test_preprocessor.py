@@ -70,20 +70,20 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             'nested\n'
             '#end\n'
             '#end\n'
-            '#prep assembler "gas-intel"\n'
+            '#assembler "intel"\n'
             '    nop\n'
             '#end\n'
         )
 
         self.assertIn('no se pueden anidar', '\n'.join(errors))
-        self.assertEqual('#prep assembler "gas-intel"\n', transformed[5])
+        self.assertEqual('#assembler "intel"\n', transformed[5])
         self.assertEqual('#end\n', transformed[7])
 
     def test_accepts_only_canonical_assembler_dialects(self):
-        self.assertEqual('gas-intel', _normalize_dialect('gas-intel'))
+        self.assertEqual('intel', _normalize_dialect('intel'))
         self.assertEqual('att', _normalize_dialect('att'))
         for alias in (
-            'intel', 'intel-gas', 'gas_intel', 'intel-nasm', 'at&t', 'att_syntax'
+            'gas-intel', 'intel-gas', 'gas_intel', 'intel-nasm', 'at&t', 'att_syntax'
         ):
             with self.subTest(alias=alias), self.assertRaises(PrepError):
                 _normalize_dialect(alias)

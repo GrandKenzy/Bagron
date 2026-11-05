@@ -17,11 +17,10 @@ class PrepBlock:
     dialect: str
     body: str
     line: int
-    is_module: bool = False
 
 
 class PrepError(ValueError):
-    """Raised when a prep template cannot be lowered for the selected target."""
+    """Raised when an assembler block cannot be lowered for the selected target."""
 
 
 @dataclass
@@ -31,7 +30,6 @@ class _ActivePrep:
     function_name: str | None
     line: int
     valid: bool
-    is_module: bool = False
 
 
 @dataclass
@@ -45,12 +43,8 @@ class _ConditionalBlock:
     line: int
 
 
-_PREP_RE = re.compile(
-    r'^(?P<indent>[ \t]*)#prep[ \t]+assembler[ \t]+'
-    r'(?P<quote>["\'])(?P<dialect>.*?)\2[ \t]*$'
-)
-_MODULE_PREP_RE = re.compile(
-    r'^(?P<indent>[ \t]*)#prep[ \t]+assembler[ \t]+module[ \t]+'
+_ASSEMBLER_RE = re.compile(
+    r'^(?P<indent>[ \t]*)#assembler[ \t]+'
     r'(?P<quote>["\'])(?P<dialect>.*?)\2[ \t]*$'
 )
 _FUNCTION_RE = re.compile(
@@ -285,8 +279,8 @@ def preprocess_conditionals(
                 )
             )
         if not stack:
-            # Existing ``#prep assembler ... #end`` blocks are consumed by
-            # ``extract_prep_blocks`` below.  Leave their terminator intact.
+            # Existing conditional ``#end`` directives are handled here; an
+            # assembler block terminator is consumed by ``extract_prep_blocks``.
             transformed.append(line)
             continue
         stack.pop()
@@ -332,7 +326,6 @@ def extract_prep_blocks(
                             dialect=active.dialect,
                             body=body,
                             line=active.line,
-                            is_module=active.is_module,
                         )
                     )
                 transformed.append(_blank_line(line))
@@ -359,40 +352,27 @@ def extract_prep_blocks(
             function_stack.pop()
 
         if stripped == '#end':
-            errors.append(f'{source}:{index + 1}: #end no tiene un #prep abierto')
+            errors.append(f'{source}:{index + 1}: #end no tiene un bloque abierto')
             transformed.append(_blank_line(line))
             index += 1
             continue
 
         if stripped.startswith('#prep'):
-            module_match = _MODULE_PREP_RE.match(line.rstrip('\r\n'))
-            if module_match is not None:
-                if function_stack:
-                    errors.append(
-                        f'{source}:{index + 1}: #prep assembler module solo '
-                        'se permite a nivel de modulo'
-                    )
-                    transformed.append(_blank_line(line))
-                    active = _ActivePrep(
-                        [], module_match.group('dialect'), None,
-                        index + 1, False, True,
-                    )
-                    index += 1
-                    continue
+            errors.append(
+                f'{source}:{index + 1}: la directiva #prep fue retirada; '
+                'usa #assembler "intel" o #assembler "att"'
+            )
+            transformed.append(_blank_line(line))
+            active = _ActivePrep([], '', None, index + 1, False)
+            index += 1
+            continue
 
-                transformed.append(_blank_line(line))
-                active = _ActivePrep(
-                    [], module_match.group('dialect'), None,
-                    index + 1, True, True,
-                )
-                index += 1
-                continue
-
-            match = _PREP_RE.match(line.rstrip('\r\n'))
+        if stripped.startswith('#assembler'):
+            match = _ASSEMBLER_RE.match(line.rstrip('\r\n'))
             if match is None:
                 errors.append(
                     f'{source}:{index + 1}: se esperaba '
-                    '#prep assembler "dialecto"'
+                    '#assembler "intel" o #assembler "att" dentro de una funcion'
                 )
                 transformed.append(_blank_line(line))
                 active = _ActivePrep([], '', None, index + 1, False)
@@ -401,7 +381,7 @@ def extract_prep_blocks(
 
             if not function_stack or indent <= function_stack[-1][0]:
                 errors.append(
-                    f'{source}:{index + 1}: #prep solo se permite dentro de una funcion'
+                    f'{source}:{index + 1}: #assembler solo se permite dentro de una funcion'
                 )
                 transformed.append(_blank_line(line))
                 active = _ActivePrep(
@@ -422,7 +402,7 @@ def extract_prep_blocks(
 
     if active is not None:
         errors.append(
-            f'{source}:{active.line}: #prep no tiene un #end de cierre'
+            f'{source}:{active.line}: #assembler no tiene un #end de cierre'
         )
 
     return transformed, blocks, errors
@@ -476,18 +456,22 @@ def _windows_x64_registers(target_triple: str) -> tuple[dict[str, str], ...]:
 
 def _normalize_dialect(dialect: str) -> str:
     normalized = dialect.strip().lower()
+    if normalized == 'intel':
+        return 'intel'
     if normalized == 'gas-intel':
-        return 'gas-intel'
+        raise PrepError(
+            'El dialecto "gas-intel" fue retirado; usa "intel" para la sintaxis Intel de GAS'
+        )
     if normalized == 'att':
         return 'att'
     if normalized == 'nasm':
         raise PrepError(
             'El dialecto NASM no es compatible con el ensamblador integrado de '
-            'Clang; usa "gas-intel" para Intel-GAS o configura un backend NASM'
+            'Clang; usa "intel" para Intel-GAS o configura un backend NASM'
         )
     raise PrepError(
         f'Dialecto ASM no soportado en esta fase: {dialect!r}; '
-        'usa "gas-intel" o "att"'
+        'usa "intel" o "att"'
     )
 
 
@@ -501,9 +485,8 @@ def _parameter_width(parameter: object) -> int:
         )
     if getattr(type_spec, 'pointer_level', 0):
         # Windows x64 passes every pointer-sized argument through the integer
-        # register/stack classes.  Templates may therefore refer to a pointer
-        # parameter with {name}; the width aliases resolve to RCX/RDX/R8/R9
-        # (or their AT&T spellings) just like a 64-bit integer.
+        # register/stack classes.  The ABI validator therefore treats pointers
+        # as 64-bit values for register and stack placement.
         return 64
 
     name = getattr(type_spec, 'name', None)
@@ -526,7 +509,7 @@ def _parameter_width(parameter: object) -> int:
     if width is None or width < 1 or width > 64:
         raise PrepError(
             f'El tipo {getattr(type_spec, "canonical_name", name)!r} '
-            'no tiene un ancho entero compatible con Windows x64'
+            'no tiene un ancho entero compatible con una ABI x86_64'
         )
     return int(width)
 
@@ -548,63 +531,24 @@ def _stack_operand(
     stack_base: int = 0x28,
 ) -> str:
     offset = stack_base + (index - register_count) * 8
-    if dialect == 'gas-intel':
+    if dialect == 'intel':
         return f'[rsp + 0x{offset:x}]'
     return f'{offset}(%rsp)'
 
 
-def _expand_template(
-    body: str,
+def _validate_parameter_abi(
     parameters: Sequence[object],
     target_triple: str,
     dialect: str,
-) -> str:
+) -> None:
+    """Validate parameter widths and slots without rewriting ASM source."""
     registers, stack_base = _x64_abi_spec(target_triple)
-    bindings: dict[str, str] = {}
     for index, parameter in enumerate(parameters):
-        name = str(getattr(parameter, 'name', ''))
         width = _parameter_width(parameter)
         if index < len(registers):
-            value = _register_for_width(registers[index], width)
-            if dialect == 'att':
-                value = f'%{value}'
+            _register_for_width(registers[index], width)
         else:
-            value = _stack_operand(index, dialect, len(registers), stack_base)
-        bindings[name] = value
-    if any(not name for name in bindings):
-        raise PrepError('Todos los parametros de @assembler deben tener nombre')
-
-    output: list[str] = []
-    index = 0
-    while index < len(body):
-        if body.startswith('{{', index):
-            output.append('{')
-            index += 2
-            continue
-        if body.startswith('}}', index):
-            output.append('}')
-            index += 2
-            continue
-        if body[index] == '{':
-            end = body.find('}', index + 1)
-            if end < 0:
-                raise PrepError('La plantilla ASM contiene una llave sin cerrar')
-            name = body[index + 1:end]
-            if not re.fullmatch(r'[A-Za-z_]\w*', name):
-                raise PrepError(f'Placeholder ASM invalido: {{{name}}}')
-            if name not in bindings:
-                raise PrepError(
-                    f'El parametro ASM no existe en la firma: {name}'
-                )
-            output.append(bindings[name])
-            index = end + 1
-            continue
-        if body[index] == '}':
-            raise PrepError('La plantilla ASM contiene una llave sin abrir')
-        output.append(body[index])
-        index += 1
-
-    return ''.join(output)
+            _stack_operand(index, dialect, len(registers), stack_base)
 
 
 def _render_assembly(
@@ -616,7 +560,8 @@ def _render_assembly(
 
     signature = getattr(function, 'signature', None)
     parameters = getattr(signature, 'parameters', ())
-    body = _expand_template(block.body, parameters, target_triple, dialect)
+    _validate_parameter_abi(parameters, target_triple, dialect)
+    body = block.body
     if any(re.match(r'^\s*ret(?:q)?(?:\s|$)', line, re.IGNORECASE)
            for line in body.splitlines()):
         raise PrepError(
@@ -628,7 +573,7 @@ def _render_assembly(
         if block.function_name == 'main'
         else getattr(function, 'llvm_name', None) or block.function_name
     )
-    syntax = '.intel_syntax noprefix' if dialect == 'gas-intel' else '.att_syntax prefix'
+    syntax = '.intel_syntax noprefix' if dialect == 'intel' else '.att_syntax prefix'
     return_type = getattr(getattr(function, 'signature', None), 'return_type', None)
     is_void = (
         getattr(return_type, 'name', None) == 'void'
@@ -642,7 +587,7 @@ def _render_assembly(
     )
     # NOTA: Las funciones void y Never no retornan codigo de estado ABI.
     status_setup = None if (is_void or is_never) else (
-        'mov eax, 1' if dialect == 'gas-intel' else 'movl $1, %eax'
+        'mov eax, 1' if dialect == 'intel' else 'movl $1, %eax'
     )
     lines = [
         syntax,
@@ -659,24 +604,6 @@ def _render_assembly(
         )
     lines.extend(('    ret', ''))
     return '\n'.join(lines)
-
-
-def _render_module_assembly(block: PrepBlock) -> str:
-    """Render a module ASM unit without imposing a function ABI."""
-    dialect = _normalize_dialect(block.dialect)
-    if '{' in block.body or '}' in block.body:
-        raise PrepError(
-            'Un bloque ASM de modulo no admite placeholders de parametros; '
-            'usa un bloque dentro de una funcion'
-        )
-
-    syntax = (
-        '.intel_syntax noprefix'
-        if dialect == 'gas-intel'
-        else '.att_syntax prefix'
-    )
-    body = block.body.rstrip('\r\n')
-    return f'{syntax}\n{body}\n' if body else f'{syntax}\n'
 
 
 def write_prep_files(
@@ -718,10 +645,10 @@ def write_prep_files(
                     previous.unlink()
             cleaned_directories.add(module_dir)
 
-        key = (source, block.function_name or '__module__')
+        key = (source, block.function_name)
         block_index = counters[key]
         counters[key] += 1
-        function_name = _safe_component(block.function_name or 'module')
+        function_name = _safe_component(block.function_name)
         destination = module_dir / f'{function_name}__prep_{block_index}.asm'
         function = functions.get(block.function_name) if functions is not None else None
         if functions is not None and block.function_name:
@@ -738,9 +665,7 @@ def write_prep_files(
                 ),
                 function,
             )
-        if block.is_module:
-            content = _render_module_assembly(block)
-        elif function is not None and target_triple is not None:
+        if function is not None and target_triple is not None:
             content = _render_assembly(block, function, target_triple)
         else:
             content = block.body

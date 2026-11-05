@@ -842,8 +842,6 @@ class Compiler(CompilerState):
         bagron_processor.process(self, AST)
 
         for block in self.prep_blocks:
-            if block.is_module:
-                continue
             if block.function_name not in self.storage.functions:
                 self.error(
                     f'El bloque ASM de {block.source}:{block.line} no pertenece '
@@ -889,7 +887,7 @@ class Compiler(CompilerState):
                 self.storage.prep_metadata = {
                     generated: (
                         block.source,
-                        block.function_name or '<module>',
+                        block.function_name,
                         block.dialect,
                         block.line,
                     )

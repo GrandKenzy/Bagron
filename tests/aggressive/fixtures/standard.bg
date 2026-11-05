@@ -15,8 +15,8 @@ extern windows "kernel32":
 
 @assembler
 func _win32_count(value: usize) uint32:
-    #prep assembler "intel"
-        mov rax, {value}
+    #assembler "intel"
+        mov rax, rcx
     #end
     return asm
 

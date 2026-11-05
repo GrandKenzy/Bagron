@@ -29,7 +29,7 @@ En el target Windows x64, los **cuatro primeros** argumentos enteros o punteros 
 - La convención de Microsoft x64 exige que el llamador reserve siempre **32 bytes** (`0x20`) en la cima de la pila conocidos como **Shadow Space** o *Home Space* (`[rsp + 0x00]` a `[rsp + 0x18]`).
 - Encima del Shadow Space se encuentran los **8 bytes** de la dirección de retorno insertada por `call`.
 - Por lo tanto, el **5.º argumento** se ubica en el offset `32 + 8 = 40` bytes (`0x28`):
-  - En `gas-intel`: `[rsp + 0x28]`
+  - En `intel`: `[rsp + 0x28]`
   - En `att`: `40(%rsp)`
 - Cada argumento posterior suma 8 bytes adicionales (`0x30`, `0x38`, etc.).
 
@@ -54,7 +54,7 @@ Los **seis primeros** argumentos enteros o punteros se pasan por registros:
 - En System V **no existe el Shadow Space** de 32 bytes.
 - Al entrar a la función, `[rsp]` contiene únicamente los 8 bytes de la dirección de retorno puesta por `call`.
 - Por lo tanto, el **7.º argumento** comienza inmediatamente en el offset `0x08` (8 bytes):
-  - En `gas-intel`: `[rsp + 0x8]`
+  - En `intel`: `[rsp + 0x8]`
   - En `att`: `8(%rsp)`
 - El 8.º argumento se ubica en `[rsp + 0x10]` / `16(%rsp)`, y así sucesivamente.
 
@@ -66,24 +66,30 @@ Al invocar la instrucción `syscall` en Linux x86_64:
 
 ---
 
-## 4. Interpolación de parámetros en el código
+## 4. Parámetros en el cuerpo ASM
 
-Dentro del cuerpo del bloque `#prep assembler`, puedes referenciar cualquier parámetro de la firma mediante `{nombre_parametro}`:
+Los parámetros no se interpolan en el cuerpo ASM. Bagron conserva la firma de la
+función para aplicar el contrato ABI al símbolo nativo; el autor escribe
+directamente los registros que corresponden al target y al ancho del parámetro:
 
 ```bg
 clause System "linux"
 
 @assembler
 public func exit(code: int32) Never:
-    #prep assembler "att"
-        movl {code}, %edi
+    #assembler "att"
+        movl %edi, %edi
         movq $60, %rax
         syscall
     #end
 ```
 
-### Reglas de expansión:
-1. **Reemplazo automático:** Bagron sustituye `{code}` por `%edi` en System V (`"att"`) o por `ecx` en Windows (`"gas-intel"`) antes de ensamblar con Clang.
-2. **Prefijo en AT&T:** En el dialecto `"att"`, el compilador antepone automáticamente el prefijo `%` a todos los registros resueltos.
-3. **Llaves literales:** Para escribir llaves literales en el código ensamblador, usa `{{` y `}}`.
-4. **Tipos válidos:** Los parámetros interpolados deben tener nombre, no pueden ser arrays ni agregados, y deben ser enteros escalares (de 8 a 64 bits) o punteros (`*T`).
+### Reglas del contrato ABI:
+1. **Registros directos:** El cuerpo debe usar los registros de la tabla ABI sin
+   placeholders ni sustituciones del compilador.
+2. **Ancho declarado:** Usa el alias de registro que corresponda al tipo
+   (`eax`/`edi` para un `int32`, por ejemplo).
+3. **Tipos válidos:** Los parámetros no pueden ser arrays ni agregados; el
+   compilador valida que sus anchos y posiciones sean representables por la ABI.
+4. **Validación de instrucciones:** Bagron no comprueba si las instrucciones
+   usan correctamente esos registros; Clang valida el ensamblador resultante.

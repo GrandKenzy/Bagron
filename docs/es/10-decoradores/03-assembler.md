@@ -1,30 +1,30 @@
 # 03. `@assembler`
 
-`@assembler` autoriza que una función contenga un bloque `#prep assembler`.
+`@assembler` autoriza que una función contenga un bloque `#assembler`.
 También cruza automáticamente la frontera `unsafe`:
 
 ```bg
 @assembler
 func zero() int32:
-    #prep assembler "gas-intel"
+    #assembler "intel"
         xor eax, eax
     #end
     return asm
 ```
 
 El bloque se extrae antes del parser de Bagron. Los dialectos activos son
-`gas-intel` y `att`; los alias ASM legacy no forman parte de la sintaxis.
+`intel` y `att`; los alias ASM legacy no forman parte de la sintaxis.
 
 Una función `@assembler` con bloque solo puede contener ese bloque y el retorno
 correspondiente:
 - Para un resultado escalar entero no `void` debe haber exactamente un `return asm`.
-- Una función `void` no puede usar `return asm` (el `return` estándar es opcional con `#prep`).
+- Una función `void` no puede usar `return asm` (el `return` estándar es opcional con `#assembler`).
 - Una función `Never` no puede usar ni `return` ni `return asm`:
 
 ```bg
 @assembler
 public func exit(code: int32) Never:
-    #prep assembler "att"
+    #assembler "att"
         movq $60, %rax
         syscall
     #end

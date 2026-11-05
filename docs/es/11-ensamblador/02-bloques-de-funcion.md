@@ -6,13 +6,13 @@ entre comillas:
 ```bg
 @assembler
 func zero() int32:
-    #prep assembler "gas-intel"
+    #assembler "intel"
         xor eax, eax
     #end
     return asm
 ```
 
-`#prep` se indenta dentro de la función. El bloque puede aparecer una sola vez
+`#assembler` se indenta dentro de la función. El bloque puede aparecer una sola vez
 por función `@assembler` y se cierra con `#end`. La función debe tener la
 declaración `@assembler`; si el bloque existe sin el decorador, el frontend lo
 rechaza.

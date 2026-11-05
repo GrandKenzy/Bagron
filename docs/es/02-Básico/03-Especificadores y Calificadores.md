@@ -182,19 +182,19 @@ se pueden repetir. Un decorador desconocido produce un error de compilación.
 | Decorador | Forma | Función |
 |:---|:---|:---|
 | `unsafe` | `@unsafe` | Permite operaciones que cruzan la frontera insegura, como indexación dinámica o acceso a punteros crudos. |
-| `assembler` | `@assembler` | Declara una función con cuerpo de ensamblador preparado mediante `#prep assembler`. También implica `unsafe`. |
+| `assembler` | `@assembler` | Declara una función con cuerpo de ensamblador mediante `#assembler`. También implica `unsafe`. |
 | `recursive` | `@recursive` | Declara explícitamente que la función participa en una recursión que no puede convertirse en un bucle. |
 
 Una función segura no puede llamar a una función `@unsafe` o `@assembler`.
 `@unsafe` debe reservarse para la pequeña frontera que realmente necesita
 operaciones sin garantía automática; el resto del programa puede permanecer
 en contexto seguro. Una función `@assembler` puede tener un único bloque
-`#prep`; las funciones con retorno distinto de `void` deben terminarlo con
+`#assembler`; las funciones con retorno distinto de `void` deben terminarlo con
 `return asm`, mientras que una función `void` puede terminar directamente al
-final del bloque ASM. También puede existir sin bloque `#prep`, en cuyo caso
+final del bloque ASM. También puede existir sin bloque `#assembler`, en cuyo caso
 solo admite un `return` normal.
 
-El dialecto `gas-intel` usa la sintaxis Intel del ensamblador integrado de
+El dialecto `intel` usa la sintaxis Intel del ensamblador integrado de
 GAS/LLVM; no es sintaxis NASM.
 El dialecto `att` usa la sintaxis AT&T. Clang valida cada bloque durante la
 compilación y Bagron remite sus diagnósticos al archivo `.bg` y a la función

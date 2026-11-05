@@ -1,19 +1,7 @@
-# 06. Ensamblador de módulo y condicionales
+# 06. Condicionales y bloques ASM
 
-Un bloque de módulo no pertenece a ninguna función y no usa `return asm` ni
-placeholders:
-
-```bg
-#prep assembler module "gas-intel"
-    .section .rodata,"a"
-    answer:
-        .long 42
-#end
-```
-
-Debe estar al nivel del módulo. Se escribe como una unidad ASM independiente,
-sin que Bagron añada símbolo de función, prólogo, epílogo o contrato de
-registros. Las llaves `{` y `}` están prohibidas en este modo.
+Los bloques ASM solo pueden estar dentro de funciones `@assembler`. No existe
+una unidad ASM independiente a nivel de módulo.
 
 El preprocesador admite condiciones simples para seleccionar declaraciones
 Bagron:
@@ -29,8 +17,6 @@ func fence() void:
 ```
 
 Se admiten `#if`, `#elif`, `#else` y `#end` con `OS` o `ARCH`. Los bloques
-condicionales no se pueden anidar. Como `#end` es también el cierre de
-`#prep`, no coloques un bloque de función o de módulo dentro de un `#if`: su
-`#end` cerraría el bloque condicional antes de la extracción ASM. Selecciona
-el módulo o la fuente apropiada antes de preparar el ensamblador. Ningún
-`#end` debe recibir argumentos.
+condicionales no se pueden anidar. Como `#end` también cierra un bloque
+`#assembler`, no coloques un bloque de función dentro de un `#if`: selecciona
+la rama antes de extraer el ensamblador. Ningún `#end` debe recibir argumentos.

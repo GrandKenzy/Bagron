@@ -9,7 +9,7 @@ No escribas instrucciones `ret` dentro del bloque de ensamblador:
 ```bg
 @assembler
 func one() int32:
-    #prep assembler "gas-intel"
+    #assembler "intel"
         mov eax, 1
     #end
     return asm
@@ -23,15 +23,15 @@ El renderizador de Bagron inserta automáticamente la instrucción `ret` al fina
 
 | Tipo de retorno | Uso de `return` | Uso de `return asm` | Comportamiento |
 | --- | --- | --- | --- |
-| **Entero escalar** (`int32`, `int64`, etc.) | ❌ Prohibido con `#prep` | ✅ **Requerido exactamente 1** | El bloque debe preparar el valor y devolver con `return asm`. |
-| **`void`** | ⚠️ Opcional si hay `#prep` | ❌ Prohibido | No hay valor de retorno. No se inyecta código de estado. |
+| **Entero escalar** (`int32`, `int64`, etc.) | ❌ Prohibido con `#assembler` | ✅ **Requerido exactamente 1** | El bloque debe preparar el valor y devolver con `return asm`. |
+| **`void`** | ⚠️ Opcional si hay `#assembler` | ❌ Prohibido | No hay valor de retorno. No se inyecta código de estado. |
 | **`Never`** | ❌ Prohibido | ❌ Prohibido | Función divergente / que no retorna (ej. `exit`, abort, bucle infinito). No inyecta código de estado ni requiere retornos. |
 
 ### Ejemplo con `void`:
 ```bg
 @assembler
 func barrier() void:
-    #prep assembler "gas-intel"
+    #assembler "intel"
         mfence
     #end
 ```
@@ -40,7 +40,7 @@ func barrier() void:
 ```bg
 @assembler
 public func exit(code: int32) Never:
-    #prep assembler "att"
+    #assembler "att"
         movq $60, %rax
         syscall
     #end
@@ -51,5 +51,5 @@ public func exit(code: int32) Never:
 ## 3. Restricciones adicionales de tipos
 
 1. **Tipos de retorno ASM:** El resultado de `return asm` debe ser un entero escalar. No se permiten arrays, punteros ni estructuras como retorno de `return asm`.
-2. **Prohibición de `ret`:** El cuerpo preparado no puede contener instrucciones `ret` o `retq`, ya que entrarían en conflicto con la envoltura ABI generada por el compilador.
-3. **Parámetros:** Los parámetros de una función preparada no pueden ser arrays. Los tipos expansivos (`Len_t`, `Size_t`, `Signed_t`, `Region_t`), `chain` y agregados no son una interfaz de registros soportada por esta fase; usa enteros escalares de 8 a 64 bits o punteros explícitos.
+2. **Prohibición de `ret`:** El cuerpo ASM no puede contener instrucciones `ret` o `retq`, ya que entrarían en conflicto con la envoltura ABI generada por el compilador.
+3. **Parámetros:** Los parámetros de una función ASM no pueden ser arrays. Los tipos expansivos (`Len_t`, `Size_t`, `Signed_t`, `Region_t`), `chain` y agregados no son una interfaz de registros soportada por esta fase; usa enteros escalares de 8 a 64 bits o punteros explícitos.

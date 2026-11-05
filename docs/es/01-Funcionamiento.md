@@ -22,7 +22,7 @@ puede salir de las comprobaciones estáticas de Bagron.
 Para un módulo ejecutable, el flujo es, en términos prácticos, el siguiente:
 
 1. Se preprocesan las directivas admitidas, como las condiciones de
-   compilación, `#prep` y `#link`.
+   compilación, `#assembler` y `#link`.
 2. Gram analiza el fuente mediante la interfaz AOT/FFI y produce GIR. Bagron
    convierte ese resultado en su árbol interno. La ruta actual requiere que
    la biblioteca nativa de esa interfaz esté disponible; no usa un parser
