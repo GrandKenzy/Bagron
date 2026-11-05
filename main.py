@@ -20,6 +20,7 @@ sys.path = [
 ]
 
 from core.compiler import CompilationError, Compiler
+from core.version import BAGRON_VERSION
 from core.library import (
     LibraryError,
     inspect_library,
@@ -45,6 +46,7 @@ def _main_help() -> str:
     return (
         'Uso:\n'
         '  Bagron <archivo.bg> [-o <salida>] [--execute]\n'
+        '  Bagron --version\n'
         '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
         'Soporte de editor (VS Code):\n'
         '  Bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
@@ -277,6 +279,10 @@ def main(*args):
     argv = list(args[0])
     if not argv:
         print(_main_help())
+        return 0
+
+    if argv[0] in {'--version', '-V'}:
+        print(f'Bagron {BAGRON_VERSION}')
         return 0
 
     if argv[0] in {'-h', '--help'}:

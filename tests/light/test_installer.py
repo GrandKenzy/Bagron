@@ -196,7 +196,7 @@ class InstallerTests(unittest.TestCase):
             (target / 'vnma.lock').write_text('{"gram": "local"}', encoding='utf-8')
             installer._configure_vnma_toml(target)
             content = (target / 'vnma.toml').read_text(encoding='utf-8')
-            self.assertIn('version = "1.0.6"', content)
+            self.assertIn('version = "1.1.0"', content)
             self.assertIn('https://github.com/GrandKenzy/Gram.git', content)
             self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
@@ -240,12 +240,12 @@ class InstallerTests(unittest.TestCase):
             with tarfile.open(output, 'r:gz') as archive:
                 names = set(archive.getnames())
 
-            self.assertIn('Bagron-1.0.6/installer.py', names)
-            self.assertIn('Bagron-1.0.6/install.sh', names)
+            self.assertIn('Bagron-1.1.0/installer.py', names)
+            self.assertIn('Bagron-1.1.0/install.sh', names)
             self.assertTrue(
-                any(name.rstrip('/') == 'Bagron-1.0.6/modules' for name in names)
+                any(name.rstrip('/') == 'Bagron-1.1.0/modules' for name in names)
             )
-            self.assertNotIn('Bagron-1.0.6/vendor/', names)
+            self.assertNotIn('Bagron-1.1.0/vendor/', names)
             self.assertFalse(any('/build/' in name for name in names))
 
     def test_windows_package_excludes_aot_runtime(self):
@@ -255,7 +255,7 @@ class InstallerTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
 
-            self.assertIn('Bagron-1.0.6/installer.py', names)
+            self.assertIn('Bagron-1.1.0/installer.py', names)
             self.assertFalse(any('/build/' in name for name in names))
             self.assertFalse(any('/vendor/' in name for name in names))
 

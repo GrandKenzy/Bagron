@@ -2,6 +2,9 @@
 
 ## Clauses
 
+- Added `Bagron --version` (and `Bagron -V`) to report the compiler version
+  directly from the canonical project metadata.
+
 - Imported modules now inherit omitted target clauses from the entry module.
 - Removed warnings for imported modules that do not declare `System`, `Arch`,
   or `Boot`; these modules use the effective target selected by `main.bg`.

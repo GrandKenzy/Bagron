@@ -20,13 +20,14 @@ import urllib.error
 import urllib.request
 import zipfile
 
+from core.version import BAGRON_VERSION
+
 
 # ============================================================================
 # Constantes y repositorios remotos
 # ============================================================================
 
 DEFAULT_INSTALL_NAME = 'Bagron'
-BAGRON_VERSION = '1.0.6'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
