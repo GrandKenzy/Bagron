@@ -9,6 +9,14 @@
   the entry module, and incompatible declarations now terminate compilation.
 - Partial target declarations inherit their omitted dimensions without
   changing the global backend target.
+- Added the explicit `ABI` clause with `sysv_amd64` as its only supported
+  value.
+- Baremetal projects now require `ABI "sysv_amd64"`; ABI declarations are
+  rejected for Linux, Windows, and other non-Baremetal targets.
+- Imported modules inherit the entry module's ABI when omitted, while explicit
+  incompatible ABI declarations stop compilation.
+- Baremetal assembler preparation uses System V AMD64 only after explicit ABI
+  selection and keeps LLVM's default AMD64 C calling convention.
 - Updated the related tests, project map, and documentation to describe the
   inheritance and compatibility rules formally.
 

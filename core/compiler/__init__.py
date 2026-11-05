@@ -34,7 +34,7 @@ from core.frontend.objects import (
 
 @dataclass(frozen=True)
 class ModuleTarget:
-    """Target clauses declared by one source module.
+    """Target and ABI clauses declared by one source module.
 
     ``None`` is intentional: an omitted dimension inherits the target selected
     by the project entry module and does not declare a separate constraint.
@@ -43,6 +43,7 @@ class ModuleTarget:
     system: str | None = None
     architecture: str | None = None
     boot: str | None = None
+    abi: str | None = None
 
 
 class Compiler(CompilerState):
@@ -97,7 +98,7 @@ class Compiler(CompilerState):
                 continue
             clause_name = self._node_token_value(children[1])
             clause_value = self._node_token_value(children[2])
-            if clause_name not in ('System', 'Arch', 'Boot'):
+            if clause_name not in ('System', 'Arch', 'Boot', 'ABI'):
                 continue
             if clause_name in seen:
                 self.error(
@@ -111,6 +112,7 @@ class Compiler(CompilerState):
             system=values.get('System'),
             architecture=values.get('Arch'),
             boot=values.get('Boot'),
+            abi=values.get('ABI'),
         )
 
     @staticmethod
@@ -124,7 +126,7 @@ class Compiler(CompilerState):
     def _read_source_target_clauses(path: Path) -> dict[str, str]:
         """Read target clauses needed before the source can be parsed."""
         clause_re = re.compile(
-            r'^\s*clause\s+(?P<name>System|Arch)\s+'
+            r'^\s*clause\s+(?P<name>System|Arch|Boot|ABI)\s+'
             r'(?P<quote>["\'])(?P<value>.*?)\2\s*$'
         )
         raw_lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
@@ -266,6 +268,36 @@ class Compiler(CompilerState):
             main_target.architecture
         )
         target_boot = self._normalize_boot(main_target.boot)
+        target_abi = (
+            str(main_target.abi).strip().lower()
+            if main_target.abi is not None
+            else None
+        )
+
+        if target_abi is not None and target_abi != 'sysv_amd64':
+            self.error(
+                f'El ABI {main_target.abi!r} no esta soportada; '
+                'usa "sysv_amd64"'
+            )
+        if target_system == 'baremetal':
+            if main_target.abi is None:
+                self.error(
+                    'El target baremetal requiere una clausula ABI explicita; '
+                    'usa "sysv_amd64"'
+                )
+            elif target_abi != 'sysv_amd64':
+                self.error(
+                    'El target baremetal AMD64 requiere la ABI "sysv_amd64"'
+                )
+            if target_abi == 'sysv_amd64' and target_architecture != 'x86_64':
+                self.error(
+                    'La ABI "sysv_amd64" solo esta disponible para arquitectura '
+                    f'AMD64, no para {target_architecture!r}'
+                )
+        elif main_target.abi is not None:
+            self.error(
+                'La clausula ABI solo se permite con System "baremetal"'
+            )
 
         if target_system == 'baremetal' and main_target.boot is None:
             self.error(
@@ -284,6 +316,20 @@ class Compiler(CompilerState):
             self.error(str(error))
 
         for path, module_target in self.module_targets.items():
+            if path != main_path and module_target.abi is not None:
+                module_abi = str(module_target.abi).strip().lower()
+                if target_system != 'baremetal':
+                    self.error(
+                        f'El modulo {path} declara ABI {module_target.abi!r}, '
+                        'pero la clausula ABI solo se permite con System '
+                        '"baremetal"'
+                    )
+                elif module_abi != target_abi:
+                    self.error(
+                        f'El modulo {path} declara ABI {module_target.abi!r}, '
+                        f'incompatible con la ABI del proyecto {target_abi!r}'
+                    )
+
             if (
                 module_target.system is not None
                 and self._normalize_target_system(module_target.system)
@@ -581,6 +627,7 @@ class Compiler(CompilerState):
                 system=targets.get('System'),
                 architecture=targets.get('Arch'),
                 boot=targets.get('Boot'),
+                abi=targets.get('ABI'),
             )
             self._loaded_module_paths.add(synthetic)
             self.storage.loaded_modules.append(str(package_path))
@@ -690,6 +737,7 @@ class Compiler(CompilerState):
                 system=targets.get('System'),
                 architecture=targets.get('Arch'),
                 boot=targets.get('Boot'),
+                abi=targets.get('ABI'),
             )
             for item in package.symbols.get('exports', ()):
                 if not isinstance(item, dict):
@@ -874,6 +922,7 @@ class Compiler(CompilerState):
                     self.project_root or path.parent,
                     functions=self.storage.functions,
                     target_triple=target.triple,
+                    abi=self.storage.abi,
                 )
                 self.storage.prep_metadata = {
                     generated: (

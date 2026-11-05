@@ -405,6 +405,61 @@ class PrepTests(unittest.TestCase):
 
         self.assertEqual(5, result.returncode)
 
+    def test_baremetal_assembler_uses_explicit_sysv_abi(self):
+        ir_path = self._compile(
+            'clause System "baremetal"\n'
+            'clause Arch "amd"\n'
+            'clause Boot "none"\n'
+            'clause ABI "sysv_amd64"\n'
+            '@assembler\n'
+            'func identity(value: int32) int32:\n'
+            '    #assembler "att"\n'
+            '        movl %edi, %eax\n'
+            '    #end\n'
+            '    return asm\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+
+        asm_path = ir_path.parent / 'prep' / '_main' / 'identity__prep_0.asm'
+        asm_text = asm_path.read_text(encoding='utf-8')
+        self.assertIn('.att_syntax prefix', asm_text)
+        self.assertIn('movl %edi, %eax', asm_text)
+
+    def test_baremetal_assembler_can_be_called_from_an_imported_module(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / 'modules').mkdir()
+        (root / 'modules' / 'asm_module.bg').write_text(
+            '@assembler\n'
+            'public func identity(value: int32) int32:\n'
+            '    #assembler "att"\n'
+            '        movl %edi, %eax\n'
+            '    #end\n'
+            '    return asm\n',
+            encoding='utf-8',
+        )
+        main = root / '_main.bg'
+        main.write_text(
+            'clause System "baremetal"\n'
+            'clause Arch "amd"\n'
+            'clause Boot "none"\n'
+            'clause ABI "sysv_amd64"\n'
+            'import asm_module\n'
+            '@unsafe\n'
+            'func main() int32:\n'
+            '    return asm_module.identity(7)\n',
+            encoding='utf-8',
+        )
+
+        compiler = Compiler()
+        ir_path = Path(compiler.compile(main, executable=False))
+        self.assertTrue(ir_path.exists())
+        self.assertEqual(1, len(compiler.storage.prep_sources))
+        ir_text = ir_path.read_text(encoding='utf-8')
+        self.assertRegex(ir_text, r'call i32 .*identity')
+
     def test_rejects_assembler_outside_function(self):
         with self.assertRaisesRegex(CompilationError, 'solo se permite dentro de una funcion'):
             self._compile(

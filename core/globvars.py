@@ -6,6 +6,7 @@ from pathlib import Path
 CLAUSES: list[str] = ['Arch',
                       'System',
                       'Boot',
+                      'ABI',
                       'Privacy',
                       'StackLimit',
                       'Optimizations',

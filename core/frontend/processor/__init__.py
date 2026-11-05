@@ -22,7 +22,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
                 module_path = compiler.module_for_node(node)
                 if (
                     clause_name in (
-                        'System', 'Arch', 'Boot', 'Optimizations',
+                        'System', 'Arch', 'Boot', 'ABI', 'Optimizations',
                     )
                     and module_path != compiler.main_module_path
                 ):

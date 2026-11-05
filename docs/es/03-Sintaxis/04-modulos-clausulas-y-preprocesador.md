@@ -34,12 +34,13 @@ clause Optimizations 'prod'
 clause System 'baremetal'
 clause Arch 'amd'
 clause Boot 'none'
+clause ABI 'sysv_amd64'
 ```
 
 Los módulos importados heredan las cláusulas de target del módulo de entrada
-cuando no declaran una propia. Si declaran `System`, `Arch` o `Boot`, Bagron
-comprueba que cada valor sea compatible con el target principal y detiene la
-compilación ante cualquier incompatibilidad.
+cuando no declaran una propia. Si declaran `System`, `Arch`, `Boot` o `ABI`,
+Bagron comprueba que cada valor sea compatible con el target y la ABI
+principales y detiene la compilación ante cualquier incompatibilidad.
 
 ## Preprocesador
 

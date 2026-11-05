@@ -42,6 +42,9 @@ registros correspondientes. En Windows x64, los cuatro primeros argumentos
 enteros usan `RCX`, `RDX`, `R8` y `R9`; en System V AMD64, los seis primeros usan
 `RDI`, `RSI`, `RDX`, `RCX`, `R8` y `R9`.
 
+En Baremetal AMD64 se debe declarar `clause ABI "sysv_amd64"`. Baremetal no
+selecciona una ABI implícita ni admite convenciones arbitrarias.
+
 ```bg
 clause System "windows"
 clause Arch "amd"

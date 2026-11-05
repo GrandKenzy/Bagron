@@ -429,8 +429,11 @@ _SYSV_X64_REGISTERS: tuple[dict[str, str], ...] = (
 )
 
 
-def _x64_abi_spec(target_triple: str) -> tuple[tuple[dict[str, str], ...], int]:
-    """Return (register_table, stack_base_offset) for the target x86_64 ABI."""
+def _x64_abi_spec(
+    target_triple: str,
+    abi: str | None = None,
+) -> tuple[tuple[dict[str, str], ...], int]:
+    """Return the registered x86_64 ABI layout for a target."""
     normalized = target_triple.lower()
     if not normalized.startswith(('x86_64-', 'amd64-')):
         raise PrepError(
@@ -440,10 +443,18 @@ def _x64_abi_spec(target_triple: str) -> tuple[tuple[dict[str, str], ...], int]:
         # NOTA: Windows x64 ABI reserva 32 bytes de shadow space + 8 bytes de
         # direccion de retorno (0x28).
         return _WINDOWS_X64_REGISTERS, 0x28
-    if any(token in normalized for token in ('linux', 'gnu', 'musl', 'elf', 'none', 'freebsd')):
+    if any(token in normalized for token in ('linux', 'gnu', 'musl', 'freebsd')):
         # NOTA: System V AMD64 ABI pasa 6 registros y el 7.o argumento inicia
         # tras los 8 bytes de la direccion de retorno (0x08), sin shadow space.
         return _SYSV_X64_REGISTERS, 0x08
+    if any(token in normalized for token in ('elf', 'none')):
+        if str(abi or '').strip().lower() == 'sysv_amd64':
+            # Baremetal selects System V explicitly; the LLVM C calling
+            # convention for this AMD64 ELF target uses the same layout.
+            return _SYSV_X64_REGISTERS, 0x08
+        raise PrepError(
+            'Las funciones @assembler de Baremetal requieren ABI "sysv_amd64"'
+        )
     raise PrepError(
         f'Target ABI no soportado para @assembler: {target_triple!r}'
     )
@@ -540,9 +551,10 @@ def _validate_parameter_abi(
     parameters: Sequence[object],
     target_triple: str,
     dialect: str,
+    abi: str | None = None,
 ) -> None:
     """Validate parameter widths and slots without rewriting ASM source."""
-    registers, stack_base = _x64_abi_spec(target_triple)
+    registers, stack_base = _x64_abi_spec(target_triple, abi)
     for index, parameter in enumerate(parameters):
         width = _parameter_width(parameter)
         if index < len(registers):
@@ -555,12 +567,13 @@ def _render_assembly(
     block: PrepBlock,
     function: object,
     target_triple: str,
+    abi: str | None = None,
 ) -> str:
     dialect = _normalize_dialect(block.dialect)
 
     signature = getattr(function, 'signature', None)
     parameters = getattr(signature, 'parameters', ())
-    _validate_parameter_abi(parameters, target_triple, dialect)
+    _validate_parameter_abi(parameters, target_triple, dialect, abi)
     body = block.body
     if any(re.match(r'^\s*ret(?:q)?(?:\s|$)', line, re.IGNORECASE)
            for line in body.splitlines()):
@@ -612,6 +625,7 @@ def write_prep_files(
     build_root: Path | None = None,
     functions: Mapping[str, object] | None = None,
     target_triple: str | None = None,
+    abi: str | None = None,
 ) -> list[Path]:
     """Write extracted assembler blocks to unique `.asm` files."""
     root = build_root or project_root / 'build' / 'prep'
@@ -666,7 +680,7 @@ def write_prep_files(
                 function,
             )
         if function is not None and target_triple is not None:
-            content = _render_assembly(block, function, target_triple)
+            content = _render_assembly(block, function, target_triple, abi)
         else:
             content = block.body
         destination.write_text(content, encoding='utf-8')

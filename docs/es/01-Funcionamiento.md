@@ -145,8 +145,10 @@ verificación de LLVM correspondiente.
 
 Los imports se resuelven dentro de la raíz del proyecto y se rechazan las
 rutas absolutas, el traversal y los enlaces que terminen fuera de esa raíz.
-Los ciclos de imports son errores. Las cláusulas `System`, `Arch` y `Boot` de
-los módulos se contrastan con el target elegido por el módulo de entrada.
+Los ciclos de imports son errores. Las cláusulas `System`, `Arch`, `Boot` y
+`ABI` de los módulos se contrastan con el target elegido por el módulo de
+entrada. Baremetal AMD64 requiere `clause ABI "sysv_amd64"`; la ABI no se
+infiere ni permite convenciones definidas por el usuario.
 
 `extern` declara una firma ABI para código fuera de Bagron. Sus restricciones
 son deliberadas: no todos los tipos del lenguaje son tipos ABI, y los

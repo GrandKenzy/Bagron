@@ -11,6 +11,8 @@ errores habituales son:
 | bloque sin `@assembler` | la función requiere `@assembler` |
 | dialecto desconocido | usa `intel` o `att` |
 | uso de `gas-intel` | el dialecto fue retirado; usa `intel` |
+| ABI Baremetal ausente | Baremetal AMD64 requiere `clause ABI "sysv_amd64"` explícita |
+| `ABI` fuera de Baremetal | la cláusula solo se permite con `System "baremetal"` |
 | `ret` dentro del cuerpo | `return asm` agrega el retorno ABI |
 | función ASM en arquitectura no soportada | esta fase requiere arquitectura x86_64 (Windows x64 o System V AMD64) |
 

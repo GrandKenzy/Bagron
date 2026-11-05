@@ -489,7 +489,7 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
                 children = _children(node)
                 if len(children) >= 3:
                     clause = str(_token_value(children[1]))
-                    if clause in {'System', 'Arch', 'Boot'}:
+                    if clause in {'System', 'Arch', 'Boot', 'ABI'}:
                         targets.setdefault(clause, str(_token_value(children[2])))
             if getattr(node, 'name', None) not in {
                 'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'OPAQUE',

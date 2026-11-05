@@ -204,6 +204,7 @@ class ExternTests(unittest.TestCase):
                 "clause System 'baremetal'\n"
                 "clause Arch 'amd'\n"
                 "clause Boot 'none'\n"
+                "clause ABI 'sysv_amd64'\n"
                 'extern c "freestanding":\n'
                 '    puts(value *: char) int32\n'
                 'func main() int32:\n'

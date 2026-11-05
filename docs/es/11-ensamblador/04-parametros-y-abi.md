@@ -1,4 +1,4 @@
-# 04. Parámetros y ABI (Windows x64 y System V AMD64)
+# 04. Parámetros y ABI (Windows x64, Linux y Baremetal AMD64)
 
 ## 1. ¿Qué es una convención de llamada (ABI)?
 
@@ -8,9 +8,11 @@ Una convención de llamada o **ABI** (*Application Binary Interface*) define el 
 - Qué registros deben ser preservados por la función llamada (*callee-saved / non-volatile*) y cuáles pueden sobreescribirse (*caller-saved / volatile*).
 - En qué registro se entrega el valor de retorno (`RAX` / `EAX`).
 
-Bagron selecciona automáticamente la convención de llamada correcta según el target del módulo:
+Bagron selecciona la convención de llamada según el target del módulo:
 - **Microsoft x64 ABI** cuando se compila para **Windows x64**.
-- **System V AMD64 ABI** cuando se compila para **Linux**, **ELF** o **Bare-metal x86_64**.
+- **System V AMD64 ABI** cuando se compila para **Linux**.
+- **System V AMD64 ABI** en **Baremetal AMD64** solo cuando se declara
+  explícitamente `clause ABI "sysv_amd64"`.
 
 ---
 
@@ -35,9 +37,23 @@ En el target Windows x64, los **cuatro primeros** argumentos enteros o punteros 
 
 ---
 
-## 3. ABI System V AMD64 (Linux, glibc, BSD, Bare-metal ELF)
+## 3. ABI System V AMD64 (Linux)
 
-En targets Linux (`clause System "linux"` o triples `x86_64-unknown-linux-gnu`) y ELF, Bagron aplica el estándar **System V AMD64 ABI**.
+En targets Linux (`clause System "linux"` o triples
+`x86_64-unknown-linux-gnu`), Bagron aplica el estándar **System V AMD64 ABI**.
+
+Baremetal AMD64 debe seleccionar esa misma convención explícitamente:
+
+```bg
+clause System "baremetal"
+clause Arch "amd"
+clause Boot "none"
+clause ABI "sysv_amd64"
+```
+
+`sysv_amd64` es actualmente la única ABI Baremetal admitida. Es un selector de
+una convención conocida por Bagron, no una descripción de registros definida por
+el usuario; Baremetal sin esta cláusula no obtiene una ABI implícita.
 
 Los **seis primeros** argumentos enteros o punteros se pasan por registros:
 

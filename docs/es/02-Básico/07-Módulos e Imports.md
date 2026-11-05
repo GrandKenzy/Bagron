@@ -108,6 +108,7 @@ host. Para `baremetal` también se debe declarar el protocolo de arranque:
 clause System 'baremetal'
 clause Arch 'amd'
 clause Boot 'multiboot2'
+clause ABI 'sysv_amd64'
 ```
 
 `Boot` acepta `none`, `multiboot2`, `uefi`, `opensbi`, `dtb` o `custom`.
@@ -117,23 +118,26 @@ x86-64. Los demás perfiles se validan para su arquitectura, pero el backend
 los marcará como no implementados hasta que se añada su empaquetador.
 
 Un sistema `linux` o `windows` no puede declarar un protocolo `Boot` distinto
-de `none`. Un target `baremetal` requiere `Boot` explícito, incluso si se usa
-`none`. Si `multiboot2` solicita herramientas que no existen en `PATH` o en
-WSL, la compilación termina con un error explícito.
+de `none`. Un target `baremetal` requiere `Boot` y `ABI` explícitos, incluso si
+se usa `none`. La única ABI Baremetal disponible es `sysv_amd64` y requiere
+arquitectura AMD64; Baremetal no selecciona System V silenciosamente ni acepta
+descripciones arbitrarias de ABI. Si `multiboot2` solicita herramientas que no
+existen en `PATH` o en WSL, la compilación termina con un error explícito.
 
 `System 'baremetal'` tampoco admite `extern` de librerías del sistema. Esa
 declaración depende del runtime y linker del sistema operativo; para símbolos
 propios del kernel se debe usar un módulo ASM.
 
-Cada módulo importado hereda el target seleccionado por el módulo de entrada
-para cualquier cláusula que no declare. Por tanto, un módulo sin `System`,
-`Arch` o `Boot` no necesita una declaración adicional ni produce warnings: usa
-directamente la configuración efectiva del módulo de entrada.
+Cada módulo importado hereda el target y la ABI seleccionados por el módulo de
+entrada para cualquier cláusula que no declare. Por tanto, un módulo sin
+`System`, `Arch`, `Boot` o `ABI` no necesita una declaración adicional ni
+produce warnings: usa directamente la configuración efectiva del módulo de
+entrada.
 
-Si un módulo declara explícitamente `System`, `Arch` o `Boot`, Bagron compara
-cada valor con el target principal antes de validar firmas y cuerpos. Una
-incompatibilidad detiene la compilación. Las cláusulas de target de un import
-no pueden cambiar el target global del backend.
+Si un módulo declara explícitamente `System`, `Arch`, `Boot` o `ABI`, Bagron
+compara cada valor con el target y la ABI principales antes de validar firmas y
+cuerpos. Una incompatibilidad detiene la compilación. Las cláusulas de target
+de un import no pueden cambiar la configuración global del backend.
 
 ## Perfil de optimización
 

@@ -23,6 +23,9 @@ def _boot(var: str):
         'custom',
     }
 
+def _abi(var: str):
+    return str(var).strip().lower() == 'sysv_amd64'
+
 def _system(var: str):
     if var == 'auto':
         var = platform.system().lower()
@@ -43,6 +46,8 @@ def validate(clause: gast.ASTRef):
     elif clause_name == 'System' and _system(clause_value):  # noqa: SIM114
         pass
     elif clause_name == 'Boot' and _boot(clause_value):  # noqa: SIM114
+        pass
+    elif clause_name == 'ABI' and _abi(clause_value):  # noqa: SIM114
         pass
     elif clause_name == 'Optimizations' and _optimizations(clause_value):  # noqa: SIM114
         pass

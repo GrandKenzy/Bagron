@@ -555,6 +555,169 @@ class ModuleTests(unittest.TestCase):
             with self.assertRaisesRegex(CompilationError, 'incompatible con el target'):
                 Compiler().compile(main, executable=False)
 
+    def test_baremetal_accepts_explicit_sysv_amd64_abi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'clause ABI "sysv_amd64"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            compiler.compile(main, executable=False)
+
+        self.assertEqual('sysv_amd64', compiler.storage.abi)
+
+    def test_baremetal_requires_an_explicit_abi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'requiere una clausula ABI explicita',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_abi_clause_is_rejected_outside_baremetal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "linux"\n'
+                'clause Arch "amd"\n'
+                'clause ABI "sysv_amd64"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'clausula ABI solo se permite con System "baremetal"',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_abi_clause_is_rejected_for_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "windows"\n'
+                'clause Arch "amd"\n'
+                'clause ABI "sysv_amd64"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'clausula ABI solo se permite con System "baremetal"',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_sysv_amd64_abi_requires_amd64(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "arm"\n'
+                'clause Boot "none"\n'
+                'clause ABI "sysv_amd64"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'sysv_amd64.*AMD64',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_unknown_baremetal_abi_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            main = Path(directory) / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'clause ABI "custom_amd64"\n'
+                'func main() int32:\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'ABI.*(no esta soportada|valor invalido)',
+            ):
+                Compiler().compile(main, executable=False)
+
+    def test_imported_abi_is_inherited_without_warning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'inherited_abi.bg').write_text(
+                'public func value() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'clause ABI "sysv_amd64"\n'
+                'import inherited_abi\n'
+                'func main() int32:\n'
+                '    return inherited_abi.value()\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            compiler.compile(main, executable=False)
+
+        self.assertEqual([], compiler.warnings)
+        self.assertEqual('sysv_amd64', compiler.storage.abi)
+
+    def test_import_rejects_incompatible_explicit_abi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'custom_abi.bg').write_text(
+                'clause ABI "custom_amd64"\n'
+                'public func value() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            main = root / '_main.bg'
+            main.write_text(
+                'clause System "baremetal"\n'
+                'clause Arch "amd"\n'
+                'clause Boot "none"\n'
+                'clause ABI "sysv_amd64"\n'
+                'import custom_abi\n'
+                'func main() int32:\n'
+                '    return custom_abi.value()\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(
+                CompilationError,
+                'incompatible con la ABI del proyecto',
+            ):
+                Compiler().compile(main, executable=False)
+
     def test_baremetal_requires_an_explicit_boot_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             main = Path(directory) / '_main.bg'

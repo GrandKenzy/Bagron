@@ -109,6 +109,7 @@ class Storage(diagnostic.Diagnostics):
         self.optimizers = 'prod'
         self.stacklimit = -1
         self.boot = 'none'
+        self.abi: str | None = None
         if parent is None:
             self.system = system().lower()
             host_architecture = architecture()
@@ -126,6 +127,7 @@ class Storage(diagnostic.Diagnostics):
             self.optimizers = parent.optimizers
             self.stacklimit = parent.stacklimit
             self.boot = parent.boot
+            self.abi = parent.abi
         
         self.namespace: dict[str, Any] = {}
         self.functions: dict[str, FunctionSymbol] = {}
@@ -157,6 +159,7 @@ class Storage(diagnostic.Diagnostics):
         elif    name in ('Optimizations', 'Optimizers'): self.optimizers = value
         elif    name == 'System'    : self.system = value
         elif    name == 'Boot'      : self.boot = str(value).strip().lower()
+        elif    name == 'ABI'       : self.abi = str(value).strip().lower()
         elif    name == 'Arch'      :
             self.architecture = str(value).lower()
             if self.architecture == 'auto':
