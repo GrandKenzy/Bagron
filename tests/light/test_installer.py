@@ -18,6 +18,8 @@ class InstallerTests(unittest.TestCase):
     def test_posix_launchers_are_executable_and_preserve_caller_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory) / 'bin'
+            (bin_dir / 'Bagron').parent.mkdir(parents=True)
+            (bin_dir / 'Bagron').write_text('legacy launcher', encoding='utf-8')
             with mock.patch.object(installer.os, 'name', 'posix'):
                 installer._create_launchers(bin_dir)
 
@@ -178,6 +180,8 @@ class InstallerTests(unittest.TestCase):
     def test_windows_launchers_use_portable_python_root(self):
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory) / 'bin'
+            (bin_dir / 'Bagron').parent.mkdir(parents=True)
+            (bin_dir / 'Bagron').write_text('legacy launcher', encoding='utf-8')
             with mock.patch.object(installer.os, 'name', 'nt'):
                 installer._create_launchers(bin_dir)
 

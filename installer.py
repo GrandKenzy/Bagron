@@ -378,6 +378,8 @@ def _add_to_posix_user_path(bin_path: Path) -> bool:
         print(f'Advertencia: no se pudo crear {user_bin}: {error}', file=sys.stderr)
         return False
 
+    _remove_legacy_posix_user_launcher(bin_path)
+
     for name in ('bagron',):
         launcher = bin_path / name
         link = user_bin / name
@@ -408,7 +410,7 @@ def _remove_from_posix_user_path(bin_path: Path) -> bool:
         return False
 
     user_bin = Path.home() / '.local' / 'bin'
-    removed = False
+    removed = _remove_legacy_posix_user_launcher(bin_path)
     for name in ('bagron',):
         link = user_bin / name
         if not link.is_symlink():
@@ -422,6 +424,24 @@ def _remove_from_posix_user_path(bin_path: Path) -> bool:
     return removed
 
 
+def _remove_legacy_posix_user_launcher(bin_path: Path) -> bool:
+    """Retira el alias POSIX ``Bagron`` heredado de instalaciones anteriores."""
+    if os.name != 'posix':
+        return False
+
+    legacy_link = Path.home() / '.local' / 'bin' / 'Bagron'
+    if not legacy_link.is_symlink():
+        return False
+
+    try:
+        if legacy_link.resolve() != (bin_path / 'Bagron').resolve():
+            return False
+        legacy_link.unlink()
+        return True
+    except OSError:
+        return False
+
+
 # ============================================================================
 # Generación de lanzadores de comandos
 # ============================================================================
@@ -429,6 +449,13 @@ def _remove_from_posix_user_path(bin_path: Path) -> bool:
 def _create_launchers(bin_dir: Path) -> None:
     """Crea los lanzadores nativos para Windows o sistemas POSIX."""
     bin_dir.mkdir(parents=True, exist_ok=True)
+
+    # NOTA: Las instalaciones anteriores podían dejar aliases con mayúscula.
+    # Se eliminan solo dentro de este bin administrado antes de escribir el CLI canónico.
+    for legacy_name in ('Bagron', 'Bagron.cmd', 'Bagron.ps1'):
+        legacy_launcher = bin_dir / legacy_name
+        if legacy_launcher.is_file() or legacy_launcher.is_symlink():
+            legacy_launcher.unlink()
 
     if os.name == 'posix':
         shell_content = '''#!/usr/bin/env bash
