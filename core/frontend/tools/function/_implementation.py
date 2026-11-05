@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from core.frontend.objects import (
@@ -1773,8 +1774,15 @@ def _body_statements(body: gast.ASTRef) -> list[object]:
 
 
 def _prep_count(compiler: Compiler, symbol: FunctionSymbol) -> int:
+    symbol_module = getattr(symbol, 'module_path', None)
+    if symbol_module is not None:
+        symbol_module = Path(symbol_module).resolve()
     return sum(
         block.function_name == symbol.name
+        and (
+            symbol_module is None
+            or Path(block.source).resolve() == symbol_module
+        )
         for block in getattr(compiler, 'prep_blocks', ())
     )
 

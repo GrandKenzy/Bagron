@@ -57,6 +57,19 @@ class CompilerState(Diagnostics):
 
         content = _open_file(self, path)
 
+        # Process conditionals before extracting library directives so a
+        # platform-specific dependency can be guarded by ``#if OS``.  The
+        # target is already selected from the entry module before this method
+        # runs, and the preprocessor preserves source line positions.
+        content, conditional_errors = preprocess_conditionals(
+            content,
+            Path(path),
+            system=getattr(self, 'preprocessor_system', 'auto'),
+            architecture=getattr(self, 'preprocessor_architecture', 'auto'),
+        )
+        for error in conditional_errors:
+            self.error(error)
+
         content, library_requests, library_errors = extract_library_directives(
             content,
             Path(path),
@@ -73,15 +86,6 @@ class CompilerState(Diagnostics):
                 library_requests
             )
         for error in library_errors:
-            self.error(error)
-
-        content, conditional_errors = preprocess_conditionals(
-            content,
-            Path(path),
-            system=getattr(self, 'preprocessor_system', 'auto'),
-            architecture=getattr(self, 'preprocessor_architecture', 'auto'),
-        )
-        for error in conditional_errors:
             self.error(error)
 
         content, link_directories, link_errors = extract_link_directives(

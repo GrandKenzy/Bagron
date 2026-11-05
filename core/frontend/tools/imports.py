@@ -357,7 +357,12 @@ def bind_aliases(compiler: Compiler) -> None:
             )
 
 
-def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[Path]:
+def _candidate_paths(
+    name: str,
+    current_file: Path,
+    project_root: Path,
+    library_roots: tuple[Path, ...] = (),
+) -> list[Path]:
     # NOTA: Devuelve posibles rutas para el modulo respetando prioridad de busqueda:
     # 1) Modulos hermanos si el archivo esta dentro de un arbol de modulos reconocido.
     # 2) Carpeta modules/ del proyecto local.
@@ -376,10 +381,17 @@ def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[
     bagron_libs = BAGRON_ROOT / 'libs'
 
     roots: list[Path] = [modules_root]
+    library_module_roots = [root / 'modules' for root in library_roots]
 
     # Permitir importaciones relativas entre hermanos si estamos dentro de modules/
     # del proyecto o en las carpetas modules/ o libs/ de Bagron.
-    for parent_root in (modules_root, bagron_modules, bagron_libs):
+    for parent_root in (
+        modules_root,
+        *library_module_roots,
+        *library_roots,
+        bagron_modules,
+        bagron_libs,
+    ):
         try:
             current_file.relative_to(parent_root)
         except ValueError:
@@ -391,6 +403,13 @@ def _candidate_paths(name: str, current_file: Path, project_root: Path) -> list[
 
     # La raiz del proyecto como fallback retrocompatible.
     roots.append(project_root)
+
+    # Los paquetes lib1 conservan sus módulos bajo una raíz extraída propia.
+    # Esa raíz debe participar en imports entre hermanos sin abrir el acceso a
+    # rutas externas no registradas por el cargador de librerías.
+    for root in (*library_module_roots, *library_roots):
+        if root not in roots:
+            roots.append(root)
 
     # Carpetas globales de Bagron: modules/ y libs/.
     if bagron_modules not in roots:
@@ -431,6 +450,10 @@ def resolve_module_path(
     project_root = project_root.resolve()
     current_file = current_file.resolve()
     bagron_root = BAGRON_ROOT.resolve()
+    library_roots = tuple(
+        Path(root).resolve()
+        for root in getattr(compiler, 'library_source_roots', ())
+    )
 
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         compiler.error(
@@ -439,7 +462,7 @@ def resolve_module_path(
         )
         return None
 
-    allowed_roots = [project_root, bagron_root]
+    allowed_roots = [project_root, bagron_root, *library_roots]
     if not any(_is_within(current_file, root) for root in allowed_roots):
         compiler.error(
             f'El modulo importador esta fuera de la raiz del proyecto: '
@@ -447,7 +470,12 @@ def resolve_module_path(
         )
         return None
 
-    for candidate in _candidate_paths(name, current_file, project_root):
+    for candidate in _candidate_paths(
+        name,
+        current_file,
+        project_root,
+        library_roots,
+    ):
         candidate = candidate.resolve()
         if (
             candidate.suffix == '.bg'

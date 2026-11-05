@@ -167,9 +167,10 @@ class Compiler(CompilerState):
         system_name: str,
     ) -> str:
         """Keep Android API levels when comparing imported module targets."""
-        if system_name == 'android' and value is not None:
-            return normalize_architecture(value)
-        return cls._normalize_target_architecture(value)
+        raw = None if value is None or str(value).strip().lower() == 'auto' else value
+        if system_name == 'android' and raw is not None:
+            return normalize_architecture(raw)
+        return cls._normalize_target_architecture(raw)
 
     @staticmethod
     def _normalize_boot(value: str | None) -> str:
@@ -543,6 +544,7 @@ class Compiler(CompilerState):
     def _load_library(self, request):
         """Load a lib1 package and bind its public export namespace."""
         from core.frontend.tools.imports import ImportRequest
+        from core.compiler.prep import PrepBlock
 
         source = Path(request.source).resolve()
         package_path = resolve_library_path(
@@ -635,6 +637,22 @@ class Compiler(CompilerState):
                     )
                     continue
                 self.precompiled_modules[module_path] = module_nodes
+                # Los bloques ASM se serializan fuera de los nodos GIR; deben
+                # volver al estado del compilador para generar el objeto nativo
+                # junto con el resto del programa consumidor.
+                for item in module.get('prep_blocks', ()):
+                    if not isinstance(item, dict):
+                        self.error(
+                            f'La IR de {package_path} contiene un bloque ASM invalido'
+                        )
+                        continue
+                    self.prep_blocks.append(PrepBlock(
+                        source=module_path,
+                        function_name=item.get('function_name'),
+                        dialect=str(item.get('dialect', '')),
+                        body=str(item.get('body', '')),
+                        line=int(item.get('line', 1)),
+                    ))
             for relative in package.modules:
                 module_path = (extracted / relative).resolve()
                 try:

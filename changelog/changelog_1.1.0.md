@@ -43,6 +43,22 @@
 - Rebuilds clear only the installation's AOT output directory, preventing
   stale libraries and manifests from being mixed across Gram versions.
 
+## Libraries
+
+- Platform-specific `library` directives are now selected after conditional
+  preprocessing, so inactive dependencies such as `windows.lib` and
+  `gnulibrary.lib` are not loaded together.
+- Lib1 packages can resolve imports between their own extracted source
+  modules without escaping the registered package root.
+- Lib1 packages preserve and restore serialized `@assembler` blocks when they
+  are consumed, so packaged native functions retain their assembly body and
+  return contract.
+- Assembly-block association is scoped by source module, preventing a local
+  wrapper such as `read` from being confused with a packaged native function
+  such as `Gnu.read`.
+- Lib2 packages declaring `Arch "auto"` now inherit the host architecture
+  instead of failing validation against the resolved `x86_64` target.
+
 ## Assembler
 
 - Functions marked with `@assembler` from the same `.bg` source now share one
@@ -54,3 +70,10 @@
   assembly body must guarantee that control does not fall through, while
   `void` and value-returning assembler functions retain their existing return
   behavior.
+
+## Standard Modules
+
+- Migrated the laboratory `standard` modules away from per-module system ABI
+  declarations. Windows modules now consume `windows.lib`, while Linux modules
+  consume `gnulibrary.lib` through the platform-selected dependencies in
+  `standard/main.bg`.

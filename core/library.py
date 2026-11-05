@@ -468,7 +468,9 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
             source_path,
             allow=True,
         )
-        lines, _, prep_errors = extract_prep_blocks(lines, source_path)
+        # La IR de lib1 conserva los bloques ASM aparte de los nodos GIR para
+        # que el consumidor pueda regenerar su objeto con el target actual.
+        lines, prep_blocks, prep_errors = extract_prep_blocks(lines, source_path)
         errors = [*link_errors, *library_errors, *prep_errors]
         if errors:
             raise LibraryError('\n'.join(errors))
@@ -483,6 +485,15 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
         modules.append({
             'path': name,
             'nodes': [_node_data(node) for node in nodes],
+            'prep_blocks': [
+                {
+                    'function_name': block.function_name,
+                    'dialect': block.dialect,
+                    'body': block.body,
+                    'line': block.line,
+                }
+                for block in prep_blocks
+            ],
         })
         for node in nodes:
             if getattr(node, 'name', None) == 'CLAUSE':

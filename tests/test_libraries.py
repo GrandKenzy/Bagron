@@ -92,6 +92,29 @@ class LibraryTests(unittest.TestCase):
             artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
+    def test_conditional_library_directive_selects_the_target_dependency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            (root / 'libs').mkdir()
+            package_path = root / 'libs' / 'My.lib'
+            pack_library(source, package_path, name='My', version='1.0.0')
+            main = root / 'main.bg'
+            main.write_text(
+                'clause System \'windows\'\n'
+                '#if OS, "windows"\n'
+                'library "My.lib" as Lib\n'
+                '#elif OS, "linux"\n'
+                'library "missing.lib" as Missing\n'
+                '#end\n'
+                'func main() int32:\n'
+                '    return Lib.convert()\n',
+                encoding='utf-8',
+            )
+
+            artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
     def test_package2_contains_native_object_without_source_or_ir(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -177,6 +200,46 @@ class LibraryTests(unittest.TestCase):
 
             with patch.object(AotInMemoryParser, 'parse', parse_without_package_source):
                 artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
+    def test_lib1_preserves_internal_imports_and_assembler_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            modules = source / 'modules'
+            modules.mkdir(parents=True)
+            (modules / 'base.bg').write_text(
+                'public func base_value() int32:\n'
+                '    return 40\n',
+                encoding='utf-8',
+            )
+            (modules / 'native.bg').write_text(
+                'import base\n'
+                '@assembler\n'
+                'public func answer() int32:\n'
+                '    #assembler "intel"\n'
+                '        mov eax, 2\n'
+                '    #end\n'
+                '    return asm\n'
+                '@unsafe\n'
+                'public func total() int32:\n'
+                '    return base.base_value() + answer()\n',
+                encoding='utf-8',
+            )
+            package_path = root / 'libs' / 'Native.lib'
+            package_path.parent.mkdir()
+            pack_library(source, package_path, name='Native', version='1.0.0')
+
+            main = root / 'main.bg'
+            main.write_text(
+                'library "Native.lib" as Native\n'
+                '@unsafe\n'
+                'func main() int32:\n'
+                '    return Native.total()\n',
+                encoding='utf-8',
+            )
+
+            artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
     def test_header_has_binary_magic_and_fixed_zip_offset(self):
