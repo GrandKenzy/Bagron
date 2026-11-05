@@ -8,16 +8,19 @@ from unittest import mock
 from core.backend.llvm import LLVMBackend
 from core.backend.llvm.android_toolchain import (
     AndroidToolchainError,
+    _host_tag_candidates,
     resolve_android_toolchain,
 )
 
 
 class AndroidToolchainTests(unittest.TestCase):
     def _fake_ndk(self, root: Path, triple: str):
-        prebuilt = root / 'toolchains' / 'llvm' / 'prebuilt' / 'windows-x86_64'
+        host_tag = _host_tag_candidates()[0]
+        executable_suffix = '.exe' if host_tag.startswith('windows-') else ''
+        prebuilt = root / 'toolchains' / 'llvm' / 'prebuilt' / host_tag
         (prebuilt / 'bin').mkdir(parents=True)
-        (prebuilt / 'bin' / 'clang.exe').touch()
-        (prebuilt / 'bin' / 'ld.lld.exe').touch()
+        (prebuilt / 'bin' / f'clang{executable_suffix}').touch()
+        (prebuilt / 'bin' / f'ld.lld{executable_suffix}').touch()
         architecture = triple.split('-', 1)[0]
         api = triple.rsplit('android', 1)[1]
         library_triple = f'{architecture}-linux-android'
@@ -40,8 +43,9 @@ class AndroidToolchainTests(unittest.TestCase):
         self.assertEqual(triple, toolchain.triple)
         self.assertEqual(35, toolchain.api_level)
         self.assertEqual('aarch64', toolchain.target.architecture)
-        self.assertTrue(toolchain.clang.name == 'clang.exe')
-        self.assertTrue(toolchain.ld_lld.name == 'ld.lld.exe')
+        executable_suffix = '.exe' if _host_tag_candidates()[0].startswith('windows-') else ''
+        self.assertEqual(f'clang{executable_suffix}', toolchain.clang.name)
+        self.assertEqual(f'ld.lld{executable_suffix}', toolchain.ld_lld.name)
         self.assertTrue(toolchain.sysroot.name == 'sysroot')
         self.assertIn('--target=aarch64-linux-android35', toolchain.clang_target_args)
 
@@ -97,18 +101,18 @@ class AndroidToolchainTests(unittest.TestCase):
 
         command = run.call_args.args[0]
         expected_clang = (
-            root
+            root.resolve()
             / 'toolchains'
             / 'llvm'
             / 'prebuilt'
-            / 'windows-x86_64'
+            / _host_tag_candidates()[0]
             / 'bin'
-            / 'clang.exe'
+            / ('clang.exe' if _host_tag_candidates()[0].startswith('windows-') else 'clang')
         )
         self.assertEqual(str(expected_clang), command[0])
         self.assertIn('--target=aarch64-linux-android35', command)
         self.assertIn(
-            f'--sysroot={root / "toolchains" / "llvm" / "prebuilt" / "windows-x86_64" / "sysroot"}',
+            f'--sysroot={root.resolve() / "toolchains" / "llvm" / "prebuilt" / _host_tag_candidates()[0] / "sysroot"}',
             command,
         )
 
@@ -134,10 +138,12 @@ class AndroidToolchainTests(unittest.TestCase):
                     LLVMBackend._link_object(object_path, output_path, triple)
 
         command = run.call_args.args[0]
-        prebuilt = root / 'toolchains' / 'llvm' / 'prebuilt' / 'windows-x86_64'
-        self.assertEqual(str(prebuilt / 'bin' / 'clang.exe'), command[0])
+        prebuilt = root.resolve() / 'toolchains' / 'llvm' / 'prebuilt' / _host_tag_candidates()[0]
+        clang_name = 'clang.exe' if _host_tag_candidates()[0].startswith('windows-') else 'clang'
+        ld_lld_name = 'ld.lld.exe' if _host_tag_candidates()[0].startswith('windows-') else 'ld.lld'
+        self.assertEqual(str(prebuilt / 'bin' / clang_name), command[0])
         self.assertIn('--target=x86_64-linux-android35', command)
-        self.assertIn(f'-fuse-ld={prebuilt / "bin" / "ld.lld.exe"}', command)
+        self.assertIn(f'-fuse-ld={prebuilt / "bin" / ld_lld_name}', command)
         api_library_dir = (
             prebuilt
             / 'sysroot'
