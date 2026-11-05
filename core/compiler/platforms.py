@@ -64,7 +64,7 @@ _KNOWN_SYSTEMS = frozenset({
     'netbsd', 'dragonfly', 'aix', 'sunos', 'haiku', 'emscripten', 'wasi',
     'java', 'cygwin', 'msys', 'baremetal',
 })
-_SUPPORTED_SYSTEMS = frozenset({'windows', 'linux', 'baremetal'})
+_SUPPORTED_SYSTEMS = frozenset({'windows', 'linux', 'android', 'baremetal'})
 
 _ARCHITECTURE_ALIASES = {
     'amd': 'x86_64',

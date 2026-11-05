@@ -22,9 +22,8 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual('darwin', normalize_system('macOS'))
         self.assertEqual('linux', normalize_system('GNU/Linux'))
 
-    def test_rejects_known_but_unsupported_system(self):
-        with self.assertRaisesRegex(ValueError, 'reconocido.*no.*soportado'):
-            validate_system_option('android')
+    def test_accepts_android_as_a_supported_system(self):
+        self.assertEqual('android', validate_system_option('android'))
 
     def test_detects_android_separately_from_linux(self):
         info = SimpleNamespace(system='Linux', machine='aarch64')
@@ -61,8 +60,17 @@ class PlatformTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'reconocida.*no.*soportada'):
             validate_architecture_option('ppc64')
 
-    def test_rejects_android_triple_until_backend_support_exists(self):
-        with self.assertRaisesRegex(ValueError, 'Android.*reconocido.*no.*soportado'):
+    def test_accepts_supported_android_triple_with_android_system(self):
+        Compiler._validate_target_configuration(
+            Path('android_probe.bg'),
+            'android',
+            'aarch64',
+            'none',
+            'aarch64-linux-android35',
+        )
+
+    def test_rejects_android_triple_without_android_system(self):
+        with self.assertRaisesRegex(ValueError, 'debe usar System "android"'):
             Compiler._validate_target_configuration(
                 Path('android_probe.bg'),
                 'linux',

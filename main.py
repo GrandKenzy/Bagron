@@ -326,6 +326,13 @@ def main(*args):
     print(final_executable)
 
     if execute:
+        if str(getattr(compiler.storage, 'system', '')).lower() == 'android':
+            print(
+                'Execution failed: no se puede ejecutar un binario Android '
+                'cruzado directamente en este host; usa adb para desplegarlo.',
+                file=sys.stderr,
+            )
+            return 1
         try:
             process = subprocess.run([str(final_executable)], cwd=str(caller_dir))
             return process.returncode

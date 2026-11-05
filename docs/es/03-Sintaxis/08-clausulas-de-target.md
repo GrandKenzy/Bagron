@@ -15,11 +15,37 @@ Las cláusulas principales son:
 
 | Cláusula | Valores relevantes | Función |
 | --- | --- | --- |
-| `System` | `auto`, `linux`, `windows`, `baremetal` | sistema objetivo |
+| `System` | `auto`, `linux`, `windows`, `android`, `baremetal` | sistema objetivo |
 | `Arch` | `auto`, `amd`, `x86`, `arm`, `riscv32`, `riscv64` o triple LLVM | arquitectura |
 | `Boot` | `none`, `multiboot2`, `uefi`, `opensbi`, `dtb`, `custom` | arranque bare-metal |
 | `ABI` | `sysv_amd64` | ABI de Baremetal AMD64 |
 | `Optimizations` | `dev`, `prod`, `high` | perfil LLVM |
+
+Android requiere un triple LLVM explícito y una instalación del NDK disponible
+cuando se genere código nativo:
+
+```bg
+clause System "android"
+clause Arch "aarch64-linux-android35"
+```
+
+Los triples iniciales soportados son `aarch64-linux-android<api>` y
+`x86_64-linux-android<api>`, con API mínima 21. La forma `Arch "auto"` no es
+válida para Android porque la API forma parte del target. El compilador puede
+generar IR sin resolver el NDK; para objetos, ensamblador o ejecutables se
+requiere `ANDROID_NDK_HOME` o `ANDROID_NDK_ROOT`.
+
+El resultado es un ejecutable ELF nativo para desplegar con `adb`; Bagron no
+genera APK en esta etapa. `--execute` no ejecuta binarios Android cruzados en el
+host de compilación.
+
+Para probar el ELF en un emulador o dispositivo conectado:
+
+```powershell
+adb push build\main /data/local/tmp/main
+adb shell chmod 755 /data/local/tmp/main
+adb shell /data/local/tmp/main
+```
 
 `baremetal` exige `Boot` y `ABI` explícitos. La única ABI admitida actualmente
 es `sysv_amd64`, y solo puede usarse con arquitectura AMD64. `Boot` distinto de

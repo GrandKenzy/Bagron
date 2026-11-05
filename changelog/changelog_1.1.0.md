@@ -9,6 +9,13 @@
   the entry module, and incompatible declarations now terminate compilation.
 - Partial target declarations inherit their omitted dimensions without
   changing the global backend target.
+- System and architecture aliases are now normalized through one platform
+  catalog. Known but unsupported platforms are reported explicitly instead of
+  being confused with a supported target.
+- Android targets are now accepted with explicit `System "android"` and
+  `aarch64-linux-android<api>` or `x86_64-linux-android<api>` triples. The LLVM
+  backend produces native ELF executables through the configured Android NDK;
+  APK packaging and automatic emulator execution are not included yet.
 - Updated the related tests, project map, and documentation to describe the
   inheritance and compatibility rules formally.
 
@@ -33,3 +40,15 @@
   instead of reusing or distributing precompiled `build/aot` artifacts.
 - Rebuilds clear only the installation's AOT output directory, preventing
   stale libraries and manifests from being mixed across Gram versions.
+
+## Assembler
+
+- Functions marked with `@assembler` from the same `.bg` source now share one
+  generated assembly unit and one native object, while imported source files
+  remain isolated.
+- Assembly diagnostics map generated line ranges back to the original source
+  function and line, and repeated non-local labels are rejected before Clang.
+- `Never @assembler` functions no longer receive an implicit `ret`; their
+  assembly body must guarantee that control does not fall through, while
+  `void` and value-returning assembler functions retain their existing return
+  behavior.

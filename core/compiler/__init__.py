@@ -160,6 +160,17 @@ class Compiler(CompilerState):
         raw = cls._host_architecture() if value is None else value
         return architecture_name(normalize_architecture(raw))
 
+    @classmethod
+    def _target_architecture_identity(
+        cls,
+        value: str | None,
+        system_name: str,
+    ) -> str:
+        """Keep Android API levels when comparing imported module targets."""
+        if system_name == 'android' and value is not None:
+            return normalize_architecture(value)
+        return cls._normalize_target_architecture(value)
+
     @staticmethod
     def _normalize_boot(value: str | None) -> str:
         return str(value or 'none').strip().lower()
@@ -198,8 +209,25 @@ class Compiler(CompilerState):
         if system_name in {'darwin', 'macos'}:
             raise ValueError(
                 f'El modulo {path} declara System {system_name!r}; '
-                'Bagron AOT solo soporta Windows y Linux actualmente'
+                'Bagron AOT solo soporta Windows, Linux y Android actualmente'
             )
+        if system_name == 'android':
+            if raw_architecture is None:
+                raise ValueError(
+                    f'El modulo {path} debe declarar Arch con un triple Android '
+                    'explicito, por ejemplo "aarch64-linux-android35"'
+                )
+            from core.backend.llvm.android_toolchain import (
+                AndroidToolchainError,
+                parse_android_target,
+            )
+
+            try:
+                parse_android_target(raw_architecture)
+            except AndroidToolchainError as error:
+                raise ValueError(
+                    f'El modulo {path} declara un target Android invalido: {error}'
+                ) from error
         if system_name != 'baremetal' and boot != 'none':
             cls_error = (
                 f'El modulo {path} declara Boot {boot!r}, pero System '
@@ -226,11 +254,11 @@ class Compiler(CompilerState):
                 )
 
         environment = cls._triple_environment(raw_architecture)
-        if 'android' in environment:
+        if 'android' in environment and system_name != 'android':
             raise ValueError(
                 f'El modulo {path} declara el triple Android '
-                f'{raw_architecture!r}; Android es reconocido, pero aun no '
-                'esta soportado por Bagron'
+                f'{raw_architecture!r}; Android es reconocido, pero debe usar '
+                'System "android"'
             )
         if system_name == 'baremetal' and environment & {
             'linux', 'gnu', 'musl', 'windows', 'win32', 'mingw', 'msvc',
@@ -266,6 +294,10 @@ class Compiler(CompilerState):
         target_system = self._normalize_target_system(main_target.system)
         target_architecture = self._normalize_target_architecture(
             main_target.architecture
+        )
+        target_architecture_identity = self._target_architecture_identity(
+            main_target.architecture,
+            target_system,
         )
         target_boot = self._normalize_boot(main_target.boot)
         target_abi = (
@@ -343,8 +375,11 @@ class Compiler(CompilerState):
 
             if (
                 module_target.architecture is not None
-                and self._normalize_target_architecture(module_target.architecture)
-                != target_architecture
+                and self._target_architecture_identity(
+                    module_target.architecture,
+                    target_system,
+                )
+                != target_architecture_identity
             ):
                 self.error(
                     f'El modulo {path} declara Arch '

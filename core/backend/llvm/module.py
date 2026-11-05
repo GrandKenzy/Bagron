@@ -238,7 +238,7 @@ class LLVMBackend:
         stem = root.stem
         ir_path = build_dir / f'{stem}.ll'
         baremetal = str(getattr(storage, 'system', '')).lower() == 'baremetal'
-        linux = str(getattr(storage, 'system', '')).lower() == 'linux'
+        linux = str(getattr(storage, 'system', '')).lower() in {'linux', 'android'}
         boot = str(getattr(storage, 'boot', 'none')).lower()
         object_suffix = '.o' if baremetal or linux else '.obj'
         object_path = build_dir / f'{stem}{object_suffix}'

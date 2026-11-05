@@ -58,7 +58,7 @@ _ANDROID_TRIPLE_RE = re.compile(
 _MIN_ANDROID_API = 21
 
 
-def _parse_android_target(triple: str) -> AndroidTarget:
+def parse_android_target(triple: str) -> AndroidTarget:
     normalized = str(triple).strip().lower()
     match = _ANDROID_TRIPLE_RE.fullmatch(normalized)
     if match is None:
@@ -162,7 +162,7 @@ def resolve_android_toolchain(
     ndk_home: str | Path | None = None,
 ) -> AndroidToolchain:
     """Resolve clang, ld.lld and the API-specific sysroot for one triple."""
-    target = _parse_android_target(triple)
+    target = parse_android_target(triple)
     ndk_root = _ndk_root_from_environment(ndk_home)
     host_tag, prebuilt_root = _select_prebuilt(ndk_root)
     clang = _tool_path(prebuilt_root, 'clang')
@@ -201,5 +201,6 @@ __all__ = [
     'AndroidTarget',
     'AndroidToolchain',
     'AndroidToolchainError',
+    'parse_android_target',
     'resolve_android_toolchain',
 ]
