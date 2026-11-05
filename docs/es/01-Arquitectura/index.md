@@ -33,7 +33,8 @@ Una función de clase llamada `main` no es entrypoint. Una llamada a una funció
 
 Para instalar Bagron en Windows o Linux, consulta [Instalación del compilador
 en Linux](04-instalacion-linux.md) y la guía de [Instalación de la extensión
-para VS Code](03-instalacion-vscode.md).
+para VS Code](03-instalacion-vscode.md). Para preparar el toolchain y probar
+binarios nativos Android, consulta [Entorno Android](05-android.md).
 
 La suite rápida cubre estas fases en `tests/test_modules.py`,
 `tests/test_functions.py`, `tests/test_types.py` y `tests/test_buffer.py`.

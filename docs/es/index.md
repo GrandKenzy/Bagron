@@ -8,6 +8,7 @@ backend actuales. Los ejemplos pequeños y ejecutables están en
 ## Rutas
 
 - [Arquitectura](01-Arquitectura/index.md)
+- [Entorno Android](01-Arquitectura/05-android.md)
 - [Instalación de la extensión para VS Code](01-Arquitectura/03-instalacion-vscode.md)
 - [Sintaxis](03-Sintaxis/index.md)
 - [Librerías](04-librerías/index.md)

@@ -33,19 +33,12 @@ Los triples iniciales soportados son `aarch64-linux-android<api>` y
 `x86_64-linux-android<api>`, con API mínima 21. La forma `Arch "auto"` no es
 válida para Android porque la API forma parte del target. El compilador puede
 generar IR sin resolver el NDK; para objetos, ensamblador o ejecutables se
-requiere `ANDROID_NDK_HOME` o `ANDROID_NDK_ROOT`.
+requiere `ANDROID_NDK_HOME` o `ANDROID_NDK_ROOT`. La configuración del NDK,
+la verificación del ELF y las pruebas con `adb` se documentan en [Entorno
+Android](../01-Arquitectura/05-android.md).
 
-El resultado es un ejecutable ELF nativo para desplegar con `adb`; Bagron no
-genera APK en esta etapa. `--execute` no ejecuta binarios Android cruzados en el
-host de compilación.
-
-Para probar el ELF en un emulador o dispositivo conectado:
-
-```powershell
-adb push build\main /data/local/tmp/main
-adb shell chmod 755 /data/local/tmp/main
-adb shell /data/local/tmp/main
-```
+El resultado es un ejecutable ELF nativo; Bagron no genera APK en esta etapa.
+`--execute` no ejecuta binarios Android cruzados en el host de compilación.
 
 `baremetal` exige `Boot` y `ABI` explícitos. La única ABI admitida actualmente
 es `sysv_amd64`, y solo puede usarse con arquitectura AMD64. `Boot` distinto de
