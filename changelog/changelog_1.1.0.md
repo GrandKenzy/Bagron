@@ -9,6 +9,11 @@
   the entry module, and incompatible declarations now terminate compilation.
 - Partial target declarations inherit their omitted dimensions without
   changing the global backend target.
+- Updated the related tests, project map, and documentation to describe the
+  inheritance and compatibility rules formally.
+
+## ABI & Baremetal
+
 - Added the explicit `ABI` clause with `sysv_amd64` as its only supported
   value.
 - Baremetal projects now require `ABI "sysv_amd64"`; ABI declarations are
@@ -17,8 +22,6 @@
   incompatible ABI declarations stop compilation.
 - Baremetal assembler preparation uses System V AMD64 only after explicit ABI
   selection and keeps LLVM's default AMD64 C calling convention.
-- Updated the related tests, project map, and documentation to describe the
-  inheritance and compatibility rules formally.
 
 ## Bagron Installer
 
