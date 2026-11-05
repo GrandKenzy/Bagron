@@ -2,7 +2,14 @@ from gram import combinators as cmb
 
 from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
-from core.frontend.syntax.items.statements import DEL, FOR, GLOBAL, IF, WHILE
+from core.frontend.syntax.items.statements import (
+    DEL,
+    FOR,
+    GLOBAL,
+    IF,
+    SIMPLE_STATEMENT,
+    WHILE,
+)
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.struct_decl import AGGREGATE_DECORATOR
 from core.frontend.syntax.items.value import (
@@ -45,34 +52,38 @@ class FUNCTION_SIGNATURE(cmb.RuleItem):
         cmb.MatchToken('COLON')
     )
     nodeable = True
+
+
+class FUNCTION_STATEMENT(cmb.RuleItem):
+    """Statements valid in an ordinary function body."""
+
+    nodeable = False
+    entrypoint = cmb.Alt(
+        cmb.Ref(SIMPLE_STATEMENT),
+        cmb.Ref(RETURN_ASM),
+    )
+
+
+class INLINE_FUNCTION_STATEMENT(cmb.RuleItem):
+    """One simple statement allowed after a function signature colon."""
+
+    nodeable = False
+    entrypoint = cmb.Alt(
+        cmb.Ref(CALL),
+        cmb.Ref(DEL),
+        cmb.Ref(RETURN),
+        cmb.MatchKeyword('pass'),
+    )
     
 class FUNCTION_BODY(cmb.RuleItem):
     nodeable = True
-    entrypoint = cmb.Seq(
-        cmb.MatchToken('INDENT'),
-        cmb.Some(
-            cmb.Alt(
-                cmb.Ref(STRUCT),
-                cmb.Ref(FLAGS),
-                cmb.Ref(MOLD),
-                cmb.Ref(IF),
-                cmb.Ref(WHILE),
-                cmb.Ref(ENUM),
-                cmb.Ref(FOR),
-                cmb.Ref(FIELD_DECLARATION),
-                cmb.Ref(VAR_ASSIGNATION),
-                cmb.Ref(CALL),
-                cmb.Ref(DEL),
-                cmb.Ref(GLOBAL),
-                cmb.Ref(VAR),
-                cmb.Ref(RETURN_ASM),
-                cmb.Ref(RETURN),
-                cmb.MatchGroup('skipers'),
-                cmb.MatchKeyword('pass')
-                
-            )
+    entrypoint = cmb.Alt(
+        cmb.Seq(
+            cmb.MatchToken('INDENT'),
+            cmb.Some(cmb.Ref(FUNCTION_STATEMENT)),
+            cmb.MatchToken('DEDENT'),
         ),
-        cmb.MatchToken('DEDENT')
+        cmb.Ref(INLINE_FUNCTION_STATEMENT),
     )
     
 class FUNCTION(cmb.RuleItem):

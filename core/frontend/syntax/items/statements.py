@@ -82,6 +82,30 @@ class GLOBAL(cmb.RuleItem):
         cmb.MatchKeyword('global'),
         cmb.MatchToken('IDENT'),
     )
+
+
+class SIMPLE_STATEMENT(cmb.RuleItem):
+    """Common statement alternatives shared by function and control bodies."""
+
+    nodeable = False
+    entrypoint = cmb.Alt(
+        cmb.Ref(ENUM),
+        cmb.Ref(FLAGS),
+        cmb.Ref(STRUCT),
+        cmb.Ref(MOLD),
+        cmb.Ref(WHILE),
+        cmb.Ref(FOR),
+        cmb.Ref(IF),
+        cmb.Ref(FIELD_DECLARATION),
+        cmb.Ref(VAR_ASSIGNATION),
+        cmb.Ref(CALL),
+        cmb.Ref(DEL),
+        cmb.Ref(GLOBAL),
+        cmb.Ref(VAR),
+        cmb.Ref(RETURN),
+        cmb.MatchGroup('skipers'),
+        cmb.MatchKeyword('pass'),
+    )
     
 # for i: uint32 ran (inicio, limite, paso):
 # for i: int32 in values:
@@ -120,26 +144,7 @@ class STATEMENT_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
-        cmb.Some(
-            cmb.Alt(
-                cmb.Ref(ENUM),
-                cmb.Ref(FLAGS),
-                cmb.Ref(STRUCT),
-                cmb.Ref(MOLD),
-                cmb.Ref(WHILE),
-                cmb.Ref(FOR),
-                cmb.Ref(IF),
-                cmb.Ref(FIELD_DECLARATION),
-                cmb.Ref(VAR_ASSIGNATION),
-                cmb.Ref(CALL),
-                cmb.Ref(DEL),
-                cmb.Ref(GLOBAL),
-                cmb.Ref(VAR),
-                cmb.Ref(RETURN),
-                cmb.MatchGroup('skipers'),
-                cmb.MatchKeyword('pass')
-            )
-        ),
+        cmb.Some(cmb.Ref(SIMPLE_STATEMENT)),
         cmb.MatchToken('DEDENT')
     )
     
@@ -174,6 +179,7 @@ IF.entrypoint = cmb.Seq(
 __all__ = [
     'FOR',
     'IF',
+    'SIMPLE_STATEMENT',
     'WHILE',
     'DEL',
     'GLOBAL',
