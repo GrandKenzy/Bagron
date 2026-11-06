@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -320,6 +321,26 @@ class InstallerTests(unittest.TestCase):
             7,
             sum(name.startswith('changelog_') for name in names),
         )
+
+    def test_bundled_vscode_extension_indexes_libraries_and_uses_cli(self):
+        vsix = (
+            Path(__file__).resolve().parents[2]
+            / 'tools'
+            / 'vscode'
+            / 'bagron-language-support.vsix'
+        )
+        with zipfile.ZipFile(vsix) as archive:
+            package = json.loads(archive.read('extension/package.json'))
+            extension = archive.read('extension/extension.js').decode('utf-8')
+
+        properties = package['contributes']['configuration']['properties']
+        self.assertEqual('1.1.2', package['version'])
+        self.assertEqual('bagron', properties['bagron.compilerPath']['default'])
+        self.assertIn('bagron.installRoot', properties)
+        self.assertIn('globalLibraryNames', extension)
+        self.assertIn("args.push('--execute')", extension)
+        self.assertIn('new vscode.ShellExecution', extension)
+        self.assertNotIn('createTerminal', extension)
 
 
 if __name__ == '__main__':

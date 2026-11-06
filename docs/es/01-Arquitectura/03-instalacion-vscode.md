@@ -9,6 +9,20 @@ nominales, funciones inline, bloques ASM y literales agregados como
 `Point{ .x = 10 }`. Su formateador es conservador y solo elimina espacios
 finales; no reindenta automáticamente código cuya indentación tiene significado.
 
+El autocompletado, Hover y Definition siguen las mismas raíces principales que
+el compilador: `modules/` y la raíz del proyecto, fuentes `lib1` ya extraídas y
+`modules/`/`libs/` de la instalación de Bagron. También reconoce
+`library "archivo.lib" as Alias` y `library nombre_global as Alias`, obtiene
+sus exports con `bagron inspect` y permite completar los miembros de `Alias`
+sin ejecutar código de la librería.
+
+La extensión usa `bagron` como comando predeterminado. `Bagron: Compilar y
+ejecutar` llama a `bagron <entrada> --execute` y selecciona el `main.bg` del
+workspace cuando existe; `Bagron: Ejecutar archivo actual` conserva como
+objetivo el archivo abierto. Si la instalación usa una ubicación personalizada,
+configura `bagron.installRoot`. `bagron.compilerPath` permite sustituir
+únicamente la ruta del lanzador.
+
 ## Instalación automática
 
 Con Bagron instalado y `code` disponible en el `PATH`, ejecuta:
