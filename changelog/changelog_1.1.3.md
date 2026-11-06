@@ -2,32 +2,33 @@
 
 ## Release Workflow
 
-- Prepare platform-specific release environments for Linux x86-64 and Windows
-  x86-64 using `vnma` during GitHub Actions packaging jobs, instead of leaving
-  dependency resolution to the installed user's machine.
-- Build the Gram AOT/FFI parser for each release target and package the native
-  library together with its matching `gram_parser_manifest.json`.
-- Include the Bagron compiler sources, the selected `llvmlite` distribution,
-  Gram dependencies, and the portable Python runtime in each release artifact.
-- Retain platform-specific tests and smoke compilation before publishing
-  artifacts; add installation smoke tests against the actual packaged release.
-- Make the release workflow fail if the packaged runtime, dependency set, AOT
-  parser, or executable smoke test is missing or incompatible.
+- Release packaging jobs now prepare their own Python 3.14 runtime, install
+  `vnma`, and resolve Gram and `llvmlite` before building the installer.
+- Each platform's packaging job builds Gram AOT/FFI from Gram's `main` branch,
+  retaining its native library and matching `gram_parser_manifest.json`.
+- Added a release-payload assembly step that collects compiler sources, local
+  vendored dependencies, Gram AOT, and metadata for PyInstaller to embed
+  alongside the portable Python runtime.
+- Added post-packaging installation smoke tests for Linux and Windows that
+  invoke the built installer, check `bagron --version`, and compile a `.bg`
+  example from the installed compiler.
+- Release jobs fail when required payload files, compiled parser artifacts, or
+  compilation tests are missing or invalid.
 
 ## Bagron Installer
 
-- Add a prebuilt installation path that extracts the packaged compiler and
+- Added a prebuilt installation path that extracts the packaged compiler and
   dependencies without cloning Gram, running `vnma install`, or rebuilding the
   AOT parser on the user's machine.
-- Validate the packaged AOT library and grammar manifest before enabling the
-  `bagron` launcher; do not silently fall back to a mismatched parser.
-- Keep the source/development installation path available for local builds and
-  explicit dependency rebuilds.
-- Preserve the existing user-local launcher and installation behavior while
-  avoiding unnecessary modifications to global Python installations.
-- Document that an offline installation of the packaged compiler does not
-  automatically imply a fully self-contained native toolchain: external
-  Clang/LLD and target-specific SDKs may still be required for compilation.
+- The installer validates bundle metadata, the AOT grammar identifier and the
+  SHA-256 of the packaged native parser before writing compiler files.
+- Kept the source/development installation path available for local builds and
+  dependency rebuilds; compiled installers no longer fall back to a network
+  installation when the prebuilt payload is absent or invalid.
+- Preserved the user-local `bagron` launchers and isolated runtime layout
+  without changing global Python installations.
+- Documented that offline installation still requires an external Clang/LLD
+  toolchain (and Android NDK when targeting Android) for native compilation.
 
 ## Portable Python Runtime
 
