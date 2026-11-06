@@ -30,6 +30,11 @@
   installation when the prebuilt payload is absent or invalid.
 - Preserved the user-local `bagron` launchers and isolated runtime layout
   without changing global Python installations.
+- Added `bagron --update` to find the latest stable GitHub release and replace
+  the managed installation with the matching platform installer.
+- Added `bagron --uninstall` cleanup for managed launchers, PATH entries and
+  the complete Bagron installation, including deferred cleanup on Windows
+  when the portable runtime is still open.
 - Documented that offline installation still requires an external Clang/LLD
   toolchain (and Android NDK when targeting Android) for native compilation.
 

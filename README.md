@@ -195,6 +195,21 @@ python installer.py
 El instalador crea `bagron.cmd` y `bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
+Desde una instalación existente puedes actualizar a la última release estable
+publicada en GitHub con:
+
+```powershell
+bagron --update
+```
+
+La actualización descarga el instalador de la plataforma, conserva la carpeta
+de destino y reemplaza solo los componentes administrados por Bagron. Para
+desinstalar limpiamente la instalación y retirar sus lanzadores usa:
+
+```powershell
+bagron --uninstall
+```
+
 Desde el release puedes descargar el instalador compilado
 `Bagron-1.1.3-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
@@ -242,6 +257,12 @@ Para desinstalar una instalación Linux usando el Python incluido:
 
 ```bash
 "$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
+```
+
+También puedes actualizar desde el lanzador instalado:
+
+```bash
+bagron --update
 ```
 
 ## Instaladores preconstruidos

@@ -198,6 +198,88 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(r'.runtime\Scripts\python.exe', ps1_content)
             self.assertIn('& $python -m vnma run main.py @args', ps1_content)
 
+    def test_maintenance_commands_use_the_embedded_installer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory) / 'bin'
+            with mock.patch.object(installer.os, 'name', 'nt'):
+                installer._create_launchers(bin_dir)
+
+            cmd_content = (bin_dir / 'bagron.cmd').read_text(encoding='utf-8')
+            ps1_content = (bin_dir / 'bagron.ps1').read_text(encoding='utf-8')
+            self.assertIn('installer.py" --update --target', cmd_content)
+            self.assertIn('installer.py" --uninstall --target', cmd_content)
+            self.assertIn('$args[0] -eq "--update"', ps1_content)
+            self.assertIn('$args[0] -eq "--uninstall"', ps1_content)
+
+    def test_update_uses_the_latest_github_asset_and_installed_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            version_file = target / 'core' / 'version.py'
+            version_file.parent.mkdir(parents=True)
+            version_file.write_text("BAGRON_VERSION = '1.1.2'\n", encoding='utf-8')
+            commands = []
+
+            def fake_download(url, destination):
+                self.assertEqual('https://github.com/example/Bagron.exe', url)
+                destination.write_bytes(b'installer')
+
+            with mock.patch.object(
+                installer, '_latest_release',
+                return_value=('1.1.3', 'https://github.com/example/Bagron.exe'),
+            ), mock.patch.object(
+                installer, '_download_release_asset', side_effect=fake_download,
+            ), mock.patch.object(
+                installer.subprocess, 'run',
+                side_effect=lambda command, **kwargs: commands.append(command) or mock.Mock(returncode=0),
+            ):
+                result = installer.update(target)
+
+            self.assertEqual(0, result)
+            self.assertEqual(1, len(commands))
+            self.assertIn('--target', commands[0])
+            self.assertEqual(str(target), commands[0][commands[0].index('--target') + 1])
+
+    def test_update_does_not_download_when_already_current(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            version_file = target / 'core' / 'version.py'
+            version_file.parent.mkdir(parents=True)
+            version_file.write_text("BAGRON_VERSION = '1.1.3'\n", encoding='utf-8')
+
+            with mock.patch.object(
+                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+            ), mock.patch.object(
+                installer, '_download_release_asset', side_effect=AssertionError('download'),
+            ):
+                self.assertEqual(0, installer.update(target))
+
+    def test_uninstall_removes_target_and_rejects_profile_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            (target / 'bin').mkdir(parents=True)
+            (target / 'installer.py').write_text('installer', encoding='utf-8')
+            with mock.patch.object(
+                installer, '_remove_from_windows_user_path', return_value=True,
+            ):
+                self.assertEqual(0, installer.uninstall(target))
+            self.assertFalse(target.exists())
+
+        with mock.patch.object(installer.Path, 'home', return_value=Path(directory)):
+            self.assertEqual(1, installer.uninstall(Path(directory)))
+
+    def test_uninstall_schedules_windows_cleanup_when_runtime_is_locked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            target.mkdir()
+            with mock.patch.object(
+                installer, '_remove_from_windows_user_path', return_value=True,
+            ), mock.patch.object(
+                installer.shutil, 'rmtree', side_effect=OSError('runtime locked'),
+            ), mock.patch.object(
+                installer, '_schedule_windows_cleanup', return_value=True,
+            ):
+                self.assertEqual(0, installer.uninstall(target))
+
     def test_installer_writes_current_version_to_vnma_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)

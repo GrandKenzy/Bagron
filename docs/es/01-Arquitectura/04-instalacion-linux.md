@@ -73,3 +73,10 @@ Para desinstalar usando el Python portable incluido:
 ```bash
 "$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
 ```
+
+Una instalación existente puede actualizarse a la última release estable de
+GitHub con el lanzador instalado:
+
+```bash
+bagron --update
+```
