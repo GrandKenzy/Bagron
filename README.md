@@ -244,6 +244,21 @@ Para desinstalar una instalación Linux usando el Python incluido:
 "$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
 ```
 
+## Instaladores preconstruidos (a partir de 1.1.3)
+
+Los instaladores de la próxima release incorporarán los componentes preparados
+por GitHub Actions para cada plataforma: fuentes del compilador, Python 3.14
+portable, `vnma`, dependencias locales (Gram y `llvmlite`) y la biblioteca
+Gram AOT junto con su manifiesto. Su instalación no necesitará descargar
+Gram ni ejecutar `vnma install` o reconstruir el parser; el instalador
+comprobará el bundle antes de crear los lanzadores. La ruta de instalación
+desde fuentes seguirá disponible para desarrolladores.
+
+**Importante:** instalar sin Internet no equivale a compilar sin herramientas
+externas. Para generar y enlazar ejecutables nativos siguen siendo necesarias
+las herramientas LLVM/Clang/LLD correspondientes; Android necesita su NDK.
+Los instaladores de la versión 1.1.2 conservan el mecanismo anterior.
+
 ## Extensión para VS Code
 
 El repositorio incluye el paquete [`bagron-language-support.vsix`](tools/vscode/bagron-language-support.vsix).
