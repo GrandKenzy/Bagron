@@ -186,8 +186,16 @@ def restore_aliases(runtime: Path, *, platform: str) -> int:
     for alias_name, canonical_name in aliases.items():
         alias = runtime / _safe_relative(alias_name)
         canonical = runtime / _safe_relative(canonical_name)
-        if not alias.exists() or not os.path.samefile(alias, canonical) and platform == 'linux':
+        if not alias.exists():
             raise RuntimeError(f'Python alias could not be restored: {alias_name}')
+        if platform == 'linux' and (
+            not alias.is_symlink() or alias.resolve() != canonical.resolve()
+        ):
+            raise RuntimeError(f'Invalid restored Python symlink: {alias_name}')
+        if platform == 'windows' and canonical.is_file() and not filecmp.cmp(
+            alias, canonical, shallow=False
+        ):
+            raise RuntimeError(f'Invalid restored Python alias: {alias_name}')
     return len(aliases)
 
 
