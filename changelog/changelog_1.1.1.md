@@ -31,3 +31,9 @@
 - Cleared inactive `mold` bytes and masked signed `flags` fields before their
   bit shift, preventing stack-data exposure and neighboring-bit corruption.
 - Preserved nominal aggregate identity through imported type aliases.
+
+## Standard Library
+
+- Removed forced inlining from stateful I/O, formatting, and clock bodies;
+  only small pure predicates and thin forwarding wrappers remain explicitly
+  inline in `standard`.
