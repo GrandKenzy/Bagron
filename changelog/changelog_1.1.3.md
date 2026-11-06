@@ -6,6 +6,11 @@
   Bagron resolves these names only in `BAGRON_ROOT/libs/<name>.lib`; quoted
   paths continue to resolve only in the project's `libs/` directory.
 
+## CLI
+
+- Simplified `bagron --help` and library usage output to expose only the public
+  `bagron` commands.
+
 ## Release Workflow
 
 - Release packaging jobs now prepare their own Python 3.14 runtime, install
@@ -13,8 +18,8 @@
 - Each platform's packaging job builds Gram AOT/FFI from Gram's `main` branch,
   retaining its native library and matching `gram_parser_manifest.json`.
 - Added a release-payload assembly step that collects compiler sources, local
-  vendored dependencies, Gram AOT, and metadata for PyInstaller to embed
-  alongside the portable Python runtime.
+  vendored dependencies, Gram AOT, validated Bagron library packages, and
+  metadata for PyInstaller to embed alongside the portable Python runtime.
 - Added post-packaging installation smoke tests for Linux and Windows that
   invoke the built installer, check `bagron --version`, and compile a `.bg`
   example from the installed compiler.
@@ -75,5 +80,4 @@
 
 ## Release
 
-- Pending: Bagron `1.1.3` has not been released. Record the release date only
-  after the packaged installers and verification tests pass.
+- Released as Bagron `1.1.3` on November 6, 2026.

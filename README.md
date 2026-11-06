@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.4-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.1.3-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -211,7 +211,7 @@ bagron --uninstall
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.4-Setup.exe` y ejecutarlo directamente. La release solo publica
+`Bagron-1.1.3-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
 El instalador compilado incluye un runtime portable de Python 3.14 con
@@ -234,15 +234,15 @@ los proyectos que usen `net` con HTTPS necesitan `libcurl.so.4`. Puede ejecutars
 release publicado:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.3/install.sh | bash
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.4-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+`Bagron-1.1.3-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
 
 ```bash
-chmod +x Bagron-1.1.4-linux-x86_64
-./Bagron-1.1.4-linux-x86_64
+chmod +x Bagron-1.1.3-linux-x86_64
+./Bagron-1.1.3-linux-x86_64
 ```
 
 La release solo publica este ejecutable Linux. El instalador coloca los
@@ -267,7 +267,7 @@ bagron --update
 
 ## Instaladores preconstruidos
 
-Los instaladores de la release 1.1.4 incorporan los componentes preparados
+Los instaladores de la release 1.1.3 incorporan los componentes preparados
 por GitHub Actions para cada plataforma: fuentes del compilador, Python 3.14
 portable, `vnma`, dependencias locales (Gram y `llvmlite`) y la biblioteca
 Gram AOT junto con su manifiesto. Su instalación no necesitará descargar
@@ -284,7 +284,7 @@ antes de restaurarlas; esto no modifica el Python global del usuario.
 **Importante:** instalar sin Internet no equivale a compilar sin herramientas
 externas. Para generar y enlazar ejecutables nativos siguen siendo necesarias
 las herramientas LLVM/Clang/LLD correspondientes; Android necesita su NDK.
-Las releases anteriores a 1.1.4 conservan el mecanismo anterior.
+Las releases anteriores a 1.1.3 conservan el mecanismo anterior.
 
 ## Extensión para VS Code
 
