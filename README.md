@@ -254,6 +254,12 @@ Gram ni ejecutar `vnma install` o reconstruir el parser; el instalador
 comprobará el bundle antes de crear los lanzadores. La ruta de instalación
 desde fuentes seguirá disponible para desarrolladores.
 
+El empaquetado omite alias duplicados del runtime: Linux reconstruye los
+enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
+crea enlaces físicos cuando el sistema de archivos lo admite (o conserva
+copias independientes como alternativa). Se verifican las rutas del manifiesto
+antes de restaurarlas; esto no modifica el Python global del usuario.
+
 **Importante:** instalar sin Internet no equivale a compilar sin herramientas
 externas. Para generar y enlazar ejecutables nativos siguen siendo necesarias
 las herramientas LLVM/Clang/LLD correspondientes; Android necesita su NDK.
