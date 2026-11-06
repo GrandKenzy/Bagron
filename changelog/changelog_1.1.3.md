@@ -1,8 +1,5 @@
 # Changelog 1.1.3
 
-> Draft for the next release. The entries below describe planned changes and
-> must be verified and rewritten in the past tense before publication.
-
 ## Release Workflow
 
 - Prepare platform-specific release environments for Linux x86-64 and Windows
