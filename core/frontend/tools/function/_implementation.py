@@ -1151,19 +1151,41 @@ def _validate_return(
         )
         return
 
-    if (
-        value_info.address_origin == 'local'
-        and value_info.type_spec.pointer_level > 0
-        and not symbol.is_unsafe
-    ):
+    if _contains_escaping_pointer(value_info):
         compiler.error(
-            f'La funcion {symbol.name} no puede retornar la direccion de una '
-            'variable local'
+            f'La funcion {symbol.name} no puede retornar un valor que contenga '
+            'un puntero de procedencia local o desconocida'
         )
         return
 
     symbol.return_values.append(value_info)
     symbol.return_node = value_node
+
+
+def _pointer_origins(value_info: object) -> set[str]:
+    """Collect pointer provenance through aggregate and array value trees."""
+    origins: set[str] = set()
+    type_spec = getattr(value_info, 'type_spec', None)
+    if type_spec is not None and getattr(type_spec, 'pointer_level', 0) > 0:
+        origin = getattr(value_info, 'address_origin', None)
+        if origin is not None:
+            origins.add(origin)
+    for item in getattr(value_info, 'items', ()):
+        origins.update(_pointer_origins(item))
+    return origins
+
+
+def _contains_escaping_pointer(value_info: object) -> bool:
+    """Reject non-global addresses hidden inside returned aggregate values.
+
+    A struct/class is returned by value, so checking only the outer
+    ``ValueInfo`` misses a pointer field such as ``Holder{.ptr = $local}``.
+    ``items`` preserves the same field/array tree used by aggregate literals.
+    A null pointer has no origin and is harmless; an unknown raw pointer is
+    rejected because Bagron cannot prove that its lifetime outlives the
+    returned value.
+    """
+    return any(origin != 'global' for origin in _pointer_origins(value_info))
 
 
 def _for_binding(
@@ -1289,6 +1311,7 @@ def _for_binding(
         if len(range_values) != 3:
             compiler.error(f'El rango de {name} debe tener start, end y step')
             return None
+        range_literals: list[int | None] = []
         for index, value_node in enumerate(range_values):
             try:
                 value_info = infer_value(
@@ -1299,7 +1322,13 @@ def _for_binding(
                 )
             except (UnsupportedExpressionError, ValueResolutionError) as error:
                 compiler.error(f'El rango de {name} es invalido: {error}')
+                range_literals.append(None)
                 continue
+            range_literals.append(
+                value_info.value
+                if value_info.is_literal and isinstance(value_info.value, int)
+                else None
+            )
             if not is_compatible(type_spec, value_info):
                 compiler.error(
                     f'El valor {index + 1} del rango de {name} no coincide con '
@@ -1333,6 +1362,15 @@ def _for_binding(
         iterator.for_array_source = array_info.identifier
         iterator.for_array_path = array_info.address_path
         iterator.for_array_length = length
+    elif (
+        len(range_literals) == 3
+        and all(value is not None for value in range_literals)
+        and range_literals[0] >= 0
+        and range_literals[1] >= range_literals[0]
+        and range_literals[2] > 0
+    ):
+        iterator.for_range_upper_bound = range_literals[1]
+        iterator.for_range_lower_bound = range_literals[0]
     scope.add(name, iterator)
     symbol.loop_iterators[name] = type_spec
     return name
@@ -1727,6 +1765,21 @@ def _validate_assignment(
             f'{target_info.type_spec.canonical_name}'
         )
         return
+
+    # A global outlives the current stack frame.  Never let a local address
+    # escape into it, even from ``@unsafe`` code.  Unknown raw pointers remain
+    # available to explicitly unsafe code, where their lifetime is a declared
+    # caller responsibility; safe code must prove a global origin instead.
+    if binding is not None and getattr(binding, 'scope_kind', None) == 'global':
+        pointer_origins = _pointer_origins(value_info)
+        if 'local' in pointer_origins or (
+            'unknown' in pointer_origins and not symbol.is_unsafe
+        ):
+            compiler.error(
+                f'La asignacion de {name} no puede escapar un puntero local o '
+                'de procedencia desconocida a almacenamiento global'
+            )
+            return
 
     if is_buffer_type(target_info.type_spec) or is_buffer_type(value_info.type_spec):
         compiler.error(

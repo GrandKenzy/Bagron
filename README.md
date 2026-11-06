@@ -1,7 +1,7 @@
 # Bagron
 
 <p align="center">
-  <img src="badge/header.gif"/>
+  <img src="badge/banner.jpeg" alt="Bagron Programming Language" />
 </p>
 
 <p align="center">
@@ -37,18 +37,22 @@ La explicación completa del flujo y de los límites de seguridad está en
 ## Estado actual
 
 La ruta principal de análisis estático, emisión de LLVM IR y generación de
-artefactos nativos para los targets implementados está disponible. La
-compilación requiere la biblioteca AOT/FFI de Gram configurada; el frontend no
-activa silenciosamente un parser alternativo si falta.
+artefactos nativos para los targets implementados está disponible. Bagron
+también puede generar ejecutables ELF para Android mediante el NDK, en los
+targets `aarch64-linux-android<api>` y `x86_64-linux-android<api>`.
+
+La compilación requiere la biblioteca AOT/FFI de Gram configurada; el frontend
+no activa silenciosamente un parser alternativo si falta.
 
 El comportamiento estricto forma parte del flujo normal. La CLI actual no
 expone un modo global `strict`; `@unsafe` es una excepción localizada por
 función y no elimina las reglas de tipos, ABI ni de `main`.
 
-Las pruebas existentes se conservan provisionalmente bajo `tests/light/` y
-`tests/aggressive/`, con los archivos de soporte de integración en
-`tests/aggressive/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>` y serán
-reemplazadas por una batería moderna y más agresiva.
+Las pruebas rápidas viven en `tests/light/` y las pruebas costosas o de
+backend en `tests/aggressive/`, con los archivos de soporte de integración en
+`tests/aggressive/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>`;
+`vnma test tests/light` es la comprobación habitual y
+`vnma test tests/aggressive` cubre los casos integrales.
 
 ---
 
@@ -119,6 +123,14 @@ reemplazadas por una batería moderna y más agresiva.
   * Bucles condicionales: `while condicion:`.
   * Iteración numérica tipada con `ran` y recorrido de arrays con `for i: int32 in values:`.
 
+* **Targets multiplataforma:** Las cláusulas `System`, `Arch` y `ARCHB`
+  distinguen el sistema objetivo, la arquitectura normalizada y su ancho en
+  bits. Android requiere un triple LLVM explícito y un Android NDK disponible;
+  Bagron genera ELF nativo, no APK.
+
+* **CLI verificable:** `bagron --version` muestra la versión canónica del
+  compilador y `bagron --help` lista las operaciones disponibles.
+
 * **Herramientas del proyecto:** El compilador usa Gram para el parseo y vnma para gestionar dependencias y binarios.
 
 ## Seguridad y límites
@@ -147,6 +159,10 @@ seguridad.
   `Boot "multiboot2"` añade la ISO `.iso`; requiere `grub-mkrescue` y
   `xorriso` en `PATH` o instalados dentro de WSL. `Boot "none"` deja la
   imagen plana sin empaquetarla.
+* **Android NDK (opcional):** Necesario solo para targets Android. Define
+  `ANDROID_NDK_HOME` o `ANDROID_NDK_ROOT` apuntando al NDK instalado; Bagron
+  resuelve automáticamente `clang`, `ld.lld` y el sysroot de la API indicada
+  por el triple.
 
 ---
 
@@ -159,6 +175,12 @@ El compilador se apoya en dos herramientas del mismo ecosistema:
   * Instala desde PyPI, rutas locales (monorepos) y repositorios Git.
   * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios, para builds reproducibles.
   * Instalación: `pip install vnma`.
+
+Para comprobar una instalación de Bagron:
+
+```powershell
+bagron --version
+```
 
 ## Instalación
 
@@ -228,6 +250,13 @@ El repositorio incluye el paquete [`bagron-language-support.vsix`](tools/vscode/
 Consulta la [guía de instalación del VSIX](docs/es/01-Arquitectura/03-instalacion-vscode.md)
 para instalarlo manualmente o mediante `bagron --vscode install`.
 
+## Android
+
+El soporte Android se orienta primero a ejecutables nativos para pruebas en
+dispositivo o emulador. Consulta la [guía del entorno Android](docs/es/01-Arquitectura/05-android.md)
+para preparar el NDK, seleccionar `aarch64-linux-android35` o
+`x86_64-linux-android35`, verificar el ELF y desplegarlo con `adb`.
+
 ---
 
 ## Licencia
@@ -236,6 +265,6 @@ Este proyecto está bajo la Licencia Apache 2.0 con el rider de no-derivados y u
 Consulta el archivo `LICENSE` para más detalles.
 
 <p align="center">
-  <img src="badge/footer.jpeg"/>
+  <img src="badge/footer.jpeg" alt="Bagron, a Discentra Community project" />
 </p>
 

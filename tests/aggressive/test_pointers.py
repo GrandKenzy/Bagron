@@ -125,6 +125,34 @@ class PointerAndAddressTests(unittest.TestCase):
                 executable=False,
             )
 
+        with self.assertRaisesRegex(CompilationError, 'procedencia local'):
+            self._compile(
+                'struct Holder:\n'
+                '    pointer *: int32\n'
+                'func make() Holder:\n'
+                '    value: int32 = 41\n'
+                '    return Holder{ .pointer = $value }\n'
+                'func main() int32:\n'
+                '    item: Holder = make()\n'
+                '    return (item.pointer)\n',
+                executable=False,
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'almacenamiento global'):
+            self._compile(
+                'struct Holder:\n'
+                '    pointer *: int32\n'
+                'saved: Holder = Holder{ .pointer = Null }\n'
+                'func store() void:\n'
+                '    value: int32 = 41\n'
+                '    saved = Holder{ .pointer = $value }\n'
+                '    return\n'
+                'func main() int32:\n'
+                '    store()\n'
+                '    return (saved.pointer)\n',
+                executable=False,
+            )
+
     def test_ampersand_remains_bitwise_and(self):
         artifacts = self._compile(
             'func main() int32:\n'
@@ -137,6 +165,40 @@ class PointerAndAddressTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(2, result.returncode)
+
+    def test_buffer_concatenation_guards_usize_overflow_before_malloc(self):
+        module_path = self._compile(
+            'func main() int32:\n'
+            '    left: buffer[2] = 0\n'
+            '    right: buffer[3] = 0\n'
+            '    combined: buffer[] = left + right\n'
+            '    Del combined\n'
+            '    Del left\n'
+            '    Del right\n'
+            '    return 0\n',
+            executable=False,
+        )
+        module = Path(module_path).read_text(encoding='utf-8')
+        self.assertIn('buffer.concat.overflow', module)
+        self.assertRegex(module, r'icmp ugt i64 .*buffer.remaining')
+        self.assertIn('call void @"llvm.trap"()', module)
+
+    def test_static_array_extent_overflow_is_rejected_before_llvm(self):
+        with self.assertRaisesRegex(CompilationError, 'array estatico'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: byte[9223372036854775808]\n'
+                '    return 0\n',
+                executable=False,
+            )
+
+        with self.assertRaisesRegex(CompilationError, 'extension total'):
+            self._compile(
+                'func main() int32:\n'
+                '    data: byte[4294967296][4294967296]\n'
+                '    return 0\n',
+                executable=False,
+            )
 
 
 if __name__ == '__main__':

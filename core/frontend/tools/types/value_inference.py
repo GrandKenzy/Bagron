@@ -29,6 +29,23 @@ from .compatibility import (
 from .postfix import (
     _address_type, _deref_value, _infer_postfix, _unwrap_value,
 )
+
+
+def _affine_index_metadata(
+    left: ValueInfo,
+    right: ValueInfo,
+    operator: str,
+) -> tuple[str | None, int]:
+    """Preserve ``index +/- literal`` metadata for safe array indexing."""
+    if operator not in {'PLUS', 'MINUS'}:
+        return None, 0
+    if left.identifier is not None and right.is_literal and isinstance(right.value, int):
+        offset = right.value if operator == 'PLUS' else -right.value
+        return left.identifier, offset
+    if operator == 'PLUS' and right.identifier is not None and left.is_literal:
+        if isinstance(left.value, int):
+            return right.identifier, left.value
+    return None, 0
 from .calls import _infer_magic_operator
 
 
@@ -547,7 +564,16 @@ def infer_value(
                 is_literal=True,
                 value=_wrap_unsigned_literal(result_type, value),
             )
-        return ValueInfo(result_type)
+        range_base, range_offset = _affine_index_metadata(
+            left,
+            right,
+            operator,
+        )
+        return ValueInfo(
+            result_type,
+            range_base=range_base,
+            range_offset=range_offset,
+        )
 
     if isinstance(current, gast.ASTRef) and current.name in ('POSTFIX_EXPR', 'MEMBER_ACCESS_TARGET'):
         return _infer_postfix(
@@ -661,6 +687,7 @@ def infer_value(
             type_spec=symbol.type_spec,
             identifier=str(value),
             value=(initialized.value if constant_literal else symbol.value),
+            items=(getattr(initialized, 'items', ()) if initialized is not None else ()),
             is_literal=constant_literal,
             is_lvalue=True,
             address_origin=(

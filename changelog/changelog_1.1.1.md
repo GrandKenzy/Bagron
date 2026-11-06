@@ -37,3 +37,14 @@
 - Removed forced inlining from stateful I/O, formatting, and clock bodies;
   only small pure predicates and thin forwarding wrappers remain explicitly
   inline in `standard`.
+
+## Security
+
+- Added a `usize` overflow guard before allocating and copying a concatenated
+  `buffer`, trapping instead of allowing the wrapped size to cause an
+  undersized allocation.
+- Rejected local or unknown pointer provenance hidden inside returned
+  aggregates, and prevented local addresses from escaping into global
+  aggregate storage.
+- Safe functions can now index fixed-size arrays with an unsigned index proven
+  below a literal bound from `while` conditions or numeric `for` ranges.

@@ -77,23 +77,45 @@ def _validate_array_index(
 ) -> None:
     if _unsafe_context(function):
         return
+    length = (
+        value.type_spec.array_lengths[0]
+        if value.type_spec.array_lengths
+        else None
+    )
     if not index.is_literal or not isinstance(index.value, int):
+        index_base = index.range_base or index.identifier
+        index_offset = index.range_offset
+
+        def fact_proves_index(fact: object) -> bool:
+            if getattr(fact, 'index', None) != index_base:
+                return False
+            source = getattr(fact, 'source', None)
+            same_source = (
+                source == value.identifier
+                and getattr(fact, 'source_path', ()) == value.address_path
+            )
+            if not same_source and source is not None:
+                return False
+            if index_offset == 0 and same_source:
+                return True
+            upper_bound = getattr(fact, 'upper_bound', None)
+            if upper_bound is None or length is None:
+                return False
+            lower_bound = getattr(fact, 'lower_bound', 0)
+            return (
+                lower_bound + index_offset >= 0
+                and upper_bound + index_offset <= length
+            )
+
         range_fact = next(
             (
                 fact for fact in getattr(function, 'range_facts', ())
-                if getattr(fact, 'index', None) == index.identifier
-                and getattr(fact, 'source', None) == value.identifier
-                and getattr(fact, 'source_path', ()) == value.address_path
+                if fact_proves_index(fact)
             ),
             None,
         )
         if range_fact is not None:
             return
-        length = (
-            value.type_spec.array_lengths[0]
-            if value.type_spec.array_lengths
-            else None
-        )
         proven_same_array = (
             index.known_index_source is not None
             and index.known_index_source == value.identifier
@@ -376,6 +398,31 @@ def resolve_type(
             'de una funcion'
         )
     array_lengths = tuple(_constant_dimension_value(suffix) for suffix in suffixes)
+    # Static arrays are lowered to LLVM array types and indexed with the
+    # target-sized integer.  Reject dimensions/extents that cannot be
+    # represented there instead of letting llvmlite fail later with an
+    # internal overflow or malformed IR.  Dynamic ``buffer[N]`` keeps its
+    # separate full-``usize`` capacity rule below.
+    if base_name != 'buffer' and array_lengths:
+        if pointer_size not in {4, 8}:
+            raise TypeResolutionError(
+                f'El tamano de puntero del target no es valido: {pointer_size} bytes'
+            )
+        max_static_extent = (1 << (pointer_size * 8 - 1)) - 1
+        static_extent = 1
+        for length in array_lengths:
+            if length is not None and length > max_static_extent:
+                raise TypeResolutionError(
+                    'El tamano de un array estatico excede el limite '
+                    f'representable del target ({max_static_extent})'
+                )
+            if length is not None:
+                static_extent *= length
+                if static_extent > max_static_extent:
+                    raise TypeResolutionError(
+                        'La extension total del array estatico excede el '
+                        f'limite representable del target ({max_static_extent})'
+                    )
     for length in array_lengths:
         if length is not None and length < 1:
             raise TypeResolutionError(

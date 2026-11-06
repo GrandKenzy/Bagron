@@ -10,11 +10,13 @@ from gram import ast as gast
 
 @dataclass(frozen=True)
 class SafeRangeFact:
-    """A local proof that ``index`` is below ``source``'s length."""
+    """A local proof that an index stays inside an array-compatible range."""
 
     index: str
-    source: str
+    source: str | None
     source_path: tuple[tuple[str, object], ...] = ()
+    lower_bound: int = 0
+    upper_bound: int | None = None
 
 
 def _children(node: object) -> list[object]:
@@ -95,6 +97,29 @@ def _less_bound(node: object) -> tuple[str, str] | None:
     return None
 
 
+def _literal_integer(node: object) -> int | None:
+    current = _unwrap(node)
+    if _token_kind(current) == 'NUMBER':
+        value = _token_value(current)
+        return value if isinstance(value, int) else None
+    return None
+
+
+def _less_literal_bound(node: object) -> tuple[str, int] | None:
+    """Find ``unsigned_index < integer_literal`` in a condition."""
+    current = _unwrap(node)
+    if type(current).__name__ == 'ASTBinaryOp':
+        operator = _operator(current)
+        if operator == 'LESS':
+            left = _identifier(current.left)
+            right = _literal_integer(current.right)
+            if left is not None and right is not None:
+                return left, right
+        if operator in {'AND_LOGIC', 'LOGIC_AND'}:
+            return _less_literal_bound(current.left) or _less_literal_bound(current.right)
+    return None
+
+
 def _array_source_for_length(function: object, length_name: str):
     parameters = getattr(getattr(function, 'signature', None), 'parameters', ())
     parameter = next(
@@ -122,15 +147,24 @@ def _array_source_for_length(function: object, length_name: str):
 
 
 def fact_from_condition(function: object, condition: object) -> SafeRangeFact | None:
-    """Build a fact from a direct array/``Len_t`` comparison."""
+    """Build a fact from a direct ``Len_t`` or literal-bound comparison."""
     bound = _less_bound(condition)
-    if bound is None:
+    literal_bound = _less_literal_bound(condition)
+    if bound is not None:
+        index_name, length_name = bound
+        source_name = _array_source_for_length(function, length_name)
+        if source_name is None:
+            return None
+        index = getattr(function, 'local_variables', {}).get(index_name)
+        upper_bound = None
+    elif literal_bound is not None:
+        index_name, upper_bound = literal_bound
+        if upper_bound < 0:
+            return None
+        source_name = None
+        index = getattr(function, 'local_variables', {}).get(index_name)
+    else:
         return None
-    index_name, length_name = bound
-    source_name = _array_source_for_length(function, length_name)
-    if source_name is None:
-        return None
-    index = getattr(function, 'local_variables', {}).get(index_name)
     type_spec = getattr(index, 'type_spec', None)
     if type_spec is None or (
         type_spec.pointer_level
@@ -138,7 +172,12 @@ def fact_from_condition(function: object, condition: object) -> SafeRangeFact | 
         or type_spec.name not in UNSIGNED_INTEGER_TYPES
     ):
         return None
-    return SafeRangeFact(index_name, source_name)
+    return SafeRangeFact(
+        index_name,
+        source_name,
+        lower_bound=0,
+        upper_bound=upper_bound,
+    )
 
 
 def _walk(node: object):
@@ -163,7 +202,9 @@ def _is_index_access(node: object, fact: SafeRangeFact) -> bool:
     if not isinstance(node, gast.ASTRef) or node.name != 'POSTFIX_EXPR':
         return False
     children = _children(node)
-    if not children or _identifier(children[0]) != fact.source:
+    if not children:
+        return False
+    if fact.source is not None and _identifier(children[0]) != fact.source:
         return False
     for suffix in _postfix_suffixes(node):
         if not isinstance(suffix, gast.ASTRef) or suffix.name != 'INDEX_ACCESS':
@@ -214,11 +255,20 @@ def body_preserves_range(body: object, fact: SafeRangeFact) -> bool:
 def for_fact(iterator: object) -> SafeRangeFact | None:
     source = getattr(iterator, 'for_array_source', None)
     if source is None:
-        return None
+        upper_bound = getattr(iterator, 'for_range_upper_bound', None)
+        if upper_bound is None:
+            return None
+        return SafeRangeFact(
+            str(getattr(iterator, 'name', '')),
+            None,
+            lower_bound=getattr(iterator, 'for_range_lower_bound', 0),
+            upper_bound=upper_bound,
+        )
     return SafeRangeFact(
         str(getattr(iterator, 'name', '')),
         str(source),
         getattr(iterator, 'for_array_path', ()),
+        upper_bound=getattr(iterator, 'for_array_length', None),
     )
 
 

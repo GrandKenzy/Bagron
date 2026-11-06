@@ -175,6 +175,9 @@ class ValueInfo:
     known_index_source: str | None = None
     known_index_path: tuple[tuple[str, object], ...] = ()
     known_index_length: int | None = None
+    # Affine metadata for safe fixed-array indexing, such as ``index - 2``.
+    range_base: str | None = None
+    range_offset: int = 0
     # Safe ``unique`` calls require a compiler-proven storage identity. The
     # value is intentionally symbolic; no runtime ownership object is made.
     region_origin: str | None = None

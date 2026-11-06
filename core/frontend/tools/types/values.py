@@ -75,6 +75,18 @@ def _member_value(
         raise ValueResolutionError(
             f'El miembro {member or "<anonimo>"} no existe en {aggregate.name}'
         )
+    member_items: tuple[ValueInfo, ...] = ()
+    if value.items:
+        try:
+            field_index = next(
+                index
+                for index, candidate in enumerate(aggregate.all_fields)
+                if candidate.name == member
+            )
+            selected = value.items[field_index]
+            member_items = getattr(selected, 'items', ())
+        except (StopIteration, IndexError):
+            member_items = ()
     declaring_type = getattr(field, 'declaring_type', None)
     active_type = getattr(current_function, 'owner_type', None)
     if (
@@ -88,6 +100,7 @@ def _member_value(
         )
     return ValueInfo(
         type_spec=field.type_spec,
+        items=member_items,
         # A member of a temporary aggregate literal is readable but has no
         # source-level storage that can be assigned to or addressed.
         is_lvalue=value.is_lvalue,

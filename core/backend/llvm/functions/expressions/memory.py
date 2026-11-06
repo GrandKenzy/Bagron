@@ -415,6 +415,35 @@ class MemoryExpressionMixin:
         left_data, left_length = self._buffer_data_and_length(left, builder)
         right_data, right_length = self._buffer_data_and_length(right, builder)
         size_type = self._size_integer_type()
+
+        # CUIDADO: ``usize`` arithmetic wraps in LLVM.  Without this guard a
+        # concatenation near the address-space limit could allocate the
+        # wrapped size and then copy the original lengths into a smaller
+        # object.
+        function = builder.function
+        if function is None:
+            raise FunctionEmissionError(
+                'La concatenacion de buffer requiere una funcion'
+            )
+        block_id = len(function.blocks)
+        valid_size_block = function.append_basic_block(
+            name=f'buffer.concat.size.valid.{block_id}'
+        )
+        invalid_size_block = function.append_basic_block(
+            name=f'buffer.concat.size.invalid.{block_id}'
+        )
+        maximum = ir.Constant(size_type, (1 << size_type.width) - 1)
+        remaining = builder.sub(maximum, left_length, name='buffer.remaining')
+        overflow = builder.icmp_unsigned(
+            '>',
+            right_length,
+            remaining,
+            name='buffer.concat.overflow',
+        )
+        builder.cbranch(overflow, invalid_size_block, valid_size_block)
+        invalid_size_builder = ir.IRBuilder(invalid_size_block)
+        self._emit_trap(invalid_size_builder)
+        builder.position_at_end(valid_size_block)
         total = builder.add(left_length, right_length, name='buffer.total')
         byte_pointer = ir.IntType(8).as_pointer()
         malloc = self._runtime_function(
@@ -428,12 +457,6 @@ class MemoryExpressionMixin:
             data,
             ir.Constant(byte_pointer, None),
         )
-        function = builder.function
-        if function is None:
-            raise FunctionEmissionError(
-                'La concatenacion de buffer requiere una funcion'
-            )
-        block_id = len(function.blocks)
         ok_block = function.append_basic_block(
             name=f'buffer.concat.ok.{block_id}'
         )
