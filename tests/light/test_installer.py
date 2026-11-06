@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -451,6 +452,19 @@ class InstallerTests(unittest.TestCase):
             8,
             sum(name.startswith('changelog_') for name in names),
         )
+
+    def test_bundled_vscode_extension_is_a_valid_vsix(self):
+        vsix = Path(__file__).resolve().parents[2] / 'tools' / 'vscode' / 'bagron-language-support.vsix'
+        with zipfile.ZipFile(vsix) as archive:
+            names = set(archive.namelist())
+            package = json.loads(archive.read('extension/package.json'))
+
+        self.assertIn('extension.vsixmanifest', names)
+        self.assertIn('extension/extension.js', names)
+        self.assertIn('extension/syntaxes/bagron.tmLanguage.json', names)
+        self.assertIn('extension/snippets/snippets.json', names)
+        self.assertEqual('./extension.js', package['main'])
+        self.assertEqual('bagron-language-support', package['name'])
 
 
 if __name__ == '__main__':

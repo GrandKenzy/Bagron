@@ -23,6 +23,8 @@ class PrebuiltReleaseTests(unittest.TestCase):
             f"BAGRON_VERSION = {BAGRON_VERSION!r}\n", encoding='utf-8'
         )
         (root / 'tools').mkdir()
+        (root / 'tools' / 'vscode').mkdir()
+        (root / 'tools' / 'vscode' / 'bagron-language-support.vsix').write_bytes(b'fake-vsix')
         (root / 'vendor' / 'gram').mkdir(parents=True)
         (root / 'vendor' / 'llvmlite').mkdir()
         (root / 'vendor' / 'gram' / '.git').mkdir()
@@ -63,6 +65,9 @@ class PrebuiltReleaseTests(unittest.TestCase):
             self.assertTrue((payload / 'vendor' / 'gram').is_dir())
             self.assertTrue((payload / 'vendor' / 'llvmlite').is_dir())
             self.assertTrue((payload / 'main.py').is_file())
+            self.assertTrue(
+                (payload / 'tools' / 'vscode' / 'bagron-language-support.vsix').is_file()
+            )
             self.assertFalse((payload / 'vendor' / 'gram' / '.git').exists())
             aot = payload / 'build' / 'aot' / info['aot_library']
             self.assertEqual(hashlib.sha256(aot.read_bytes()).hexdigest(),

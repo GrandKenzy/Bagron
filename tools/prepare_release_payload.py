@@ -29,6 +29,7 @@ COMPILER_FILES = (
     'vnma.toml',
 )
 OPTIONAL_FILES = ('vnma.lock', 'vnma.toml.example')
+VSIX_RELATIVE_PATH = Path('tools/vscode/bagron-language-support.vsix')
 
 
 def _aot_name(platform_name: str) -> str:
@@ -62,6 +63,7 @@ def prepare_payload(root: Path, destination: Path, *, platform_name: str) -> Pat
     manifest = library.parent / 'gram_parser_manifest.json'
     mandatory = [
         root / 'core', root / 'tools', root / 'main.py',
+        root / VSIX_RELATIVE_PATH,
         root / 'vendor' / 'gram', root / 'vendor' / 'llvmlite',
         root / 'vnma.toml', _runtime_path(root, platform_name),
         library, manifest,

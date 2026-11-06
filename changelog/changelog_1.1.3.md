@@ -35,6 +35,8 @@
 - Added `bagron --uninstall` cleanup for managed launchers, PATH entries and
   the complete Bagron installation, including deferred cleanup on Windows
   when the portable runtime is still open.
+- Release payloads now require and carry the installable VS Code extension so
+  `bagron --vscode install` works from the compiled distribution.
 - Documented that offline installation still requires an external Clang/LLD
   toolchain (and Android NDK when targeting Android) for native compilation.
 
