@@ -27,3 +27,11 @@ flags NetworkBits uint8:
 ```
 
 `@order_lsb` no existe: era un alias redundante del valor predeterminado.
+
+También puedes crear un valor de flags sin depender de los valores declarativos
+del tipo. El literal designado empieza con todos los bits en cero y solo coloca
+los campos escritos:
+
+```bg
+active: Permissions = Permissions{ .write = 1 }
+```

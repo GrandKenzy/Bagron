@@ -8,6 +8,7 @@ from core.backend.llvm.types import (
     LLVMTypeRegistry,
     constant_value,
     default_value,
+    zero_value,
     value_type,
 )
 from core.frontend.objects import ValueInfo, Variable
@@ -47,10 +48,10 @@ class GlobalEmitter:
                 f'El agregado {spec.canonical_name} requiere un registro de tipos'
             )
         layout = self.type_registry.layout(spec)
-        if layout is None or layout.symbol.kind != 'struct':
+        if layout is None or layout.symbol.kind == 'mold':
             raise GlobalEmissionError(
                 f'El agregado {spec.canonical_name} no admite un inicializador '
-                'frontend global'
+                'global de este tipo'
             )
         if not value.items:
             if not value.is_literal:
@@ -58,14 +59,41 @@ class GlobalEmitter:
                     f'El inicializador frontend de {spec.name} debe ser constante '
                     'en una variable global'
                 )
-            return self.type_registry.default_constant(spec)
+            return zero_value(spec, value, self.type_registry)
         if len(value.items) != len(layout.symbol.all_fields):
             raise GlobalEmissionError(
                 f'El agregado {spec.canonical_name} no tiene todos sus campos'
             )
 
+        if layout.symbol.kind == 'flags':
+            if not isinstance(layout.backing_type, ir.IntType):
+                raise GlobalEmissionError(f'El flags {spec.name} no tiene entero base')
+            bits = 0
+            for field, field_value in zip(layout.symbol.fields, value.items):
+                if field_value.value is None and not field_value.items:
+                    continue
+                if not field_value.is_literal or field.bit_offset is None:
+                    raise GlobalEmissionError(
+                        f'El campo {spec.name}.{field.name} debe ser constante'
+                    )
+                width = field.type_spec.bit_width or (1 if field.type_spec.name == 'bool' else 0)
+                bits |= (int(field_value.value) & ((1 << width) - 1)) << field.bit_offset
+            payload = ir.Constant(
+                layout.payload_type,
+                [ir.Constant(layout.backing_type, bits)],
+            )
+            target_type = value_type(spec, value, self.type_registry)
+            outer_values = []
+            if layout.payload_index:
+                outer_values.append(ir.Constant(target_type.elements[0], None))
+            outer_values.append(payload)
+            return ir.Constant(target_type, outer_values)
+
         field_values = []
         for field, field_value in zip(layout.symbol.all_fields, value.items):
+            if field_value.value is None and not field_value.items:
+                field_values.append(zero_value(field.type_spec, field_value, self.type_registry))
+                continue
             if field.type_spec.name == 'chain':
                 if not field_value.is_literal or not isinstance(field_value.value, str):
                     raise GlobalEmissionError(
@@ -340,11 +368,8 @@ class GlobalEmitter:
                 initializer = self._address_initializer(symbol, value)
             elif (
                 self.type_registry is not None
-                and getattr(
-                    self.type_registry.aggregate(symbol.type_spec),
-                    'initializer_name',
-                    None,
-                ) == '__frontend__'
+                and self.type_registry.layout(symbol.type_spec) is not None
+                and value.items
             ):
                 initializer = self._aggregate_constant(symbol.type_spec, value)
             else:

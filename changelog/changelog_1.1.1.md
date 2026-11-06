@@ -12,3 +12,14 @@
   still require an explicit `return`, with no implicit return introduced.
 - Rebuilt the Gram AOT parser so its grammar identifier matches the updated
   frontend grammar.
+
+## Aggregate Literals
+
+- Added designated aggregate literals for `struct`, `mold`, and `flags`, such
+  as `Point{ .x = 20, .y = 40 }`.
+- Struct and flags literals zero omitted fields; a mold literal requires
+  exactly one active member.
+- Preserved postfix reads on temporary literals while rejecting assignments and
+  address-taking through a temporary member.
+- Local designated aggregate initialization now skips the redundant default
+  store before writing the completed literal value.

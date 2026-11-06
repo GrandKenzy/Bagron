@@ -477,10 +477,75 @@ class TypeSemanticTests(unittest.TestCase):
             'func main() int32:\n'
             '    return 0\n'
         )
-
         self.assertEqual('char[10]', compiler.storage.namespace['nombre'].type)
         self.assertEqual('byte[6]', compiler.storage.namespace['bytes'].type)
         self.assertTrue(compiler.storage.namespace['mensaje'].value_is_const)
+
+    def test_designated_aggregate_literals_initialize_structs_flags_and_molds(self):
+        self.compile_source(
+            'struct Punto:\n'
+            '    x: int32\n'
+            '    y: int32\n'
+            'mold Vista:\n'
+            '    entero: int32\n'
+            '    bytes: byte[4]\n'
+            'flags Estado uint8:\n'
+            '    activo: uBint<1> = 0\n'
+            '    modo: uBint<2> = 0\n'
+            '    reservado: uBint<5> = 0\n'
+            'func main() int32:\n'
+            '    base: int32 = 20\n'
+            '    punto: Punto = Punto{ .y = 7, .x = base }\n'
+            '    vista: Vista = Vista{ .entero = punto.x }\n'
+            '    estado: Estado = Estado{ .modo = 3 }\n'
+            '    if vista.entero != 20:\n'
+            '        return 1\n'
+            '    if punto.y != 7:\n'
+            '        return 2\n'
+            '    if estado.modo != 3:\n'
+            '        return 3\n'
+            '    return 0\n',
+            executable=True,
+        )
+
+    def test_designated_aggregate_literals_reject_invalid_members_and_temporaries(self):
+        source = (
+            'struct Punto:\n'
+            '    x: int32\n'
+            'mold Vista:\n'
+            '    entero: int32\n'
+            'func main() int32:\n'
+        )
+        with self.assertRaisesRegex(CompilationError, 'no existe'):
+            self.compile_source(source + '    p: Punto = Punto{ .y = 1 }\n    return 0\n')
+        with self.assertRaisesRegex(CompilationError, 'repetido'):
+            self.compile_source(source + '    p: Punto = Punto{ .x = 1, .x = 2 }\n    return 0\n')
+        with self.assertRaisesRegex(CompilationError, 'exactamente un campo'):
+            self.compile_source(source + '    v: Vista = Vista{}\n    return 0\n')
+        with self.assertRaisesRegex(CompilationError, 'destino no es direccionable'):
+            self.compile_source(source + '    Punto{ .x = 1 }.x = 2\n    return 0\n')
+
+    def test_designated_struct_and_flags_literals_are_static_global_initializers(self):
+        self.compile_source(
+            'struct Punto:\n'
+            '    x: int32\n'
+            '    y: int32\n'
+            'flags Estado uint8:\n'
+            '    activo: uBint<1> = 1\n'
+            '    modo: uBint<2> = 2\n'
+            '    reservado: uBint<5> = 0\n'
+            'point: Punto = Punto{ .x = 4 }\n'
+            'state: Estado = Estado{ .modo = 3 }\n'
+            'func main() int32:\n'
+            '    if point.x != 4:\n'
+            '        return 1\n'
+            '    if point.y != 0:\n'
+            '        return 2\n'
+            '    if state.modo != 3:\n'
+            '        return 3\n'
+            '    return 0\n',
+            executable=True,
+        )
 
     def test_rejects_invalid_char_byte_and_chain_declarations(self):
         with self.assertRaisesRegex(CompilationError, 'no coincide'):

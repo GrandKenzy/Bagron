@@ -88,7 +88,9 @@ def _member_value(
         )
     return ValueInfo(
         type_spec=field.type_spec,
-        is_lvalue=True,
+        # A member of a temporary aggregate literal is readable but has no
+        # source-level storage that can be assigned to or addressed.
+        is_lvalue=value.is_lvalue,
         identifier=value.identifier,
         # A pointer read through a raw union member has no safe provenance.
         # Taking the member's address still uses ``storage_origin`` below.

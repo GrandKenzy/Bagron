@@ -139,6 +139,39 @@ class ARRAY_VALUE(cmb.RuleItem):
     nodeable = True
 
 
+class DESIGNATED_FIELD(cmb.RuleItem):
+    """One explicitly named member in an aggregate literal."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('DOT'),
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('ASSIGN'),
+        cmb.Ref(VALUE),
+    )
+    nodeable = True
+
+
+class AGGREGATE_VALUE(cmb.RuleItem):
+    """A nominal aggregate value such as ``Point{ .x = 1 }``."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.Enclosed(
+            open=lexer.Token.LBRACE,
+            close=lexer.Token.RBRACE,
+            content=cmb.Separator(
+                sep=lexer.Token.COMMA,
+                values=cmb.Ref(DESIGNATED_FIELD),
+                min=1,
+                allow_trailing=True,
+            ),
+            allow_empty=True,
+            skip_whitespace=True,
+        ),
+    )
+    nodeable = True
+
+
 class PAREN_VALUE(cmb.RuleItem):
     entrypoint = cmb.Enclosed(
         open=lexer.Token.LPAREN,
@@ -213,6 +246,7 @@ class CALL_SUFFIX(cmb.RuleItem):
 class PRIMARY(cmb.RuleItem):
     entrypoint = cmb.Alt(
         cmb.Ref(PAREN_VALUE),
+        cmb.Ref(AGGREGATE_VALUE),
         cmb.Ref(ARRAY_VALUE),
         cmb.MatchToken('IDENT'),
         cmb.MatchToken('BOOL'),
@@ -272,6 +306,7 @@ class RETURN_ASM(cmb.RuleItem):
 
 __all__ = [
     'ALIAS',
+    'AGGREGATE_VALUE',
     'ARGUMENTS',
     'ARRAY_SUFFIX',
     'ARRAY_VALUE',
@@ -279,6 +314,7 @@ __all__ = [
     'CAST_SUFFIX',
     'CALL_SUFFIX',
     'DECLARATOR',
+    'DESIGNATED_FIELD',
     'DEREF_ASSIGN_TARGET',
     'DEREF_TARGET',
     'INDEX_ACCESS',

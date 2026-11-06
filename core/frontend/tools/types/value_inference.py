@@ -23,12 +23,118 @@ from .resolution import (
 from .compatibility import (
     _integer_common_type,
     _integer_width,
+    is_compatible,
     _wrap_unsigned_literal,
 )
 from .postfix import (
     _address_type, _deref_value, _infer_postfix, _unwrap_value,
 )
 from .calls import _infer_magic_operator
+
+
+def _aggregate_literal_fields(node: gast.ASTRef) -> tuple[str | None, list[object]]:
+    """Return the declared type and direct designators of an aggregate literal."""
+    type_name = next(
+        (
+            str(_token_value(child))
+            for child in _children(node)
+            if _token_kind(child) == 'IDENT'
+        ),
+        None,
+    )
+    fields: list[object] = []
+    for child in _children(node):
+        candidates = (
+            child
+            if isinstance(child, list)
+            else _children(child)
+            if not isinstance(child, gast.ASTRef)
+            else (child,)
+        )
+        fields.extend(
+            candidate
+            for candidate in candidates
+            if isinstance(candidate, gast.ASTRef)
+            and candidate.name == 'DESIGNATED_FIELD'
+        )
+    return type_name, fields
+
+
+def _aggregate_literal_value(
+    node: gast.ASTRef,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    *,
+    current_function: object | None,
+) -> ValueInfo:
+    type_name, designators = _aggregate_literal_fields(node)
+    aggregate = _resolve_aggregate(namespace, type_name or '')
+    if aggregate is None or aggregate.is_class:
+        raise ValueResolutionError(
+            f'{type_name or "<anonimo>"} no es un struct, mold o flags construible'
+        )
+
+    owner = _namespace_owner(namespace)
+    resolver = getattr(owner, 'resolve_field', None)
+    values: dict[str, ValueInfo] = {}
+    for designator in designators:
+        name = _identifier_from_node(designator)
+        field = (
+            resolver(aggregate.name, name)
+            if callable(resolver)
+            else next((item for item in aggregate.all_fields if item.name == name), None)
+        )
+        if field is None:
+            raise ValueResolutionError(
+                f'El campo {aggregate.name}.{name or "<anonimo>"} no existe'
+            )
+        if name in values:
+            raise ValueResolutionError(
+                f'El campo {aggregate.name}.{name} esta repetido en el literal'
+            )
+        value_node = next(
+            (
+                child for child in _children(designator)
+                if isinstance(child, gast.ASTRef) and child.name == 'VALUE'
+            ),
+            None,
+        )
+        if value_node is None:
+            raise ValueResolutionError(
+                f'El campo {aggregate.name}.{name} no tiene valor'
+            )
+        value = infer_value(
+            value_node,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if not is_compatible(field.type_spec, value):
+            raise ValueResolutionError(
+                f'El valor de {aggregate.name}.{name} no coincide con '
+                f'{field.type_spec.canonical_name}'
+            )
+        values[name] = value
+
+    if aggregate.kind == 'mold' and len(values) != 1:
+        raise ValueResolutionError(
+            f'El mold {aggregate.name} requiere exactamente un campo designado'
+        )
+
+    # Keep declaration order for constants and global emission.  Omitted
+    # members are represented by an empty value of their concrete type; LLVM
+    # lowers that form to the all-zero aggregate member without consulting a
+    # flags declaration default.
+    ordered = tuple(
+        values.get(field.name, ValueInfo(field.type_spec, is_literal=True))
+        for field in aggregate.all_fields
+    )
+    return ValueInfo(
+        TypeSpec(aggregate.name, nominal_key=aggregate.registry_key),
+        is_literal=all(value.is_literal for value in values.values()),
+        value=tuple(values),
+        items=ordered,
+    )
 
 
 def infer_value(
@@ -474,6 +580,14 @@ def infer_value(
             is_literal=True,
             value=items,
             items=items,
+        )
+
+    if isinstance(current, gast.ASTRef) and current.name == 'AGGREGATE_VALUE':
+        return _aggregate_literal_value(
+            current,
+            namespace,
+            functions,
+            current_function=current_function,
         )
 
     if isinstance(current, gast.ASTRef):

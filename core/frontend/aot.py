@@ -228,7 +228,10 @@ def _source_bytes(source: str | bytes | Iterable[str]) -> bytes:
 # secuencias y repeticiones restantes devuelven listas que Gram aplana al
 # incorporarlas a la regla padre; el generador C representa ambas como ARRAY.
 _SEPARATOR_ARRAY_PARENTS = frozenset(
-    {'IMPORT_GROUP', 'PARAMETERS', 'ARGUMENTS', 'ARRAY_VALUE'}
+    {
+        'IMPORT_GROUP', 'PARAMETERS', 'ARGUMENTS', 'ARRAY_VALUE',
+        'AGGREGATE_VALUE',
+    }
 )
 _ROOT_REPETITION_RULES = frozenset(
     {'DECORATORS', 'POINTER', 'AGGREGATE_DECORATORS'}

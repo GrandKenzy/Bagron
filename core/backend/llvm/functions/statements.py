@@ -818,6 +818,20 @@ class StatementEmitterMixin:
             if self.type_registry is not None:
                 pointer.align = self.type_registry.abi_alignment(local_type)
             values[name] = pointer
+            initializer = getattr(variable, 'value', None)
+            is_designated_aggregate = (
+                initializer is not None
+                and getattr(self._unwrap(initializer), 'name', None)
+                == 'AGGREGATE_VALUE'
+                and self.type_registry is not None
+                and self.type_registry.layout(variable.type_spec) is not None
+            )
+            if is_designated_aggregate:
+                # The literal itself creates a complete aggregate SSA value.
+                # Do not first write the ordinary zero/default storage value:
+                # that would perform the redundant initialization this syntax
+                # is intended to avoid.
+                continue
             initial_value = (
                 ir.Constant(local_type, 0)
                 if name in region_parameters

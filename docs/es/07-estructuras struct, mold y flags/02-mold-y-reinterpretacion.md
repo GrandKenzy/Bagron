@@ -29,3 +29,12 @@ func read_address(value: PointerBits) uint8:
 
 Usa `mold` para formatos binarios y registros compatibles, no para simular
 conversiones seguras entre tipos no relacionados.
+
+Un literal de `mold` selecciona exactamente una vista activa:
+
+```bg
+view: WordView = WordView{ .whole = 270544960 }
+```
+
+No se permiten varios campos ni un literal vacío, porque los miembros se
+superponen en la misma región de almacenamiento.
