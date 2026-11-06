@@ -41,6 +41,23 @@ class AotFrontendTests(unittest.TestCase):
         self.assertEqual('FUNCTION', nodes[0].name)
         self.assertEqual('FUNCTION_BODY', nodes[0].nodes[-1].name)
 
+    def test_preserves_designated_aggregate_literal_nodes(self):
+        nodes = self.parser.parse(
+            'struct Point:\n'
+            '    x: int32\n'
+            'func main() int32:\n'
+            '    point: Point = Point{ .x = 7 }\n'
+            '    return point.x\n',
+            session=BAGRON_SESSION,
+            name='aggregate_literal_aot.bg',
+        )
+        function = nodes[-1]
+        body = function.nodes[-1]
+        declaration = body.nodes[1][0].nodes[0]
+        literal = declaration.nodes[-1].nodes[0].nodes[0].nodes[0]
+        self.assertEqual('AGGREGATE_VALUE', literal.name)
+        self.assertEqual('DESIGNATED_FIELD', literal.nodes[1].items[0].name)
+
 
 
 if __name__ == '__main__':
