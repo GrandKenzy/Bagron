@@ -841,7 +841,7 @@ def _method_decorators(
     method_name: str,
     decorators: tuple[str, ...],
 ) -> None:
-    allowed = {'static', 'unsafe', 'assembler', 'recursive', 'after'}
+    allowed = {'static', 'unsafe', 'assembler', 'recursive', 'after', 'before'}
     seen: set[str] = set()
     for decorator in decorators:
         magic_name = method_name.rsplit('.', 1)[-1]
@@ -856,6 +856,11 @@ def _method_decorators(
         }:
             compiler.error(
                 f'El decorador @after solo puede usarse en los hooks de acceso: '
+                f'{method_name}'
+            )
+        elif decorator == 'before' and magic_name != '__deletion__':
+            compiler.error(
+                f'El decorador @before solo puede usarse en el hook de ciclo de vida: '
                 f'{method_name}'
             )
         elif decorator in seen:

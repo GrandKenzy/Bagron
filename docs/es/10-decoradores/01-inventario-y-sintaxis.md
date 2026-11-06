@@ -19,6 +19,7 @@ El inventario válido es:
 | `@consume` | función (no método); consume sus parámetros `opaque` |
 | `@static` | método de clase |
 | `@after` | `__ongetter__` y `__onsetter__` |
+| `@before` | `__deletion__` (ejecuta el hook antes de la limpieza automática de memoria) |
 | `@frozen` | clase |
 | `@packed` | `class`, `struct`, `mold` y `flags` |
 | `@align(N)` | `class`, `struct`, `mold` y `flags` |

@@ -176,10 +176,10 @@ por valor; el buffer siempre permanece bajo responsabilidad del llamador.
 
 Este documento fija la representación, creación, indexación, inicialización,
 concatenación, liberación y expansión `Len_t` de `buffer`. La transferencia de
-propiedad y el retorno desde funciones quedan fuera del modelo del lenguaje.
-La liberación automática al salir de un ámbito continúa pendiente; por ahora la
-liberación es explícita mediante `Del`. En esta fase el análisis de flujo es
-conservador: si alguna rama o iteración puede dejar un buffer en `dead`, no se
-permite usarlo después de ese punto. Por la misma razón, `Del` dentro de un
-bucle se rechaza: una segunda iteración no podría volver a liberar el mismo
-binding `owned`.
+propiedad y el retorno de buffers desde funciones quedan fuera del modelo del lenguaje.
+La liberación es explícita mediante `Del`. Al salir de un ámbito o en retornos
+tempranos, el compilador emite una advertencia si un buffer `owned` no fue liberado
+(o un error de compilación al activar `--strict-ownership`). Si una rama condicional
+deja un buffer en `dead` y la rama no termina ni lo reconstruye, no se permite usarlo
+después de ese punto. `Del` sobre un buffer declarado fuera de un bucle se rechaza:
+una segunda iteración no podría volver a liberar el mismo binding.

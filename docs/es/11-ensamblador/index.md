@@ -75,5 +75,5 @@ y el enlace sin duplicar la implementación en ASM.
 Los bloques ASM solo pueden pertenecer a funciones `@assembler`; no existe un
 bloque ASM independiente a nivel de módulo.
 
-Los diagnósticos relacionan el archivo generado con la línea `.bg` mediante
-`core/compiler/prep.py` y `core/backend/llvm/module.py`.
+Los diagnósticos de ensamblado relacionan el archivo emitido directamente
+con el número de línea del archivo fuente `.bg` original.

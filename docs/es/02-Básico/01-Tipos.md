@@ -56,7 +56,7 @@ tipo. No todas son valores escalares ni tienen almacenamiento independiente:
 `Null` es un literal de puntero nulo, no un tipo almacenable. Solo es compatible
 con un puntero y desreferenciarlo produce una trampa en ejecución. Los detalles
 de arrays, punteros, buffers, agregados y descriptores opacos se documentan en
-[Arrays](04-Arrays.md), [Punteros](05-Punteros.md), [buffer](buffer.md) y
+[Arrays](04-Arrays.md), [Punteros](05-Punteros.md), [buffer](08-buffer.md) y
 [Estructuras](02-Estructuras.md).
 
 ## Diferencia entre `char` y `byte`
@@ -158,11 +158,11 @@ count: uint64 = number      ; válido: 8 bits -> 64 bits
 same_width: uint32 = count ; error: 64 bits -> 32 bits
 ```
 
-`byte` y `uint8` no se convierten entre sí: tienen el mismo ancho, pero
-representan conceptos diferentes. Un `byte` solo puede permanecer como
-`byte`; los cálculos numéricos deben usar un tipo entero sin signo. Aunque su
-representación tenga 8 bits y sus valores sean no signados, `byte` no pertenece
-a la familia `uint*`.
+`byte` y `uint8` no se convierten implícitamente entre sí: tienen el mismo
+ancho, pero representan conceptos diferentes. Un `byte` no pertenece a la
+familia `uint*`; los cálculos numéricos deben usar un tipo entero sin signo.
+Cuando el programa necesita cruzar explícitamente esa frontera escalar, puede
+usar `as` como se explica abajo.
 
 ### Punto flotante
 
@@ -215,6 +215,36 @@ bad: int16 = u + s      ; error: mezcla con y sin signo
 Bagron no ofrece un casteo general para saltarse estas restricciones. Las
 conversiones entre familias, los cambios de signo y los estrechamientos deben
 rechazarse explícitamente por el compilador.
+
+### Conversión explícita con `as`
+
+En una expresión, `as` solicita una conversión explícita y comprobada por el
+compilador. No es un alias, no crea una vista sobre la memoria y no convierte
+un puntero en otro puntero. El resultado sigue siendo un valor escalar
+independiente con el tipo indicado.
+
+La conversión explícita entre `byte` y `uint8` está permitida únicamente para
+valores escalares:
+
+```bg
+raw: byte = 255
+number: uint8 = raw as uint8
+restored: byte = number as byte
+```
+
+El uso habitual es adaptar un byte crudo a una operación numérica o convertir
+el resultado numérico de vuelta al almacenamiento `byte`. Por ejemplo, el
+campo de longitud de SHA-256 se escribe así:
+
+```bg
+block[56] = bit7 as byte
+```
+
+`bit7` es `uint8` y `block[56]` es `byte`; la conversión hace explícita la
+frontera entre dato numérico y byte crudo. No produce aliasing ni una copia
+adicional de un buffer. Las conversiones generales entre enteros, cambios de
+signo, estrechamientos y conversiones de punteros siguen sin estar permitidas
+por esta forma.
 
 ## Datos especiales
 

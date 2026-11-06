@@ -39,6 +39,10 @@ from core.frontend.tools.variable import (
     collect_local,
 )
 from core.frontend.tools.opaque import is_opaque_type, validate_opaque_use
+from core.frontend.tools.array_flow import (
+    analyze_fixed_array_writes,
+    refresh_fixed_array_analysis,
+)
 from core.frontend.tools.ranges import (
     body_preserves_range,
     fact_from_condition,
@@ -406,6 +410,12 @@ def validate_recursion(compiler: Compiler) -> None:
         if id(symbol) not in seen and not symbol.is_external:
             seen.add(id(symbol))
             symbols.append(symbol)
+
+    # All top-level functions and methods have now collected their bodies and
+    # resolved call sites.  Recompute array contracts once the whole call graph
+    # is available, so source order cannot make a private scratch helper look
+    # like an opaque escape.
+    refresh_fixed_array_analysis(symbols)
 
     for symbol in symbols:
         if any(target is symbol for target in symbol.called_functions):
@@ -2513,6 +2523,9 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     symbol.buffer_states.clear()
     symbol.leak_reported.clear()
     symbol.range_facts.clear()
+    symbol.definite_array_writes.clear()
+    symbol.fixed_array_parameter_summary.clear()
+    symbol.call_targets.clear()
 
     _validate_assembler_body(compiler, symbol, body)
 
@@ -2520,6 +2533,10 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     if symbol.scope is not None:
         for child in _children(body):
             _process_body_node(compiler, symbol, child, returns, symbol.scope)
+        symbol.definite_array_writes = analyze_fixed_array_writes(
+            body,
+            symbol.local_variables,
+        )
         if not _statement_body_guarantees_return(body, symbol):
             _report_leaks(
                 compiler, symbol, list(symbol.local_variables.values())

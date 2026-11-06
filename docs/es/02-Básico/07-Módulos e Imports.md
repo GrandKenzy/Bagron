@@ -27,6 +27,19 @@ Las tres formas significan:
 - `import { doble as twice } from math`: importa solo `doble` con el nombre
   local `twice`.
 
+En una declaración `import`, `as` tiene otro papel: crea un alias de módulo o
+de símbolo. Ese alias solo cambia el nombre con el que el código se refiere a
+la declaración importada; conserva su firma y no convierte valores ni tipos.
+No debe confundirse con `as` dentro de una expresión, donde significa una
+conversión explícita de tipo:
+
+```bg
+import { sha256 as hash } from SHA_256   ; alias de símbolo
+
+raw: byte = 255
+number: uint8 = raw as uint8             ; conversión escalar explícita
+```
+
 Las variables globales públicas también forman parte de las exportaciones y se
 resuelven automáticamente desde una función importadora. Se pueden usar con
 cualquiera de las dos formas:

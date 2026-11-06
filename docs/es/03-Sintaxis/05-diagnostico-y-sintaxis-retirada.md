@@ -20,5 +20,5 @@ detectar firmas incompatibles, privacidad y ciclos de imports.
 `@order_lsb` no son aliases de compatibilidad. Si aparecen, se produce un
 diagnóstico en vez de reinterpretarlos silenciosamente.
 
-La suite que conserva estos contratos está en `tests/test_modules.py`,
-`tests/test_preprocessor.py`, `tests/test_types.py` y `tests/test_functions.py`.
+El compilador reporta de manera temprana cualquier discrepancia léxica,
+sintáctica o semántica con el archivo y la línea exactos donde se produce.

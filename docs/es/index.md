@@ -1,9 +1,8 @@
 # Documentación de Bagron
 
-Esta documentación describe el lenguaje que implementan el frontend y el
-backend actuales. Los ejemplos pequeños y ejecutables están en
-[`examples/`](../../examples/README.md); las pruebas automatizadas están en
-[`tests/`](../../tests).
+Esta documentación describe el lenguaje que implementan el compilador y las
+herramientas de Bagron. Los ejemplos ejecutables están en
+[`examples/`](../../examples/README.md).
 
 ## Rutas
 

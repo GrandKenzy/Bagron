@@ -444,19 +444,47 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
     from core.frontend import BAGRON_SESSION
     from core.frontend.aot import AotParser, AotParserError
     from core.compiler.links import extract_link_directives
-    from core.compiler.prep import extract_prep_blocks
+    from core.compiler import Compiler
+    from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
     from core.frontend.tools.imports import public_definition_names
 
     parser = AotParser.from_config()
     modules: list[dict[str, object]] = []
     symbols: list[dict[str, object]] = []
     targets: dict[str, str] = {}
+    main_path = next(
+        (
+            source_root / candidate
+            for candidate in ('main.bg', '_main.bg')
+            if (source_root / candidate).is_file()
+        ),
+        None,
+    )
+    declared_target = (
+        Compiler._read_source_target_clauses(main_path)
+        if main_path is not None
+        else {}
+    )
+    target_system = Compiler._normalize_target_system(
+        declared_target.get('System')
+    )
+    target_architecture = Compiler._normalize_target_architecture(
+        declared_target.get('Arch')
+    )
     for name, data in files:
         if not name.endswith('.bg'):
             continue
         text = data.decode('utf-8')
         source_path = source_root / name
         lines = text.splitlines(keepends=True)
+        lines, conditional_errors = preprocess_conditionals(
+            lines,
+            source_path,
+            system=target_system,
+            architecture=target_architecture,
+        )
+        if conditional_errors:
+            raise LibraryError('\n'.join(conditional_errors))
         lines, _, link_errors = extract_link_directives(
             lines,
             source_path,
@@ -575,6 +603,7 @@ def _validate_source_tree(
     only after the regular compiler has accepted the source tree.
     """
     from core.compiler import CompilationError, Compiler
+    from core.compiler.prep import preprocess_conditionals
 
     bg_files = [
         relative for relative, _ in files
@@ -603,11 +632,68 @@ def _validate_source_tree(
                 and module_path.name in {'main.bg', '_main.bg'}
             ):
                 module_names.add(module_path.parts[1])
+        main_relative = next(
+            (
+                candidate
+                for candidate in ('main.bg', '_main.bg')
+                if any(relative == candidate for relative, _ in files)
+            ),
+            None,
+        )
+        target_lines: list[str] = []
+        library_lines: list[str] = []
+        if main_relative is not None:
+            main_path = root / main_relative
+            declared_target = Compiler._read_source_target_clauses(main_path)
+            for clause_name in ('System', 'Arch', 'Boot', 'ABI'):
+                clause_value = declared_target.get(clause_name)
+                if clause_value is not None:
+                    target_lines.append(
+                        f'clause {clause_name} "{clause_value}"\n'
+                    )
+
+            selected_main, conditional_errors = preprocess_conditionals(
+                main_path.read_text(encoding='utf-8').splitlines(keepends=True),
+                main_path,
+                system=Compiler._normalize_target_system(
+                    declared_target.get('System')
+                ),
+                architecture=Compiler._normalize_target_architecture(
+                    declared_target.get('Arch')
+                ),
+            )
+            if conditional_errors:
+                raise LibraryError('\n'.join(conditional_errors))
+            _, requests, library_errors = extract_library_directives(
+                selected_main,
+                main_path,
+                allow=True,
+            )
+            if library_errors:
+                raise LibraryError('\n'.join(library_errors))
+            library_lines = [
+                f'library "{request.path}" as {request.alias}\n'
+                for request in requests
+            ]
+
+        if main_relative is None:
+            target_lines = [
+                'clause System "auto"\n',
+                'clause Arch "auto"\n',
+            ]
         imports = ''.join(f'import {name}\n' for name in sorted(module_names))
         links = ''.join(f'#link "./{path}"\n' for path in link_paths)
         entry = root / '__bagron_pack_main.bg'
         entry.write_text(
-            links + imports + 'func main() int32:\n    return 0\n',
+            ''.join(
+                [
+                    *target_lines,
+                    *library_lines,
+                    links,
+                    imports,
+                    'func main() int32:\n    return 0\n',
+                ]
+            ),
             encoding='utf-8',
         )
         compiler = Compiler()

@@ -63,10 +63,10 @@ func main() int32:
     return 0
 ```
 
-Dentro del repositorio, compila usando `vnma`:
+Para compilar para el target x86-64:
 
 ```powershell
-vnma run main.py <archivo.bg> -o build\android-x86_64
+bagron <archivo.bg> -o build\android-x86_64
 ```
 
 Para ARM64 cambia la cláusula y el nombre de salida:
@@ -77,7 +77,7 @@ clause Arch "aarch64-linux-android35"
 ```
 
 ```powershell
-vnma run main.py <archivo.bg> -o build\android-aarch64
+bagron <archivo.bg> -o build\android-aarch64
 ```
 
 El backend puede producir IR sin resolver el NDK. La variable de entorno es

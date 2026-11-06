@@ -174,5 +174,5 @@ ensamblador, se considera una llamada insegura desde una función segura.
 - [Especificadores y calificadores](02-Básico/03-Especificadores%20y%20Calificadores.md)
 - [Punteros](02-Básico/05-Punteros.md)
 - [Módulos e imports](02-Básico/07-Módulos%20e%20Imports.md)
-- [Buffers y ownership](02-Básico/buffer.md)
+- [Buffers y ownership](02-Básico/08-buffer.md)
 

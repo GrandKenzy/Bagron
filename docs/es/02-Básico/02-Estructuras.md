@@ -136,8 +136,14 @@ Los métodos de instancia reciben `self` de forma implícita, mientras que los
 métodos `@static` se llaman a través de la clase y no reciben `self`.
 
 Los nombres que empiezan por `_` son privados para la clase que los declara y
-no quedan visibles para sus subclases. Las clases se retornan por valor. Los
-hooks `__deletion__`, `__eq__` y los hooks de acceso/magia forman parte de la
-semántica de clases; `@frozen` restringe las asignaciones posteriores según lo
-descrito en [Especificadores y Calificadores](03-Especificadores%20y%20Calificadores.md).
+no quedan visibles para sus subclases. Las clases se retornan por valor.
+
+Al destruir una instancia de clase con `Del`, el compilador realiza una limpieza
+automática de su memoria (puesta a cero de todos sus campos). Si la clase implementa
+el hook `__deletion__`, este se ejecuta por defecto justo *después* de dicha limpieza;
+si se desea ejecutar antes de limpiar la memoria, el método se decora con `@before`.
+Los literales agregados con campos designados (por ejemplo `Point{ .x = 10, .y = 20 }`)
+permiten inicializaciones expresivas de agregados `struct`.
+Para más detalles sobre destrucción y clases, consulta
+[Frozen y destrucción](../06-clases/05-frozen-y-destruccion.md).
 

@@ -22,6 +22,8 @@ Los decoradores cambian reglas que el compilador valida.
 | `@order_msb` | `flags` | coloca bitfields desde el extremo MSB |
 | `@frozen` | clases | limita escrituras a inicializadores |
 | `@after` | hooks de clase | ejecuta hooks después del acceso |
+| `@before` | `__deletion__` | ejecuta el hook de destrucción antes de la limpieza de memoria |
+| `@consume` | funciones / parámetros | transfiere ownership consumiendo un parámetro descriptor `opaque` |
 
 Una función segura no puede llamar a una `@unsafe`; el decorador tampoco
 convierte enteros en booleanos ni elimina las comprobaciones de `Null` o de

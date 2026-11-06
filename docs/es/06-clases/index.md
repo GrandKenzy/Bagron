@@ -53,6 +53,7 @@ aplanan en el layout.
 devuelven `1` para permitir el acceso y `0` para detenerlo. `@after` los mueve
 después de la operación.
 
-`Del instance` llama a `__deletion__` si existe. Sin ese método no hay acción
-automática. `@frozen` limita las escrituras de atributos a `__init__` o
-`__frontend__` y se propaga por herencia.
+`Del instance` limpia a cero automáticamente toda la memoria de la instancia.
+Si existe `__deletion__`, se ejecuta por defecto después de la limpieza a cero
+(o antes si está decorado con `@before`). `@frozen` limita las escrituras de
+atributos a `__init__` o `__frontend__` y se propaga por herencia.

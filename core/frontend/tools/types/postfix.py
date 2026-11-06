@@ -256,7 +256,7 @@ def _infer_postfix(
             )
         if function is None:
             raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
-        _record_function_call(current_function, function)
+        _record_function_call(current_function, function, current)
         if getattr(function, 'is_unsafe', False) and not _unsafe_context(
             current_function
         ):

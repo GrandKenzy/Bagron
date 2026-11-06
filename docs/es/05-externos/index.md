@@ -37,8 +37,9 @@ extern windows "SDL3":
     SDL_Init(flags: uint32) int32
 ```
 
-Las rutas deben existir y quedar dentro del proyecto. `core/compiler/links.py`
-valida la ruta y `core/backend/llvm/links.py` resuelve la variante ABI.
+Las rutas deben existir y quedar dentro del proyecto. El compilador valida
+la existencia de la ruta y resuelve la biblioteca nativa correspondiente según el
+target y la convención ABI activa.
 
 ## Descriptores `opaque`
 

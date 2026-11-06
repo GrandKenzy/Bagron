@@ -51,5 +51,5 @@ demostrar una procedencia exclusiva. El contrato también se aplica a arrays
 `unique T[]`; no cambia las reglas de los punteros crudos.
 
 `$value` obtiene una dirección, pero el puntero no mantiene vivo el objeto ni
-puede retornarse desde una función. La implementación principal está en
-`core/frontend/ownership.py`.
+puede retornarse desde una función. Para verificar fugas de recursos locales en compilación, el compilador admite
+la opción `--strict-ownership` (por ejemplo `bagron --strict-ownership archivo.bg`).

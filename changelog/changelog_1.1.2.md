@@ -1,5 +1,13 @@
 # Changelog 1.1.2
 
+## Libraries
+
+- Source library validation now uses the target clauses and `library`
+  dependencies declared by the package's `main.bg`. Packages without a
+  `main.bg` validate with automatic host target selection.
+- Conditional clauses and library directives in a source package are selected
+  before its metadata and frontend snapshot are generated.
+
 ## Ownership and Borrow Checker
 
 - Added the `@consume` function decorator. A function marked with it takes
@@ -38,3 +46,36 @@
 - Unfreed local `buffer`s and unclosed `opaque` descriptors leaving scope or hit
   by an early `return` now emit a leak warning. Passing `--strict-ownership`
   turns leak warnings into compilation errors.
+
+## Classes and Destruction
+
+- `Del instance` now automatically zeroes all memory bytes of the class instance.
+- By default, memory zeroing happens before executing the `__deletion__` hook.
+- Added the `@before` method decorator for `__deletion__`, allowing the deletion hook
+  to execute prior to the automatic memory zeroing when fields must be inspected or
+  released before cleanup.
+
+## Compiler Analysis
+
+- Added a conservative definite-write analysis for one-dimensional fixed local
+  arrays. It tracks constant element writes, complete branch intersections, and
+  statically bounded `for` ranges, while rejecting unknown reads and escapes.
+  The LLVM backend now consumes proven results in `prod`/`high` profiles to
+  omit redundant local zero-initialization; `dev` and unproven arrays retain
+  their previous deterministic initialization.
+- Added conservative summaries for fixed-array parameters of private Bagron
+  functions. Calls to helpers that overwrite every element before reading it
+  can now treat the argument as scratch storage, while input arrays, external
+  calls, public calls, and ambiguous escapes still require their established
+  initialization guarantees.
+- Hardened the array-flow proof for compound expressions and numeric-loop
+  recurrences. Dynamic indexes such as `data[i - 1]` are no longer mistaken
+  for constants, while safe backward dependencies such as SHA-256's
+  `schedule[i - 16]` can be proven from earlier loop writes. This removes the
+  redundant schedule zeroing in the laboratory SHA-256 build.
+
+## Standard Library Boundaries
+
+- Removed the obsolete repository-level `modules/io.bg`. High-level I/O now
+  lives in `BagronLab/io` and selects the target-native `windows.lib` or
+  `gnulibrary.lib` dependency from its own library entry point.

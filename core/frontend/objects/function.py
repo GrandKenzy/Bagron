@@ -61,6 +61,9 @@ class FunctionSymbol:
     # Resolved source-level calls used by the compiler's recursion analysis.
     # Symbols are kept by identity so aliases and methods retain their target.
     called_functions: list['FunctionSymbol'] = field(default_factory=list)
+    # Resolved call-site targets let later flow analyses inspect the callee's
+    # contract without trying to resolve source names a second time.
+    call_targets: dict[int, 'FunctionSymbol'] = field(default_factory=dict)
     tail_recursive: bool = False
     decorators: tuple[str, ...] = ()
     is_inline: bool = False
@@ -89,6 +92,13 @@ class FunctionSymbol:
     # Flow-sensitive proofs used by safe array indexing.  Facts are scoped to
     # the conditional or loop that established them and never reach LLVM.
     range_facts: list[object] = field(default_factory=list)
+    # Conservative definite-write proofs for fixed local arrays.  The backend
+    # may consume these facts in a later pass to elide redundant zeroing; the
+    # analysis itself never changes the language's initialization semantics.
+    definite_array_writes: set[str] = field(default_factory=set)
+    # Per fixed-array parameter summary used by callers to distinguish an
+    # input array from scratch/output storage.
+    fixed_array_parameter_summary: dict[str, object] = field(default_factory=dict)
     # Methods are emitted under a reserved name while retaining their source
     # name for ``object.method(...)`` resolution.
     owner_type: str | None = None
