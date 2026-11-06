@@ -83,12 +83,21 @@ jobs:
           test -s build/aot/gram_parser_manifest.json
           build/portable-python/bin/python -m vnma run main.py examples/01_basico.bg -o build/package-smoke
           test -f build/package-smoke
+      - name: Assemble prebuilt Linux compiler payload
+        run: python tools/prepare_release_payload.py --platform linux --output-dir build/release-payload
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
           test -x dist/bagron-installer
           mv dist/bagron-installer "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
           test -x "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
+      - name: Smoke test installed Linux release
+        run: |
+          target="$RUNNER_TEMP/Bagron-release-smoke"
+          ./dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64 --target "$target"
+          "$target/bin/bagron" --version
+          "$target/bin/bagron" "$target/examples/01_basico.bg" -o "$target/release-smoke"
+          test -s "$target/release-smoke"
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -140,6 +149,8 @@ jobs:
           & ./build/portable-python/python.exe -m vnma run main.py examples/01_basico.bg -o build/package-smoke.exe
           if ($LASTEXITCODE -ne 0) { throw 'Falló el smoke test del compilador' }
           if (-not (Test-Path build/package-smoke.exe)) { throw 'No se generó el ejecutable de prueba' }
+      - name: Assemble prebuilt Windows compiler payload
+        run: python tools/prepare_release_payload.py --platform windows --output-dir build/release-payload
       - name: Build compiled Windows installer
         shell: pwsh
         run: |
@@ -148,6 +159,17 @@ jobs:
           if (-not (Test-Path $compiled)) { throw 'No se generó bagron-installer.exe' }
           Move-Item -LiteralPath $compiled -Destination "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe" -Force
           if (-not (Test-Path "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe")) { throw 'No se renombró el instalador Windows' }
+      - name: Smoke test installed Windows release
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "Bagron-release-smoke"
+          & "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe" --target $target
+          if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación preconstruida' }
+          & "$target/bin/bagron.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló bagron --version' }
+          & "$target/bin/bagron.cmd" "$target/examples/01_basico.bg" -o "$target/release-smoke.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación de prueba' }
+          if (-not (Test-Path "$target/release-smoke.exe")) { throw 'No se generó el ejecutable' }
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
