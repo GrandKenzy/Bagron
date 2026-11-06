@@ -65,6 +65,26 @@ jobs:
         run: python -m pip install pyinstaller
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform linux --output-dir build/portable-python
+      - name: Checkout BagronLab prebuilt libraries
+        uses: actions/checkout@v4
+        with:
+          repository: GrandKenzy/BagronLab
+          ref: main
+          path: build/bagronlab
+          sparse-checkout: |
+            build
+          sparse-checkout-cone-mode: true
+      - name: Stage BagronLab libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="build/bagronlab/build"
+          staging_dir="build/prebuilt-libs"
+          test -d "$source_dir"
+          mkdir -p "$staging_dir"
+          find "$source_dir" -maxdepth 1 -type f -name '*.lib' -exec cp -f {} "$staging_dir/" \;
+          test -n "$(find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -print -quit)"
+          find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -printf '%f\n' | sort
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
@@ -95,6 +115,28 @@ jobs:
         run: python -m pip install pyinstaller
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform windows --output-dir build/portable-python
+      - name: Checkout BagronLab prebuilt libraries
+        uses: actions/checkout@v4
+        with:
+          repository: GrandKenzy/BagronLab
+          ref: main
+          path: build/bagronlab
+          sparse-checkout: |
+            build
+          sparse-checkout-cone-mode: true
+      - name: Stage BagronLab libraries
+        shell: pwsh
+        run: |
+          $sourceDir = 'build/bagronlab/build'
+          $stagingDir = 'build/prebuilt-libs'
+          if (-not (Test-Path -LiteralPath $sourceDir -PathType Container)) { throw "No existe $sourceDir" }
+          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+          $libraries = @(Get-ChildItem -LiteralPath $sourceDir -File -Filter '*.lib')
+          if ($libraries.Count -eq 0) { throw "No se encontraron .lib en $sourceDir" }
+          foreach ($library in $libraries) {
+            Copy-Item -LiteralPath $library.FullName -Destination (Join-Path $stagingDir $library.Name) -Force
+          }
+          Get-ChildItem -LiteralPath $stagingDir -File -Filter '*.lib' | Sort-Object Name | Select-Object -ExpandProperty Name
       - name: Build compiled Windows installer
         shell: pwsh
         run: |

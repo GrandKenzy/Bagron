@@ -297,6 +297,12 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('prepare_portable_python.py --platform windows', windows_job)
         self.assertIn('build/portable-python', linux_job)
         self.assertIn('build/portable-python', windows_job)
+        self.assertIn('repository: GrandKenzy/BagronLab', linux_job)
+        self.assertIn('repository: GrandKenzy/BagronLab', windows_job)
+        self.assertIn('build/prebuilt-libs', linux_job)
+        self.assertIn('build/prebuilt-libs', windows_job)
+        self.assertIn("-name '*.lib'", linux_job)
+        self.assertIn("-Filter '*.lib'", windows_job)
         self.assertIn('gh release delete-asset', publish_job)
         self.assertIn('--notes-file "$notes_file"', publish_job)
 
