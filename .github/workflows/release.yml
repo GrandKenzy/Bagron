@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+env:
+  PACKAGE_LABEL: ${{ github.ref_type == 'tag' && github.ref_name || format('preview-{0}', github.run_id) }}
 
 jobs:
   test:
@@ -89,20 +93,20 @@ jobs:
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
           test -x dist/bagron-installer
-          mv dist/bagron-installer "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
-          test -x "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
+          mv dist/bagron-installer "dist/Bagron-${PACKAGE_LABEL}-linux-x86_64"
+          test -x "dist/Bagron-${PACKAGE_LABEL}-linux-x86_64"
       - name: Smoke test installed Linux release
         run: |
           target="$RUNNER_TEMP/Bagron-release-smoke"
-          ./dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64 --target "$target"
+          ./dist/Bagron-${PACKAGE_LABEL}-linux-x86_64 --target "$target"
           "$target/bin/bagron" --version
           "$target/bin/bagron" "$target/examples/01_basico.bg" -o "$target/release-smoke"
           test -s "$target/release-smoke"
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bagron-release-${{ github.ref_name }}
-          path: dist/Bagron-${{ github.ref_name }}-linux-x86_64
+          name: bagron-release-${{ env.PACKAGE_LABEL }}
+          path: dist/Bagron-${{ env.PACKAGE_LABEL }}-linux-x86_64
           if-no-files-found: error
 
   package-windows:
@@ -157,13 +161,13 @@ jobs:
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
           $compiled = 'dist/bagron-installer.exe'
           if (-not (Test-Path $compiled)) { throw 'No se generó bagron-installer.exe' }
-          Move-Item -LiteralPath $compiled -Destination "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe" -Force
-          if (-not (Test-Path "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe")) { throw 'No se renombró el instalador Windows' }
+          Move-Item -LiteralPath $compiled -Destination "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe" -Force
+          if (-not (Test-Path "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe")) { throw 'No se renombró el instalador Windows' }
       - name: Smoke test installed Windows release
         shell: pwsh
         run: |
           $target = Join-Path $env:RUNNER_TEMP "Bagron-release-smoke"
-          & "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe" --target $target
+          & "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe" --target $target
           if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación preconstruida' }
           & "$target/bin/bagron.cmd" --version
           if ($LASTEXITCODE -ne 0) { throw 'Falló bagron --version' }
@@ -173,12 +177,13 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bagron-release-${{ github.ref_name }}-windows
-          path: dist/Bagron-${{ github.ref_name }}-Setup.exe
+          name: bagron-release-${{ env.PACKAGE_LABEL }}-windows
+          path: dist/Bagron-${{ env.PACKAGE_LABEL }}-Setup.exe
           if-no-files-found: error
 
   publish:
     name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     needs: [package-linux, package-windows]
     permissions:
@@ -189,7 +194,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: bagron-release-${{ github.ref_name }}*
+          pattern: bagron-release-${{ env.PACKAGE_LABEL }}*
           path: dist
           merge-multiple: true
       - name: Create or update clean release
