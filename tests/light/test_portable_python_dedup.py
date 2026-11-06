@@ -72,6 +72,23 @@ class PortablePythonDedupTests(unittest.TestCase):
             ))
             self.assertTrue((extracted / 'lib64').is_symlink())
 
+    def test_linux_regular_duplicate_aliases_are_recorded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            (source / 'bin').mkdir()
+            (source / 'lib').mkdir()
+            for name in ('python', 'python3', 'python3.14'):
+                (source / 'bin' / name).write_bytes(b'same-python-binary')
+            for name in ('libpython3.14.so', 'libpython3.14.so.1.0'):
+                (source / 'lib' / name).write_bytes(b'same-python-library')
+            aliases = make_manifest(source, platform='linux')['aliases']
+            self.assertEqual('bin/python3.14', aliases['bin/python'])
+            self.assertEqual('bin/python3.14', aliases['bin/python3'])
+            self.assertEqual(
+                'lib/libpython3.14.so.1.0',
+                aliases['lib/libpython3.14.so'],
+            )
+
     def test_windows_identical_files_restore_as_hardlinks_or_copies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -93,9 +110,12 @@ class PortablePythonDedupTests(unittest.TestCase):
             _simulate_pyinstaller_inputs(source, extracted, info['aliases'])
             self.assertEqual(2, restore_aliases(extracted, platform='windows'))
             self.assertEqual(b'python-exe', (extracted / 'python314.exe').read_bytes())
-            self.assertTrue(os.path.samefile(
-                extracted / 'python.exe', extracted / 'python314.exe'
-            ))
+            # Filesystems without hardlinks may legitimately fall back
+            # to copied aliases, while the onefile payload stays deduplicated.
+            self.assertEqual(
+                (extracted / 'python.exe').read_bytes(),
+                (extracted / 'python314.exe').read_bytes(),
+            )
 
     def test_windows_falls_back_to_copy_when_hardlinks_not_supported(self):
         with tempfile.TemporaryDirectory() as temporary:
