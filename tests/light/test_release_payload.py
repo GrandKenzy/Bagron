@@ -13,6 +13,7 @@ from unittest import mock
 import installer
 from core.version import BAGRON_VERSION
 from tools.prepare_release_payload import prepare_payload
+from tools.deduplicate_portable_python import write_manifest
 
 
 class PrebuiltReleaseTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class PrebuiltReleaseTests(unittest.TestCase):
         )
         python_bin.parent.mkdir(parents=True)
         python_bin.write_bytes(b'fake-python')
+        write_manifest(runtime, platform=platform_name)
         payload = prepare_payload(
             root, root / 'build' / 'release-payload', platform_name=platform_name
         )
