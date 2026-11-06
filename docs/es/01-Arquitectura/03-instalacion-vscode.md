@@ -1,8 +1,13 @@
 # Instalación de la extensión para VS Code
 
-Bagron incluye el paquete [`bagron-language-support.vsix`](../../../tools/vscode/bagron-language-support.vsix),
-que aporta resaltado, diagnósticos y comandos del lenguaje en Visual Studio
-Code.
+Bagron 1.1.1 incluye el paquete [`bagron-language-support.vsix`](../../../tools/vscode/bagron-language-support.vsix),
+que aporta resaltado, Hover, Definition, autocompletado, documentación
+secuencial y comandos del lenguaje en Visual Studio Code.
+
+La extensión reconoce la sintaxis actual de Bagron, incluidos métodos, tipos
+nominales, funciones inline, bloques ASM y literales agregados como
+`Point{ .x = 10 }`. Su formateador es conservador y solo elimina espacios
+finales; no reindenta automáticamente código cuya indentación tiene significado.
 
 ## Instalación automática
 
