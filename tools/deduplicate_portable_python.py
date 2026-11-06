@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 
 MANIFEST_NAME = 'bagron-runtime-aliases.json'
 FORMAT_VERSION = 1
@@ -154,6 +155,40 @@ def verify_manifest(runtime: Path, *, expected_platform: str | None = None) -> d
             raise ValueError(f'Unexpected duplicate Python alias: {alias_name}')
         result[alias_name] = canonical_name
     return result
+
+
+def restore_aliases(runtime: Path, *, platform: str) -> int:
+    """Restore missing aliases in an installed runtime (without network access).
+
+    POSIX uses relative symlinks. Windows uses hardlinks on the same volume,
+    falling back to copies when the filesystem does not support hardlinks.
+    """
+    runtime = runtime.resolve(strict=True)
+    aliases = verify_manifest(runtime, expected_platform=platform)
+    for alias_name, canonical_name in aliases.items():
+        alias = runtime / _safe_relative(alias_name)
+        canonical = runtime / _safe_relative(canonical_name)
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        if platform == 'linux':
+            alias.symlink_to(
+                os.path.relpath(canonical, start=alias.parent),
+                target_is_directory=canonical.is_dir(),
+            )
+        elif canonical.is_dir():
+            shutil.copytree(canonical, alias)
+        else:
+            try:
+                os.link(canonical, alias)
+            except OSError:
+                shutil.copy2(canonical, alias)
+
+    # Validate all restored aliases, including the expected primary Python.
+    for alias_name, canonical_name in aliases.items():
+        alias = runtime / _safe_relative(alias_name)
+        canonical = runtime / _safe_relative(canonical_name)
+        if not alias.exists() or not os.path.samefile(alias, canonical) and platform == 'linux':
+            raise RuntimeError(f'Python alias could not be restored: {alias_name}')
+    return len(aliases)
 
 
 def write_manifest(runtime: Path, *, platform: str) -> Path:
