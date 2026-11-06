@@ -63,6 +63,41 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             transformed,
         )
 
+    def test_archb_matches_target_width_and_llvm_triples(self):
+        source = (
+            '#if ARCHB, "64"\n'
+            'wide\n'
+            '#elif ARCHB, "32"\n'
+            'narrow\n'
+            '#else\n'
+            'unknown\n'
+            '#end\n'
+        )
+
+        for architecture, selected in (
+            ('x86_64', 'wide'),
+            ('aarch64-linux-android35', 'wide'),
+            ('riscv32', 'narrow'),
+        ):
+            with self.subTest(architecture=architecture):
+                transformed, errors = self._process(
+                    source,
+                    architecture=architecture,
+                )
+
+                self.assertEqual([], errors)
+                self.assertEqual(selected + '\n', transformed[1 if selected == 'wide' else 3])
+                self.assertNotIn(
+                    (('narrow' if selected == 'wide' else 'wide') + '\n'),
+                    transformed,
+                )
+
+    def test_archb_rejects_noncanonical_condition_syntax(self):
+        _, errors = self._process('#if ARCHB "64"\nselected\n#end\n')
+
+        self.assertTrue(errors)
+        self.assertIn('ARCHB', errors[0])
+
     def test_rejects_nested_conditionals_and_keeps_assembler_end(self):
         transformed, errors = self._process(
             '#if OS, "windows"\n'

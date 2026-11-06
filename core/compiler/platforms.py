@@ -103,6 +103,23 @@ _KNOWN_ARCHITECTURES = frozenset(_ARCHITECTURE_ALIASES.values())
 _SUPPORTED_ARCHITECTURES = frozenset({
     'x86_64', 'i386', 'aarch64', 'riscv32', 'riscv64',
 })
+_ARCHITECTURE_BITS = {
+    'x86_64': '64',
+    'i386': '32',
+    'aarch64': '64',
+    'armv7': '32',
+    'armv6': '32',
+    'riscv32': '32',
+    'riscv64': '64',
+    'ppc': '32',
+    'ppc64': '64',
+    'ppc64le': '64',
+    's390x': '64',
+    'mips': '32',
+    'mips64': '64',
+    'wasm32': '32',
+    'wasm64': '64',
+}
 
 
 def _slug(value: object) -> str:
@@ -136,6 +153,11 @@ def normalize_architecture(value: object) -> str:
 def architecture_name(value: object) -> str:
     """Return the canonical architecture component of an alias or triple."""
     return normalize_architecture(value).split('-', 1)[0]
+
+
+def architecture_bits(value: object) -> str:
+    """Return the canonical pointer width for an architecture or LLVM triple."""
+    return _ARCHITECTURE_BITS.get(architecture_name(value), 'unknown')
 
 
 def detect_host_system() -> str:
@@ -232,6 +254,7 @@ def supported_architectures() -> frozenset[str]:
 __all__ = [
     'HostPlatform',
     'PlatformOptionError',
+    'architecture_bits',
     'architecture_name',
     'detect_host_platform',
     'detect_host_system',

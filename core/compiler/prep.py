@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, MutableMapping, Sequence
 
+from core.compiler.platforms import architecture_bits
+
 
 @dataclass(frozen=True)
 class PrepBlock:
@@ -112,7 +114,7 @@ def _parse_condition(
         return None
 
     flag = match.group('flag').upper()
-    if flag not in {'OS', 'ARCH'}:
+    if flag not in {'OS', 'ARCH', 'ARCHB'}:
         return None
     return flag, match.group('value')
 
@@ -126,9 +128,11 @@ def _condition_matches(
     expected = value.strip().lower()
     if flag == 'OS':
         return expected == str(system).strip().lower()
-    return _normalize_preprocessor_architecture(expected) == (
-        _normalize_preprocessor_architecture(architecture)
-    )
+    if flag == 'ARCH':
+        return _normalize_preprocessor_architecture(expected) == (
+            _normalize_preprocessor_architecture(architecture)
+        )
+    return expected == architecture_bits(architecture)
 
 
 def _conditional_error(
@@ -148,7 +152,8 @@ def preprocess_conditionals(
 ) -> tuple[list[str], list[str]]:
     """Select one non-nested conditional branch before Bagron tokenization.
 
-    The supported form is ``#if OS, "windows"`` or ``#if ARCH, "amd"``;
+    The supported forms are ``#if OS, "windows"``, ``#if ARCH, "amd"`` and
+    ``#if ARCHB, "64"``;
     ``#elif``, ``#else`` and ``#end`` use the same block.  Inactive lines are
     replaced with blank lines so parser diagnostics retain source locations.
     """
@@ -185,7 +190,7 @@ def preprocess_conditionals(
                     _conditional_error(
                         source,
                         source_line,
-                        '#if requiere OS o ARCH seguido de una cadena, por ejemplo '
+                        '#if requiere OS, ARCH o ARCHB seguido de una cadena, por ejemplo '
                         '#if OS, "windows"',
                     )
                 )
@@ -235,7 +240,7 @@ def preprocess_conditionals(
                     _conditional_error(
                         source,
                         source_line,
-                        '#elif requiere OS o ARCH seguido de una cadena, por ejemplo '
+                        '#elif requiere OS, ARCH o ARCHB seguido de una cadena, por ejemplo '
                         '#elif ARCH, "amd"',
                     )
                 )

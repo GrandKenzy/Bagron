@@ -17,9 +17,19 @@ func platform() int32:
 ```
 
 Las directivas válidas son `#if`, `#elif`, `#else` y `#end`. Las condiciones
-usan únicamente `OS` o `ARCH` y una cadena. `OS` compara el sistema del target;
+usan `OS`, `ARCH` o `ARCHB` y una cadena. `OS` compara el sistema del target;
 `ARCH` normaliza alias como `amd`/`amd64`/`x86_64`, `x86`/`i386` y
-`arm`/`arm64`.
+`arm`/`arm64`; `ARCHB` compara el ancho de la arquitectura del target en bits:
+
+```bg
+#if ARCHB, "64"
+func wide_target() int32:
+    return 64
+#elif ARCHB, "32"
+func wide_target() int32:
+    return 32
+#end
+```
 
 Las ramas no seleccionadas se reemplazan por líneas vacías para conservar las
 posiciones de los diagnósticos, pero su contenido no se analiza como Bagron.
