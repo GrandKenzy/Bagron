@@ -14,6 +14,9 @@
   example from the installed compiler.
 - Release jobs fail when required payload files, compiled parser artifacts, or
   compilation tests are missing or invalid.
+- Added manual preview builds through `workflow_dispatch` without publishing a
+  GitHub release; tagged releases also check that the tag matches the compiler
+  version before packaging.
 
 ## Bagron Installer
 
