@@ -34,11 +34,11 @@ from core.library import (
 def _library_help() -> str:
     return (
         'Uso:\n'
-        '  vnma run main.py library --v1 <source> -o <archivo.lib> [--name N] [--version V]\n'
-        '  vnma run main.py library --v2 <source> -o <archivo.lib> [--name N] [--version V]\n'
-        '  vnma run main.py inspect <archivo.lib>\n'
-        '  vnma run main.py verify <archivo.lib>\n'
-        '  vnma run main.py unpack <archivo.lib> <destino>'
+        '  bagron library --v1 <source> -o <archivo.lib> [--name N] [--version V]\n'
+        '  bagron library --v2 <source> -o <archivo.lib> [--name N] [--version V]\n'
+        '  bagron inspect <archivo.lib>\n'
+        '  bagron verify <archivo.lib>\n'
+        '  bagron unpack <archivo.lib> <destino>'
     )
 
 
@@ -48,13 +48,11 @@ def _main_help() -> str:
         '  bagron <archivo.bg> [-o <salida>] [--execute] [--strict-ownership]\n'
         '  bagron --version\n'
         '  bagron --update                       Actualiza a la última release estable de GitHub.\n'
-        '  bagron --uninstall                    Elimina la instalación actual y sus lanzadores.\n'
-        '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
+        '  bagron --uninstall                    Elimina la instalación actual y sus lanzadores.\n\n'
         'Soporte de editor (VS Code):\n'
         '  bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'
-        + _library_help() + '\n\n'
-        'El frontend Gram FFI produce GIR; semántica y backend LLVM siguen en Bagron.'
+        + _library_help()
     )
 
 

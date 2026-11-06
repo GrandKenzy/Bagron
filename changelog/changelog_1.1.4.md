@@ -15,6 +15,11 @@
   Bagron resolves these names only in `BAGRON_ROOT/libs/<name>.lib`; quoted
   paths continue to resolve only in the project's `libs/` directory.
 
+## CLI
+
+- Simplified `bagron --help` and library usage output to expose only the public
+  `bagron` commands.
+
 ## VS Code Extension
 
 - Release payloads include the validated Bagron VS Code extension so it can be

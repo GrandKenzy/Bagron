@@ -13,7 +13,13 @@ class CliVersionTests(unittest.TestCase):
 
         self.assertIn('bagron <archivo.bg>', help_text)
         self.assertIn('bagron --version', help_text)
-        self.assertIn('Bagron.', help_text)
+        self.assertIn('bagron library --v1 <source> -o <archivo.lib>', help_text)
+        self.assertIn('bagron library --v2 <source> -o <archivo.lib>', help_text)
+        self.assertIn('bagron inspect <archivo.lib>', help_text)
+        self.assertIn('bagron verify <archivo.lib>', help_text)
+        self.assertIn('bagron unpack <archivo.lib> <destino>', help_text)
+        self.assertNotIn('vnma run main.py', help_text)
+        self.assertNotIn('El frontend Gram FFI produce GIR', help_text)
         self.assertNotIn('Bagron <archivo.bg>', help_text)
         self.assertNotIn('Bagron --vscode', help_text)
 
