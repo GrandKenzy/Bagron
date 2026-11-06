@@ -47,6 +47,8 @@ def _main_help() -> str:
         'Uso:\n'
         '  bagron <archivo.bg> [-o <salida>] [--execute] [--strict-ownership]\n'
         '  bagron --version\n'
+        '  bagron --update                       Actualiza a la última release estable de GitHub.\n'
+        '  bagron --uninstall                    Elimina la instalación actual y sus lanzadores.\n'
         '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
         'Soporte de editor (VS Code):\n'
         '  bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'

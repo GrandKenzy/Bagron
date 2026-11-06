@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.2-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.1.3-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -195,15 +195,30 @@ python installer.py
 El instalador crea `bagron.cmd` y `bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
+Desde una instalación existente puedes actualizar a la última release estable
+publicada en GitHub con:
+
+```powershell
+bagron --update
+```
+
+La actualización descarga el instalador de la plataforma, conserva la carpeta
+de destino y reemplaza solo los componentes administrados por Bagron. Para
+desinstalar limpiamente la instalación y retirar sus lanzadores usa:
+
+```powershell
+bagron --uninstall
+```
+
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.2-Setup.exe` y ejecutarlo directamente. La release solo publica
+`Bagron-1.1.3-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
-El instalador compilado ya incluye un runtime portable de Python 3.14 con
-`pip`. Lo extrae en `.runtime/`, instala `vnma` dentro de ese runtime y usa
-`vnma install` para resolver Gram y `llvmlite`; no necesita Python global ni
-modifica ninguna instalación de Python del sistema. Git y LLVM/Clang/LLD
-siguen siendo necesarios para descargar Gram y construir el parser AOT.
+El instalador compilado incluye un runtime portable de Python 3.14 con
+`vnma`, Gram, `llvmlite` y el parser AOT ya preparados. Los extrae en
+`.runtime/` y `vendor/` sin ejecutar `pip`, descargar Gram o reconstruir el
+parser; no necesita Python, vnma ni Gram instalados globalmente. LLVM/Clang/LLD
+sigue siendo necesario para compilar programas nativos.
 
 La ejecución directa desde una copia del repositorio (`python installer.py`)
 sigue siendo una ruta de desarrollo y usa Python 3.14+ del sistema para crear
@@ -212,22 +227,22 @@ su runtime local.
 ### Linux
 
 El instalador Linux compilado incluye un runtime portable de Python 3.14 con
-`pip`. Lo extrae en `.runtime/`, instala `vnma`, Gram y `llvmlite` allí y no
-requiere Python global. Git y LLVM/Clang/LLD siguen siendo necesarios para
-descargar Gram y construir el parser AOT; los proyectos que usen `net` con
-HTTPS necesitan `libcurl.so.4`. Puede ejecutarse directamente desde el
+`vnma`, Gram, `llvmlite` y el parser AOT ya preparados. Los extrae en
+`.runtime/` y `vendor/` sin red ni reconstrucción; no requiere Python, vnma ni
+Gram globales. LLVM/Clang/LLD sigue siendo necesario para compilar programas;
+los proyectos que usen `net` con HTTPS necesitan `libcurl.so.4`. Puede ejecutarse directamente desde el
 release publicado:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.3/install.sh | bash
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.2-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+`Bagron-1.1.3-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
 
 ```bash
-chmod +x Bagron-1.1.2-linux-x86_64
-./Bagron-1.1.2-linux-x86_64
+chmod +x Bagron-1.1.3-linux-x86_64
+./Bagron-1.1.3-linux-x86_64
 ```
 
 La release solo publica este ejecutable Linux. El instalador coloca los
@@ -243,6 +258,33 @@ Para desinstalar una instalación Linux usando el Python incluido:
 ```bash
 "$HOME/Bagron/.runtime/bin/python" "$HOME/Bagron/installer.py" --uninstall
 ```
+
+También puedes actualizar desde el lanzador instalado:
+
+```bash
+bagron --update
+```
+
+## Instaladores preconstruidos
+
+Los instaladores de la release 1.1.3 incorporan los componentes preparados
+por GitHub Actions para cada plataforma: fuentes del compilador, Python 3.14
+portable, `vnma`, dependencias locales (Gram y `llvmlite`) y la biblioteca
+Gram AOT junto con su manifiesto. Su instalación no necesitará descargar
+Gram ni ejecutar `vnma install` o reconstruir el parser; el instalador
+comprobará el bundle antes de crear los lanzadores. La ruta de instalación
+desde fuentes seguirá disponible para desarrolladores.
+
+El empaquetado omite alias duplicados del runtime: Linux reconstruye los
+enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
+crea enlaces físicos cuando el sistema de archivos lo admite (o conserva
+copias independientes como alternativa). Se verifican las rutas del manifiesto
+antes de restaurarlas; esto no modifica el Python global del usuario.
+
+**Importante:** instalar sin Internet no equivale a compilar sin herramientas
+externas. Para generar y enlazar ejecutables nativos siguen siendo necesarias
+las herramientas LLVM/Clang/LLD correspondientes; Android necesita su NDK.
+Las releases anteriores a 1.1.3 conservan el mecanismo anterior.
 
 ## Extensión para VS Code
 

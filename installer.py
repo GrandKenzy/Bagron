@@ -9,9 +9,12 @@ crea carpetas base y registra la CLI en el PATH de usuario.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
+import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +24,7 @@ import urllib.request
 import zipfile
 
 from core.version import BAGRON_VERSION
+from tools.deduplicate_portable_python import restore_aliases, verify_manifest
 
 
 # ============================================================================
@@ -30,6 +34,7 @@ from core.version import BAGRON_VERSION
 DEFAULT_INSTALL_NAME = 'Bagron'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
+GITHUB_LATEST_RELEASE_URL = 'https://api.github.com/repos/GrandKenzy/Bagron/releases/latest'
 GRAM_REPO_URL = 'https://github.com/GrandKenzy/Gram.git'
 MIN_PYTHON_VERSION = (3, 14)
 PORTABLE_PYTHON_BUNDLE_NAME = 'portable-python'
@@ -326,12 +331,22 @@ def _remove_from_windows_user_path(bin_path: Path) -> bool:
             winreg.KEY_READ | winreg.KEY_WRITE,
         )
     except OSError:
+        current_proc_path = os.environ.get('PATH', '')
+        os.environ['PATH'] = ';'.join(
+            p for p in current_proc_path.split(';')
+            if p and os.path.normcase(os.path.normpath(p)) != bin_norm
+        )
         return False
 
     with key:
         try:
             current_path, path_type = winreg.QueryValueEx(key, 'Path')
         except FileNotFoundError:
+            current_proc_path = os.environ.get('PATH', '')
+            os.environ['PATH'] = ';'.join(
+                p for p in current_proc_path.split(';')
+                if p and os.path.normcase(os.path.normpath(p)) != bin_norm
+            )
             return False
 
         entries = [p.strip() for p in current_path.split(';') if p.strip()]
@@ -363,6 +378,12 @@ def _remove_from_windows_user_path(bin_path: Path) -> bool:
     except Exception:
         pass
 
+    current_proc_path = os.environ.get('PATH', '')
+    current_entries = [p for p in current_proc_path.split(';') if p]
+    os.environ['PATH'] = ';'.join(
+        p for p in current_entries
+        if os.path.normcase(os.path.normpath(p)) != bin_norm
+    )
     return True
 
 
@@ -421,6 +442,13 @@ def _remove_from_posix_user_path(bin_path: Path) -> bool:
                 removed = True
         except OSError:
             continue
+
+    user_bin_norm = os.path.normcase(os.path.normpath(str(user_bin.resolve())))
+    current_path = os.environ.get('PATH', '')
+    os.environ['PATH'] = os.pathsep.join(
+        entry for entry in current_path.split(os.pathsep)
+        if entry and os.path.normcase(os.path.normpath(entry)) != user_bin_norm
+    )
     return removed
 
 
@@ -474,6 +502,10 @@ if [[ ! -x "$python_bin" ]]; then
     printf '%s\n' 'Error: falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo.' >&2
     exit 1
 fi
+if [[ "${1:-}" == "--update" || "${1:-}" == "--uninstall" ]]; then
+    maintenance_command="$1"
+    exec "$python_bin" "$bagron_home/installer.py" "$maintenance_command" --target "$bagron_home"
+fi
 export BAGRON_CALLER_DIR="$PWD"
 cd "$bagron_home"
 exec "$python_bin" -m vnma run main.py "$@"
@@ -492,6 +524,10 @@ exec "$python_bin" -m vnma run main.py "$@"
         'set "PYTHON=%BAGRON_HOME%\\.runtime\\python.exe"\r\n'
         'if not exist "%PYTHON%" set "PYTHON=%BAGRON_HOME%\\.runtime\\Scripts\\python.exe"\r\n'
         'if not exist "%PYTHON%" (echo Error: falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo. 1>&2 & exit /b 1)\r\n'
+        'if /I "%~1"=="--update" "%PYTHON%" "%BAGRON_HOME%\\installer.py" --update --target "%BAGRON_HOME%"\r\n'
+        'if /I "%~1"=="--update" exit /b %ERRORLEVEL%\r\n'
+        'if /I "%~1"=="--uninstall" "%PYTHON%" "%BAGRON_HOME%\\installer.py" --uninstall --target "%BAGRON_HOME%"\r\n'
+        'if /I "%~1"=="--uninstall" exit /b %ERRORLEVEL%\r\n'
         'pushd "%BAGRON_HOME%"\r\n'
         '"%PYTHON%" -m vnma run main.py %*\r\n'
         'set "EXIT_CODE=%ERRORLEVEL%"\r\n'
@@ -505,6 +541,10 @@ exec "$python_bin" -m vnma run main.py "$@"
         '$python = Join-Path $bagronHome ".runtime\\python.exe"\r\n'
         'if (-not (Test-Path -LiteralPath $python)) { $python = Join-Path $bagronHome ".runtime\\Scripts\\python.exe" }\r\n'
         'if (-not (Test-Path -LiteralPath $python)) { Write-Error "Falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo."; exit 1 }\r\n'
+        'if ($args.Count -gt 0 -and ($args[0] -eq "--update" -or $args[0] -eq "--uninstall")) {\r\n'
+        '    & $python (Join-Path $bagronHome "installer.py") $args[0] --target $bagronHome\r\n'
+        '    exit $LASTEXITCODE\r\n'
+        '}\r\n'
         '$env:BAGRON_CALLER_DIR = $callerDir\r\n'
         'Push-Location $bagronHome\r\n'
         'try {\r\n'
@@ -597,6 +637,194 @@ def _fetch_from_github(target_dir: Path) -> None:
     except Exception as error:
         print(f'Error al descargar desde GitHub: {error}', file=sys.stderr)
         raise
+
+
+def _release_version_tuple(version: str) -> tuple[int, ...]:
+    """Valida una versión semver simple usada por los tags de Bagron."""
+    normalized = version.strip()
+    if normalized.startswith('v'):
+        normalized = normalized[1:]
+    parts = normalized.split('.')
+    if len(parts) != 3 or any(not part.isdigit() for part in parts):
+        raise ValueError(f'La release de GitHub tiene una versión inválida: {version!r}')
+    return tuple(int(part) for part in parts)
+
+
+def _release_asset_name(version: str) -> str:
+    """Devuelve el nombre del instalador publicado para el sistema actual."""
+    if os.name == 'nt':
+        return f'Bagron-{version}-Setup.exe'
+    if sys.platform == 'linux':
+        return f'Bagron-{version}-linux-x86_64'
+    raise RuntimeError(f'No hay un instalador publicado para {sys.platform}.')
+
+
+def _latest_release() -> tuple[str, str]:
+    """Consulta la release estable más reciente y devuelve tag y asset HTTPS."""
+    request = urllib.request.Request(
+        GITHUB_LATEST_RELEASE_URL,
+        headers={
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'Bagron-installer',
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        metadata = json.loads(response.read().decode('utf-8'))
+
+    tag = metadata.get('tag_name')
+    if not isinstance(tag, str):
+        raise ValueError('La respuesta de GitHub no contiene tag_name.')
+    _release_version_tuple(tag)
+
+    expected_name = _release_asset_name(tag.lstrip('v'))
+    for asset in metadata.get('assets', ()):
+        if not isinstance(asset, dict) or asset.get('name') != expected_name:
+            continue
+        download_url = asset.get('browser_download_url')
+        if not isinstance(download_url, str) or not download_url.startswith('https://'):
+            raise ValueError('La release no contiene una URL HTTPS válida para el instalador.')
+        return tag.lstrip('v'), download_url
+    raise FileNotFoundError(f'La release {tag} no contiene el asset {expected_name}.')
+
+
+def _download_release_asset(url: str, destination: Path) -> None:
+    """Descarga un instalador a un archivo temporal sin mantenerlo en memoria."""
+    request = urllib.request.Request(
+        url,
+        headers={'Accept': 'application/octet-stream', 'User-Agent': 'Bagron-installer'},
+    )
+    with urllib.request.urlopen(request, timeout=120) as response, destination.open('wb') as output:
+        shutil.copyfileobj(response, output, length=1024 * 1024)
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise OSError('GitHub devolvió un instalador vacío.')
+
+
+def _running_from_installation(target_dir: Path) -> bool:
+    """Indica si el proceso actual mantiene abierto el runtime que se actualizará."""
+    try:
+        Path(sys.executable).resolve().relative_to(target_dir.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _schedule_windows_update(installer_path: Path, target_dir: Path) -> bool:
+    """Programa la actualización después de cerrar el Python portable actual."""
+    if os.name != 'nt':
+        return False
+
+    script_path = installer_path.with_suffix('.cmd')
+    try:
+        script_path.write_text(
+            '@echo off\r\n'
+            'setlocal\r\n'
+            'set "INSTALLER=%~1"\r\n'
+            'set "TARGET=%~2"\r\n'
+            'set "PARENT_PID=%~3"\r\n'
+            ':wait_parent\r\n'
+            'tasklist /FI "PID eq %PARENT_PID%" /NH | find "%PARENT_PID%" >nul\r\n'
+            'if not errorlevel 1 (\r\n'
+            '  ping 127.0.0.1 -n 2 >nul\r\n'
+            '  goto wait_parent\r\n'
+            ')\r\n'
+            '"%INSTALLER%" --target "%TARGET%"\r\n'
+            'set "EXIT_CODE=%ERRORLEVEL%"\r\n'
+            'del /F /Q "%INSTALLER%" >nul 2>&1\r\n'
+            'del /F /Q "%~f0" >nul 2>&1\r\n'
+            'rmdir /Q "%~dp0" >nul 2>&1\r\n'
+            'exit /b %EXIT_CODE%\r\n',
+            encoding='utf-8',
+        )
+        comspec = os.environ.get('ComSpec', 'cmd.exe')
+        flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(
+            subprocess, 'CREATE_NO_WINDOW', 0
+        )
+        subprocess.Popen(
+            [comspec, '/D', '/C', str(script_path), str(installer_path), str(target_dir), str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=flags,
+        )
+        return True
+    except OSError:
+        script_path.unlink(missing_ok=True)
+        return False
+
+
+_INSTALLED_VERSION_RE = re.compile(r"^BAGRON_VERSION\s*=\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
+
+
+def _installed_version(target_dir: Path) -> str | None:
+    """Lee la versión instalada sin importar módulos desde el runtime objetivo."""
+    version_file = target_dir / 'core' / 'version.py'
+    try:
+        match = _INSTALLED_VERSION_RE.search(version_file.read_text(encoding='utf-8'))
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def update(target_dir: Path | None = None) -> int:
+    """Actualiza la instalación al último asset estable publicado en GitHub."""
+    if target_dir is None:
+        target_dir = Path.home() / DEFAULT_INSTALL_NAME
+    target_dir = target_dir.resolve()
+    if not target_dir.is_dir():
+        print(f'Error: no existe una instalación de Bagron en {target_dir}.', file=sys.stderr)
+        return 1
+
+    print('=== Actualizador de Bagron ===')
+    print(f'Objetivo: {target_dir}')
+    try:
+        latest_version, asset_url = _latest_release()
+        latest_tuple = _release_version_tuple(latest_version)
+        current_version = _installed_version(target_dir) or BAGRON_VERSION
+        current_tuple = _release_version_tuple(current_version)
+    except (OSError, RuntimeError, ValueError, urllib.error.URLError, json.JSONDecodeError) as error:
+        print(f'Error: no se pudo consultar la última release de GitHub: {error}', file=sys.stderr)
+        return 1
+
+    print(f'Versión instalada: {current_version}')
+    print(f'Última release estable: {latest_version}')
+    if latest_tuple <= current_tuple:
+        print('Bagron ya está actualizado.')
+        return 0
+
+    asset_name = _release_asset_name(latest_version)
+    temporary_dir = Path(tempfile.mkdtemp(prefix='bagron-update-'))
+    deferred = False
+    try:
+        installer_path = temporary_dir / asset_name
+        print(f'Descargando {asset_name}...')
+        _download_release_asset(asset_url, installer_path)
+        if os.name != 'nt':
+            installer_path.chmod(installer_path.stat().st_mode | 0o111)
+        if os.name == 'nt' and _running_from_installation(target_dir):
+            deferred = _schedule_windows_update(installer_path, target_dir)
+            if not deferred:
+                print('Error: no se pudo programar la actualización de Windows.', file=sys.stderr)
+                return 1
+            print('La actualización continuará al cerrar la terminal actual.')
+            return 0
+
+        result = subprocess.run(
+            [str(installer_path), '--target', str(target_dir)],
+            check=False,
+        )
+        if result.returncode != 0:
+            print('Error: el instalador de la nueva release terminó con error.', file=sys.stderr)
+            return result.returncode or 1
+    except (OSError, subprocess.SubprocessError, urllib.error.URLError) as error:
+        print(f'Error: no se pudo descargar o ejecutar la actualización: {error}', file=sys.stderr)
+        return 1
+    finally:
+        if not deferred:
+            shutil.rmtree(temporary_dir, ignore_errors=True)
+
+    print(f'Actualización a Bagron {latest_version} completada.')
+    return 0
 
 
 # ============================================================================
@@ -703,6 +931,155 @@ def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
 
 
 # ============================================================================
+# Instalación desde el compilador y las dependencias preconstruidas
+# ============================================================================
+
+def _bundled_compiler_dir() -> Path | None:
+    """Directorio con Bagron, vendor y Gram AOT dentro del instalador."""
+    if not getattr(sys, 'frozen', False):
+        return None
+    meipass = getattr(sys, '_MEIPASS', None)
+    return Path(meipass) / 'bagron-payload' if meipass else None
+
+
+def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
+    """Valida el bundle antes de tocar el directorio de instalación."""
+    info_path = payload / 'bagron-prebuilt.json'
+    metadata = json.loads(info_path.read_text(encoding='utf-8'))
+    if metadata.get('format_version') != 1:
+        raise ValueError('Formato de bundle Bagron no compatible.')
+    if metadata.get('bagron_version') != BAGRON_VERSION:
+        raise ValueError('El bundle no corresponde a esta versión de Bagron.')
+    expected_platform = 'windows' if os.name == 'nt' else 'linux'
+    if metadata.get('platform') != expected_platform:
+        raise ValueError('El bundle corresponde a otra plataforma.')
+    library_name = metadata.get('aot_library')
+    if library_name not in _aot_library_names():
+        raise ValueError('La biblioteca AOT del bundle no corresponde a este sistema.')
+
+    # PyInstaller intentionally omits alias files; validate the manifest and
+    # canonical targets before copying, then restore aliases at destination.
+    aliases = verify_manifest(runtime, expected_platform=expected_platform)
+    python_bin = _runtime_python_path(runtime)
+    if not python_bin.is_file() and python_bin.relative_to(runtime).as_posix() not in aliases:
+        raise FileNotFoundError('Falta el intérprete Python del runtime preparado.')
+
+    library = payload / 'build' / 'aot' / library_name
+    manifest = library.parent / 'gram_parser_manifest.json'
+    requirements = (
+        payload / 'main.py',
+        payload / 'core' / 'version.py',
+        payload / 'vnma.toml',
+        payload / 'vendor' / 'gram',
+        payload / 'vendor' / 'llvmlite',
+        library,
+        manifest,
+    )
+    if any(not item.exists() for item in requirements):
+        raise FileNotFoundError('Faltan componentes del compilador preconstruido.')
+    manifest_data = json.loads(manifest.read_text(encoding='utf-8'))
+    expected_grammar = metadata.get('grammar_id')
+    actual_grammar = manifest_data.get('grammar_id')
+    try:
+        expected_id = (int(expected_grammar, 0)
+                       if isinstance(expected_grammar, str)
+                       else int(expected_grammar))
+        actual_id = (int(actual_grammar, 0)
+                     if isinstance(actual_grammar, str)
+                     else int(actual_grammar))
+    except (TypeError, ValueError) as error:
+        raise ValueError('El manifiesto de Gram AOT tiene un grammar_id inválido.') from error
+    if expected_id != actual_id:
+        raise ValueError('El parser AOT no coincide con su manifiesto.')
+    digest = hashlib.sha256(library.read_bytes()).hexdigest()
+    if digest != metadata.get('aot_sha256'):
+        raise ValueError('La biblioteca Gram AOT del bundle no pasó la verificación SHA-256.')
+    return library_name, _runtime_python_path(runtime)
+
+
+def _install_prebuilt(target_dir: Path) -> int:
+    """Instala archivos precompilados sin red, pip ni reconstrucción de Gram."""
+    payload = _bundled_compiler_dir()
+    runtime = _bundled_python_dir()
+    if payload is None or runtime is None:
+        print('Error: el instalador no contiene su bundle preconstruido.', file=sys.stderr)
+        return 1
+    try:
+        _prebuilt_layout(payload, runtime)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f'Error: el bundle preconstruido es inválido: {error}', file=sys.stderr)
+        return 1
+
+    print('\n[1/3] Instalando compilador, vendor y Gram AOT preparados...')
+    try:
+        # Solo se regeneran directorios administrados por Bagron. No se borra
+        # modules/, que puede contener código local del usuario.
+        for relative in ('core', 'tools', 'vendor', '.runtime', 'build/aot'):
+            existing = target_dir / relative
+            if existing.is_symlink():
+                existing.unlink()
+            elif existing.is_dir():
+                shutil.rmtree(existing)
+            elif existing.exists():
+                existing.unlink()
+
+        for entry in payload.iterdir():
+            destination = target_dir / entry.name
+            if entry.is_dir():
+                shutil.copytree(entry, destination, dirs_exist_ok=True, symlinks=True)
+            else:
+                shutil.copy2(entry, destination)
+        shutil.copytree(runtime, target_dir / LOCAL_RUNTIME_NAME, symlinks=True)
+        count = restore_aliases(
+            target_dir / LOCAL_RUNTIME_NAME,
+            platform='windows' if os.name == 'nt' else 'linux',
+        )
+        print(f'  [OK] Restaurados {count} alias del runtime Python.')
+
+        for name in EMPTY_DIRS:
+            (target_dir / name).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(f'Error: no se pudo instalar el bundle: {error}', file=sys.stderr)
+        return 1
+
+    print('[2/3] Verificando la CLI preparada sin conexión...')
+    python_bin = _runtime_python_path(target_dir / LOCAL_RUNTIME_NAME)
+    try:
+        probe = subprocess.run(
+            [str(python_bin), '-m', 'vnma', 'run', 'main.py', '--version'],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        print(f'Error: no se pudo iniciar Bagron: {error}', file=sys.stderr)
+        return 1
+    if probe.returncode != 0 or f'Bagron {BAGRON_VERSION}' not in probe.stdout:
+        print(
+            'Error: el compilador instalado no superó la verificación: '
+            + (probe.stderr or probe.stdout).strip(),
+            file=sys.stderr,
+        )
+        return 1
+
+    print('[3/3] Creando lanzadores de Bagron...')
+    bin_dir = target_dir / 'bin'
+    try:
+        _create_launchers(bin_dir)
+        if os.name == 'posix':
+            _add_to_posix_user_path(bin_dir)
+        else:
+            _add_to_windows_user_path(bin_dir)
+    except OSError as error:
+        print(f'Error: no se pudo crear el lanzador: {error}', file=sys.stderr)
+        return 1
+
+    print(f'Instalación preconstruida completada: {target_dir}')
+    return 0
+
+
+# ============================================================================
 # Proceso principal de instalación
 # ============================================================================
 
@@ -719,8 +1096,19 @@ def install(
 
     target_dir = target_dir.resolve()
     print(f'=== Instalador de Bagron {BAGRON_VERSION} ===')
-    print(f'Modo:    {"Local (copia directa)" if from_local else "GitHub (" + BAGRON_REPO_URL + ")"}')
+    frozen = bool(getattr(sys, 'frozen', False))
+    mode = ('Preconstruido (sin red)' if frozen and not from_local
+            else 'Local (copia directa)' if from_local
+            else 'GitHub (' + BAGRON_REPO_URL + ')')
+    print(f'Modo:    {mode}')
     print(f'Destino: {target_dir}')
+
+    if frozen and from_local:
+        print('Error: --local solo es compatible con la instalación desde fuentes.', file=sys.stderr)
+        return 1
+    if frozen:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return _install_prebuilt(target_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -836,12 +1224,68 @@ def install(
     return 0
 
 
+def _schedule_windows_cleanup(target_dir: Path) -> bool:
+    """Programa la eliminación diferida cuando Windows mantiene archivos abiertos."""
+    if os.name != 'nt':
+        return False
+
+    cleanup_script: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            suffix='.cmd',
+            prefix='bagron-uninstall-',
+            delete=False,
+        ) as script:
+            cleanup_script = Path(script.name)
+            script.write(
+                '@echo off\r\n'
+                'setlocal\r\n'
+                'set "TARGET=%~1"\r\n'
+                'for /L %%N in (1,1,60) do (\r\n'
+                '  rmdir /S /Q "%TARGET%" >nul 2>&1\r\n'
+                '  if not exist "%TARGET%" goto done\r\n'
+                '  ping 127.0.0.1 -n 2 >nul\r\n'
+                ')\r\n'
+                ':done\r\n'
+                'del /F /Q "%~f0" >nul 2>&1\r\n'
+            )
+
+        comspec = os.environ.get('ComSpec', 'cmd.exe')
+        flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(
+            subprocess, 'CREATE_NO_WINDOW', 0
+        )
+        subprocess.Popen(
+            [comspec, '/D', '/C', str(cleanup_script), str(target_dir)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=flags,
+        )
+        return True
+    except OSError:
+        if cleanup_script is not None:
+            cleanup_script.unlink(missing_ok=True)
+        return False
+
+
+def _safe_uninstall_target(target_dir: Path) -> bool:
+    """Evita que una ruta raíz o el perfil completo sean objetivos de borrado."""
+    resolved = target_dir.resolve()
+    return resolved != Path(resolved.anchor) and resolved != Path.home().resolve()
+
+
 def uninstall(target_dir: Path | None = None) -> int:
-    """Desinstala Bagron y retira su directorio bin del PATH."""
+    """Desinstala Bagron, limpia enlaces y PATH y elimina su instalación."""
     if target_dir is None:
         target_dir = Path.home() / DEFAULT_INSTALL_NAME
 
     target_dir = target_dir.resolve()
+    if not _safe_uninstall_target(target_dir):
+        print(f'Error: la ruta de desinstalación no es segura: {target_dir}', file=sys.stderr)
+        return 1
     bin_dir = target_dir / 'bin'
 
     print(f'=== Desinstalador de Bagron ===')
@@ -853,7 +1297,7 @@ def uninstall(target_dir: Path | None = None) -> int:
             print(f'  [OK] Lanzadores retirados de {Path.home() / ".local" / "bin"}')
         else:
             print('  - No había enlaces POSIX asociados a esta instalación.')
-    elif bin_dir.exists():
+    else:
         removed = _remove_from_windows_user_path(bin_dir)
         if removed:
             print(f'  [OK] Ruta retirada del PATH: {bin_dir}')
@@ -865,6 +1309,9 @@ def uninstall(target_dir: Path | None = None) -> int:
             shutil.rmtree(target_dir)
             print(f'  [OK] Carpeta eliminada: {target_dir}')
         except OSError as error:
+            if _schedule_windows_cleanup(target_dir):
+                print('  [OK] La limpieza de Windows continuará al cerrar Bagron.')
+                return 0
             print(f'  Error al eliminar {target_dir}: {error}', file=sys.stderr)
             return 1
 
@@ -885,16 +1332,24 @@ def main() -> int:
         action='store_true',
         help='Instala desde la copia local en lugar de descargar desde GitHub',
     )
-    parser.add_argument(
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument(
         '--uninstall',
         action='store_true',
         help='Desinstala Bagron y elimina la ruta del PATH',
+    )
+    actions.add_argument(
+        '--update',
+        action='store_true',
+        help='Actualiza la instalación a la última release estable de GitHub',
     )
     args = parser.parse_args()
 
     try:
         if args.uninstall:
             return uninstall(args.target)
+        if args.update:
+            return update(args.target)
         return install(args.target, from_local=args.local)
     except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
         print(f'Error de instalación: {error}', file=sys.stderr)

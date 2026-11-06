@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+env:
+  PACKAGE_LABEL: ${{ github.ref_type == 'tag' && github.ref_name || format('preview-{0}', github.run_id) }}
 
 jobs:
   test:
@@ -20,6 +24,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.14'
+      - name: Verify release tag matches compiler version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version="$(python -c 'from core.version import BAGRON_VERSION; print(BAGRON_VERSION)')"
+          test "$version" = "$GITHUB_REF_NAME"
       - name: Install LLVM tools on Linux
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes clang lld
@@ -63,6 +73,8 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Install LLVM tools
+        run: sudo apt-get update && sudo apt-get install --yes clang lld
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform linux --output-dir build/portable-python
       - name: Checkout BagronLab prebuilt libraries
@@ -85,17 +97,46 @@ jobs:
           find "$source_dir" -maxdepth 1 -type f -name '*.lib' -exec cp -f {} "$staging_dir/" \;
           test -n "$(find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -print -quit)"
           find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -printf '%f\n' | sort
+      - name: Install vnma in portable runtime
+        run: build/portable-python/bin/python -m pip install --upgrade vnma
+      - name: Prepare vnma project configuration
+        run: python -c "from pathlib import Path; Path('vnma.toml').write_text(Path('vnma.toml.example').read_text(encoding='utf-8'), encoding='utf-8')"
+      - name: Resolve dependencies using portable runtime
+        run: build/portable-python/bin/python -m vnma install
+      - name: Checkout Gram native sources (main)
+        run: git clone --depth 1 --branch main https://github.com/GrandKenzy/Gram.git gram-source
+      - name: Build Gram AOT parser
+        run: build/portable-python/bin/python -m vnma run tools/build_aot_parser.py --gram-path gram-source --output-dir build/aot
+      - name: Smoke test packaged compiler prerequisites
+        run: |
+          test -s build/aot/libbagron_aot.so
+          test -s build/aot/gram_parser_manifest.json
+          build/portable-python/bin/python -m vnma run main.py examples/01_basico.bg -o build/package-smoke
+          test -f build/package-smoke
+      - name: Record portable Python aliases (Linux)
+        run: python tools/deduplicate_portable_python.py --platform linux --runtime build/portable-python
+      - name: Assemble prebuilt Linux compiler payload
+        run: python tools/prepare_release_payload.py --platform linux --output-dir build/release-payload
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
           test -x dist/bagron-installer
-          mv dist/bagron-installer "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
-          test -x "dist/Bagron-${GITHUB_REF_NAME}-linux-x86_64"
+          mv dist/bagron-installer "dist/Bagron-${PACKAGE_LABEL}-linux-x86_64"
+          test -x "dist/Bagron-${PACKAGE_LABEL}-linux-x86_64"
+      - name: Smoke test installed Linux release
+        run: |
+          target="$RUNNER_TEMP/Bagron-release-smoke"
+          ./dist/Bagron-${PACKAGE_LABEL}-linux-x86_64 --target "$target"
+          "$target/bin/bagron" --version
+          "$target/.runtime/bin/python" --version
+          "$target/.runtime/bin/python" -m pip --version
+          "$target/bin/bagron" "$target/examples/01_basico.bg" -o "$target/release-smoke"
+          test -s "$target/release-smoke"
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bagron-release-${{ github.ref_name }}
-          path: dist/Bagron-${{ github.ref_name }}-linux-x86_64
+          name: bagron-release-${{ env.PACKAGE_LABEL }}
+          path: dist/Bagron-${{ env.PACKAGE_LABEL }}-linux-x86_64
           if-no-files-found: error
 
   package-windows:
@@ -113,6 +154,9 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Install LLVM tools
+        shell: pwsh
+        run: choco install llvm --yes --no-progress
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform windows --output-dir build/portable-python
       - name: Checkout BagronLab prebuilt libraries
@@ -137,23 +181,67 @@ jobs:
             Copy-Item -LiteralPath $library.FullName -Destination (Join-Path $stagingDir $library.Name) -Force
           }
           Get-ChildItem -LiteralPath $stagingDir -File -Filter '*.lib' | Sort-Object Name | Select-Object -ExpandProperty Name
+      - name: Install vnma in portable runtime
+        shell: pwsh
+        run: |
+          & ./build/portable-python/python.exe -m pip install --upgrade vnma
+      - name: Prepare vnma project configuration
+        run: python -c "from pathlib import Path; Path('vnma.toml').write_text(Path('vnma.toml.example').read_text(encoding='utf-8'), encoding='utf-8')"
+      - name: Resolve dependencies using portable runtime
+        shell: pwsh
+        run: |
+          & ./build/portable-python/python.exe -m vnma install
+      - name: Checkout Gram native sources (main)
+        run: git clone --depth 1 --branch main https://github.com/GrandKenzy/Gram.git gram-source
+      - name: Build Gram AOT parser
+        shell: pwsh
+        run: |
+          & ./build/portable-python/python.exe -m vnma run tools/build_aot_parser.py --gram-path gram-source --output-dir build/aot
+      - name: Smoke test packaged compiler prerequisites
+        shell: pwsh
+        run: |
+          if (-not (Test-Path build/aot/bagron_aot.dll)) { throw 'No se generó bagron_aot.dll' }
+          if (-not (Test-Path build/aot/gram_parser_manifest.json)) { throw 'Falta el manifiesto Gram AOT' }
+          & ./build/portable-python/python.exe -m vnma run main.py examples/01_basico.bg -o build/package-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Falló el smoke test del compilador' }
+          if (-not (Test-Path build/package-smoke.exe)) { throw 'No se generó el ejecutable de prueba' }
+      - name: Record portable Python aliases (Windows)
+        run: python tools/deduplicate_portable_python.py --platform windows --runtime build/portable-python
+      - name: Assemble prebuilt Windows compiler payload
+        run: python tools/prepare_release_payload.py --platform windows --output-dir build/release-payload
       - name: Build compiled Windows installer
         shell: pwsh
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
           $compiled = 'dist/bagron-installer.exe'
           if (-not (Test-Path $compiled)) { throw 'No se generó bagron-installer.exe' }
-          Move-Item -LiteralPath $compiled -Destination "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe" -Force
-          if (-not (Test-Path "dist/Bagron-${env:GITHUB_REF_NAME}-Setup.exe")) { throw 'No se renombró el instalador Windows' }
+          Move-Item -LiteralPath $compiled -Destination "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe" -Force
+          if (-not (Test-Path "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe")) { throw 'No se renombró el instalador Windows' }
+      - name: Smoke test installed Windows release
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "Bagron-release-smoke"
+          & "dist/Bagron-${env:PACKAGE_LABEL}-Setup.exe" --target $target
+          if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación preconstruida' }
+          & "$target/bin/bagron.cmd" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló bagron --version' }
+          & "$target/.runtime/python.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló Python portable' }
+          & "$target/.runtime/python.exe" -m pip --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló pip portable' }
+          & "$target/bin/bagron.cmd" "$target/examples/01_basico.bg" -o "$target/release-smoke.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación de prueba' }
+          if (-not (Test-Path "$target/release-smoke.exe")) { throw 'No se generó el ejecutable' }
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bagron-release-${{ github.ref_name }}-windows
-          path: dist/Bagron-${{ github.ref_name }}-Setup.exe
+          name: bagron-release-${{ env.PACKAGE_LABEL }}-windows
+          path: dist/Bagron-${{ env.PACKAGE_LABEL }}-Setup.exe
           if-no-files-found: error
 
   publish:
     name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     needs: [package-linux, package-windows]
     permissions:
@@ -164,7 +252,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: bagron-release-${{ github.ref_name }}*
+          pattern: bagron-release-${{ env.PACKAGE_LABEL }}*
           path: dist
           merge-multiple: true
       - name: Create or update clean release
