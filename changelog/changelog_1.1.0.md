@@ -4,9 +4,6 @@
 
 - Added `bagron --version` (and `bagron -V`) to report the compiler version
   directly from the canonical project metadata.
-- Added the `ARCHB` preprocessor condition for selecting target code by its
-  canonical 32-bit or 64-bit architecture width.
-
 - Imported modules now inherit omitted target clauses from the entry module.
 - Removed warnings for imported modules that do not declare `System`, `Arch`,
   or `Boot`; these modules use the effective target selected by `main.bg`.

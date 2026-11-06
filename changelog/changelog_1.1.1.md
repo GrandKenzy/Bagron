@@ -1,5 +1,10 @@
 # Changelog 1.1.1
 
+## Preprocessor
+
+- Added the `ARCHB` preprocessor condition for selecting target code by its
+  canonical 32-bit or 64-bit architecture width.
+
 ## Syntax
 
 - Added one-line bodies for ordinary functions and class methods. A function
