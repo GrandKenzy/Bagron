@@ -246,10 +246,10 @@ class InstallerTests(unittest.TestCase):
             target = Path(directory) / 'Bagron'
             version_file = target / 'core' / 'version.py'
             version_file.parent.mkdir(parents=True)
-            version_file.write_text("BAGRON_VERSION = '1.1.3'\n", encoding='utf-8')
+            version_file.write_text("BAGRON_VERSION = '1.1.4'\n", encoding='utf-8')
 
             with mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.4', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=AssertionError('download'),
             ):
@@ -306,7 +306,7 @@ class InstallerTests(unittest.TestCase):
                 "BAGRON_VERSION = '1.1.2'\n", encoding='utf-8'
             )
             with mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.4', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=OSError('network down'),
             ):
@@ -543,8 +543,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.1.1.md', names)
         self.assertIn('changelog_1.1.2.md', names)
         self.assertIn('changelog_1.1.3.md', names)
+        self.assertIn('changelog_1.1.4.md', names)
         self.assertEqual(
-            8,
+            9,
             sum(name.startswith('changelog_') for name in names),
         )
 

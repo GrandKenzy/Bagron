@@ -102,8 +102,11 @@ def prepare_payload(root: Path, destination: Path, *, platform_name: str) -> Pat
         if library_files:
             libraries_destination = destination / 'libs'
             libraries_destination.mkdir(parents=True, exist_ok=True)
-            for library in library_files:
-                shutil.copy2(library, libraries_destination / library.name)
+            for prebuilt_library in library_files:
+                shutil.copy2(
+                    prebuilt_library,
+                    libraries_destination / prebuilt_library.name,
+                )
     aot_destination = destination / 'build' / 'aot'
     aot_destination.mkdir(parents=True)
     shutil.copy2(library, aot_destination / library.name)

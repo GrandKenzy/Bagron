@@ -27,7 +27,7 @@ if [[ "${BAGRON_LOCAL_INSTALL:-0}" == "1" \
     fi
 fi
 
-version="${BAGRON_VERSION:-1.1.3}"
+version="${BAGRON_VERSION:-1.1.4}"
 installer_url="${BAGRON_INSTALLER_URL:-https://github.com/GrandKenzy/Bagron/releases/download/${version}/Bagron-${version}-linux-x86_64}"
 temporary_dir="$(mktemp -d)"
 trap 'rm -rf "$temporary_dir"' EXIT
