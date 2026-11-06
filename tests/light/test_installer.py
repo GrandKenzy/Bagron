@@ -299,6 +299,47 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('gh release delete-asset', publish_job)
         self.assertIn('--notes-file "$notes_file"', publish_job)
 
+    def test_release_packaging_prepares_portable_vnma_and_gram_aot(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / '.github' / 'workflows' / 'release.yml'
+        ).read_text(encoding='utf-8')
+
+        linux_job = workflow.split('  package-linux:', 1)[1].split(
+            '  package-windows:', 1
+        )[0]
+        windows_job = workflow.split('  package-windows:', 1)[1].split(
+            '  publish:', 1
+        )[0]
+
+        for job, runtime, installer in (
+            (linux_job, 'build/portable-python/bin/python', 'Build compiled Linux installer'),
+            (windows_job, 'build/portable-python/python.exe', 'Build compiled Windows installer'),
+        ):
+            stages = (
+                'Prepare portable Python runtime',
+                'Install vnma in portable runtime',
+                'Prepare vnma project configuration',
+                'Resolve dependencies using portable runtime',
+                'Checkout Gram native sources (main)',
+                'Build Gram AOT parser',
+                'Smoke test packaged compiler prerequisites',
+                installer,
+            )
+            positions = [job.index(stage) for stage in stages]
+            self.assertEqual(sorted(positions), positions)
+            self.assertIn(f'{runtime} -m pip install --upgrade vnma', job)
+            self.assertIn(f'{runtime} -m vnma install', job)
+            self.assertIn(
+                f'{runtime} -m vnma run tools/build_aot_parser.py', job
+            )
+            self.assertIn('git clone --depth 1 --branch main', job)
+            self.assertIn('gram_parser_manifest.json', job)
+            self.assertIn(f'{runtime} -m vnma run main.py', job)
+
+        self.assertIn('libbagron_aot.so', linux_job)
+        self.assertIn('bagron_aot.dll', windows_job)
+
     def test_canonical_changelog_is_english_and_unique(self):
         changelog_dir = Path(__file__).resolve().parents[2] / 'changelog'
         canonical = changelog_dir / 'changelog_1.0.6.md'
