@@ -108,6 +108,8 @@ jobs:
           target="$RUNNER_TEMP/Bagron-release-smoke"
           ./dist/Bagron-${PACKAGE_LABEL}-linux-x86_64 --target "$target"
           "$target/bin/bagron" --version
+          "$target/.runtime/bin/python" --version
+          "$target/.runtime/bin/python" -m pip --version
           "$target/bin/bagron" "$target/examples/01_basico.bg" -o "$target/release-smoke"
           test -s "$target/release-smoke"
       - name: Upload release artifacts
@@ -181,6 +183,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Falló la instalación preconstruida' }
           & "$target/bin/bagron.cmd" --version
           if ($LASTEXITCODE -ne 0) { throw 'Falló bagron --version' }
+          & "$target/.runtime/python.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló Python portable' }
+          & "$target/.runtime/python.exe" -m pip --version
+          if ($LASTEXITCODE -ne 0) { throw 'Falló pip portable' }
           & "$target/bin/bagron.cmd" "$target/examples/01_basico.bg" -o "$target/release-smoke.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación de prueba' }
           if (-not (Test-Path "$target/release-smoke.exe")) { throw 'No se generó el ejecutable' }
