@@ -35,14 +35,18 @@
 
 ## Portable Python Runtime
 
-- Preserve or reconstruct Linux runtime symlinks so aliases such as
-  `python`, `python3`, and `python3.14` do not introduce unnecessary
-  duplicate executable data.
-- Deduplicate compatible shared-library aliases without changing their
-  required loader names or runtime resolution.
-- Handle Windows runtime aliases separately when symlinks are not appropriate.
-- Verify that runtime deduplication survives PyInstaller packaging and
-  extraction, and that the bundled Python and `pip` remain usable.
+- Preserved Linux runtime symlinks while preparing the portable CPython
+  distribution, avoiding eager expansion of executable and library aliases.
+- Added `tools/deduplicate_portable_python.py` to identify native links and
+  byte-identical Python executable/shared-library aliases, then write a
+  platform-specific alias manifest without altering the build-time runtime.
+- Updated the PyInstaller spec to exclude registered aliases from the
+  compressed installer payload while retaining their canonical files.
+- Restored aliases after installation as relative symlinks on Linux and
+  hardlinks on Windows, with regular-file copies as the Windows fallback.
+- Added regression tests for restored Python executable and library aliases,
+  missing aliases in the packaged input, corrupted alias metadata, and
+  attempts to reference files outside the portable runtime.
 
 ## Reproducibility and Verification
 
