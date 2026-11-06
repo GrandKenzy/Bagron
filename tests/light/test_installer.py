@@ -204,7 +204,7 @@ class InstallerTests(unittest.TestCase):
             (target / 'vnma.lock').write_text('{"gram": "local"}', encoding='utf-8')
             installer._configure_vnma_toml(target)
             content = (target / 'vnma.toml').read_text(encoding='utf-8')
-            self.assertIn('version = "1.1.2"', content)
+            self.assertIn(f'version = "{installer.BAGRON_VERSION}"', content)
             self.assertIn('https://github.com/GrandKenzy/Gram.git', content)
             self.assertNotIn('Desktop/Gram', content)
             self.assertIn('branch = "main"', content)
@@ -248,10 +248,10 @@ class InstallerTests(unittest.TestCase):
             with tarfile.open(output, 'r:gz') as archive:
                 names = set(archive.getnames())
 
-            self.assertIn('Bagron-1.1.2/installer.py', names)
-            self.assertIn('Bagron-1.1.2/install.sh', names)
+            self.assertIn(f'Bagron-{installer.BAGRON_VERSION}/installer.py', names)
+            self.assertIn(f'Bagron-{installer.BAGRON_VERSION}/install.sh', names)
             self.assertTrue(
-                any(name.rstrip('/') == 'Bagron-1.1.2/modules' for name in names)
+                any(name.rstrip('/') == f'Bagron-{installer.BAGRON_VERSION}/modules' for name in names)
             )
             self.assertNotIn('Bagron-1.1.1/vendor/', names)
             self.assertFalse(any('/build/' in name for name in names))
@@ -263,7 +263,7 @@ class InstallerTests(unittest.TestCase):
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
 
-            self.assertIn('Bagron-1.1.2/installer.py', names)
+            self.assertIn(f'Bagron-{installer.BAGRON_VERSION}/installer.py', names)
             self.assertFalse(any('/build/' in name for name in names))
             self.assertFalse(any('/vendor/' in name for name in names))
 
@@ -364,8 +364,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.1.0.md', names)
         self.assertIn('changelog_1.1.1.md', names)
         self.assertIn('changelog_1.1.2.md', names)
+        self.assertIn('changelog_1.1.3.md', names)
         self.assertEqual(
-            7,
+            8,
             sum(name.startswith('changelog_') for name in names),
         )
 
