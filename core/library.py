@@ -45,6 +45,14 @@ class LibraryRequest:
     path: str
     alias: str
     source: Path
+    global_name: bool = False
+
+
+def _format_library_directive(request: LibraryRequest) -> str:
+    """Render a library request while preserving its lookup scope."""
+    if request.global_name:
+        return f'library {request.path} as {request.alias}\n'
+    return f'library "{request.path}" as {request.alias}\n'
 
 
 @dataclass(frozen=True)
@@ -672,7 +680,7 @@ def _validate_source_tree(
             if library_errors:
                 raise LibraryError('\n'.join(library_errors))
             library_lines = [
-                f'library "{request.path}" as {request.alias}\n'
+                _format_library_directive(request)
                 for request in requests
             ]
 
@@ -1215,8 +1223,10 @@ def extract_library(path: str | Path, cache_root: str | Path) -> tuple[LibraryPa
 
 
 _LIBRARY_DIRECTIVE = re.compile(
-    r'^[ \t]*library[ \t]+(?P<quote>["\'])(?P<path>.*?)'
-    r'(?P=quote)[ \t]+as[ \t]+(?P<alias>[A-Za-z_][A-Za-z0-9_]*)[ \t]*$'
+    r'^[ \t]*library[ \t]+'
+    r'(?:(?P<quote>["\'])(?P<path>.*?)(?P=quote)|'
+    r'(?P<global>[A-Za-z_][A-Za-z0-9_]*))'
+    r'[ \t]+as[ \t]+(?P<alias>[A-Za-z_][A-Za-z0-9_]*)[ \t]*$'
 )
 
 
@@ -1243,14 +1253,17 @@ def extract_library_directives(
             continue
         if match is None:
             errors.append(
-                f'{source}:{index + 1}: library requiere "ruta.lib" as Alias'
+                f'{source}:{index + 1}: library requiere "ruta.lib" o '
+                'nombre_global as Alias'
             )
             transformed.append('\n' if line.endswith(('\n', '\r')) else '')
             continue
+        global_name = match.group('global')
         requests.append(LibraryRequest(
-            match.group('path'),
+            global_name if global_name is not None else match.group('path'),
             match.group('alias'),
             source.resolve(),
+            global_name=global_name is not None,
         ))
         transformed.append('\n' if line.endswith(('\n', '\r')) else '')
     return transformed, requests, errors
@@ -1260,23 +1273,35 @@ def resolve_library_path(
     name: str,
     source: Path,
     project_root: Path,
+    *,
+    global_name: bool = False,
 ) -> Path | None:
-    candidate = Path(name)
-    if candidate.is_absolute():
-        return None
-    # ``library`` has one deterministic search root.  Keeping source modules,
-    # native libraries, and binaries on separate paths avoids accidentally
-    # resolving a stale .lib beside main.bg.
-    roots = [project_root / 'libs']
+    if global_name:
+        if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
+            return None
+        from core.globvars import BAGRON_ROOT
+
+        candidate = Path(f'{name}.lib')
+        roots = [BAGRON_ROOT.resolve() / 'libs']
+    else:
+        candidate = Path(name)
+        if candidate.is_absolute():
+            return None
+        # ``library`` has one deterministic project-local search root.  Keeping
+        # source modules, native libraries, and binaries on separate paths
+        # avoids accidentally resolving a stale .lib beside main.bg.
+        roots = [project_root.resolve() / 'libs']
+
     seen: set[Path] = set()
     for root in roots:
+        root = root.resolve()
         resolved = (root / candidate).resolve()
         if resolved in seen:
             continue
         seen.add(resolved)
         if resolved.is_file() and resolved.suffix.lower() == '.lib':
             try:
-                resolved.relative_to(project_root.resolve())
+                resolved.relative_to(root)
             except ValueError:
                 continue
             return resolved
