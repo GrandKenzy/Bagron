@@ -112,8 +112,13 @@ def _literal_array_shape(value: ValueInfo) -> tuple[int, ...] | None:
 
 
 def _same_shape(left: TypeSpec, right: TypeSpec) -> bool:
+    nominal_match = (
+        left.nominal_key == right.nominal_key
+        if left.nominal_key is not None and right.nominal_key is not None
+        else left.name == right.name
+    )
     return (
-        left.name == right.name
+        nominal_match
         and left.bit_width == right.bit_width
         and left.signed == right.signed
         and left.pointer_level == right.pointer_level

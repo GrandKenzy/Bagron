@@ -38,3 +38,7 @@ view: WordView = WordView{ .whole = 270544960 }
 
 No se permiten varios campos ni un literal vacío, porque los miembros se
 superponen en la misma región de almacenamiento.
+
+Los bytes no ocupados por la vista activa se inicializan en cero. Esto evita
+filtrar contenido previo de pila al leer otra vista o pasar el valor a una ABI
+externa.

@@ -28,3 +28,6 @@
   address-taking through a temporary member.
 - Local designated aggregate initialization now skips the redundant default
   store before writing the completed literal value.
+- Cleared inactive `mold` bytes and masked signed `flags` fields before their
+  bit shift, preventing stack-data exposure and neighboring-bit corruption.
+- Preserved nominal aggregate identity through imported type aliases.

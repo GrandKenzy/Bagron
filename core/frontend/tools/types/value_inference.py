@@ -80,7 +80,7 @@ def _aggregate_literal_value(
     for designator in designators:
         name = _identifier_from_node(designator)
         field = (
-            resolver(aggregate.name, name)
+            resolver(type_name or aggregate.name, name)
             if callable(resolver)
             else next((item for item in aggregate.all_fields if item.name == name), None)
         )
@@ -130,7 +130,7 @@ def _aggregate_literal_value(
         for field in aggregate.all_fields
     )
     return ValueInfo(
-        TypeSpec(aggregate.name, nominal_key=aggregate.registry_key),
+        TypeSpec(type_name or aggregate.name, nominal_key=aggregate.registry_key),
         is_literal=all(value.is_literal for value in values.values()),
         value=tuple(values),
         items=ordered,

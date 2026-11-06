@@ -86,6 +86,78 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
         self.assertEqual(1, len(point_stores), module)
         self.assertNotIn('store %"__bg_', point_stores[0])
 
+    def test_mold_literal_clears_inactive_bytes(self):
+        artifacts = self._compile(
+            'mold WordView:\n'
+            '    word: int32\n'
+            '    bytes: byte[4]\n'
+            'func main() int32:\n'
+            '    view: WordView = WordView{ .word = 1 }\n'
+            '    if view.bytes[3] != 0:\n'
+            '        return 1\n'
+            '    return 0\n'
+        )
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+
+    def test_signed_flags_literal_masks_its_active_field(self):
+        artifacts = self._compile(
+            'flags State uint8:\n'
+            '    delta: Bint<3> = 0\n'
+            '    privileged: uBint<1> = 0\n'
+            '    reserved: uBint<4> = 0\n'
+            'func main() int32:\n'
+            '    state: State = State{ .delta = -1 }\n'
+            '    if state.delta != -1:\n'
+            '        return 1\n'
+            '    if state.privileged != 0:\n'
+            '        return 2\n'
+            '    if state.reserved != 0:\n'
+            '        return 3\n'
+            '    return 0\n'
+        )
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+
+    def test_imported_type_alias_resolves_its_nominal_layout(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / 'model.bg').write_text(
+            'struct Point:\n'
+            '    x: int32\n'
+            '    y: int32\n',
+            encoding='utf-8',
+        )
+        main = root / 'main.bg'
+        main.write_text(
+            'import { Point as ImportedPoint } from model\n'
+            'func main() int32:\n'
+            '    point: ImportedPoint = ImportedPoint{ .x = 4, .y = 9 }\n'
+            '    if ImportedPoint{ .x = 1, .y = 9 }.y != 9:\n'
+            '        return 1\n'
+            '    return point.x + point.y\n',
+            encoding='utf-8',
+        )
+        artifacts = Compiler().compile(main, executable=True)
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(13, result.returncode, result.stderr.decode())
+
 
 if __name__ == '__main__':
     unittest.main()

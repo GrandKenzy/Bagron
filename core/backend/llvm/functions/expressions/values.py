@@ -16,6 +16,28 @@ from .memory import _MemoryPlace
 
 
 class ValueExpressionMixin:
+    def _aggregate_literal_layout(
+        self,
+        type_name: str,
+        expected_type: ir.Type | None = None,
+    ):
+        """Resolve a literal through its semantic nominal type when possible."""
+        if self.type_registry is None:
+            return None
+        if expected_type is not None:
+            layout = self.type_registry.layout(expected_type)
+            if layout is not None:
+                return layout
+        scope = getattr(self._active_function_symbol, 'scope', None)
+        resolver = getattr(scope, 'resolve_type', None)
+        symbol = resolver(type_name) if callable(resolver) else None
+        registry_key = getattr(symbol, 'registry_key', None)
+        if registry_key is not None:
+            layout = self.type_registry.layout(registry_key)
+            if layout is not None:
+                return layout
+        return self.type_registry.layout(type_name)
+
     def _aggregate_literal_entries(self, node: object) -> tuple[str | None, dict[str, object]]:
         """Extract direct ``.field = value`` entries from an aggregate AST."""
         type_name = next(
@@ -55,26 +77,38 @@ class ValueExpressionMixin:
         node: object,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
+        expected_type: ir.Type | None = None,
     ) -> ir.Value:
         if self.type_registry is None:
             raise FunctionEmissionError('El literal agregado requiere tipos LLVM')
         type_name, entries = self._aggregate_literal_entries(node)
-        layout = self.type_registry.layout(type_name or '')
+        layout = self._aggregate_literal_layout(type_name or '', expected_type)
         if layout is None or layout.symbol.is_class:
             raise FunctionEmissionError(
                 f'{type_name or "<anonimo>"} no es un agregado construible'
             )
+        type_key = layout.symbol.registry_key or layout.symbol.name
 
         if layout.symbol.kind == 'mold':
             # A mold has one active member.  Materialize only that member in a
             # temporary union slot; unlike a struct, there is no meaningful
             # value for the remaining overlay bytes.
             field_name, value_node = next(iter(entries.items()))
-            field = self.type_registry.field_spec(type_name or '', field_name)
-            storage_path = self.type_registry.storage_path(type_name or '')
+            field = self.type_registry.field_spec(type_key, field_name)
+            storage_path = self.type_registry.storage_path(type_key)
             if field is None or storage_path is None:
                 raise FunctionEmissionError('El literal mold no tiene almacenamiento')
             result = builder.alloca(layout.llvm_type, name='mold.literal')
+            # A mold exposes every byte through alternate views.  Clear the
+            # temporary before storing its active member so a later view or an
+            # extern boundary cannot observe uninitialized stack contents.
+            self._store_address(
+                ir.Constant(layout.llvm_type, None),
+                result,
+                builder,
+                alignment=layout.alignment,
+                volatile=layout.symbol.is_volatile,
+            )
             storage = builder.gep(
                 result,
                 [ir.Constant(ir.IntType(32), 0), *(
@@ -105,22 +139,41 @@ class ValueExpressionMixin:
                 raise FunctionEmissionError(f'El flags {type_name} no tiene entero base')
             bits: ir.Value = ir.Constant(backing, 0)
             for field_name, value_node in entries.items():
-                field = self.type_registry.field_spec(type_name or '', field_name)
+                field = self.type_registry.field_spec(type_key, field_name)
                 if field is None or field.bit_offset is None:
                     raise FunctionEmissionError(f'El campo {type_name}.{field_name} no existe')
-                value = self._compile_expression(value_node, builder, values)
-                value = self._coerce_value(value, backing, builder, signed=False)
+                field_type = self.type_registry.resolve(field.type_spec)
+                if not isinstance(field_type, ir.IntType):
+                    raise FunctionEmissionError(
+                        f'El campo flags {type_name}.{field_name} no es entero'
+                    )
+                value = self._compile_expression(
+                    value_node,
+                    builder,
+                    values,
+                    expected_type=field_type,
+                )
+                value = self._coerce_value(
+                    value,
+                    field_type,
+                    builder,
+                    signed=field.type_spec.name == 'Bint',
+                )
+                if field_type.width < backing.width:
+                    value = builder.zext(value, backing)
+                mask = (1 << field_type.width) - 1
+                value = builder.and_(value, ir.Constant(backing, mask))
                 if field.bit_offset:
                     value = builder.shl(value, ir.Constant(backing, field.bit_offset))
                 bits = builder.or_(bits, value)
-            storage_path = self.type_registry.storage_path(type_name or '')
+            storage_path = self.type_registry.storage_path(type_key)
             if storage_path is None:
                 raise FunctionEmissionError(f'El flags {type_name} no tiene almacenamiento')
             return builder.insert_value(result, bits, storage_path)
 
         for field_name, value_node in entries.items():
-            field = self.type_registry.field_spec(type_name or '', field_name)
-            path = self.type_registry.field_path(type_name or '', field_name)
+            field = self.type_registry.field_spec(type_key, field_name)
+            path = self.type_registry.field_path(type_key, field_name)
             if field is None or path is None:
                 raise FunctionEmissionError(f'El campo {type_name}.{field_name} no existe')
             field_type = self.type_registry.resolve(field.type_spec)
@@ -518,9 +571,16 @@ class ValueExpressionMixin:
                     )
                     type_name, _ = self._aggregate_literal_entries(literal)
                     field_name = self._identifier(suffixes[0])
-                    layout = self.type_registry.layout(type_name or '') if self.type_registry else None
+                    layout = (
+                        self._aggregate_literal_layout(type_name or '')
+                        if self.type_registry else None
+                    )
+                    type_key = (
+                        layout.symbol.registry_key or layout.symbol.name
+                        if layout is not None else ''
+                    )
                     field = (
-                        self.type_registry.field_spec(type_name or '', field_name or '')
+                        self.type_registry.field_spec(type_key, field_name or '')
                         if self.type_registry else None
                     )
                     if layout is None or field is None:
@@ -530,7 +590,7 @@ class ValueExpressionMixin:
                         backing = layout.backing_type
                         if not isinstance(backing, ir.IntType) or field.bit_offset is None:
                             raise FunctionEmissionError('El campo flags no tiene layout')
-                        storage_path = self.type_registry.storage_path(type_name or '')
+                        storage_path = self.type_registry.storage_path(type_key)
                         bits = builder.extract_value(aggregate, storage_path)
                         if field.bit_offset:
                             bits = builder.lshr(bits, ir.Constant(backing, field.bit_offset))
@@ -538,13 +598,13 @@ class ValueExpressionMixin:
                         bits = builder.and_(bits, ir.Constant(backing, mask))
                         return builder.trunc(bits, field_type)
                     if layout.symbol.kind != 'mold':
-                        path = self.type_registry.field_path(type_name or '', field_name or '')
+                        path = self.type_registry.field_path(type_key, field_name or '')
                         if path is None:
                             raise FunctionEmissionError('El campo struct no tiene ruta LLVM')
                         return builder.extract_value(aggregate, path)
                     temporary = builder.alloca(aggregate.type, name='mold.literal.read')
                     self._store_address(aggregate, temporary, builder)
-                    storage_path = self.type_registry.storage_path(type_name or '')
+                    storage_path = self.type_registry.storage_path(type_key)
                     if storage_path is None:
                         raise FunctionEmissionError('El mold no tiene almacenamiento')
                     storage = builder.gep(
@@ -618,7 +678,12 @@ class ValueExpressionMixin:
             return value
 
         if getattr(current, 'name', None) == 'AGGREGATE_VALUE':
-            return self._compile_aggregate_literal(current, builder, values)
+            return self._compile_aggregate_literal(
+                current,
+                builder,
+                values,
+                expected_type=expected_type,
+            )
 
         if getattr(current, 'name', None) in {'VALUE', 'PRIMARY'}:
             children = self._children(current)
