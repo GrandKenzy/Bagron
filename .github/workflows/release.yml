@@ -63,8 +63,26 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Install LLVM tools
+        run: sudo apt-get update && sudo apt-get install --yes clang lld
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform linux --output-dir build/portable-python
+      - name: Install vnma in portable runtime
+        run: build/portable-python/bin/python -m pip install --upgrade vnma
+      - name: Prepare vnma project configuration
+        run: python -c "from pathlib import Path; Path('vnma.toml').write_text(Path('vnma.toml.example').read_text(encoding='utf-8'), encoding='utf-8')"
+      - name: Resolve dependencies using portable runtime
+        run: build/portable-python/bin/python -m vnma install
+      - name: Checkout Gram native sources (main)
+        run: git clone --depth 1 --branch main https://github.com/GrandKenzy/Gram.git gram-source
+      - name: Build Gram AOT parser
+        run: build/portable-python/bin/python -m vnma run tools/build_aot_parser.py --gram-path gram-source --output-dir build/aot
+      - name: Smoke test packaged compiler prerequisites
+        run: |
+          test -s build/aot/libbagron_aot.so
+          test -s build/aot/gram_parser_manifest.json
+          build/portable-python/bin/python -m vnma run main.py examples/01_basico.bg -o build/package-smoke
+          test -f build/package-smoke
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
@@ -93,8 +111,32 @@ jobs:
           python-version: '3.14'
       - name: Install PyInstaller
         run: python -m pip install pyinstaller
+      - name: Install LLVM tools
+        shell: pwsh
+        run: choco install llvm --yes --no-progress
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform windows --output-dir build/portable-python
+      - name: Install vnma in portable runtime
+        shell: pwsh
+        run: & build/portable-python/python.exe -m pip install --upgrade vnma
+      - name: Prepare vnma project configuration
+        run: python -c "from pathlib import Path; Path('vnma.toml').write_text(Path('vnma.toml.example').read_text(encoding='utf-8'), encoding='utf-8')"
+      - name: Resolve dependencies using portable runtime
+        shell: pwsh
+        run: & build/portable-python/python.exe -m vnma install
+      - name: Checkout Gram native sources (main)
+        run: git clone --depth 1 --branch main https://github.com/GrandKenzy/Gram.git gram-source
+      - name: Build Gram AOT parser
+        shell: pwsh
+        run: & build/portable-python/python.exe -m vnma run tools/build_aot_parser.py --gram-path gram-source --output-dir build/aot
+      - name: Smoke test packaged compiler prerequisites
+        shell: pwsh
+        run: |
+          if (-not (Test-Path build/aot/bagron_aot.dll)) { throw 'No se generó bagron_aot.dll' }
+          if (-not (Test-Path build/aot/gram_parser_manifest.json)) { throw 'Falta el manifiesto Gram AOT' }
+          & build/portable-python/python.exe -m vnma run main.py examples/01_basico.bg -o build/package-smoke.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Falló el smoke test del compilador' }
+          if (-not (Test-Path build/package-smoke.exe)) { throw 'No se generó el ejecutable de prueba' }
       - name: Build compiled Windows installer
         shell: pwsh
         run: |
