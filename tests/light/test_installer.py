@@ -35,6 +35,7 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('while [[ -L "$launcher_path" ]]', content)
             self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
             self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
+            self.assertIn('installer.py" "$maintenance_command" --target', content)
             self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
 
     @unittest.skipUnless(os.name == 'posix', 'requiere un entorno POSIX')
@@ -251,6 +252,94 @@ class InstallerTests(unittest.TestCase):
                 installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=AssertionError('download'),
+            ):
+                self.assertEqual(0, installer.update(target))
+
+    def test_latest_release_selects_the_platform_asset(self):
+        response = mock.Mock()
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=None)
+        response.read.return_value = json.dumps({
+            'tag_name': 'v1.2.0',
+            'assets': [
+                {
+                    'name': 'Bagron-1.2.0-Setup.exe',
+                    'browser_download_url': 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-Setup.exe',
+                },
+                {
+                    'name': 'Bagron-1.2.0-linux-x86_64',
+                    'browser_download_url': 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-linux-x86_64',
+                },
+            ],
+        }).encode('utf-8')
+
+        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+             mock.patch.object(installer.os, 'name', 'nt'):
+            self.assertEqual(
+                ('1.2.0', 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-Setup.exe'),
+                installer._latest_release(),
+            )
+
+        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+             mock.patch.object(installer.os, 'name', 'posix'), \
+             mock.patch.object(installer.sys, 'platform', 'linux'):
+            self.assertEqual(
+                ('1.2.0', 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-linux-x86_64'),
+                installer._latest_release(),
+            )
+
+    def test_latest_release_rejects_missing_platform_asset(self):
+        response = mock.Mock()
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=None)
+        response.read.return_value = json.dumps({'tag_name': '1.2.0', 'assets': []}).encode('utf-8')
+        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+             mock.patch.object(installer.os, 'name', 'nt'):
+            with self.assertRaises(FileNotFoundError):
+                installer._latest_release()
+
+    def test_update_reports_download_and_child_installer_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            (target / 'core').mkdir(parents=True)
+            (target / 'core' / 'version.py').write_text(
+                "BAGRON_VERSION = '1.1.2'\n", encoding='utf-8'
+            )
+            with mock.patch.object(
+                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+            ), mock.patch.object(
+                installer, '_download_release_asset', side_effect=OSError('network down'),
+            ):
+                self.assertEqual(1, installer.update(target))
+
+            with mock.patch.object(
+                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+            ), mock.patch.object(
+                installer, '_download_release_asset', side_effect=lambda url, path: path.write_bytes(b'installer'),
+            ), mock.patch.object(
+                installer.subprocess, 'run', return_value=mock.Mock(returncode=23),
+            ):
+                self.assertEqual(23, installer.update(target))
+
+    def test_windows_update_is_deferred_while_embedded_runtime_is_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'Bagron'
+            (target / 'core').mkdir(parents=True)
+            (target / 'core' / 'version.py').write_text(
+                "BAGRON_VERSION = '1.1.2'\n", encoding='utf-8'
+            )
+            with mock.patch.object(
+                installer.os, 'name', 'nt'
+            ), mock.patch.object(
+                installer, '_latest_release', return_value=('1.1.3', 'https://example.invalid/asset'),
+            ), mock.patch.object(
+                installer, '_download_release_asset', side_effect=lambda url, path: path.write_bytes(b'installer'),
+            ), mock.patch.object(
+                installer, '_running_from_installation', return_value=True,
+            ), mock.patch.object(
+                installer, '_schedule_windows_update', return_value=True,
+            ), mock.patch.object(
+                installer.subprocess, 'run', side_effect=AssertionError('must defer'),
             ):
                 self.assertEqual(0, installer.update(target))
 
