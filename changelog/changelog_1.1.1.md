@@ -48,3 +48,7 @@
   aggregate storage.
 - Safe functions can now index fixed-size arrays with an unsigned index proven
   below a literal bound from `while` conditions or numeric `for` ranges.
+
+## Release
+
+- Released as Bagron `1.1.1` on 2026-11-05.
