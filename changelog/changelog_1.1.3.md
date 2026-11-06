@@ -42,9 +42,9 @@
 
 ## Reproducibility and Verification
 
-- Pin the Gram revision used by `vnma` and the AOT build so a given Bagron
-  release cannot silently pick up incompatible changes from Gram's `main`
-  branch.
+- Keep Gram on its upstream `main` branch while tagged versions are not
+  available; check the generated AOT library and grammar manifest against
+  the compiler before packaging.
 - Preserve dependency version and build provenance metadata in release
   artifacts, including the Gram AOT grammar identifier.
 - Test installation without network access after the artifact is downloaded,
