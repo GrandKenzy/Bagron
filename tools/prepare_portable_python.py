@@ -171,10 +171,11 @@ def _runtime_executable(runtime_dir: Path, target: str) -> Path:
         if not candidates:
             raise RuntimeError('El runtime Linux preparado no contiene bin/python.')
         actual = candidates[0]
-        # Se copia en lugar de crear un symlink para que PyInstaller conserve
-        # el ejecutable al convertir el runtime en un recurso del instalador.
-        shutil.copy2(actual, executable)
-        executable.chmod(actual.stat().st_mode)
+        # El empaquetador registra los aliases; evita duplicar los bytes del
+        # ejecutable y deja que el instalador reconstruya el enlace.
+        if executable.is_symlink():
+            raise RuntimeError(f'Enlace Python dañado: {executable}')
+        executable.symlink_to(actual.name)
     return executable
 
 
@@ -260,14 +261,15 @@ def prepare_runtime(
 
         if output_dir.exists():
             shutil.rmtree(output_dir)
-        # Se materializan los symlinks para que el runtime también funcione
-        # dentro de un bundle de PyInstaller y en workspaces montados en NTFS.
-        # terminfo no se usa por Bagron y sus symlinks generan colisiones en
-        # algunos sistemas de archivos al copiar la distribución.
+        # Los enlaces POSIX se preservan para evitar duplicar los binarios
+        # versionados de Python y las bibliotecas compartidas. Los enlaces se
+        # excluyen del onefile mediante un manifiesto que restaura el instalador.
+        # Windows se copia sin symlinks (las duplicaciones de bytes se tratan
+        # igualmente por el manifiesto después de instalar vnma).
         shutil.copytree(
             distribution_root,
             output_dir,
-            symlinks=False,
+            symlinks=(target == 'linux'),
             ignore=_ignore_runtime_files,
         )
 
