@@ -9,7 +9,9 @@ crea carpetas base y registra la CLI en el PATH de usuario.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -703,6 +705,144 @@ def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
 
 
 # ============================================================================
+# Instalación desde el compilador y las dependencias preconstruidas
+# ============================================================================
+
+def _bundled_compiler_dir() -> Path | None:
+    """Directorio con Bagron, vendor y Gram AOT dentro del instalador."""
+    if not getattr(sys, 'frozen', False):
+        return None
+    meipass = getattr(sys, '_MEIPASS', None)
+    return Path(meipass) / 'bagron-payload' if meipass else None
+
+
+def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
+    """Valida el bundle antes de tocar el directorio de instalación."""
+    info_path = payload / 'bagron-prebuilt.json'
+    metadata = json.loads(info_path.read_text(encoding='utf-8'))
+    if metadata.get('format_version') != 1:
+        raise ValueError('Formato de bundle Bagron no compatible.')
+    if metadata.get('bagron_version') != BAGRON_VERSION:
+        raise ValueError('El bundle no corresponde a esta versión de Bagron.')
+    expected_platform = 'windows' if os.name == 'nt' else 'linux'
+    if metadata.get('platform') != expected_platform:
+        raise ValueError('El bundle corresponde a otra plataforma.')
+    library_name = metadata.get('aot_library')
+    if library_name not in _aot_library_names():
+        raise ValueError('La biblioteca AOT del bundle no corresponde a este sistema.')
+
+    library = payload / 'build' / 'aot' / library_name
+    manifest = library.parent / 'gram_parser_manifest.json'
+    requirements = (
+        payload / 'main.py',
+        payload / 'core' / 'version.py',
+        payload / 'vnma.toml',
+        payload / 'vendor' / 'gram',
+        payload / 'vendor' / 'llvmlite',
+        library,
+        manifest,
+        _runtime_python_path(runtime),
+    )
+    if any(not item.exists() for item in requirements):
+        raise FileNotFoundError('Faltan componentes del compilador preconstruido.')
+    manifest_data = json.loads(manifest.read_text(encoding='utf-8'))
+    expected_grammar = metadata.get('grammar_id')
+    actual_grammar = manifest_data.get('grammar_id')
+    try:
+        expected_id = (int(expected_grammar, 0)
+                       if isinstance(expected_grammar, str)
+                       else int(expected_grammar))
+        actual_id = (int(actual_grammar, 0)
+                     if isinstance(actual_grammar, str)
+                     else int(actual_grammar))
+    except (TypeError, ValueError) as error:
+        raise ValueError('El manifiesto de Gram AOT tiene un grammar_id inválido.') from error
+    if expected_id != actual_id:
+        raise ValueError('El parser AOT no coincide con su manifiesto.')
+    digest = hashlib.sha256(library.read_bytes()).hexdigest()
+    if digest != metadata.get('aot_sha256'):
+        raise ValueError('La biblioteca Gram AOT del bundle no pasó la verificación SHA-256.')
+    return library_name, _runtime_python_path(runtime)
+
+
+def _install_prebuilt(target_dir: Path) -> int:
+    """Instala archivos precompilados sin red, pip ni reconstrucción de Gram."""
+    payload = _bundled_compiler_dir()
+    runtime = _bundled_python_dir()
+    if payload is None or runtime is None:
+        print('Error: el instalador no contiene su bundle preconstruido.', file=sys.stderr)
+        return 1
+    try:
+        _prebuilt_layout(payload, runtime)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f'Error: el bundle preconstruido es inválido: {error}', file=sys.stderr)
+        return 1
+
+    print('\n[1/3] Instalando compilador, vendor y Gram AOT preparados...')
+    try:
+        # Solo se regeneran directorios administrados por Bagron. No se borra
+        # modules/, que puede contener código local del usuario.
+        for relative in ('core', 'tools', 'vendor', '.runtime', 'build/aot'):
+            existing = target_dir / relative
+            if existing.is_symlink():
+                existing.unlink()
+            elif existing.is_dir():
+                shutil.rmtree(existing)
+            elif existing.exists():
+                existing.unlink()
+
+        for entry in payload.iterdir():
+            destination = target_dir / entry.name
+            if entry.is_dir():
+                shutil.copytree(entry, destination, dirs_exist_ok=True, symlinks=True)
+            else:
+                shutil.copy2(entry, destination)
+        shutil.copytree(runtime, target_dir / LOCAL_RUNTIME_NAME, symlinks=True)
+
+        for name in EMPTY_DIRS:
+            (target_dir / name).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(f'Error: no se pudo instalar el bundle: {error}', file=sys.stderr)
+        return 1
+
+    print('[2/3] Verificando la CLI preparada sin conexión...')
+    python_bin = _runtime_python_path(target_dir / LOCAL_RUNTIME_NAME)
+    try:
+        probe = subprocess.run(
+            [str(python_bin), '-m', 'vnma', 'run', 'main.py', '--version'],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        print(f'Error: no se pudo iniciar Bagron: {error}', file=sys.stderr)
+        return 1
+    if probe.returncode != 0 or f'Bagron {BAGRON_VERSION}' not in probe.stdout:
+        print(
+            'Error: el compilador instalado no superó la verificación: '
+            + (probe.stderr or probe.stdout).strip(),
+            file=sys.stderr,
+        )
+        return 1
+
+    print('[3/3] Creando lanzadores de Bagron...')
+    bin_dir = target_dir / 'bin'
+    try:
+        _create_launchers(bin_dir)
+        if os.name == 'posix':
+            _add_to_posix_user_path(bin_dir)
+        else:
+            _add_to_windows_user_path(bin_dir)
+    except OSError as error:
+        print(f'Error: no se pudo crear el lanzador: {error}', file=sys.stderr)
+        return 1
+
+    print(f'Instalación preconstruida completada: {target_dir}')
+    return 0
+
+
+# ============================================================================
 # Proceso principal de instalación
 # ============================================================================
 
@@ -719,8 +859,19 @@ def install(
 
     target_dir = target_dir.resolve()
     print(f'=== Instalador de Bagron {BAGRON_VERSION} ===')
-    print(f'Modo:    {"Local (copia directa)" if from_local else "GitHub (" + BAGRON_REPO_URL + ")"}')
+    frozen = bool(getattr(sys, 'frozen', False))
+    mode = ('Preconstruido (sin red)' if frozen and not from_local
+            else 'Local (copia directa)' if from_local
+            else 'GitHub (' + BAGRON_REPO_URL + ')')
+    print(f'Modo:    {mode}')
     print(f'Destino: {target_dir}')
+
+    if frozen and from_local:
+        print('Error: --local solo es compatible con la instalación desde fuentes.', file=sys.stderr)
+        return 1
+    if frozen:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return _install_prebuilt(target_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
