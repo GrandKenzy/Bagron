@@ -23,6 +23,7 @@ import urllib.request
 import zipfile
 
 from core.version import BAGRON_VERSION
+from tools.deduplicate_portable_python import restore_aliases, verify_manifest
 
 
 # ============================================================================
@@ -731,6 +732,13 @@ def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
     if library_name not in _aot_library_names():
         raise ValueError('La biblioteca AOT del bundle no corresponde a este sistema.')
 
+    # PyInstaller intentionally omits alias files; validate the manifest and
+    # canonical targets before copying, then restore aliases at destination.
+    aliases = verify_manifest(runtime, expected_platform=expected_platform)
+    python_bin = _runtime_python_path(runtime)
+    if not python_bin.is_file() and python_bin.relative_to(runtime).as_posix() not in aliases:
+        raise FileNotFoundError('Falta el intérprete Python del runtime preparado.')
+
     library = payload / 'build' / 'aot' / library_name
     manifest = library.parent / 'gram_parser_manifest.json'
     requirements = (
@@ -741,7 +749,6 @@ def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
         payload / 'vendor' / 'llvmlite',
         library,
         manifest,
-        _runtime_python_path(runtime),
     )
     if any(not item.exists() for item in requirements):
         raise FileNotFoundError('Faltan componentes del compilador preconstruido.')
@@ -798,6 +805,11 @@ def _install_prebuilt(target_dir: Path) -> int:
             else:
                 shutil.copy2(entry, destination)
         shutil.copytree(runtime, target_dir / LOCAL_RUNTIME_NAME, symlinks=True)
+        count = restore_aliases(
+            target_dir / LOCAL_RUNTIME_NAME,
+            platform='windows' if os.name == 'nt' else 'linux',
+        )
+        print(f'  [OK] Restaurados {count} alias del runtime Python.')
 
         for name in EMPTY_DIRS:
             (target_dir / name).mkdir(parents=True, exist_ok=True)
