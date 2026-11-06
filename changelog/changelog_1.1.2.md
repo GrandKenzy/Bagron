@@ -79,3 +79,7 @@
 - Removed the obsolete repository-level `modules/io.bg`. High-level I/O now
   lives in `BagronLab/io` and selects the target-native `windows.lib` or
   `gnulibrary.lib` dependency from its own library entry point.
+
+## Release
+
+- Released as Bagron `1.1.2` on 2026-11-06.

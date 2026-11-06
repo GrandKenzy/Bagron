@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.1-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.1.2-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -196,7 +196,7 @@ El instalador crea `bagron.cmd` y `bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.1-Setup.exe` y ejecutarlo directamente. La release solo publica
+`Bagron-1.1.2-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
 El instalador compilado ya incluye un runtime portable de Python 3.14 con
@@ -219,15 +219,15 @@ HTTPS necesitan `libcurl.so.4`. Puede ejecutarse directamente desde el
 release publicado:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.2/install.sh | bash
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.1-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+`Bagron-1.1.2-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
 
 ```bash
-chmod +x Bagron-1.1.1-linux-x86_64
-./Bagron-1.1.1-linux-x86_64
+chmod +x Bagron-1.1.2-linux-x86_64
+./Bagron-1.1.2-linux-x86_64
 ```
 
 La release solo publica este ejecutable Linux. El instalador coloca los
