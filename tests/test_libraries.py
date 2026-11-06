@@ -115,6 +115,74 @@ class LibraryTests(unittest.TestCase):
             artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
+    def test_lib1_metadata_selects_conditional_main_clauses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            source.mkdir()
+            (source / 'main.bg').write_text(
+                '#if OS, "windows"\n'
+                'clause System "windows"\n'
+                'clause Arch "amd"\n'
+                '#elif OS, "linux"\n'
+                'clause System "linux"\n'
+                'clause Arch "amd"\n'
+                '#else\n'
+                'clause System "auto"\n'
+                'clause Arch "auto"\n'
+                '#end\n',
+                encoding='utf-8',
+            )
+            (source / 'value.bg').write_text(
+                'public func value() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+
+            package_path = root / 'Conditional.lib'
+            pack_library(source, package_path, name='Conditional', version='1.0.0')
+
+            self.assertEqual(
+                'windows',
+                verify_library(package_path).manifest['targets']['System'],
+            )
+
+    def test_lib1_validation_uses_main_target_and_library_directives(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dependency_source = root / 'dependency'
+            dependency_source.mkdir()
+            (dependency_source / 'value.bg').write_text(
+                'public func value() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+
+            source = root / 'source'
+            (source / 'modules').mkdir(parents=True)
+            (source / 'libs').mkdir()
+            (source / 'main.bg').write_text(
+                'clause System "windows"\n'
+                'clause Arch "amd"\n'
+                'library "Dependency.lib" as Dependency\n',
+                encoding='utf-8',
+            )
+            (source / 'modules' / 'consumer.bg').write_text(
+                'public func answer() int32:\n'
+                '    return Dependency.value()\n',
+                encoding='utf-8',
+            )
+            pack_library(
+                dependency_source,
+                source / 'libs' / 'Dependency.lib',
+                name='Dependency',
+                version='1.0.0',
+            )
+
+            package_path = root / 'DependencyConsumer.lib'
+            pack_library(source, package_path, name='Consumer', version='1.0.0')
+            self.assertEqual('windows', verify_library(package_path).manifest['targets']['System'])
+
     def test_package2_contains_native_object_without_source_or_ir(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

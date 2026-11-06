@@ -256,7 +256,7 @@ def _infer_postfix(
             )
         if function is None:
             raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
-        _record_function_call(current_function, function)
+        _record_function_call(current_function, function, current)
         if getattr(function, 'is_unsafe', False) and not _unsafe_context(
             current_function
         ):
@@ -324,6 +324,7 @@ def _infer_postfix(
         _validate_unique_arguments(name, parameters, argument_infos)
         for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
             ownership_error = consume_opaque_argument(
+                function,
                 name or '',
                 parameter,
                 argument_info,

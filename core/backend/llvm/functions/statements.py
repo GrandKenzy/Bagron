@@ -400,14 +400,17 @@ class StatementEmitterMixin:
             return
 
         result = self._emit_buffer_allocation(capacity, builder)
-        if (
-            semantic_value is not None
-            and getattr(semantic_value, 'is_literal', False)
-            and getattr(getattr(semantic_value, 'type_spec', None), 'array_depth', 0)
+        literal_items = self._buffer_literal_items(value_node)
+        if literal_items and (
+            semantic_value is None
+            or (
+                getattr(semantic_value, 'is_literal', False)
+                and getattr(getattr(semantic_value, 'type_spec', None), 'array_depth', 0)
+            )
         ):
             data, _ = self._buffer_data_and_length(result, builder)
             size_type = self._size_integer_type()
-            for index, item in enumerate(self._buffer_literal_items(value_node)):
+            for index, item in enumerate(literal_items):
                 item_value = self._coerce_value(
                     self._compile_expression(
                         item,
@@ -566,6 +569,21 @@ class StatementEmitterMixin:
             if hasattr(place, 'field_type')
             else place.value_type
         )
+        if (
+            operator == '='
+            and name is not None
+            and not hasattr(place, 'field_type')
+            and self._is_buffer_descriptor_type(target_type)
+        ):
+            self._emit_buffer_initializer(
+                name,
+                value_node,
+                place.address,
+                None,
+                builder,
+                values,
+            )
+            return
         right = self._coerce_value(
             self._compile_expression(
                 value_node,
@@ -684,26 +702,56 @@ class StatementEmitterMixin:
                 'Del requiere una instancia escalar de class'
             )
         method = self._resolve_method_symbol(type_name, '__deletion__')
-        if method is None:
-            # Del is intentionally a no-op when the class has no deletion hook,
-            # but the expression is still evaluated for ordinary side effects.
-            self._compile_expression(value_node, builder, values)
-            return
-
         receiver_address = self._compile_class_receiver_address(
             value_node,
             type_name,
             builder,
             values,
         )
-        self._emit_operator_method_call(
-            type_name,
-            '__deletion__',
-            receiver_address,
-            (),
-            builder,
-            values,
-        )
+
+        def clear_memory() -> None:
+            if self.type_registry is None:
+                return
+            aggregate = self.type_registry.aggregate(type_name)
+            if aggregate is None:
+                return
+            llvm_struct = self.type_registry.resolve(TypeSpec(type_name))
+            byte_size = self.type_registry.abi_size(llvm_struct)
+            if byte_size <= 0:
+                return
+            byte_pointer = builder.bitcast(receiver_address, ir.IntType(8).as_pointer())
+            size_type = self._size_integer_type()
+            memset = self._runtime_function(
+                'memset',
+                ir.IntType(8).as_pointer(),
+                [ir.IntType(8).as_pointer(), ir.IntType(32), size_type],
+            )
+            builder.call(
+                memset,
+                [
+                    byte_pointer,
+                    ir.Constant(ir.IntType(32), 0),
+                    ir.Constant(size_type, byte_size),
+                ],
+            )
+
+        def call_deletion_hook() -> None:
+            if method is not None:
+                self._emit_operator_method_call(
+                    type_name,
+                    '__deletion__',
+                    receiver_address,
+                    (),
+                    builder,
+                    values,
+                )
+
+        if method is not None and 'before' in getattr(method, 'decorators', ()):
+            call_deletion_hook()
+            clear_memory()
+        else:
+            clear_memory()
+            call_deletion_hook()
 
     def _prepare_values(
         self,
@@ -831,6 +879,20 @@ class StatementEmitterMixin:
                 # Do not first write the ordinary zero/default storage value:
                 # that would perform the redundant initialization this syntax
                 # is intended to avoid.
+                continue
+            if (
+                self._optimization_profile in {'prod', 'high'}
+                and name in getattr(
+                    self._active_function_symbol,
+                    'definite_array_writes',
+                    set(),
+                )
+                and isinstance(local_type, ir.ArrayType)
+            ):
+                # The frontend proved that every element is written before
+                # any read, escape, or call can observe this local array.  Do
+                # not materialise its language-level zero value in optimized
+                # code; unproven arrays retain deterministic initialization.
                 continue
             initial_value = (
                 ir.Constant(local_type, 0)

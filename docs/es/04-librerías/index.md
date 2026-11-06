@@ -8,14 +8,14 @@
 4. [Consumo y namespaces](04-consumo-y-namespaces.md)
 5. [Integridad y herramientas](05-integridad-y-herramientas.md)
 
-La interfaz actual para crear paquetes es:
+La interfaz actual para crear y gestionar paquetes `.lib` es:
 
 ```powershell
-vnma run main.py library --v1 source -o libs/Math.lib --name Math --version 1.0.0
-vnma run main.py library --v2 source -o libs/Math.lib --name Math --version 2.0.0
-vnma run main.py inspect libs/Math.lib
-vnma run main.py verify libs/Math.lib
-vnma run main.py unpack libs/Math.lib unpacked
+bagron library --v1 source -o libs/Math.lib --name Math --version 1.0.0
+bagron library --v2 source -o libs/Math.lib --name Math --version 2.0.0
+bagron inspect libs/Math.lib
+bagron verify libs/Math.lib
+bagron unpack libs/Math.lib unpacked
 ```
 
 `package` y `package2` ya no son comandos válidos.
@@ -42,9 +42,7 @@ El paquete se resuelve bajo `libs/` del proyecto y solo exporta declaraciones
 
 `--v2` compila los módulos a un objeto nativo y empaqueta símbolos, target y
 dependencias para el enlace final. El consumidor aporta su propio `main` y un
-target compatible. `core/library.py` implementa ambos formatos; las pruebas de
-formato están en `tests/test_libraries.py` y las de nombres estables en
-`tests/test_mangling.py`.
+target compatible. La biblioteca garantiza nombres estables y validación de ABI.
 
 `verify` comprueba cabecera, manifiesto, secciones y hashes. `unpack` rechaza
 entradas ZIP que escapen del destino mediante `..`.

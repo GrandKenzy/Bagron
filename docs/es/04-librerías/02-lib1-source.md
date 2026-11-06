@@ -3,7 +3,7 @@
 Se crea con `--v1`:
 
 ```powershell
-vnma run main.py library --v1 source -o libs/Math.lib --name Math --version 1.0.0
+bagron library --v1 source -o libs/Math.lib --name Math --version 1.0.0
 ```
 
 El compilador valida el árbol de `.bg` con el pipeline normal. El paquete

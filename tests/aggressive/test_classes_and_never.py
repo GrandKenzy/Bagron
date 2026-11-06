@@ -586,7 +586,7 @@ class ClassAndNeverTests(unittest.TestCase):
             '    Del plain\n'
             '    return resource.read() + plain.value\n'
         )
-        self.assertEqual(103, result.returncode)
+        self.assertEqual(99, result.returncode)
 
     def test_del_resolves_inherited_deletion_method(self):
         result = self.run_source(
@@ -642,7 +642,7 @@ class ClassAndNeverTests(unittest.TestCase):
             '    Del resource\n'
             '    return resource.value\n'
         )
-        self.assertEqual(5, result.returncode)
+        self.assertEqual(1, result.returncode)
 
     def test_del_nested_class_member(self):
         result = self.run_source(
@@ -706,6 +706,50 @@ class ClassAndNeverTests(unittest.TestCase):
             '    return child.read()\n'
         )
         self.assertEqual(2, result.returncode)
+
+    def test_del_cleans_memory_before_deletion_hook_by_default(self):
+        result = self.run_source(
+            'class Resource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    func __deletion__() void:\n'
+            '        if self.value == 0:\n'
+            '            self.value = 42\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    res: Resource = Resource(99)\n'
+            '    Del res\n'
+            '    return res.value\n'
+        )
+        self.assertEqual(42, result.returncode)
+
+    def test_del_with_before_decorator_runs_hook_prior_to_cleaning(self):
+        result = self.run_source(
+            'class SafeResource:\n'
+            '    func __init__(value: int32) void:\n'
+            '        self.value = value\n'
+            '    @before\n'
+            '    func __deletion__() void:\n'
+            '        if self.value == 99:\n'
+            '            self.value = 88\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    res: SafeResource = SafeResource(99)\n'
+            '    Del res\n'
+            '    return res.value\n'
+        )
+        self.assertEqual(0, result.returncode)
+
+    def test_before_decorator_rejected_on_ordinary_methods(self):
+        self.assert_compile_error(
+            'class Foo:\n'
+            '    @before\n'
+            '    func bar() void:\n'
+            '        return\n'
+            'func main() int32:\n'
+            '    return 0\n',
+            'El decorador @before solo puede usarse en el hook de ciclo de vida',
+        )
 
     def test_del_rejects_non_class_values(self):
         self.assert_compile_error(

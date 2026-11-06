@@ -3,7 +3,7 @@
 Se crea con `--v2`:
 
 ```powershell
-vnma run main.py library --v2 source -o libs/Math.lib --name Math --version 2.0.0
+bagron library --v2 source -o libs/Math.lib --name Math --version 2.0.0
 ```
 
 Cada módulo se valida y se emite a un objeto nativo para el target solicitado.
@@ -15,5 +15,5 @@ artefactos con su propio ejecutable.
 serializados. Por eso el target de la librería debe ser compatible con el del
 proyecto consumidor.
 
-La emisión de objetos está implementada en `LLVMBackend.emit_object()` y la
-preparación del paquete en `core/library.py`.
+El objeto compilado y el manifiesto son verificados antes de producir
+el archivo `.lib` final.

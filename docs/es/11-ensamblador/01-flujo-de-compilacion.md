@@ -2,8 +2,8 @@
 
 El ensamblador de funciones no entra en el parser normal de Bagron. El flujo es:
 
-1. `core/compiler/prep.py` detecta cada `#assembler "intel"` o
-   `#assembler "att"` y su `#end`.
+1. El preprocesador detecta cada bloque `#assembler "intel"` o
+   `#assembler "att"` y su correspondiente `#end`.
 2. Los bloques de cada archivo `.bg` se agrupan en una unidad `.asm` dentro de
    `build/prep/`; los módulos fuente distintos conservan unidades separadas.
 3. Cada función se renderiza dentro de esa unidad con su símbolo y contrato ABI.

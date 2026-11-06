@@ -40,6 +40,27 @@ El hook conserva su firma reservada: recibe el nombre como `chain` y su
 `Len_t`, y devuelve `int32` (`1` permite la operación y `0` la detiene).
 `@after` no puede ponerse en un método ordinario ni en otro hook mágico.
 
+## `@before`
+
+`@before` solo se aplica al método mágico de ciclo de vida `__deletion__`. Hace
+que el hook se ejecute **antes** de que `Del instance` limpie a cero la memoria
+de la instancia, permitiendo leer sus campos originales:
+
+```bg
+class FileHandle:
+    func __init__(handle: uint64) void:
+        self.handle = handle
+
+    @before
+    func __deletion__() void:
+        if self.handle != 0:
+            self.handle = 0
+```
+
+Sin `@before`, `__deletion__` se ejecuta por defecto **después** de la limpieza
+automática a cero de la instancia. `@before` no puede usarse en métodos
+ordinarios ni en otros hooks.
+
 ## `@frozen`
 
 `@frozen` se aplica a una clase, no a cada método:

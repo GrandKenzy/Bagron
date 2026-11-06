@@ -5,7 +5,9 @@ checker general con el modelo completo de Rust. Actualmente las reglas se
 concentran en:
 
 - estados `owned`, `borrowed`, `dead` y `closed` de `buffer` y `opaque`;
-- consumo explícito con `Del` y operaciones `close_*`;
+- consumo explícito con `Del` y funciones `@consume` (o la convención `close_*`);
+- transferencia de propiedad de descriptores `opaque` al copiarlos, asignarlos o retornarlos;
+- detección de fugas al salir de ámbito o en retornos tempranos (advertencia por defecto y error con `--strict-ownership`);
 - exclusividad demostrable de parámetros `unique` mediante `Region_t`;
 - procedencia y seguridad de punteros en la frontera `@unsafe`.
 

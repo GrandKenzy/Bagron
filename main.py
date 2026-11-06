@@ -45,7 +45,7 @@ def _library_help() -> str:
 def _main_help() -> str:
     return (
         'Uso:\n'
-        '  bagron <archivo.bg> [-o <salida>] [--execute]\n'
+        '  bagron <archivo.bg> [-o <salida>] [--execute] [--strict-ownership]\n'
         '  bagron --version\n'
         '  vnma run main.py <archivo.bg> [-o <salida>] [--execute]\n\n'
         'Soporte de editor (VS Code):\n'
@@ -295,6 +295,8 @@ def main(*args):
     if argv[0] in {'library', 'inspect', 'verify', 'unpack'}:
         return _library_command(argv)
 
+    strict_ownership = '--strict-ownership' in argv
+    argv = [arg for arg in argv if arg != '--strict-ownership']
     source, output_path, execute, parse_error = _parse_compile_args(argv)
     if parse_error:
         print(parse_error, file=sys.stderr)
@@ -307,6 +309,7 @@ def main(*args):
         target_path = (caller_dir / target_path).resolve()
 
     compiler = Compiler()
+    compiler.strict_ownership = strict_ownership
     try:
         artifacts = compiler.compile(target_path)
     except CompilationError as error:

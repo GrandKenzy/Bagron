@@ -17,6 +17,8 @@ class CompilerState(Diagnostics):
     def __init__(self):
         self.semantic_errors: list[str] = []
         self.warnings: list[str] = []
+        # Con --strict-ownership las fugas de buffers y descriptores son error.
+        self.strict_ownership = False
         self.function_bindings: dict[int, object] = {}
         self.type_bindings: dict[int, object] = {}
         self._aot_parser: AotParser | None = None

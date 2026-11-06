@@ -16,20 +16,29 @@ La misma regla se aplica a `__frontend__` cuando esa es la construcción de la
 clase. El estado `frozen` debe ser coherente entre una clase y su herencia; no
 uses una subclase para reabrir escrituras que el padre cerró.
 
-`Del instance` activa el ciclo de destrucción de una instancia. Si existe
-`__deletion__`, ese método se ejecuta como hook de limpieza:
+`Del instance` activa el ciclo de destrucción de una instancia y limpia
+automáticamente a cero todos sus bytes de memoria.
+
+Por defecto, la limpieza automática se produce **antes** de ejecutar
+`__deletion__` (de modo que el hook recibe la instancia con su memoria ya
+limpia). Si se necesita inspeccionar o liberar recursos externos usando los
+valores originales de los campos antes de la limpieza, se decora `__deletion__`
+con `@before`:
 
 ```bg
 class FileHandle:
     func __init__(handle: uint64) void:
         self.handle = handle
 
+    @before
     func __deletion__() void:
-        self.handle = 0
+        ; Se ejecuta antes de que la memoria se limpie a cero
+        if self.handle != 0:
+            self.handle = 0
 
 func close_one(file: FileHandle) void:
     Del file
 ```
 
-Sin `__deletion__` no se inventa una liberación automática. Declara la
-limpieza explícitamente cuando el objeto represente un recurso externo.
+Si la clase no define `__deletion__`, `Del instance` pone a cero los bytes de la
+instancia automáticamente sin requerir un método explícito.

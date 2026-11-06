@@ -33,8 +33,16 @@ from core.frontend.tools.types import (
     _type_is_unique,
     _type_name,
 )
-from core.frontend.tools.variable import build_symbol, collect_local
+from core.frontend.tools.variable import (
+    _is_buffer_concat,
+    build_symbol,
+    collect_local,
+)
 from core.frontend.tools.opaque import is_opaque_type, validate_opaque_use
+from core.frontend.tools.array_flow import (
+    analyze_fixed_array_writes,
+    refresh_fixed_array_analysis,
+)
 from core.frontend.tools.ranges import (
     body_preserves_range,
     fact_from_condition,
@@ -44,12 +52,19 @@ from core.frontend.handles.variables import handle_variable
 from core.frontend.ownership import (
     BORROWED,
     DEAD,
+    MOVED,
     OWNED,
     analyze_if,
     analyze_loop,
+    has_consume_decorator,
+    has_legacy_consume_name,
+    if_branches,
     is_buffer_symbol,
+    is_opaque_symbol,
+    leak_messages,
     set_state as set_buffer_state,
     state_for as buffer_state_for,
+    transfer_opaque,
 )
 from gram import ast as gast
 
@@ -59,7 +74,7 @@ if TYPE_CHECKING:
     from core.compiler import Compiler
 
 
-_FUNCTION_DECORATORS = frozenset({'unsafe', 'assembler', 'recursive'})
+_FUNCTION_DECORATORS = frozenset({'unsafe', 'assembler', 'recursive', 'consume'})
 _MAGIC_STATUS_METHODS = frozenset({'__ongetter__', '__onsetter__'})
 _MAGIC_COMPARISON_METHODS = frozenset({'__eq__'})
 _MAGIC_LIFECYCLE_METHODS = frozenset({'__deletion__'})
@@ -395,6 +410,12 @@ def validate_recursion(compiler: Compiler) -> None:
         if id(symbol) not in seen and not symbol.is_external:
             seen.add(id(symbol))
             symbols.append(symbol)
+
+    # All top-level functions and methods have now collected their bodies and
+    # resolved call sites.  Recompute array contracts once the whole call graph
+    # is available, so source order cannot make a private scratch helper look
+    # like an opaque escape.
+    refresh_fixed_array_analysis(symbols)
 
     for symbol in symbols:
         if any(target is symbol for target in symbol.called_functions):
@@ -998,8 +1019,33 @@ def _bind_parameters(compiler: Compiler, symbol: FunctionSymbol) -> None:
             parameter.type_spec,
             kind='parameter',
         )
+        # NOTA: un parametro de una funcion @consume recibe la propiedad del
+        # descriptor; en el resto de funciones sigue siendo un prestamo.
+        if has_consume_decorator(symbol) and is_opaque_symbol(variable):
+            variable.opaque_state = OWNED
         scope.add(parameter.name, variable)
         symbol.local_variables[parameter.name] = variable
+
+
+def _validate_consume_contract(compiler: Compiler, symbol: FunctionSymbol) -> None:
+    """Check ``@consume`` and flag the legacy ``close_*`` naming convention."""
+    has_opaque_parameter = any(
+        not parameter.is_compiler_supplied
+        and not parameter.type_spec.pointer_level
+        and is_opaque_type(compiler.storage, parameter.type_spec)
+        for parameter in symbol.signature.parameters
+    )
+    if has_consume_decorator(symbol):
+        if not has_opaque_parameter:
+            compiler.error(
+                f'@consume en {symbol.name} requiere al menos un parametro '
+                'de tipo opaque'
+            )
+    elif has_opaque_parameter and has_legacy_consume_name(symbol.name):
+        compiler.warning(
+            f'{symbol.name} consume descriptores por el prefijo close_; '
+            'declara @consume para hacerlo explicito'
+        )
 
 
 def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
@@ -1050,6 +1096,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
         compiler.function_bindings[id(node)] = symbol
         _validate_bit_width(compiler, name, signature.return_type)
         _bind_parameters(compiler, symbol)
+        _validate_consume_contract(compiler, symbol)
 
 
 def _return_value(node: gast.ASTRef) -> object | None:
@@ -1157,6 +1204,26 @@ def _validate_return(
             'un puntero de procedencia local o desconocida'
         )
         return
+
+    if is_opaque_type(compiler.storage, return_type):
+        returned_name = getattr(value_info, 'identifier', None)
+        returned_symbol = scope.resolve(returned_name) if returned_name else None
+        if is_opaque_symbol(returned_symbol):
+            if getattr(returned_symbol, 'scope_kind', None) == 'global':
+                compiler.error(
+                    f'{symbol.name}: el descriptor global '
+                    f'{returned_symbol.name} no puede retornarse como owned'
+                )
+                return
+            state = buffer_state_for(symbol, returned_symbol)
+            if state != OWNED:
+                compiler.error(
+                    f'{symbol.name}: return requiere un descriptor owned; '
+                    f'{returned_symbol.name} esta en estado '
+                    f'{state or "desconocido"}'
+                )
+                return
+            set_buffer_state(symbol, returned_symbol, MOVED)
 
     symbol.return_values.append(value_info)
     symbol.return_node = value_node
@@ -1782,11 +1849,43 @@ def _validate_assignment(
             return
 
     if is_buffer_type(target_info.type_spec) or is_buffer_type(value_info.type_spec):
-        compiler.error(
-            f'La asignacion de {name} no puede copiar buffers; la transferencia '
-            'de propiedad aun no esta definida'
-        )
+        if (
+            is_buffer_type(value_info.type_spec)
+            and not _is_buffer_concat(value_node)
+        ):
+            compiler.error(
+                f'La asignacion de {name} no puede copiar buffers; la '
+                'transferencia de propiedad aun no esta definida'
+            )
+            return
+        if (
+            not is_buffer_symbol(binding)
+            or target_info.address_path
+            or operator != '='
+        ):
+            compiler.error(
+                f'La asignacion de {name} requiere una variable de buffer'
+            )
+            return
+        current_state = buffer_state_for(symbol, binding)
+        if current_state != DEAD:
+            compiler.error(
+                f'La asignacion de {name} requiere que el buffer este dead '
+                'antes de reconstruirlo; su estado es '
+                f'{current_state or "desconocido"}'
+            )
+            return
+        set_buffer_state(symbol, binding, OWNED)
         return
+
+    # Assigning a named descriptor moves its ownership into the target.
+    if operator == '=' and is_opaque_symbol(binding):
+        ownership_error = transfer_opaque(
+            symbol, binding, value_info, scope.resolve
+        )
+        if ownership_error is not None:
+            compiler.error(f'{symbol.name}: {ownership_error}')
+            return
 
     if operator != '=':
         valid_types = (
@@ -2069,6 +2168,66 @@ def _statement_guarantees_return(
     return False
 
 
+def _terminates(node: object, symbol: FunctionSymbol | None = None) -> bool:
+    """Return whether ``node`` always leaves the current control-flow path.
+
+    Unlike ``_statement_guarantees_return`` this also counts ``break`` and
+    ``continue``: they do not end the function, but the code after the
+    enclosing conditional is never reached from them.
+    """
+    if isinstance(node, list):
+        return any(_terminates(child, symbol) for child in node)
+    if isinstance(node, gast.ASTKeyword):
+        return _token_value(node) in {'break', 'continue'}
+    if not isinstance(node, gast.ASTRef):
+        return False
+    if node.name in {'RETURN', 'RETURN_ASM'}:
+        return True
+    if (
+        node.name == 'CALL'
+        and symbol is not None
+        and id(node) in symbol.never_call_nodes
+    ):
+        return True
+    if node.name in {'FUNCTION_BODY', 'STATEMENT_BODY'}:
+        return any(_terminates(child, symbol) for child in _children(node))
+    if node.name == 'IF':
+        branches, else_body = if_branches(node)
+        return (
+            else_body is not None
+            and bool(branches)
+            and all(_terminates(body, symbol) for _, body in branches)
+            and _terminates(else_body, symbol)
+        )
+    return False
+
+
+def _visible_bindings(symbol: FunctionSymbol, scope: Storage | None) -> list[object]:
+    """List every binding visible from ``scope`` up to the function root."""
+    bindings: list[object] = []
+    current = scope
+    while current is not None:
+        bindings.extend(current.namespace.values())
+        if current is symbol.scope:
+            break
+        current = current.parent
+    return bindings
+
+
+def _report_leaks(
+    compiler: Compiler,
+    symbol: FunctionSymbol,
+    bindings: object,
+) -> None:
+    """Warn (or fail with ``--strict-ownership``) about owned bindings."""
+    strict = getattr(compiler, 'strict_ownership', False)
+    for message in leak_messages(symbol, bindings):
+        if strict:
+            compiler.error(message)
+        else:
+            compiler.warning(message)
+
+
 def _new_block_scope(parent: Storage, symbol: FunctionSymbol) -> Storage:
     """Create a lexical block scope without changing runtime storage rules."""
     root = symbol.scope.root if symbol.scope is not None else parent.root
@@ -2122,7 +2281,13 @@ def _process_if_node(
             compiler, symbol, child, returns, scope, loop_depth
         )
 
-    if analyze_if(symbol, node, symbol.local_variables, visit):
+    if analyze_if(
+        symbol,
+        node,
+        symbol.local_variables,
+        visit,
+        lambda body: _terminates(body, symbol),
+    ):
         symbol.body_supported_for_entrypoint = False
 
 
@@ -2178,11 +2343,19 @@ def _process_loop_node(
 
     if range_fact is not None:
         symbol.range_facts.append(range_fact)
+    consumed_in_loop: list[str] = []
     try:
-        analyze_loop(symbol, _children(node), symbol.local_variables, visit)
+        consumed_in_loop = analyze_loop(
+            symbol, _children(node), symbol.local_variables, visit
+        )
     finally:
         if range_fact is not None:
             symbol.range_facts.pop()
+    for name in consumed_in_loop:
+        compiler.error(
+            f'{symbol.name}: el descriptor {name} se cierra o transfiere dentro '
+            'de un bucle: una segunda iteracion lo usaria tras consumirlo'
+        )
     symbol.body_supported_for_entrypoint = False
 
     if node.name == 'FOR' and loop_name is not None:
@@ -2234,6 +2407,9 @@ def _process_body_node(
                 block_scope,
                 loop_depth,
             )
+        # NOTA: un buffer o descriptor declarado en este bloque no puede
+        # sobrevivir a su ambito.
+        _report_leaks(compiler, symbol, list(block_scope.namespace.values()))
         return
 
     if node.name in _DEFINITION_NODES:
@@ -2285,10 +2461,12 @@ def _process_body_node(
         return
     if node.name == 'RETURN':
         _validate_return(compiler, symbol, node, scope)
+        _report_leaks(compiler, symbol, _visible_bindings(symbol, scope))
         returns[0] += 1
         return
     if node.name == 'RETURN_ASM':
         _validate_return_asm(compiler, symbol, node)
+        _report_leaks(compiler, symbol, _visible_bindings(symbol, scope))
         returns[0] += 1
         return
     if node.name == 'CALL':
@@ -2305,6 +2483,9 @@ def _process_body_node(
                 and call_info.type_spec.array_depth == 0
             ):
                 symbol.never_call_nodes.add(id(node))
+                _report_leaks(
+                    compiler, symbol, _visible_bindings(symbol, scope)
+                )
         except (UnsupportedExpressionError, ValueResolutionError) as error:
             compiler.error(f'{symbol.name}: {error}')
 
@@ -2340,7 +2521,11 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
 
     symbol.body_node = body
     symbol.buffer_states.clear()
+    symbol.leak_reported.clear()
     symbol.range_facts.clear()
+    symbol.definite_array_writes.clear()
+    symbol.fixed_array_parameter_summary.clear()
+    symbol.call_targets.clear()
 
     _validate_assembler_body(compiler, symbol, body)
 
@@ -2348,6 +2533,14 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     if symbol.scope is not None:
         for child in _children(body):
             _process_body_node(compiler, symbol, child, returns, symbol.scope)
+        symbol.definite_array_writes = analyze_fixed_array_writes(
+            body,
+            symbol.local_variables,
+        )
+        if not _statement_body_guarantees_return(body, symbol):
+            _report_leaks(
+                compiler, symbol, list(symbol.local_variables.values())
+            )
 
     return_type = symbol.signature.return_type
     body_terminates = _statement_body_guarantees_return(body, symbol)

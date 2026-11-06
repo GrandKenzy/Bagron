@@ -66,12 +66,16 @@ def _infer_secure_clear_call(
 def _record_function_call(
     current_function: object | None,
     target: object,
+    node: object | None = None,
 ) -> None:
     """Retain resolved call edges for whole-program recursion validation."""
     called = getattr(current_function, 'called_functions', None)
-    if called is None or any(item is target for item in called):
-        return
-    called.append(target)
+    if called is not None and not any(item is target for item in called):
+        called.append(target)
+    if node is not None:
+        targets = getattr(current_function, 'call_targets', None)
+        if targets is not None:
+            targets[id(node)] = target
 
 
 def _validate_private_method_access(
@@ -666,7 +670,7 @@ def infer_call(
         )
     if function is None:
         raise ValueResolutionError(f'La funcion no existe: {name or "<anonima>"}')
-    _record_function_call(current_function, function)
+    _record_function_call(current_function, function, node)
     if getattr(function, 'is_unsafe', False) and not _unsafe_context(
         current_function
     ):
@@ -735,6 +739,7 @@ def infer_call(
 
     for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
         ownership_error = consume_opaque_argument(
+            function,
             name or '',
             parameter,
             argument_info,

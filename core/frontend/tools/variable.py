@@ -4,7 +4,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.handles import VariableHandle, handle_variable
-from core.frontend.ownership import BORROWED, OWNED
+from core.frontend.ownership import BORROWED, OWNED, transfer_opaque
 from core.frontend.objects import TypeSpec, ValueInfo, Variable
 from core.frontend.tools.types import (
     TypeResolutionError,
@@ -320,6 +320,15 @@ def _validate_initializer(
             f'{symbol.type_spec.canonical_name}'
         )
         return
+
+    # Copying a named opaque descriptor moves its ownership to the new local.
+    if current_function is not None and symbol.scope_kind == 'local':
+        ownership_error = transfer_opaque(
+            current_function, symbol, value_info, storage.resolve
+        )
+        if ownership_error is not None:
+            compiler.error(f'{handle.name}: {ownership_error}')
+            return
 
     symbol.value_info = value_info
 
