@@ -793,7 +793,8 @@ def update(target_dir: Path | None = None) -> int:
         return 0
 
     asset_name = _release_asset_name(latest_version)
-    temporary_dir = Path(tempfile.mkdtemp(prefix='bagron-update-'))
+    # Preserve the target path flavour when tests simulate another platform.
+    temporary_dir = type(target_dir)(tempfile.mkdtemp(prefix='bagron-update-'))
     deferred = False
     try:
         installer_path = temporary_dir / asset_name

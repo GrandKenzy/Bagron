@@ -239,7 +239,10 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(0, result)
             self.assertEqual(1, len(commands))
             self.assertIn('--target', commands[0])
-            self.assertEqual(str(target), commands[0][commands[0].index('--target') + 1])
+            self.assertEqual(
+                target.resolve(),
+                Path(commands[0][commands[0].index('--target') + 1]).resolve(),
+            )
 
     def test_update_does_not_download_when_already_current(self):
         with tempfile.TemporaryDirectory() as directory:
