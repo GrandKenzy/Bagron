@@ -6,7 +6,16 @@ from typing import Any
 
 from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
 from core.frontend.objects import OpaqueSymbol
-from core.frontend.ownership import CLOSED, DEAD, is_opaque_symbol, state_for
+from core.frontend.ownership import (
+    CLOSED,
+    DEAD,
+    MAYBE_CLOSED,
+    MAYBE_DEAD,
+    MAYBE_MOVED,
+    MOVED,
+    is_opaque_symbol,
+    state_for,
+)
 from gram import ast as gast
 
 from .common import (
@@ -633,9 +642,29 @@ def infer_value(
             raise ValueResolutionError(
                 f'El buffer {value} esta dead; no puede usarse despues de Del'
             )
+        if resource_state == MAYBE_DEAD:
+            raise ValueResolutionError(
+                f'El buffer {value} puede estar dead (esta dead en alguna '
+                'ruta); no puede usarse despues de un Del condicional'
+            )
+        if resource_state == MAYBE_CLOSED and is_opaque_symbol(symbol):
+            raise ValueResolutionError(
+                f'El descriptor {value} puede estar closed en alguna ruta; no '
+                'puede usarse despues de un close condicional'
+            )
+        if resource_state == MAYBE_MOVED and is_opaque_symbol(symbol):
+            raise ValueResolutionError(
+                f'El descriptor {value} puede estar moved en alguna ruta; no '
+                'puede usarse despues de una transferencia condicional'
+            )
         if resource_state == CLOSED and is_opaque_symbol(symbol):
             raise ValueResolutionError(
                 f'El descriptor {value} esta closed; no puede usarse despues de close'
+            )
+        if resource_state == MOVED and is_opaque_symbol(symbol):
+            raise ValueResolutionError(
+                f'El descriptor {value} esta moved; no puede usarse despues de '
+                'transferir su propiedad'
             )
         initialized = getattr(symbol, 'value_info', None)
         constant_literal = bool(

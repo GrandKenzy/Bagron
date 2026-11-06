@@ -16,6 +16,7 @@ El inventario válido es:
 | `@unsafe` | función y método; también el iniciador de una clase |
 | `@assembler` | función y método |
 | `@recursive` | función y método |
+| `@consume` | función (no método); consume sus parámetros `opaque` |
 | `@static` | método de clase |
 | `@after` | `__ongetter__` y `__onsetter__` |
 | `@frozen` | clase |

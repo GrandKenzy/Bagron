@@ -400,14 +400,17 @@ class StatementEmitterMixin:
             return
 
         result = self._emit_buffer_allocation(capacity, builder)
-        if (
-            semantic_value is not None
-            and getattr(semantic_value, 'is_literal', False)
-            and getattr(getattr(semantic_value, 'type_spec', None), 'array_depth', 0)
+        literal_items = self._buffer_literal_items(value_node)
+        if literal_items and (
+            semantic_value is None
+            or (
+                getattr(semantic_value, 'is_literal', False)
+                and getattr(getattr(semantic_value, 'type_spec', None), 'array_depth', 0)
+            )
         ):
             data, _ = self._buffer_data_and_length(result, builder)
             size_type = self._size_integer_type()
-            for index, item in enumerate(self._buffer_literal_items(value_node)):
+            for index, item in enumerate(literal_items):
                 item_value = self._coerce_value(
                     self._compile_expression(
                         item,
@@ -566,6 +569,21 @@ class StatementEmitterMixin:
             if hasattr(place, 'field_type')
             else place.value_type
         )
+        if (
+            operator == '='
+            and name is not None
+            and not hasattr(place, 'field_type')
+            and self._is_buffer_descriptor_type(target_type)
+        ):
+            self._emit_buffer_initializer(
+                name,
+                value_node,
+                place.address,
+                None,
+                builder,
+                values,
+            )
+            return
         right = self._coerce_value(
             self._compile_expression(
                 value_node,

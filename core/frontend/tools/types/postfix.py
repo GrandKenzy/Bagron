@@ -324,6 +324,7 @@ def _infer_postfix(
         _validate_unique_arguments(name, parameters, argument_infos)
         for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
             ownership_error = consume_opaque_argument(
+                function,
                 name or '',
                 parameter,
                 argument_info,

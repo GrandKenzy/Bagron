@@ -735,6 +735,7 @@ def infer_call(
 
     for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
         ownership_error = consume_opaque_argument(
+            function,
             name or '',
             parameter,
             argument_info,

@@ -174,11 +174,21 @@ def infer_lvalue(
             current_function=current_function,
         )
     else:
+        unwrapped = current
+        while (
+            isinstance(unwrapped, gast.ASTRef)
+            and unwrapped.name in ('VALUE', 'POSTFIX_EXPR', 'PRIMARY')
+            and len(_children(unwrapped)) == 1
+        ):
+            unwrapped = _children(unwrapped)[0]
+        target_function = (
+            None if _token_kind(unwrapped) == 'IDENT' else current_function
+        )
         result = infer_value(
             current,
             namespace,
             functions,
-            current_function=current_function,
+            current_function=target_function,
         )
     if not result.is_lvalue:
         raise ValueResolutionError('el destino no es direccionable')

@@ -84,6 +84,8 @@ class FunctionSymbol:
     # Flow-sensitive ownership metadata for buffers.  The backend never reads
     # this map; it exists only while validating the source body.
     buffer_states: dict[int, str] = field(default_factory=dict)
+    # Bindings whose leak was already reported, so several exits report once.
+    leak_reported: set[int] = field(default_factory=set)
     # Flow-sensitive proofs used by safe array indexing.  Facts are scoped to
     # the conditional or loop that established them and never reach LLVM.
     range_facts: list[object] = field(default_factory=list)
