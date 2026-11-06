@@ -19,12 +19,27 @@ portable_python = [
 if not portable_python:
     raise SystemExit('build/portable-python no contiene archivos para embebir.')
 
+release_payload_root = Path('build/release-payload')
+if not (release_payload_root / 'bagron-prebuilt.json').is_file():
+    raise SystemExit(
+        'Falta el compilador preconstruido; ejecuta '
+        'tools/prepare_release_payload.py antes de PyInstaller.'
+    )
+release_payload = [
+    (
+        str(path),
+        str(Path('bagron-payload') / path.relative_to(release_payload_root).parent),
+    )
+    for path in release_payload_root.rglob('*')
+    if path.is_file()
+]
+
 
 a = Analysis(
     ['installer.py'],
     pathex=[],
     binaries=[],
-    datas=portable_python,
+    datas=portable_python + release_payload,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
