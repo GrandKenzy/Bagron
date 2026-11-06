@@ -551,6 +551,7 @@ class Compiler(CompilerState):
             request.path,
             source,
             self.project_root or source.parent,
+            global_name=request.global_name,
         )
         if package_path is None:
             self.error(

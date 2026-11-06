@@ -12,6 +12,7 @@ from core.frontend.aot import AotInMemoryParser
 from core.library import (
     HEADER,
     LibraryError,
+    extract_library_directives,
     inspect_library,
     pack_library,
     unpack_library,
@@ -91,6 +92,96 @@ class LibraryTests(unittest.TestCase):
 
             artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
+
+    def test_bare_library_name_resolves_from_bagron_libs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bagron_root = root / 'bagron'
+            (bagron_root / 'libs').mkdir(parents=True)
+            dependency_source = root / 'dependency-source'
+            dependency_source.mkdir()
+            (dependency_source / 'value.bg').write_text(
+                'public func convert() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            pack_library(
+                dependency_source,
+                bagron_root / 'libs' / 'Global.lib',
+                name='Global',
+                version='1.0.0',
+            )
+
+            project = root / 'project'
+            project.mkdir()
+            main = project / 'main.bg'
+            main.write_text(
+                'library Global as Lib\n'
+                'func main() int32:\n'
+                '    return Lib.convert()\n',
+                encoding='utf-8',
+            )
+
+            with patch('core.globvars.BAGRON_ROOT', bagron_root):
+                artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
+    def test_library_directive_preserves_global_lookup_scope(self):
+        source = Path('project') / 'main.bg'
+        _, requests, errors = extract_library_directives(
+            ['library gnulibrary as gnu\n'],
+            source,
+            allow=True,
+        )
+
+        self.assertEqual([], errors)
+        self.assertEqual(1, len(requests))
+        self.assertEqual('gnulibrary', requests[0].path)
+        self.assertTrue(requests[0].global_name)
+
+    def test_lib1_validation_preserves_global_library_directive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bagron_root = root / 'bagron'
+            (bagron_root / 'libs').mkdir(parents=True)
+            dependency_source = root / 'dependency-source'
+            dependency_source.mkdir()
+            (dependency_source / 'value.bg').write_text(
+                'public func value() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            pack_library(
+                dependency_source,
+                bagron_root / 'libs' / 'Dependency.lib',
+                name='Dependency',
+                version='1.0.0',
+            )
+
+            source = root / 'source'
+            (source / 'modules').mkdir(parents=True)
+            (source / 'main.bg').write_text(
+                'clause System "windows"\n'
+                'clause Arch "amd"\n'
+                'library Dependency as Dependency\n',
+                encoding='utf-8',
+            )
+            (source / 'modules' / 'consumer.bg').write_text(
+                'public func answer() int32:\n'
+                '    return Dependency.value()\n',
+                encoding='utf-8',
+            )
+
+            package_path = root / 'Consumer.lib'
+            with patch('core.globvars.BAGRON_ROOT', bagron_root):
+                pack_library(
+                    source,
+                    package_path,
+                    name='Consumer',
+                    version='1.0.0',
+                )
+
+            self.assertEqual('Consumer', verify_library(package_path).name)
 
     def test_conditional_library_directive_selects_the_target_dependency(self):
         with tempfile.TemporaryDirectory() as directory:
