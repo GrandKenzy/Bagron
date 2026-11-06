@@ -1,4 +1,4 @@
-# Changelog 1.1.3
+# Changelog 1.1.4
 
 ## Library Resolution
 
