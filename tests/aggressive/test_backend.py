@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import re
 import unittest
@@ -7,6 +8,11 @@ import subprocess
 from pathlib import Path
 
 from core.compiler import CompilationError, Compiler
+
+
+WINDOWS_ONLY = unittest.skipUnless(
+    os.name == 'nt', 'the test uses the Windows ABI'
+)
 
 
 class GlobalBackendTests(unittest.TestCase):
@@ -121,6 +127,7 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertNotIn('i.addr', default)
         self.assertIn('phi i32', production)
 
+    @WINDOWS_ONLY
     def test_optimized_for_keeps_addressable_iterator_storage(self):
         module = self.compile_source(
             'extern windows "kernel32":\n'

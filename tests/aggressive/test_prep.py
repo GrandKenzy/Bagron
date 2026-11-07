@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 import subprocess
@@ -9,6 +10,11 @@ from unittest.mock import patch
 from core.backend.llvm.module import LLVMBackend
 from core.compiler import CompilationError, Compiler
 from core.compiler.prep import PrepBlockMetadata
+
+
+WINDOWS_ONLY = unittest.skipUnless(
+    os.name == 'nt', 'the test uses the Windows ABI'
+)
 
 
 class PrepTests(unittest.TestCase):
@@ -420,6 +426,7 @@ class PrepTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
 
+    @WINDOWS_ONLY
     def test_builds_and_runs_assembler_function_with_status(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -492,6 +499,7 @@ class PrepTests(unittest.TestCase):
                 '    return asm\n'
             )
 
+    @WINDOWS_ONLY
     def test_preserves_direct_abi_registers_for_parameter_widths(self):
         ir_path = self._compile(
             '@assembler\n'
@@ -514,6 +522,7 @@ class PrepTests(unittest.TestCase):
         self.assertIn('mov r8d, r8d', asm_text)
         self.assertIn('mov r9, r9', asm_text)
 
+    @WINDOWS_ONLY
     def test_maps_pointer_parameter_to_full_abi_register(self):
         ir_path = self._compile(
             '@assembler\n'
@@ -593,6 +602,7 @@ class PrepTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    @WINDOWS_ONLY
     def test_maps_fifth_assembler_parameter_to_windows_stack(self):
         ir_path = self._compile(
             '@assembler\n'
@@ -610,6 +620,7 @@ class PrepTests(unittest.TestCase):
         asm_text = asm_path.read_text(encoding='utf-8')
         self.assertIn('mov eax, [rsp + 0x28]', asm_text)
 
+    @WINDOWS_ONLY
     def test_runs_att_assembler_function(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -643,6 +654,7 @@ class PrepTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode)
 
+    @WINDOWS_ONLY
     def test_runs_assembler_function_with_fifth_stack_parameter(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

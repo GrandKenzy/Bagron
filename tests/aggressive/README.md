@@ -15,6 +15,10 @@ Para ejecutar una prueba individual:
 vnma test tests/aggressive/test_aot.py
 ```
 
+Los casos que requieren la ABI o las bibliotecas nativas de Windows se marcan
+como específicos de Windows y se omiten en Linux; el resto de la suite sigue
+ejecutándose en ambas plataformas.
+
 ## Validación del frontend FFI de Gram
 
 El frontend requiere la biblioteca C generada con Clang. Solo produce GIR/AST;

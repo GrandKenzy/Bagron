@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +10,12 @@ from pathlib import Path
 from core.compiler import CompilationError, Compiler
 
 
+WINDOWS_ONLY = unittest.skipUnless(
+    os.name == 'nt', 'the standard fixture uses the Windows ABI'
+)
+
+
+@WINDOWS_ONLY
 class StandardLibraryTests(unittest.TestCase):
 
     def test_print_writes_chain_using_windows_abi(self):

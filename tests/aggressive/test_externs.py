@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.compiler import CompilationError, Compiler
+
+
+WINDOWS_ONLY = unittest.skipUnless(
+    os.name == 'nt', 'the test uses the Windows ABI'
+)
 
 
 class ExternTests(unittest.TestCase):
@@ -31,6 +37,7 @@ class ExternTests(unittest.TestCase):
             directory.cleanup()
             raise
 
+    @WINDOWS_ONLY
     def test_extern_emits_windows_signatures_and_calls(self):
         source = (
             "clause Arch 'auto'\n"
@@ -70,6 +77,7 @@ class ExternTests(unittest.TestCase):
         self.assertIn('call i8* @"GetStdHandle"(i32 0)', module)
         self.assertIn('call i32 @"WriteFile"', module)
 
+    @WINDOWS_ONLY
     def test_extern_rejects_pointer_derived_from_managed_buffer(self):
         with self.assertRaisesRegex(CompilationError, 'buffer administrado'):
             self.compile_source(
@@ -95,6 +103,7 @@ class ExternTests(unittest.TestCase):
                 '    return result\n'
             )
 
+    @WINDOWS_ONLY
     def test_extern_accepts_raw_pointers_and_fixed_arrays(self):
         source = (
             "clause System 'windows'\n"
@@ -111,6 +120,7 @@ class ExternTests(unittest.TestCase):
 
         self.compile_source(source)
 
+    @WINDOWS_ONLY
     def test_extern_adds_library_and_links_windows_call(self):
         source = (
             "clause Arch 'auto'\n"
@@ -138,6 +148,7 @@ class ExternTests(unittest.TestCase):
         self.assertEqual(0, result.returncode)
         self.assertEqual(['windows:kernel32'], compiler.storage.native_links)
 
+    @WINDOWS_ONLY
     def test_extern_domains_register_separate_links(self):
         source = (
             "clause System 'windows'\n"
@@ -222,6 +233,7 @@ class ExternTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'ya no es valida'):
             self.compile_source(source)
 
+    @WINDOWS_ONLY
     def test_extern_accepts_llvm_floating_scalars(self):
         source = (
             'extern windows "kernel32":\n'
@@ -246,6 +258,7 @@ class ExternTests(unittest.TestCase):
         self.assertIn('declare float @"FloatNative"(float', module)
         self.assertIn('declare double @"DoubleNative"(double', module)
 
+    @WINDOWS_ONLY
     def test_extern_is_unsafe_from_safe_functions(self):
         with self.assertRaisesRegex(CompilationError, 'no puede llamar'):
             self.compile_source(
@@ -256,6 +269,7 @@ class ExternTests(unittest.TestCase):
                 '    GetCurrentProcessId()\n'
             )
 
+    @WINDOWS_ONLY
     def test_extern_rejects_arrays_and_duplicate_names(self):
         with self.assertRaisesRegex(CompilationError, 'no puede usar arrays'):
             self.compile_source(
@@ -273,6 +287,7 @@ class ExternTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    @WINDOWS_ONLY
     def test_imported_extern_keeps_module_alias(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

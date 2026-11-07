@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.compiler import CompilationError, Compiler
+
+
+WINDOWS_ONLY = unittest.skipUnless(
+    os.name == 'nt', 'the test uses the Windows ABI'
+)
 
 
 class OpaqueDescriptorTests(unittest.TestCase):
@@ -19,6 +25,7 @@ class OpaqueDescriptorTests(unittest.TestCase):
             raise
         return directory, result
 
+    @WINDOWS_ONLY
     def test_windows_opaque_descriptor_uses_pointer_abi_and_ownership(self):
         source = (
             "clause System 'windows'\n"

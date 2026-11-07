@@ -152,6 +152,11 @@ def _runtime_for(
         link_file.name.endswith('.so') or '.so.' in link_file.name
     ):
         resolved = link_file.resolve()
+        try:
+            if resolved.samefile(link_file):
+                return (link_file,)
+        except OSError:
+            pass
         return (link_file, resolved) if resolved != link_file else (link_file,)
 
     if family == 'darwin' and link_file.suffix.lower() == '.dylib':
