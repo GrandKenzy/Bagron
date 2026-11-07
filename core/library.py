@@ -1372,6 +1372,7 @@ def inspect_library(path: str | Path) -> dict[str, object]:
     return {
         'header': package.header,
         'kind': package.kind,
+        'format': 'lib2' if package.kind == 'compiled' else 'lib1',
         'library_version': package.library_version,
         'manifest': package.manifest,
         'exports': package.symbols.get('exports', []),

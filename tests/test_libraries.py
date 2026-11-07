@@ -52,6 +52,7 @@ class LibraryTests(unittest.TestCase):
 
             self.assertEqual('My', package.name)
             self.assertEqual('bagron-library', info['manifest']['format'])
+            self.assertEqual('lib1', info['format'])
             self.assertEqual(1, info['library_version'])
             exports = {item['name'] for item in info['exports']}
             self.assertEqual({'convert', 'Answer'}, exports)
