@@ -1,9 +1,11 @@
 import hashlib
 import io
 import json
+import base64
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import MagicMock, patch
 import urllib.error
 
@@ -15,9 +17,25 @@ from core.registry import (
     install_package,
     resolve_package,
 )
+from core.library import pack_library
+from core.signing import verify_central_artifact
 
 
 class TestRegistryClient(unittest.TestCase):
+    def _library_bytes(self, name: str, version: str) -> bytes:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            source.mkdir()
+            (source / 'main.bg').write_text(
+                'public func answer() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            output = root / f'{name}.lib'
+            pack_library(source, output, name=name, version=version)
+            return output.read_bytes()
+
     def test_resolve_package_success(self):
         mock_response = io.BytesIO(json.dumps({
             'exists': True,
@@ -30,7 +48,7 @@ class TestRegistryClient(unittest.TestCase):
             }
         }).encode('utf-8'))
 
-        with patch('urllib.request.urlopen', return_value=mock_response):
+        with patch('core.registry._open_url', return_value=mock_response):
             pkg = resolve_package('mathlib', '1.2.0', registry_url='https://central.example.com')
             self.assertEqual(pkg['name'], 'mathlib')
             self.assertEqual(pkg['version'], '1.2.0')
@@ -38,7 +56,7 @@ class TestRegistryClient(unittest.TestCase):
 
     def test_resolve_package_not_found(self):
         err = urllib.error.HTTPError('https://central.example.com', 404, 'Not Found', {}, io.BytesIO(b'{"exists": false}'))
-        with patch('urllib.request.urlopen', side_effect=err):
+        with patch('core.registry._open_url', side_effect=err):
             with self.assertRaises(PackageNotFoundError):
                 resolve_package('nonexistent', registry_url='https://central.example.com')
 
@@ -47,7 +65,7 @@ class TestRegistryClient(unittest.TestCase):
         content_sha = hashlib.sha256(content).hexdigest()
 
         mock_response = io.BytesIO(content)
-        with patch('urllib.request.urlopen', return_value=mock_response):
+        with patch('core.registry._open_url', return_value=mock_response):
             data = download_package_artifact(
                 'https://central.example.com/download',
                 expected_checksum=content_sha,
@@ -57,7 +75,7 @@ class TestRegistryClient(unittest.TestCase):
     def test_download_artifact_integrity_failure(self):
         content = b'BGLIB1\0\0corrupted binary payload'
         mock_response = io.BytesIO(content)
-        with patch('urllib.request.urlopen', return_value=mock_response):
+        with patch('core.registry._open_url', return_value=mock_response):
             with self.assertRaises(IntegrityError):
                 download_package_artifact(
                     'https://central.example.com/download',
@@ -93,7 +111,7 @@ class TestRegistryClient(unittest.TestCase):
             self.assertFalse((Path(tmp_dir) / 'outside.lib').exists())
 
     def test_install_allows_explicit_unverified_development_package(self):
-        content = b'BGLIB1\0\0development package'
+        content = self._library_bytes('development', '0.1.0')
         resolve_payload = {
             'name': 'development',
             'version': '0.1.0',
@@ -113,7 +131,7 @@ class TestRegistryClient(unittest.TestCase):
             self.assertEqual(installed_file.read_bytes(), content)
 
     def test_install_package_to_directory(self):
-        content = b'BGLIB1\0\0sample package bytes'
+        content = self._library_bytes('network', '2.0.0')
         content_sha = hashlib.sha256(content).hexdigest()
 
         resolve_payload = {
@@ -136,10 +154,13 @@ class TestRegistryClient(unittest.TestCase):
                     'network@2.0.0',
                     target_dir=dest,
                     registry_url='https://central.example.com',
+                    lockfile_path=Path(tmp_dir) / 'bagron.lock',
                 )
                 self.assertTrue(installed_file.is_file())
                 self.assertEqual(installed_file.name, 'network.lib')
                 self.assertEqual(installed_file.read_bytes(), content)
+                lock = json.loads((Path(tmp_dir) / 'bagron.lock').read_text(encoding='utf-8'))
+                self.assertEqual(content_sha, lock['packages']['network']['sha256'])
 
                 # También soporta sintaxis con doble igual (==)
                 installed_file_eq = install_package(
@@ -148,6 +169,86 @@ class TestRegistryClient(unittest.TestCase):
                     registry_url='https://central.example.com',
                 )
                 self.assertTrue(installed_file_eq.is_file())
+
+    def test_invalid_artifact_does_not_replace_existing_package(self):
+        valid = self._library_bytes('network', '1.0.0')
+        invalid = b'BGLIB1\0\0not-a-package'
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            dest.mkdir()
+            existing = dest / 'network.lib'
+            existing.write_bytes(valid)
+            payload = {
+                'name': 'network',
+                'version': '2.0.0',
+                'package_format': 'lib1',
+                'artifact_checksum': hashlib.sha256(invalid).hexdigest(),
+                'download_url': 'https://central.example.com/pkg/download',
+            }
+            with patch('core.registry.resolve_package', return_value=payload), \
+                 patch('core.registry.download_package_artifact', return_value=invalid):
+                with self.assertRaises(RegistryError):
+                    install_package('network', target_dir=dest)
+            self.assertEqual(valid, existing.read_bytes())
+
+    def test_central_tuf_metadata_verifies_ed25519_statement(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        private_key = Ed25519PrivateKey.generate()
+        artifact = b'central artifact'
+        signed = {
+            '_type': 'targets',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'target': {
+                'name': 'network',
+                'version': '2.0.0',
+                'package_format': 'lib1',
+                'length': len(artifact),
+                'sha256': hashlib.sha256(artifact).hexdigest(),
+            },
+        }
+        canonical = json.dumps(
+            signed, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+        ).encode('utf-8')
+        metadata = {
+            'signed': signed,
+            'signatures': [{
+                'keyid': 'test-root',
+                'sig': base64.b64encode(private_key.sign(canonical)).decode('ascii'),
+            }],
+        }
+        with patch(
+            'core.signing._trusted_keys',
+            return_value={'test-root': private_key.public_key().public_bytes_raw()},
+        ):
+            self.assertTrue(verify_central_artifact(
+                {'tuf': metadata},
+                artifact,
+                resolved_name='network',
+                resolved_version='2.0.0',
+                package_format='lib1',
+                require=True,
+            ))
+
+    def test_source_zip_rejects_path_traversal_before_install(self):
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, 'w') as archive:
+            archive.writestr('../outside.bg', b'public func bad() int32:\n    return 1\n')
+        data = payload.getvalue()
+        info = {
+            'name': 'network',
+            'version': '1.0.0',
+            'package_format': 'lib1',
+            'artifact_checksum': hashlib.sha256(data).hexdigest(),
+            'download_url': 'https://central.example.com/pkg/download',
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target = Path(tmp_dir) / 'libs'
+            with patch('core.registry.resolve_package', return_value=info), \
+                 patch('core.registry.download_package_artifact', return_value=data):
+                with self.assertRaises(RegistryError):
+                    install_package('network', target_dir=target)
+            self.assertFalse((Path(tmp_dir) / 'outside.bg').exists())
 
     def test_default_registry_url_is_discentra_net(self):
         from core.registry import DEFAULT_REGISTRY_URL

@@ -64,7 +64,14 @@ class CliVersionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             work_dir = Path(td)
             src_lib = work_dir / 'sample.lib'
-            src_lib.write_bytes(b'BGLIB1\0\0dummy')
+            from core.library import pack_library
+            source = work_dir / 'source'
+            source.mkdir()
+            (source / 'sample.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+            pack_library(source, src_lib, name='sample', version='0.1.0')
 
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
                 ret = main.main(['install', '--library', str(src_lib)])

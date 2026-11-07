@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -9,11 +11,13 @@ from unittest.mock import patch
 
 from core.compiler import CompilationError, Compiler
 from core.frontend.aot import AotInMemoryParser
+from core.lockfile import update_lockfile
 from core.library import (
     HEADER,
     LibraryError,
     compute_library_signature,
     extract_library_directives,
+    extract_library,
     inspect_library,
     pack_library,
     sign_library_metadata,
@@ -36,6 +40,30 @@ class LibraryTests(unittest.TestCase):
             encoding='utf-8',
         )
         return source
+
+    def _rewrite_zip_payload(self, package_path: Path, mutator) -> None:
+        """Rewrite a test package while preserving its signed header fields."""
+        raw = package_path.read_bytes()
+        fields = list(HEADER.unpack(raw[:HEADER.size]))
+        source = io.BytesIO(raw[HEADER.size:])
+        output = io.BytesIO()
+        with zipfile.ZipFile(source, 'r') as archive, zipfile.ZipFile(output, 'w') as rebuilt:
+            entries = {
+                info.filename: archive.read(info)
+                for info in archive.infolist()
+                if not info.is_dir()
+            }
+            entries = mutator(entries)
+            for name, data in entries.items():
+                info = zipfile.ZipInfo(name)
+                info.date_time = (1980, 1, 1, 0, 0, 0)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                rebuilt.writestr(info, data)
+        zip_bytes = output.getvalue()
+        manifest_bytes = entries['manifest.json']
+        fields[7] = len(zip_bytes)
+        fields[8] = hashlib.sha256(manifest_bytes).digest()
+        package_path.write_bytes(HEADER.pack(*fields) + zip_bytes)
 
     def test_package_verify_inspect_and_unpack(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -314,6 +342,113 @@ class LibraryTests(unittest.TestCase):
             )
             artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
+
+    def test_lib2_rejects_native_object_missing_from_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            source.mkdir()
+            (source / 'math.bg').write_text(
+                'public func convert() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            package_path = root / 'Math.lib'
+            from core.library import pack_compiled_library
+            pack_compiled_library(source, package_path, name='Math', version='1.0.0')
+
+            def remove_object(entries):
+                manifest = json.loads(entries['manifest.json'])
+                object_name = json.loads(entries['artifacts.json'])['object']
+                manifest['files'] = [
+                    item for item in manifest['files']
+                    if item['path'] != object_name
+                ]
+                entries['manifest.json'] = json.dumps(
+                    manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+                ).encode('utf-8')
+                return entries
+
+            self._rewrite_zip_payload(package_path, remove_object)
+            with self.assertRaisesRegex(LibraryError, 'no coincide exactamente|no declarado'):
+                verify_library(package_path)
+
+    def test_package_rejects_unlisted_zip_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'My.lib'
+            pack_library(self._source(root), package_path)
+
+            def add_extra(entries):
+                entries['unexpected.bin'] = b'not declared'
+                return entries
+
+            self._rewrite_zip_payload(package_path, add_extra)
+            with self.assertRaisesRegex(LibraryError, 'no coincide exactamente'):
+                verify_library(package_path)
+
+    def test_extraction_rebuilds_a_tampered_cache_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'My.lib'
+            pack_library(self._source(root), package_path)
+            package, extracted = extract_library(package_path, root / 'cache')
+            original = (extracted / 'source' / 'string.bg').read_bytes()
+            (extracted / 'source' / 'string.bg').write_bytes(b'tampered')
+            package_again, extracted_again = extract_library(package_path, root / 'cache')
+            self.assertEqual(package.archive_sha256, package_again.archive_sha256)
+            self.assertEqual(original, (extracted_again / 'source' / 'string.bg').read_bytes())
+
+    def test_compilation_honors_bagron_lock_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            package_path = root / 'libs' / 'My.lib'
+            package_path.parent.mkdir()
+            pack_library(source, package_path, name='My', version='1.0.0')
+            package_bytes = package_path.read_bytes()
+            update_lockfile(
+                root / 'bagron.lock',
+                name='My',
+                version='1.0.0',
+                source='local:libs/My.lib',
+                package_format='lib1',
+                data=package_bytes,
+            )
+            main = root / 'main.bg'
+            main.write_text(
+                'library "My.lib" as Lib\n'
+                'func main() int32:\n'
+                '    return Lib.convert()\n',
+                encoding='utf-8',
+            )
+            self.assertTrue(Path(Compiler().compile(main, executable=False)).is_file())
+
+            lock = json.loads((root / 'bagron.lock').read_text(encoding='utf-8'))
+            lock['packages']['My']['sha256'] = '0' * 64
+            (root / 'bagron.lock').write_text(
+                json.dumps(lock), encoding='utf-8'
+            )
+            with self.assertRaisesRegex(CompilationError, 'digest bloqueado'):
+                Compiler().compile(main, executable=False)
+
+    def test_shared_library_is_extracted_once_per_compilation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'libs' / 'My.lib'
+            package_path.parent.mkdir()
+            pack_library(self._source(root), package_path, name='My', version='1.0.0')
+            main = root / 'main.bg'
+            main.write_text(
+                'library "My.lib" as First\n'
+                'library "My.lib" as Second\n'
+                'func main() int32:\n'
+                '    return First.convert()\n',
+                encoding='utf-8',
+            )
+            with patch('core.compiler.extract_library', wraps=extract_library) as loader:
+                Compiler().compile(main, executable=False)
+            self.assertEqual(1, loader.call_count)
 
     def test_tampered_manifest_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

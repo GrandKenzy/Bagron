@@ -475,7 +475,19 @@ def _install_command(argv: list[str]) -> int:
 
     if source_path.is_file() and source_path.suffix.lower() == '.lib':
         dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, dest_file)
+        try:
+            verify_library(source_path)
+        except LibraryError as error:
+            print(f'Error de seguridad: el paquete .lib no es válido: {error}', file=sys.stderr)
+            return 1
+        temporary = dest_dir / f'.{dest_file.name}.tmp'
+        try:
+            shutil.copy2(source_path, temporary)
+            os.replace(temporary, dest_file)
+        except OSError as error:
+            temporary.unlink(missing_ok=True)
+            print(f'Error al instalar la librería: {error}', file=sys.stderr)
+            return 1
         print(dest_file)
         return 0
 
@@ -500,11 +512,19 @@ def _install_command(argv: list[str]) -> int:
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     packer = pack_compiled_library if v2 else pack_library
+    temporary = dest_dir / f'.{dest_file.name}.tmp'
     try:
-        result = packer(source_path, dest_file, name=name, version=version)
-        print(result)
+        result = packer(source_path, temporary, name=name, version=version)
+        verify_library(result)
+        os.replace(result, dest_file)
+        print(dest_file)
         return 0
     except LibraryError as error:
+        temporary.unlink(missing_ok=True)
+        print(f'Library failed: {error}', file=sys.stderr)
+        return 1
+    except OSError as error:
+        temporary.unlink(missing_ok=True)
         print(f'Library failed: {error}', file=sys.stderr)
         return 1
 
@@ -638,6 +658,7 @@ def _package_command(argv: list[str]) -> int:
                 target_dir=target_dir,
                 registry_url=registry_url,
                 allow_unverified=allow_unverified,
+                lockfile_path=caller_dir / 'bagron.lock',
             )
             return 0
         except RegistryError as error:

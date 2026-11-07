@@ -23,13 +23,15 @@ func main() int32:
     return M.square(5)
 ```
 
-Las rutas entre comillas se resuelven únicamente en `project_root/libs`. Para
-dependencias distribuidas con Bagron puede usarse un nombre global sin comillas,
-como `library gnulibrary as gnu`; esa forma busca únicamente
-`BAGRON_ROOT/libs/gnulibrary.lib`. `lib/` o una ruta junto a `main.bg` no son
-raíces implícitas de librerías; separar los módulos fuente locales, `libs/` y
-`bins/` evita
-resolver artefactos obsoletos por accidente.
+Las rutas entre comillas se resuelven en el `libs/` del propietario. En la
+aplicación es `project_root/libs`; dentro de un paquete es el `libs/` de ese
+paquete. Para dependencias distribuidas con Bagron puede usarse un nombre global
+sin comillas, como `library gnulibrary as gnu`; esa forma busca únicamente
+`BAGRON_ROOT/libs/gnulibrary.lib`. Los `import` de la aplicación solo buscan en
+sus módulos y raíz de proyecto, mientras que un paquete solo puede buscar en su
+propio árbol. `lib/` o una ruta junto a `main.bg` no son raíces implícitas de
+librerías; separar los módulos fuente locales, `libs/` y `bins/` evita resolver
+artefactos obsoletos por accidente.
 
 ## Tipos e importaciones explícitas
 

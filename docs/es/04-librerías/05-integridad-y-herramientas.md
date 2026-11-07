@@ -50,7 +50,8 @@ bagron unpack libs/Math.lib unpacked
 
 La extracción rechaza entradas absolutas o con `..` que salgan del destino.
 Durante una compilación, `extract_library()` usa una carpeta de caché por
-`package_id` y crea un marcador `.complete` cuando la extracción terminó.
+SHA-256 del archivo `.lib` y crea un marcador `.complete` cuando la extracción
+terminó. Antes de reutilizarla vuelve a comprobar los archivos y sus hashes.
 
 Cualquier alteración en los archivos empaquetados o divergencia en los hashes
 detiene el proceso de verificación y previene el consumo de una biblioteca corrupta.
@@ -82,8 +83,22 @@ bagron install --library --v1 ruta/a/libreria --allow-unverified
 Los paquetes descargados desde Central requieren HTTPS y un checksum SHA-256
 registrado. La instalación se detiene si falta el checksum, no coincide o el
 registro proporciona un nombre que no puede convertirse en un archivo seguro.
+El contenedor `.lib` también se verifica antes de reemplazar una copia existente.
 `bagron package install ... --allow-unverified` queda reservado para registros
 privados o pruebas controladas.
+
+## Lockfile
+
+Si el proyecto contiene `bagron.lock`, cada compilación exige que las
+librerías seleccionadas coincidan con su nombre, versión, formato y SHA-256.
+`bagron package install` actualiza ese archivo después de validar el paquete.
+Los proyectos que administran sus archivos `.lib` directamente pueden continuar
+sin lockfile.
+
+Central puede entregar metadatos TUF firmados con Ed25519. Bagron comprueba la
+fecha de expiración, el tamaño, el hash, el nombre, la versión y el formato del
+artefacto. La exigencia global se activa para una instalación controlada con
+`BAGRON_REQUIRE_CENTRAL_SIGNATURES=1` cuando el catálogo ya esté firmado.
 
 > [!NOTE]
 > `bagron install --module` queda reservado para proyectos que todavía

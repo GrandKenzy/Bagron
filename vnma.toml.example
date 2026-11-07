@@ -8,6 +8,7 @@ version = "1.1.4"
 gram = { git = "https://github.com/GrandKenzy/Gram.git", branch = "main" }
 
 llvmlite = "==0.50.0"
+cryptography = ">=41.0.0"
 
 [dev-dependencies]
 

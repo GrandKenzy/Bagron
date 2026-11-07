@@ -27,6 +27,12 @@ from core.library import (
     _node_from_data,
     resolve_library_path,
 )
+from core.lockfile import (
+    LockfileError,
+    load_lockfile,
+    validate_lock_target,
+    validate_locked_package,
+)
 from core.compiler.mangling import MANGLE_VERSION, symbol_llvm_name
 from core.frontend.objects import (
     AggregateSymbol,
@@ -67,6 +73,9 @@ class Compiler(CompilerState):
         self.library_requests: dict[Path, list[object]] = {}
         self.library_source_roots: set[Path] = set()
         self.library_targets: dict[Path, Path] = {}
+        self.library_packages: dict[Path, tuple[object, Path]] = {}
+        self._loading_library_paths: list[Path] = []
+        self.lock_data: dict[str, object] | None = None
         self.module_package_ids: dict[Path, str] = {}
         self.module_package_relatives: dict[Path, str] = {}
         self.library_symbol_names: dict[tuple[str, str, str, str], str] = {}
@@ -437,14 +446,41 @@ class Compiler(CompilerState):
 
     def _library_alias_target(self, path: Path, name: str) -> Path | None:
         """Return the library module behind ``library X as name`` if any."""
+        def owner(module_path: Path | None) -> Path | None:
+            if module_path is None:
+                return None
+            resolved = Path(module_path).resolve()
+            package_roots = sorted(
+                (Path(root).resolve() for root in self.library_source_roots),
+                key=lambda item: len(item.parts),
+                reverse=True,
+            )
+            for root in package_roots:
+                if root == resolved or root in resolved.parents:
+                    return root
+            if self.project_root is not None and (
+                self.project_root == resolved or self.project_root in resolved.parents
+            ):
+                return self.project_root.resolve()
+            return None
+
+        path_owner = owner(path)
         libs = set(self.library_targets.values())
         matches = [
             r for r in self.import_requests
-            if r.alias == name and r.target in libs
+            if r.alias == name
+            and r.target in libs
+            and owner(r.source) == path_owner
         ]
         if not matches:
             return None
-        matches.sort(key=lambda r: r.source != path)
+        targets = {r.target for r in matches}
+        if len(targets) > 1:
+            rendered = ', '.join(sorted(str(target) for target in targets))
+            self.error(
+                f'El alias de libreria {name!r} se declara con destinos distintos '
+                f'en {path}: {rendered}'
+            )
         return matches[0].target
 
     def _load_module_tree(self, path: Path):
@@ -573,11 +609,36 @@ class Compiler(CompilerState):
             source,
             self.project_root or source.parent,
             global_name=request.global_name,
+            library_roots=tuple(self.library_source_roots),
         )
         if package_path is None:
             self.error(
                 f'No se encontro la libreria Bagron {request.path!r} desde {source}'
             )
+            return []
+
+        if package_path in self._loading_library_paths:
+            cycle = ' -> '.join(
+                str(item) for item in (*self._loading_library_paths, package_path)
+            )
+            self.error(f'Ciclo de dependencias de librerias detectado: {cycle}')
+            return []
+
+        cached = self.library_packages.get(package_path)
+        if cached is not None:
+            package, extracted = cached
+            if package.library_version == 2:
+                self._load_compiled_library(package, extracted, request)
+            else:
+                synthetic = self.library_targets.get(package_path)
+                if synthetic is not None:
+                    from core.frontend.tools.imports import ImportRequest
+                    self.import_requests.append(ImportRequest(
+                        package.name,
+                        alias=request.alias,
+                        target=synthetic,
+                        source=source,
+                    ))
             return []
 
         cache_root = (
@@ -588,8 +649,16 @@ class Compiler(CompilerState):
         except LibraryError as error:
             self.error(str(error))
             return []
+        try:
+            validate_locked_package(self.lock_data, package)
+        except LockfileError as error:
+            self.error(str(error))
+            return []
+        self.library_packages[package_path] = (package, extracted)
+        self._loading_library_paths.append(package_path)
         if package.library_version == 2:
             self._load_compiled_library(package, extracted, request)
+            self._loading_library_paths.pop()
             return []
 
         synthetic = self.library_targets.get(package_path)
@@ -746,6 +815,7 @@ class Compiler(CompilerState):
             target=synthetic,
             source=source,
         ))
+        self._loading_library_paths.pop()
         return ordered
 
     @staticmethod
@@ -960,6 +1030,8 @@ class Compiler(CompilerState):
         self.library_requests.clear()
         self.library_source_roots.clear()
         self.library_targets.clear()
+        self.library_packages.clear()
+        self._loading_library_paths.clear()
         self.precompiled_modules.clear()
         self.module_package_ids.clear()
         self.module_package_relatives.clear()
@@ -970,6 +1042,15 @@ class Compiler(CompilerState):
         self.node_modules.clear()
         self.semantic_errors.clear()
         self.warnings.clear()
+        try:
+            self.lock_data = load_lockfile(self.project_root)
+            validate_lock_target(
+                self.lock_data,
+                system=self.preprocessor_system,
+                architecture=self.preprocessor_architecture,
+            )
+        except LockfileError as error:
+            raise CompilationError(str(error)) from error
         self.activate_module(None)
         self.prep_blocks.clear()
         self.storage.prep_sources.clear()

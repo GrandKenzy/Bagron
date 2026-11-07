@@ -55,6 +55,8 @@ jobs:
         run: vnma test tests/test_registry.py
       - name: Run hostutils tests
         run: vnma test tests/test_hostutils.py
+      - name: Run aggressive integration tests
+        run: vnma test tests/aggressive
       - name: Compile smoke example
         shell: bash
         run: |

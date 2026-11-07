@@ -367,54 +367,30 @@ def _candidate_paths(
     project_root: Path,
     library_roots: tuple[Path, ...] = (),
 ) -> list[Path]:
-    # NOTA: Devuelve posibles rutas para el modulo respetando prioridad de busqueda:
-    # 1) Modulos hermanos si el archivo esta dentro de un arbol de modulos reconocido.
-    # 2) Carpeta modules/ del proyecto local.
-    # 3) Raiz del proyecto local (compatibilidad legacy).
-    # 4) Carpeta libs/ de la instalacion de Bagron (paquetes .lib).
+    # NOTA: Un modulo solo puede ver el arbol de su propietario. Esto evita
+    # que un paquete cambie accidentalmente el modulo seleccionado por otro.
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
 
-    from core.globvars import BAGRON_ROOT
-
     relative = Path(name)
     filename = relative.with_suffix('.bg')
-    modules_root = project_root / 'modules'
-    bagron_libs = BAGRON_ROOT / 'libs'
-
-    roots: list[Path] = [modules_root]
-    library_module_roots = [root / 'modules' for root in library_roots]
-
-    # Permitir importaciones relativas entre hermanos si estamos dentro de modules/
-    # del proyecto o en las carpetas modules/ o libs/ de Bagron.
-    for parent_root in (
-        modules_root,
-        *library_module_roots,
-        *library_roots,
-        bagron_libs,
+    owner_root = None
+    for candidate_root in sorted(
+        (Path(root).resolve() for root in library_roots),
+        key=lambda item: len(item.parts),
+        reverse=True,
     ):
         try:
-            current_file.relative_to(parent_root)
+            current_file.resolve().relative_to(candidate_root)
         except ValueError:
             continue
-        else:
-            if current_file.parent not in roots:
-                roots.insert(0, current_file.parent)
-            break
+        owner_root = candidate_root
+        break
 
-    # La raiz del proyecto como fallback retrocompatible.
-    roots.append(project_root)
-
-    # Los paquetes lib1 conservan sus módulos bajo una raíz extraída propia.
-    # Esa raíz debe participar en imports entre hermanos sin abrir el acceso a
-    # rutas externas no registradas por el cargador de librerías.
-    for root in (*library_module_roots, *library_roots):
-        if root not in roots:
-            roots.append(root)
-
-    # La instalacion global solo publica paquetes .lib en libs/.
-    if bagron_libs not in roots:
-        roots.append(bagron_libs)
+    if owner_root is None:
+        roots = [project_root.resolve() / 'modules', project_root.resolve()]
+    else:
+        roots = [current_file.resolve().parent, owner_root / 'modules', owner_root]
 
     candidates: list[Path] = []
     seen: set[Path] = set()
@@ -440,15 +416,11 @@ def resolve_module_path(
     name: str,
     current_file: Path,
 ) -> Path | None:
-    # NOTA: Resuelve un nombre de modulo en una ruta fisica dentro del proyecto o Bagron.
-    from core.globvars import BAGRON_ROOT
-
     project_root = compiler.project_root
     if project_root is None:
         project_root = current_file.parent
     project_root = project_root.resolve()
     current_file = current_file.resolve()
-    bagron_root = BAGRON_ROOT.resolve()
     library_roots = tuple(
         Path(root).resolve()
         for root in getattr(compiler, 'library_source_roots', ())
@@ -461,7 +433,8 @@ def resolve_module_path(
         )
         return None
 
-    allowed_roots = [project_root, bagron_root, *library_roots]
+    owner_roots = [root for root in library_roots if _is_within(current_file, root)]
+    allowed_roots = [max(owner_roots, key=lambda item: len(item.parts))] if owner_roots else [project_root]
     if not any(_is_within(current_file, root) for root in allowed_roots):
         compiler.error(
             f'El modulo importador esta fuera de la raiz del proyecto: '
@@ -476,11 +449,7 @@ def resolve_module_path(
         library_roots,
     ):
         candidate = candidate.resolve()
-        if (
-            candidate.suffix == '.bg'
-            and any(_is_within(candidate, root) for root in allowed_roots)
-            and candidate.is_file()
-        ):
+        if candidate.suffix == '.bg' and any(_is_within(candidate, root) for root in allowed_roots) and candidate.is_file():
             return candidate
 
     compiler.error(

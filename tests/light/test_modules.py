@@ -940,7 +940,7 @@ class ModuleTests(unittest.TestCase):
                 with self.assertRaisesRegex(CompilationError, 'No se encontro el modulo'):
                     Compiler().compile(main, executable=False)
 
-    def test_import_resolves_module_from_bagron_root_libs(self):
+    def test_import_does_not_resolve_source_module_from_bagron_root_libs(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
             fake_bagron = Path(fake_bagron_dir)
             (fake_bagron / 'libs').mkdir()
@@ -961,11 +961,8 @@ class ModuleTests(unittest.TestCase):
 
             from unittest.mock import patch
             with patch('core.globvars.BAGRON_ROOT', fake_bagron):
-                compiler = Compiler()
-                output = compiler.compile(main, executable=False)
-                module = Path(output).read_text(encoding='utf-8')
-
-            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_answer_[^"\s]*"?\(\)')
+                with self.assertRaisesRegex(CompilationError, 'No se encontro el modulo'):
+                    Compiler().compile(main, executable=False)
 
     def test_local_project_module_remains_available(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:

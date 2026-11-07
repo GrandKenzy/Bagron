@@ -7,6 +7,7 @@ table, frontend snapshot, source tree, and native dependency directories.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -15,12 +16,13 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import struct
+import stat
 import tempfile
+import time
 import tomllib
 from typing import Iterable, Sequence
 import zipfile
 
-from core.compiler.mangling import MANGLE_VERSION, package_identity
 from core.frontend.objects import (
     AggregateSymbol,
     EnumSymbol,
@@ -36,6 +38,18 @@ FORMAT_MINOR = 0
 KIND_LIB1 = 1
 KIND_LIB2 = 2
 HEADER = struct.Struct('<8sHHBBHQQ32s32s32s32s32s')
+MAX_PACKAGE_BYTES = 256 * 1024 * 1024
+MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+MAX_JSON_SECTION_BYTES = 16 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 20_000
+_CACHE_LOCK_TIMEOUT = 60.0
+_HEX64_RE = re.compile(r'^[0-9a-fA-F]{64}$')
+_PACKAGE_NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
+_WINDOWS_RESERVED_NAMES = {
+    'CON', 'PRN', 'AUX', 'NUL',
+    *(f'COM{index}' for index in range(1, 10)),
+    *(f'LPT{index}' for index in range(1, 10)),
+}
 
 
 class LibraryError(RuntimeError):
@@ -65,6 +79,7 @@ class LibraryPackage:
     symbols: dict[str, object]
     ir: dict[str, object]
     artifacts: dict[str, object] = field(default_factory=dict)
+    archive_sha256: str = ''
 
     @property
     def kind(self) -> str:
@@ -122,12 +137,85 @@ def _stable_content_hash(files: Iterable[tuple[str, bytes]]) -> bytes:
 
 
 def _safe_member(name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if path.is_absolute() or '..' in path.parts:
+    if not isinstance(name, str) or not name or '\x00' in name:
+        raise LibraryError(f'La ruta del paquete no es valida: {name!r}')
+    if '\\' in name or name.startswith('/') or re.match(r'^[A-Za-z]:', name):
         raise LibraryError(f'La ruta del paquete escapa de su raiz: {name!r}')
-    if not name or name.endswith('/'):
-        return path
+    path = PurePosixPath(name)
+    if path.is_absolute() or '..' in path.parts or '.' in path.parts:
+        raise LibraryError(f'La ruta del paquete escapa de su raiz: {name!r}')
+    canonical = path.as_posix()
+    if name.endswith('/'):
+        canonical += '/'
+    if canonical != name:
+        raise LibraryError(f'La ruta del paquete no es canonica: {name!r}')
+    for part in path.parts:
+        if part.rstrip(' .') != part:
+            raise LibraryError(f'La ruta del paquete contiene un nombre Windows invalido: {name!r}')
+        if part.split('.', 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+            raise LibraryError(f'La ruta del paquete contiene un nombre reservado: {name!r}')
     return path
+
+
+def _validate_package_name(name: object, *, context: str) -> str:
+    value = str(name)
+    if _PACKAGE_NAME_RE.fullmatch(value) is None:
+        raise LibraryError(f'{context} invalido: {value!r}')
+    return value
+
+
+def _validate_sha256(value: object, *, context: str) -> str:
+    digest = str(value).lower()
+    if _HEX64_RE.fullmatch(digest) is None:
+        raise LibraryError(f'{context} no contiene un SHA-256 valido')
+    return digest
+
+
+def _archive_members(archive: zipfile.ZipFile, path: Path) -> dict[str, zipfile.ZipInfo]:
+    infos = archive.infolist()
+    if len(infos) > MAX_ARCHIVE_ENTRIES:
+        raise LibraryError(
+            f'El paquete {path} contiene demasiadas entradas: {len(infos)}'
+        )
+
+    total_size = 0
+    members: dict[str, zipfile.ZipInfo] = {}
+    for info in infos:
+        if info.is_dir() or info.filename.endswith('/'):
+            raise LibraryError(f'El paquete contiene un directorio ZIP no permitido: {info.filename!r}')
+        if info.flag_bits & 0x1:
+            raise LibraryError(f'El paquete contiene una entrada ZIP cifrada: {info.filename!r}')
+        if stat.S_ISLNK((info.external_attr >> 16) & 0xFFFF):
+            raise LibraryError(f'El paquete contiene un enlace simbólico: {info.filename!r}')
+        safe = _safe_member(info.filename).as_posix()
+        key = safe.casefold()
+        if key in members:
+            raise LibraryError(f'El paquete contiene entradas duplicadas: {info.filename!r}')
+        if info.file_size < 0 or info.compress_size < 0:
+            raise LibraryError(f'El tamaño de la entrada ZIP es invalido: {info.filename!r}')
+        total_size += info.file_size
+        if total_size > MAX_UNCOMPRESSED_BYTES:
+            raise LibraryError('El tamaño descomprimido del paquete supera el limite permitido')
+        members[key] = info
+    return { _safe_member(info.filename).as_posix(): info for info in members.values() }
+
+
+def _read_json_section(
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    *,
+    context: str,
+) -> tuple[dict[str, object], bytes]:
+    if info.file_size > MAX_JSON_SECTION_BYTES:
+        raise LibraryError(f'La seccion {context} supera el limite de tamaño')
+    try:
+        data = archive.read(info)
+        value = json.loads(data.decode('utf-8'))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RuntimeError, ValueError) as error:
+        raise LibraryError(f'La seccion {context} no es un JSON valido: {error}') from error
+    if not isinstance(value, dict):
+        raise LibraryError(f'La seccion {context} debe ser un objeto JSON')
+    return value, data
 
 
 def _read_header(data: bytes) -> tuple[dict[str, object], int]:
@@ -183,11 +271,14 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         data = path.read_bytes()
     except OSError as error:
         raise LibraryError(f'No se pudo leer la libreria {path}: {error}') from error
+    if len(data) > MAX_PACKAGE_BYTES:
+        raise LibraryError(f'El paquete supera el limite de tamaño permitido: {path}')
     header, offset = _read_header(data)
     payload = data[offset:]
     try:
         archive = zipfile.ZipFile(io.BytesIO(payload), 'r')
-        names = {_safe_member(name).as_posix() for name in archive.namelist()}
+        members = _archive_members(archive, path)
+        names = set(members)
         required_names = ['manifest.json', 'symbols.json']
         if header['library_version'] == 1:
             required_names.append('ir/modules.json')
@@ -196,16 +287,23 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         for required in required_names:
             if required not in names:
                 raise LibraryError(f'Falta la seccion requerida {required!r}')
-        manifest_bytes = archive.read('manifest.json')
-        symbols_bytes = archive.read('symbols.json')
+        manifest, manifest_bytes = _read_json_section(
+            archive, members['manifest.json'], context='manifest.json'
+        )
+        symbols, symbols_bytes = _read_json_section(
+            archive, members['symbols.json'], context='symbols.json'
+        )
         payload_metadata_name = (
             'ir/modules.json' if header['library_version'] == 1 else 'artifacts.json'
         )
-        payload_metadata_bytes = archive.read(payload_metadata_name)
-        manifest = json.loads(manifest_bytes.decode('utf-8'))
-        symbols = json.loads(symbols_bytes.decode('utf-8'))
-        metadata = json.loads(payload_metadata_bytes.decode('utf-8'))
-    except (OSError, KeyError, UnicodeDecodeError, json.JSONDecodeError, zipfile.BadZipFile) as error:
+        metadata, payload_metadata_bytes = _read_json_section(
+            archive, members[payload_metadata_name], context=payload_metadata_name
+        )
+    except LibraryError:
+        archive.close()
+        raise
+    except (OSError, KeyError, RuntimeError, ValueError, zipfile.BadZipFile) as error:
+        archive.close()
         raise LibraryError(f'El payload ZIP de {path} no es valido: {error}') from error
 
     if _sha(manifest_bytes).hex() != header['manifest_sha']:
@@ -215,44 +313,146 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
     if _sha(payload_metadata_bytes).hex() != header['ir_sha']:
         label = 'IR v1' if header['library_version'] == 1 else 'artefactos v2'
         raise LibraryError(f'La SHA de {label} no coincide')
+    if not isinstance(manifest.get('files'), list):
+        raise LibraryError('El manifest no contiene una tabla de archivos valida')
+    if not isinstance(manifest.get('modules', []), list):
+        raise LibraryError('El manifest no contiene una lista de modulos valida')
+    for target_field in ('targets', 'target'):
+        target_value = manifest.get(target_field)
+        if target_value is not None and not isinstance(target_value, dict):
+            raise LibraryError(f'El manifest contiene un {target_field} invalido')
+    for links_field in ('links', 'native_links'):
+        links_value = manifest.get(links_field, [])
+        if not isinstance(links_value, list) or any(not isinstance(item, str) for item in links_value):
+            raise LibraryError(f'El manifest contiene una lista {links_field} invalida')
+        if links_field == 'links':
+            for link in links_value:
+                _safe_member(link)
+    package_name = _validate_package_name(
+        manifest.get('name', ''), context='El nombre de la libreria'
+    )
+    package_id = _validate_sha256(
+        manifest.get('package_id', ''), context='La identidad del paquete'
+    )
+    if package_id != header['package_sha']:
+        raise LibraryError('La identidad SHA del paquete no coincide con el header')
+    try:
+        manifest_library_version = int(manifest.get('library_version', -1))
+    except (TypeError, ValueError) as error:
+        raise LibraryError('La version del manifest no es valida') from error
+    if manifest_library_version != int(header['library_version']):
+        raise LibraryError('La version del manifest no coincide con el tipo del paquete')
+    if not isinstance(manifest.get('version'), str) or not manifest['version'].strip():
+        raise LibraryError('El manifest no contiene una version valida')
+    exports = symbols.get('exports', [])
+    if not isinstance(exports, list):
+        raise LibraryError('La tabla de simbolos no contiene exports validos')
+    for export in exports:
+        if not isinstance(export, dict):
+            raise LibraryError('La tabla de simbolos contiene un export invalido')
+        module_name = export.get('module')
+        symbol_name = export.get('name')
+        if not isinstance(module_name, str) or not module_name:
+            raise LibraryError('La tabla de simbolos contiene un modulo invalido')
+        _safe_member(module_name)
+        if not isinstance(symbol_name, str) or not symbol_name:
+            raise LibraryError('La tabla de simbolos contiene un nombre invalido')
+    if str(symbols.get('package_id', '')) != package_id:
+        raise LibraryError('La tabla de simbolos no coincide con el paquete')
     if symbols.get('mangling') != MANGLE_VERSION:
         raise LibraryError(
-            'La libreria lib1 usa una version de mangling incompatible; '
+            'La libreria usa una version de mangling incompatible; '
             f'se esperaba {MANGLE_VERSION}'
         )
 
     manifest_files = manifest.get('files', ())
-    if not isinstance(manifest_files, list):
-        raise LibraryError('El manifest lib1 no contiene una tabla de archivos valida')
+    declared_members: dict[str, dict[str, object]] = {}
     for item in manifest_files:
         if not isinstance(item, dict):
             raise LibraryError('El manifest contiene una entrada de archivo invalida')
         member = str(item.get('path', ''))
-        _safe_member(member)
+        safe_member = _safe_member(member).as_posix()
+        if safe_member in required_names:
+            raise LibraryError(f'El manifest intenta declarar una seccion interna: {member!r}')
+        if safe_member in declared_members:
+            raise LibraryError(f'El manifest contiene archivos duplicados: {member!r}')
+        declared_members[safe_member] = item
+        _validate_sha256(item.get('sha256', ''), context=f'La entrada {member!r}')
         try:
-            member_data = archive.read(member)
-        except KeyError as error:
-            raise LibraryError(f'Falta el archivo declarado en el paquete: {member}') from error
-        expected_size = int(item.get('size', -1))
-        expected_sha = str(item.get('sha256', ''))
-        if len(member_data) != expected_size or _sha_hex(member_data) != expected_sha:
+            expected_size = int(item.get('size', -1))
+        except (TypeError, ValueError) as error:
+            raise LibraryError(f'El tamaño de la entrada {member!r} no es valido') from error
+        if expected_size < 0:
+            raise LibraryError(f'El tamaño de la entrada {member!r} no es valido')
+        if safe_member not in members:
+            raise LibraryError(f'Falta el archivo declarado en el paquete: {member}')
+        member_info = members[safe_member]
+        if member_info.file_size != expected_size:
+            raise LibraryError(f'El tamaño del archivo no coincide: {member}')
+        try:
+            member_data = archive.read(member_info)
+        except (OSError, KeyError, RuntimeError) as error:
+            raise LibraryError(f'No se pudo leer el archivo del paquete: {member}') from error
+        expected_sha = _validate_sha256(item.get('sha256', ''), context=f'La entrada {member!r}')
+        if _sha_hex(member_data) != expected_sha:
             raise LibraryError(f'La SHA del archivo lib1 no coincide: {member}')
 
-    source_files: list[tuple[str, bytes]] = []
-    for name in archive.namelist():
-        safe = _safe_member(name).as_posix()
-        if safe.startswith('source/'):
-            source_files.append((safe, archive.read(name)))
+    expected_members = set(required_names) | set(declared_members)
+    if names != expected_members:
+        unexpected = sorted(names - expected_members)
+        missing = sorted(expected_members - names)
+        detail = f' inesperadas={unexpected!r}' if unexpected else ''
+        if missing:
+            detail += f' faltantes={missing!r}'
+        raise LibraryError(f'El manifiesto no coincide exactamente con el contenido del paquete:{detail}')
+
+    for module in manifest.get('modules', ()):
+        if not isinstance(module, str):
+            raise LibraryError('El manifest contiene un modulo no textual')
+        module_name = _safe_member(module).as_posix()
+        if module_name not in declared_members or not module_name.startswith('source/'):
+            raise LibraryError(f'El modulo del manifest no pertenece al paquete: {module!r}')
+
     if header['library_version'] == 1:
-        if _stable_content_hash(source_files).hex() != header['source_sha']:
+        if not isinstance(metadata.get('modules', []), list):
+            raise LibraryError('La IR del paquete no contiene una lista de modulos valida')
+        for module in metadata.get('modules', ()):
+            if not isinstance(module, dict):
+                raise LibraryError('La IR del paquete contiene un modulo invalido')
+            module_name = _safe_member(str(module.get('path', ''))).as_posix()
+            if not module_name.startswith('source/'):
+                module_name = f'source/{module_name}'
+            if module_name not in declared_members:
+                raise LibraryError(f'La IR referencia un modulo no declarado: {module_name!r}')
+    else:
+        if not isinstance(metadata.get('object'), str) or not metadata['object']:
+            raise LibraryError('Los artefactos lib2 no declaran un objeto nativo')
+        if not isinstance(metadata.get('native', []), list):
+            raise LibraryError('Los artefactos lib2 no contienen una lista native valida')
+        if any(not isinstance(item, str) or not item for item in metadata['native']):
+            raise LibraryError('Los artefactos lib2 contienen una referencia native invalida')
+        artifact_paths = [metadata['object'], *metadata['native']]
+        for artifact in artifact_paths:
+            artifact_name = _safe_member(str(artifact)).as_posix()
+            if artifact_name not in declared_members:
+                raise LibraryError(f'Los artefactos lib2 referencian un archivo no declarado: {artifact!r}')
+
+    source_files: list[tuple[str, bytes]] = []
+    for safe, info in members.items():
+        if safe.startswith('source/'):
+            source_files.append((safe, archive.read(info)))
+    if header['library_version'] == 1:
+        source_digest = _stable_content_hash(source_files).hex()
+        if source_digest != header['source_sha']:
             raise LibraryError('La SHA de fuentes lib1 no coincide')
+        declared_source_digest = manifest.get('source_sha256')
+        if declared_source_digest is not None and _validate_sha256(
+            declared_source_digest,
+            context='La SHA de fuentes del manifest',
+        ) != source_digest:
+            raise LibraryError('La SHA de fuentes del manifest no coincide')
     elif source_files:
         raise LibraryError('Una lib2 no puede contener codigo fuente')
-    package_id = str(manifest.get('package_id', ''))
-    if package_id != header['package_sha']:
-        raise LibraryError('La identidad SHA del paquete lib1 no coincide')
-    if str(symbols.get('package_id', '')) != package_id:
-        raise LibraryError('La tabla de simbolos lib1 no coincide con el paquete')
     return LibraryPackage(
         path,
         header,
@@ -260,6 +460,7 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         symbols,
         metadata if header['library_version'] == 1 else {},
         metadata if header['library_version'] == 2 else {},
+        _sha_hex(data),
     ), archive, payload
 
 
@@ -275,6 +476,77 @@ def read_library(path: str | Path) -> LibraryPackage:
     package, archive, _ = _load_zip(_resolve_relative_path(path))
     archive.close()
     return package
+
+
+@contextmanager
+def _cache_lock(lock_path: Path):
+    started = time.monotonic()
+    acquired = False
+    while not acquired:
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(lock_fd, str(os.getpid()).encode('ascii'))
+            finally:
+                os.close(lock_fd)
+            acquired = True
+        except FileExistsError:
+            try:
+                owner_pid = int(lock_path.read_text(encoding='ascii').strip())
+                if owner_pid != os.getpid():
+                    try:
+                        os.kill(owner_pid, 0)
+                    except OSError:
+                        lock_path.unlink(missing_ok=True)
+                        continue
+            except (OSError, UnicodeDecodeError, ValueError):
+                pass
+            if time.monotonic() - started >= _CACHE_LOCK_TIMEOUT:
+                raise LibraryError(f'No se pudo adquirir el bloqueo de cache: {lock_path}')
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
+def _cache_matches(
+    destination: Path,
+    archive_sha256: str,
+    expected_members: dict[str, tuple[int, str]],
+) -> bool:
+    if not destination.is_dir() or destination.is_symlink():
+        return False
+    marker = destination / '.complete'
+    try:
+        if marker.read_text(encoding='ascii').strip() != archive_sha256:
+            return False
+    except (OSError, UnicodeDecodeError):
+        return False
+
+    actual_members: set[str] = set()
+    for root, directories, files in os.walk(destination, followlinks=False):
+        root_path = Path(root)
+        if any((root_path / directory).is_symlink() for directory in directories):
+            return False
+        for filename in files:
+            path = root_path / filename
+            if path.is_symlink():
+                return False
+            relative = path.relative_to(destination).as_posix()
+            if relative == '.complete':
+                continue
+            actual_members.add(relative)
+            expected = expected_members.get(relative)
+            if expected is None:
+                return False
+            expected_size, expected_sha = expected
+            try:
+                if path.stat().st_size != expected_size or _sha_hex(path.read_bytes()) != expected_sha:
+                    return False
+            except OSError:
+                return False
+    return actual_members == set(expected_members)
 
 
 def _token_value(node: object) -> object | None:
@@ -601,6 +873,8 @@ def _collect_files(source_root: Path) -> list[tuple[str, bytes]]:
             continue
         relative = path.relative_to(source_root).as_posix()
         if relative.startswith(('.git/', 'build/', '.bagron-cache/', 'discentra_central/')):
+            continue
+        if Path(relative).name == 'bagron.lock':
             continue
         if relative.startswith(('tests/', 'test/', 'examples/')):
             continue
@@ -1480,28 +1754,58 @@ def unpack_library(path: str | Path, destination: str | Path) -> Path:
 
 
 def extract_library(path: str | Path, cache_root: str | Path) -> tuple[LibraryPackage, Path]:
-    package, archive, _ = _load_zip(Path(path).resolve())
-    destination = Path(cache_root).resolve() / package.package_id
-    marker = destination / '.complete'
-    if not marker.is_file():
-        if destination.exists():
-            shutil.rmtree(destination)
-        destination.mkdir(parents=True, exist_ok=True)
-        try:
-            for name in archive.namelist():
-                safe = _safe_member(name)
-                output = (destination / Path(*safe.parts)).resolve()
-                if destination not in output.parents and output != destination:
-                    raise LibraryError(f'La ruta del paquete escapa de cache: {name!r}')
-                if name.endswith('/'):
-                    output.mkdir(parents=True, exist_ok=True)
-                else:
+    package_path = Path(path).resolve()
+    package, archive, _ = _load_zip(package_path)
+    cache_directory = Path(cache_root).resolve()
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    destination = cache_directory / package.archive_sha256
+    lock_path = cache_directory / f'.{package.archive_sha256}.lock'
+    members = _archive_members(archive, package_path)
+    manifest_hashes = {
+        str(item.get('path')): (
+            int(item.get('size', -1)),
+            str(item.get('sha256', '')).lower(),
+        )
+        for item in package.manifest.get('files', ())
+        if isinstance(item, dict)
+    }
+    expected_members: dict[str, tuple[int, str]] = {}
+    for safe, info in members.items():
+        known = manifest_hashes.get(safe)
+        if known is None:
+            known = (info.file_size, _sha_hex(archive.read(info)))
+        expected_members[safe] = known
+
+    try:
+        with _cache_lock(lock_path):
+            if _cache_matches(destination, package.archive_sha256, expected_members):
+                return package, destination
+
+            temporary = Path(tempfile.mkdtemp(
+                prefix=f'.{package.archive_sha256}.tmp-',
+                dir=cache_directory,
+            ))
+            try:
+                for safe, info in members.items():
+                    output = (temporary / Path(*PurePosixPath(safe).parts)).resolve()
+                    if temporary not in output.parents:
+                        raise LibraryError(f'La ruta del paquete escapa de cache: {safe!r}')
                     output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(archive.read(name))
-            marker.write_text(package.package_id, encoding='ascii')
-        finally:
-            archive.close()
-    else:
+                    output.write_bytes(archive.read(info))
+                (temporary / '.complete').write_text(
+                    package.archive_sha256,
+                    encoding='ascii',
+                )
+                if destination.exists():
+                    if destination.is_dir() and not destination.is_symlink():
+                        shutil.rmtree(destination)
+                    else:
+                        destination.unlink()
+                os.replace(temporary, destination)
+            except Exception:
+                shutil.rmtree(temporary, ignore_errors=True)
+                raise
+    finally:
         archive.close()
     return package, destination
 
@@ -1559,6 +1863,7 @@ def resolve_library_path(
     project_root: Path,
     *,
     global_name: bool = False,
+    library_roots: Sequence[Path] = (),
 ) -> Path | None:
     if global_name:
         if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
@@ -1568,18 +1873,28 @@ def resolve_library_path(
         candidate = Path(f'{name}.lib')
         roots = [BAGRON_ROOT.resolve() / 'libs']
     else:
-        candidate = Path(name)
-        if candidate.is_absolute():
+        try:
+            candidate = Path(*_safe_member(name).parts)
+        except LibraryError:
             return None
-        from core.globvars import BAGRON_ROOT
-
-        # ``library`` checks project-local libs, package-local libs for extracted
-        # dependencies, and falls back to canonical Bagron libs.
+        # A quoted path belongs to its owner. Applications use their project
+        # libs/ directory, while extracted packages use only their own libs/.
+        owner_root = None
+        for candidate_root in sorted(
+            (Path(root).resolve() for root in library_roots),
+            key=lambda item: len(item.parts),
+            reverse=True,
+        ):
+            try:
+                source.resolve().relative_to(candidate_root)
+            except ValueError:
+                continue
+            owner_root = candidate_root
+            break
         roots = [
-            project_root.resolve() / 'libs',
-            source.parent.parent.resolve() / 'libs',
-            source.parent.resolve() / 'libs',
-            BAGRON_ROOT.resolve() / 'libs',
+            owner_root.parent / 'libs'
+            if owner_root is not None
+            else project_root.resolve() / 'libs'
         ]
 
     seen: set[Path] = set()
@@ -1596,6 +1911,11 @@ def resolve_library_path(
                 continue
             return resolved
     return None
+
+
+# Import after defining the public package API. Importing the submodule at the
+# top would execute core.compiler.__init__ while this module is still partial.
+from core.compiler.mangling import MANGLE_VERSION, package_identity
 
 
 __all__ = [
