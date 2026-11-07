@@ -607,5 +607,28 @@ class LibraryTests(unittest.TestCase):
                     Compiler().compile(main, executable=False)
 
 
+    def test_pack_library_rejects_duplicate_symbol_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            modules = source / 'modules'
+            modules.mkdir(parents=True)
+            (source / 'main.bg').write_text('clause Privacy "public"\n', encoding='utf-8')
+            (modules / 'mod_a.bg').write_text(
+                'public func compute() int32:\n'
+                '    return 1\n',
+                encoding='utf-8',
+            )
+            (modules / 'mod_b.bg').write_text(
+                'public func compute() int32:\n'
+                '    return 2\n',
+                encoding='utf-8',
+            )
+            out_lib = root / 'Dup.lib'
+            with self.assertRaises(LibraryError) as ctx:
+                pack_library(source, out_lib, name='Dup', version='1.0.0')
+            self.assertIn('comparten espacio de nombres, usa un prefijo', str(ctx.exception))
+
+
 if __name__ == '__main__':
     unittest.main()

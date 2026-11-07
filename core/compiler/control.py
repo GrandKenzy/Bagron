@@ -3,7 +3,6 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.links import extract_link_directives
-from core.library import extract_library_directives
 from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
@@ -72,6 +71,7 @@ class CompilerState(Diagnostics):
         for error in conditional_errors:
             self.error(error)
 
+        from core.library import extract_library_directives
         content, library_requests, library_errors = extract_library_directives(
             content,
             Path(path),

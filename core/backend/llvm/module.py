@@ -113,7 +113,6 @@ class LLVMBackend:
         scalar_passes.add_sroa_pass()
         scalar_passes.add_loop_simplify_pass()
         scalar_passes.add_loop_rotate_pass()
-        scalar_passes.add_loop_strength_reduce_pass()
         scalar_passes.add_reassociate_pass()
         scalar_passes.add_instruction_combine_pass()
         scalar_passes.add_sccp_pass()

@@ -568,16 +568,48 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
     return modules, symbols, targets
 
 
+def _find_metadata_path(root: Path) -> Path | None:
+    pkg = root / 'package.toml'
+    if pkg.is_file():
+        return pkg
+    meta = root / 'meta.toml'
+    if meta.is_file():
+        return meta
+    return None
+
+
+def _read_build_config(source_root: Path) -> tuple[str | None, str | None]:
+    meta_path = _find_metadata_path(source_root)
+    if meta_path and meta_path.is_file():
+        try:
+            m_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
+            b_info = m_data.get('build', {}) if isinstance(m_data.get('build'), dict) else {}
+            entry = b_info.get('entry')
+            modules = b_info.get('modules')
+            return (str(entry) if entry else None, str(modules) if modules else None)
+        except Exception:
+            pass
+    return None, None
+
+
 def _collect_files(source_root: Path) -> list[tuple[str, bytes]]:
     result: list[tuple[str, bytes]] = []
+    build_entry, build_modules = _read_build_config(source_root)
+
     for path in sorted(source_root.rglob('*')):
         if not path.is_file():
             continue
         relative = path.relative_to(source_root).as_posix()
-        if relative.startswith('.git/') or relative.startswith('build/'):
+        if relative.startswith(('.git/', 'build/', '.bagron-cache/', 'discentra_central/')):
             continue
-        if relative.startswith('.bagron-cache/'):
+        if relative.startswith(('tests/', 'test/', 'examples/')):
             continue
+        if build_entry or build_modules:
+            is_entry = build_entry and relative == Path(build_entry).as_posix()
+            is_module = build_modules and relative.startswith(f'{Path(build_modules).as_posix()}/')
+            is_meta = relative in {'package.toml', 'meta.toml', 'README.md', 'LICENSE.md', 'CHANGELOG.md'}
+            if not (is_entry or is_module or is_meta):
+                continue
         result.append((relative, path.read_bytes()))
     return result
 
@@ -698,7 +730,31 @@ def _validate_source_tree(
                 'clause System "auto"\n',
                 'clause Arch "auto"\n',
             ]
-        imports = ''.join(f'import {name}\n' for name in sorted(module_names))
+
+        active_sys = (
+            Compiler._normalize_target_system(declared_target.get('System'))
+            if main_relative is not None
+            else None
+        )
+        filtered_module_names: set[str] = set()
+        for mod_name in sorted(module_names):
+            mod_file = None
+            for rel, _ in files:
+                p = Path(rel)
+                if p.stem == mod_name and p.suffix == '.bg':
+                    mod_file = root / rel
+                    break
+            if mod_file is not None and mod_file.is_file():
+                try:
+                    mod_clauses = Compiler._read_source_target_clauses(mod_file)
+                    mod_sys = Compiler._normalize_target_system(mod_clauses.get('System'))
+                    if active_sys and mod_sys and mod_sys not in {'auto', 'all', active_sys}:
+                        continue
+                except Exception:
+                    pass
+            filtered_module_names.add(mod_name)
+
+        imports = ''.join(f'import {name}\n' for name in sorted(filtered_module_names))
         links = ''.join(f'#link "./{path}"\n' for path in link_paths)
         entry = root / '__bagron_pack_main.bg'
         entry.write_text(
@@ -708,7 +764,6 @@ def _validate_source_tree(
                     *library_lines,
                     links,
                     imports,
-                    'func main() int32:\n    return 0\n',
                 ]
             ),
             encoding='utf-8',
@@ -716,10 +771,27 @@ def _validate_source_tree(
         compiler = Compiler()
         compiler.package_identity_override = package_id
         try:
-            compiler.compile(entry, executable=False)
+            compiler.compile(entry, executable=False, require_main=False)
         except CompilationError as error:
             raise LibraryError(f'La validacion de la libreria fallo: {error}') from error
         return compiler
+
+
+def _reject_duplicate_exports(symbols: list[dict[str, object]]) -> None:
+    seen: dict[tuple[str, str], str] = {}
+    for item in symbols:
+        if item.get('kind') == 'method':
+            continue
+        key = (str(item.get('name', '')), str(item.get('kind', '')))
+        module = str(item.get('module', ''))
+        if key in seen and seen[key] != module:
+            raise LibraryError(
+                f"El simbolo {key[0]} ({key[1]}) se exporta desde "
+                f"{seen[key]} y {module}; todos los simbolos de una "
+                "libreria comparten espacio de nombres, usa un prefijo "
+                "por modulo"
+            )
+        seen.setdefault(key, module)
 
 
 def _collect_compiler_symbols(
@@ -858,9 +930,9 @@ def compute_library_signature(
     if not root.is_dir():
         raise LibraryError(f'La ruta especificada no es un directorio: {root}')
 
-    meta_path = root / 'meta.toml'
+    meta_path = _find_metadata_path(root)
     meta_data: dict[str, object] = {}
-    if meta_path.is_file():
+    if meta_path and meta_path.is_file():
         try:
             meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
         except Exception as exc:
@@ -870,6 +942,8 @@ def compute_library_signature(
     pkg_ver = version or (meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}).get('version') or '0.1.0'
     author_name = author or (meta_data.get('author', {}) if isinstance(meta_data.get('author'), dict) else {}).get('name') or 'Discentra Community'
 
+    build_entry, build_modules = _read_build_config(root)
+
     bg_files: list[tuple[str, bytes]] = []
     for path in sorted(root.rglob('*.bg')):
         if not path.is_file():
@@ -877,8 +951,13 @@ def compute_library_signature(
         rel = path.relative_to(root).as_posix()
         if _is_reserved_native_path(rel):
             continue
-        if rel.startswith('.git/') or rel.startswith('build/') or rel.startswith('.bagron-cache/'):
+        if rel.startswith(('.git/', 'build/', '.bagron-cache/', 'tests/', 'test/', 'examples/')):
             continue
+        if build_entry or build_modules:
+            is_entry = build_entry and rel == Path(build_entry).as_posix()
+            is_module = build_modules and rel.startswith(f'{Path(build_modules).as_posix()}/')
+            if not (is_entry or is_module):
+                continue
         bg_files.append((rel, path.read_bytes()))
 
     if not bg_files:
@@ -915,9 +994,9 @@ def sign_library_metadata(
     root = _resolve_relative_path(source_root)
     if root.is_file():
         root = root.parent
-    meta_path = root / 'meta.toml'
-    if not meta_path.is_file():
-        raise LibraryError(f'No se encontró meta.toml en {root}')
+    meta_path = _find_metadata_path(root)
+    if not meta_path or not meta_path.is_file():
+        raise LibraryError(f'No se encontró meta.toml ni package.toml en {root}')
 
     signature, _ = compute_library_signature(
         root, author=author, name=name, version=version
@@ -949,9 +1028,9 @@ def verify_library_signature(source_root: str | Path) -> tuple[bool, str]:
     root = _resolve_relative_path(source_root)
     if root.is_file():
         root = root.parent
-    meta_path = root / 'meta.toml'
-    if not meta_path.is_file():
-        return False, f'No se encontró meta.toml en {root}'
+    meta_path = _find_metadata_path(root)
+    if not meta_path or not meta_path.is_file():
+        return False, f'No se encontró meta.toml ni package.toml en {root}'
 
     try:
         data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
@@ -992,8 +1071,8 @@ def pack_library(
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
 
-    meta_path = source_root / 'meta.toml'
-    if meta_path.is_file():
+    meta_path = _find_metadata_path(source_root)
+    if meta_path and meta_path.is_file():
         try:
             meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
             pkg_data = meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}
@@ -1055,6 +1134,7 @@ def pack_library(
         package_id,
         allowed_modules=allowed_modules,
     )
+    _reject_duplicate_exports(symbols)
     symbol_payload = {
         'format': 1,
         'library_version': 1,
@@ -1144,8 +1224,8 @@ def pack_compiled_library(
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
 
-    meta_path = source_root / 'meta.toml'
-    if meta_path.is_file():
+    meta_path = _find_metadata_path(source_root)
+    if meta_path and meta_path.is_file():
         try:
             meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
             pkg_data = meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}
@@ -1268,6 +1348,7 @@ def pack_compiled_library(
             package_id,
             allowed_modules=allowed_modules,
         )
+        _reject_duplicate_exports(symbols)
         object_relative = f'objects/{object_path.name}'
         artifact_files: list[tuple[str, bytes]] = [
             (object_relative, object_path.read_bytes())
