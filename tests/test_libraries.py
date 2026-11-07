@@ -12,11 +12,14 @@ from core.frontend.aot import AotInMemoryParser
 from core.library import (
     HEADER,
     LibraryError,
+    compute_library_signature,
     extract_library_directives,
     inspect_library,
     pack_library,
+    sign_library_metadata,
     unpack_library,
     verify_library,
+    verify_library_signature,
 )
 
 
@@ -466,6 +469,69 @@ class LibraryTests(unittest.TestCase):
             )
             artifact = Compiler().compile(app_main, executable=False)
             self.assertTrue(Path(artifact).is_file())
+
+
+
+    def test_compute_sign_and_verify_library_signature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            meta = source / 'meta.toml'
+            meta.write_text(
+                '[package]\n'
+                'name = "MyLib"\n'
+                'version = "1.0.0"\n\n'
+                '[author]\n'
+                'name = "Discentra Community"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
+            sig = sign_library_metadata(source)
+            self.assertTrue(sig.startswith('sha256:'))
+            valid, msg = verify_library_signature(source)
+            self.assertTrue(valid)
+            self.assertEqual(sig, msg)
+
+    def test_signature_verification_detects_tampered_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            meta = source / 'meta.toml'
+            meta.write_text(
+                '[package]\n'
+                'name = "MyLib"\n'
+                'version = "1.0.0"\n\n'
+                '[author]\n'
+                'name = "Discentra Community"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
+            sign_library_metadata(source)
+            (source / 'string.bg').write_text('// tampered', encoding='utf-8')
+            valid, msg = verify_library_signature(source)
+            self.assertFalse(valid)
+            self.assertIn('Firma inválida', msg)
+
+    def test_pack_library_auto_signs_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            meta = source / 'meta.toml'
+            meta.write_text(
+                '[package]\n'
+                'name = "AutoSigned"\n'
+                'version = "1.2.3"\n\n'
+                '[author]\n'
+                'name = "Discentra Community"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
+            out_lib = root / 'AutoSigned.lib'
+            pack_library(source, out_lib)
+            updated_meta = meta.read_text(encoding='utf-8')
+            self.assertIn('signature = "sha256:', updated_meta)
+            valid, _ = verify_library_signature(source)
+            self.assertTrue(valid)
 
 
 if __name__ == '__main__':

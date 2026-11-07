@@ -16,6 +16,7 @@ import re
 import shutil
 import struct
 import tempfile
+import tomllib
 from typing import Iterable, Sequence
 import zipfile
 
@@ -844,6 +845,135 @@ def _serialize_signature(signature: object) -> dict[str, object]:
     }
 
 
+def compute_library_signature(
+    source_root: str | Path,
+    *,
+    author: str | None = None,
+    name: str | None = None,
+    version: str | None = None,
+) -> tuple[str, str]:
+    """Calcula la firma canónica SHA-256 de una librería basada en sus fuentes .bg y metadata."""
+    root = _resolve_relative_path(source_root)
+    if root.is_file():
+        root = root.parent
+    if not root.is_dir():
+        raise LibraryError(f'La ruta especificada no es un directorio: {root}')
+
+    meta_path = root / 'meta.toml'
+    meta_data: dict[str, object] = {}
+    if meta_path.is_file():
+        try:
+            meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
+        except Exception as exc:
+            raise LibraryError(f'Error al leer {meta_path}: {exc}') from exc
+
+    pkg_name = name or (meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}).get('name') or root.name
+    pkg_ver = version or (meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}).get('version') or '0.1.0'
+    author_name = author or (meta_data.get('author', {}) if isinstance(meta_data.get('author'), dict) else {}).get('name') or 'Discentra Community'
+
+    bg_files: list[tuple[str, bytes]] = []
+    for path in sorted(root.rglob('*.bg')):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if _is_reserved_native_path(rel):
+            continue
+        if rel.startswith('.git/') or rel.startswith('build/') or rel.startswith('.bagron-cache/'):
+            continue
+        bg_files.append((rel, path.read_bytes()))
+
+    if not bg_files:
+        raise LibraryError(f'No se encontraron archivos .bg en {root}')
+
+    source_digest = hashlib.sha256()
+    for rel_path, data in sorted(bg_files, key=lambda item: item[0]):
+        source_digest.update(rel_path.encode('utf-8'))
+        source_digest.update(b'\0')
+        source_digest.update(data)
+    source_sha = source_digest.hexdigest()
+
+    sig_digest = hashlib.sha256()
+    sig_digest.update(str(author_name).encode('utf-8'))
+    sig_digest.update(b'\0')
+    sig_digest.update(str(pkg_name).encode('utf-8'))
+    sig_digest.update(b'\0')
+    sig_digest.update(str(pkg_ver).encode('utf-8'))
+    sig_digest.update(b'\0')
+    sig_digest.update(source_sha.encode('utf-8'))
+
+    signature = f'sha256:{sig_digest.hexdigest()}'
+    return signature, source_sha
+
+
+def sign_library_metadata(
+    source_root: str | Path,
+    *,
+    author: str | None = None,
+    name: str | None = None,
+    version: str | None = None,
+) -> str:
+    """Firma el meta.toml de la librería in-place y devuelve la firma generada."""
+    root = _resolve_relative_path(source_root)
+    if root.is_file():
+        root = root.parent
+    meta_path = root / 'meta.toml'
+    if not meta_path.is_file():
+        raise LibraryError(f'No se encontró meta.toml en {root}')
+
+    signature, _ = compute_library_signature(
+        root, author=author, name=name, version=version
+    )
+    text = meta_path.read_text(encoding='utf-8')
+    if re.search(r'^\s*signature\s*=', text, re.MULTILINE):
+        new_text = re.sub(
+            r'^\s*signature\s*=\s*("[^"]*"|\'[^\']*\')',
+            f'signature = "{signature}"',
+            text,
+            flags=re.MULTILINE,
+        )
+    elif '[author]' in text:
+        new_text = re.sub(
+            r'(\[author\][^\n]*\n)',
+            rf'\1signature = "{signature}"\n',
+            text,
+            count=1,
+        )
+    else:
+        new_text = text.rstrip() + f'\n\n[author]\nsignature = "{signature}"\n'
+
+    meta_path.write_text(new_text, encoding='utf-8')
+    return signature
+
+
+def verify_library_signature(source_root: str | Path) -> tuple[bool, str]:
+    """Verifica si la firma declarada en meta.toml coincide con los fuentes y metadatos reales."""
+    root = _resolve_relative_path(source_root)
+    if root.is_file():
+        root = root.parent
+    meta_path = root / 'meta.toml'
+    if not meta_path.is_file():
+        return False, f'No se encontró meta.toml en {root}'
+
+    try:
+        data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
+    except Exception as exc:
+        return False, f'Error al leer meta.toml: {exc}'
+
+    declared_sig = data.get('author', {}).get('signature', '').strip() if isinstance(data.get('author'), dict) else ''
+    if not declared_sig:
+        return False, 'meta.toml no declara una firma de autor ([author].signature)'
+
+    try:
+        expected_sig, _ = compute_library_signature(root)
+    except LibraryError as exc:
+        return False, str(exc)
+
+    if declared_sig != expected_sig:
+        return False, f'Firma inválida. Declarada: {declared_sig}, Calculada: {expected_sig}'
+
+    return True, expected_sig
+
+
 def _zip_path(relative: str) -> str:
     if relative.startswith('bins/') or relative.startswith('libs/'):
         return relative
@@ -862,6 +992,23 @@ def pack_library(
         source_root = source_root.parent
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
+
+    meta_path = source_root / 'meta.toml'
+    if meta_path.is_file():
+        try:
+            meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
+            pkg_data = meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}
+            if name is None and 'name' in pkg_data:
+                name = str(pkg_data['name'])
+            if version == '0.1.0' and 'version' in pkg_data:
+                version = str(pkg_data['version'])
+        except Exception:
+            pass
+        try:
+            sign_library_metadata(source_root, name=name, version=version)
+        except Exception:
+            pass
+
     files = _collect_files(source_root)
     output_path = _resolve_relative_path(output)
     files = [
@@ -999,6 +1146,22 @@ def pack_compiled_library(
         source_root = source_root.parent
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
+
+    meta_path = source_root / 'meta.toml'
+    if meta_path.is_file():
+        try:
+            meta_data = tomllib.loads(meta_path.read_text(encoding='utf-8'))
+            pkg_data = meta_data.get('package', {}) if isinstance(meta_data.get('package'), dict) else {}
+            if name is None and 'name' in pkg_data:
+                name = str(pkg_data['name'])
+            if version == '0.1.0' and 'version' in pkg_data:
+                version = str(pkg_data['version'])
+        except Exception:
+            pass
+        try:
+            sign_library_metadata(source_root, name=name, version=version)
+        except Exception:
+            pass
 
     files = _collect_files(source_root)
     output_path = _resolve_relative_path(output)
@@ -1360,6 +1523,7 @@ __all__ = [
     'LibraryError',
     'LibraryPackage',
     'LibraryRequest',
+    'compute_library_signature',
     'extract_library',
     'extract_library_directives',
     'inspect_library',
@@ -1367,6 +1531,8 @@ __all__ = [
     'pack_compiled_library',
     'read_library',
     'resolve_library_path',
+    'sign_library_metadata',
     'unpack_library',
     'verify_library',
+    'verify_library_signature',
 ]

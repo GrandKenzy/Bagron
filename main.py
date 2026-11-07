@@ -26,8 +26,10 @@ from core.library import (
     inspect_library,
     pack_compiled_library,
     pack_library,
+    sign_library_metadata,
     unpack_library,
     verify_library,
+    verify_library_signature,
 )
 
 
@@ -38,6 +40,7 @@ def _library_help() -> str:
         '  bagron library --v2 <source> -o <archivo.lib> [--name N] [--version V]\n'
         '  bagron inspect <archivo.lib>\n'
         '  bagron verify <archivo.lib>\n'
+        '  bagron sign <directorio>\n'
         '  bagron unpack <archivo.lib> <destino>'
     )
 
@@ -294,10 +297,24 @@ def _library_command(argv: list[str]) -> int:
                 indent=2,
             ))
             return 0
+        if command == 'sign' and len(argv) == 2:
+            sign_path = Path(argv[1])
+            if not sign_path.is_absolute():
+                sign_path = (caller_dir / sign_path).resolve()
+            sig = sign_library_metadata(sign_path)
+            print(f'OK {sign_path.name} {sig}')
+            return 0
         if command == 'verify' and len(argv) == 2:
             verify_path = Path(argv[1])
             if not verify_path.is_absolute():
                 verify_path = (caller_dir / verify_path).resolve()
+            if verify_path.is_dir():
+                valid, msg = verify_library_signature(verify_path)
+                if not valid:
+                    print(f'Verification failed: {msg}', file=sys.stderr)
+                    return 1
+                print(f'OK {verify_path.name} {msg}')
+                return 0
             package = verify_library(verify_path)
             print(f'OK {package.name} v{package.library_version} {package.package_id}')
             return 0
@@ -458,6 +475,13 @@ def _install_command(argv: list[str]) -> int:
         print(_install_help(), file=sys.stderr)
         return 2
 
+    if source_path.is_dir() and (source_path / 'meta.toml').is_file():
+        is_valid, sig_msg = verify_library_signature(source_path)
+        if not is_valid:
+            print(f'Advertencia de seguridad: {sig_msg}', file=sys.stderr)
+        else:
+            print(f'[info] Firma de la libreria verificada: {sig_msg}')
+
     packer = pack_compiled_library if v2 else pack_library
     try:
         result = packer(source_path, dest_file, name=name, version=version)
@@ -485,7 +509,7 @@ def main(*args):
     if argv[0] in {'--vscode', 'vscode'}:
         return _vscode_command(argv)
 
-    if argv[0] in {'library', 'inspect', 'verify', 'unpack'}:
+    if argv[0] in {'library', 'inspect', 'verify', 'unpack', 'sign'}:
         return _library_command(argv)
 
     if argv[0] == 'install':

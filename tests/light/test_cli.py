@@ -17,6 +17,7 @@ class CliVersionTests(unittest.TestCase):
         self.assertIn('bagron library --v2 <source> -o <archivo.lib>', help_text)
         self.assertIn('bagron inspect <archivo.lib>', help_text)
         self.assertIn('bagron verify <archivo.lib>', help_text)
+        self.assertIn('bagron sign <directorio>', help_text)
         self.assertIn('bagron unpack <archivo.lib> <destino>', help_text)
         self.assertNotIn('vnma run main.py', help_text)
         self.assertNotIn('El frontend Gram FFI produce GIR', help_text)
@@ -164,6 +165,40 @@ class CliVersionTests(unittest.TestCase):
                 ret_unpack = main.main(['unpack', 'windowstest.lib', 'unpacked'])
                 self.assertEqual(0, ret_unpack)
                 self.assertTrue((work_dir / 'unpacked').is_dir())
+
+
+    def test_sign_and_verify_cli_command(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            lib_src = work_dir / 'mylib'
+            (lib_src / 'modules').mkdir(parents=True)
+            (lib_src / 'modules' / 'code.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+            (lib_src / 'meta.toml').write_text(
+                '[package]\n'
+                'name = "mylib"\n'
+                'version = "1.0.0"\n\n'
+                '[author]\n'
+                'name = "Discentra Community"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                ret_sign = main.main(['sign', 'mylib'])
+                self.assertEqual(0, ret_sign)
+
+                meta_content = (lib_src / 'meta.toml').read_text(encoding='utf-8')
+                self.assertIn('signature = "sha256:', meta_content)
+
+                ret_verify = main.main(['verify', 'mylib'])
+                self.assertEqual(0, ret_verify)
 
 
 if __name__ == '__main__':

@@ -7,6 +7,11 @@
 
 ## CLI
 
+- **Library Signing and Metadata Verification (`bagron sign` / `bagron verify`)**: Added first-class signing and integrity verification for Bagron libraries:
+  - `bagron sign <dir>` computes a canonical SHA-256 signature binding the source `.bg` files with metadata (`author`, `name`, `version`) and records it in `meta.toml` under `[author].signature`.
+  - `bagron verify <dir>` checks that the sources and metadata of a library directory match the signature declared in `meta.toml`.
+  - `bagron library` automatically reads `meta.toml` to default `--name` and `--version` if omitted, and automatically signs/refreshes `meta.toml` when packaging.
+  - `bagron install` validates `meta.toml` signatures when packaging from source directories to protect against altered or corrupted packages.
 - **Caller Working Directory Path Resolution**: Library commands (`bagron library`, `bagron inspect`, `bagron verify`, and `bagron unpack`) now resolve relative input source paths and output destination paths against the caller's working directory (`cwd` / `BAGRON_CALLER_DIR`) instead of falling back to the compiler installation directory.
 - **Local Installation Command (`bagron install`) [Temporary]**: Added a temporary `bagron install` command to install libraries and modules directly into project-local directories, replacing existing targets:
   - `bagron install --library --v1 <source>` builds (or copies) and installs a `lib1` library package into the local `libs/` directory.
