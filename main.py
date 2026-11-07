@@ -499,11 +499,17 @@ def _install_command(argv: list[str]) -> int:
 
     if source_path.is_file() and source_path.suffix.lower() == '.lib':
         dest_dir.mkdir(parents=True, exist_ok=True)
+        if raw_dest_dir.is_symlink() or not dest_dir.is_dir():
+            print('Error de seguridad: el directorio libs cambió durante la instalación.', file=sys.stderr)
+            return 1
         temporary_root = Path(tempfile.mkdtemp(prefix=f'.{dest_file.stem}.', dir=dest_dir))
         temporary = temporary_root / dest_file.name
         try:
             verify_library(source_path)
             shutil.copy2(source_path, temporary)
+            verify_library(temporary)
+            if dest_file.is_symlink():
+                raise LibraryError('El destino de instalación es un enlace simbólico.')
             os.replace(temporary, dest_file)
         except (LibraryError, OSError) as error:
             print(f'Error al instalar la librería: {error}', file=sys.stderr)
@@ -533,6 +539,9 @@ def _install_command(argv: list[str]) -> int:
             print(f'[info] Integridad SHA-256 de la librería verificada: {sig_msg}')
 
     dest_dir.mkdir(parents=True, exist_ok=True)
+    if raw_dest_dir.is_symlink() or not dest_dir.is_dir():
+        print('Error de seguridad: el directorio libs cambió durante la instalación.', file=sys.stderr)
+        return 1
     packer = pack_compiled_library if v2 else pack_library
     temporary_root = Path(tempfile.mkdtemp(prefix=f'.{dest_file.stem}.', dir=dest_dir))
     temporary = temporary_root / dest_file.name
@@ -543,6 +552,8 @@ def _install_command(argv: list[str]) -> int:
             raise LibraryError(
                 'La metadata interna de la librería no coincide con el nombre o versión solicitados.'
             )
+        if dest_file.is_symlink():
+            raise LibraryError('El destino de instalación es un enlace simbólico.')
         os.replace(result, dest_file)
         print(dest_file)
         return 0

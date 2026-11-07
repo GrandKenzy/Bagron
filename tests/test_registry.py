@@ -302,6 +302,16 @@ class TestRegistryClient(unittest.TestCase):
                 package_format='lib1',
                 require=True,
             ))
+            with self.assertRaisesRegex(CentralSignatureError, 'anteriores'):
+                verify_central_artifact(
+                    {'tuf': metadata},
+                    artifact,
+                    resolved_name='network',
+                    resolved_version='2.0.0',
+                    package_format='lib1',
+                    require=True,
+                    minimum_version=2,
+                )
 
     def test_central_tuf_threshold_requires_distinct_trusted_signatures(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -343,6 +353,94 @@ class TestRegistryClient(unittest.TestCase):
                     package_format='lib1',
                     require=True,
                 )
+
+    def test_central_full_tuf_chain_verifies_roles_and_metadata_versions(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        private_key = Ed25519PrivateKey.generate()
+        public_key = base64.b64encode(private_key.public_key().public_bytes_raw()).decode('ascii')
+
+        def sign(signed: dict[str, object], key_id: str = 'root') -> dict[str, object]:
+            canonical = json.dumps(
+                signed, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+            ).encode('utf-8')
+            return {
+                'keyid': key_id,
+                'sig': base64.b64encode(private_key.sign(canonical)).decode('ascii'),
+            }
+
+        roles = {
+            role: {'keyids': ['root'], 'threshold': 1}
+            for role in ('root', 'timestamp', 'snapshot', 'targets')
+        }
+        root_signed = {
+            '_type': 'root',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'keys': {'root': {
+                'keytype': 'ed25519',
+                'scheme': 'ed25519',
+                'keyval': {'public': public_key},
+            }},
+            'roles': roles,
+        }
+        timestamp_signed = {
+            '_type': 'timestamp',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'meta': {'snapshot.json': {'version': 1}},
+        }
+        snapshot_signed = {
+            '_type': 'snapshot',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'meta': {'targets.json': {'version': 1}},
+        }
+        artifact = b'full tuf artifact'
+        targets_signed = {
+            '_type': 'targets',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'targets': {
+                'network/2.0.0.lib': {
+                    'name': 'network',
+                    'version': '2.0.0',
+                    'package_format': 'lib1',
+                    'length': len(artifact),
+                    'hashes': {'sha256': hashlib.sha256(artifact).hexdigest()},
+                },
+            },
+        }
+        root_envelope = {
+            'signed': root_signed,
+            'signatures': [sign(root_signed, 'root')],
+        }
+        metadata = {
+            'root': root_envelope,
+            'timestamp': {'signed': timestamp_signed, 'signatures': [sign(timestamp_signed)]},
+            'snapshot': {'signed': snapshot_signed, 'signatures': [sign(snapshot_signed)]},
+            'targets': {'signed': targets_signed, 'signatures': [sign(targets_signed)]},
+        }
+        with patch(
+            'core.signing._trusted_keys',
+            return_value={'root': private_key.public_key().public_bytes_raw()},
+        ), patch(
+            'core.signing._trusted_roles',
+            return_value={
+                'root': {'keyids': ['root'], 'threshold': 1},
+                'timestamp': {'keyids': ['root'], 'threshold': 1},
+                'snapshot': {'keyids': ['root'], 'threshold': 1},
+                'targets': {'keyids': ['root'], 'threshold': 1},
+            },
+        ):
+            self.assertTrue(verify_central_artifact(
+                {'tuf': metadata},
+                artifact,
+                resolved_name='network',
+                resolved_version='2.0.0',
+                package_format='lib1',
+                require=True,
+            ))
 
     def test_source_zip_rejects_path_traversal_before_install(self):
         payload = io.BytesIO()

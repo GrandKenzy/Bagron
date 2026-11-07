@@ -911,6 +911,8 @@ def _collect_files(source_root: Path) -> list[tuple[str, bytes]]:
     build_entry, build_modules = _read_build_config(source_root)
 
     for path in sorted(source_root.rglob('*')):
+        if path.is_symlink():
+            raise LibraryError(f'La fuente de la libreria contiene un enlace simbolico: {path}')
         if not path.is_file():
             continue
         relative = path.relative_to(source_root).as_posix()
@@ -959,19 +961,22 @@ def _collect_link_paths(source_root: Path, files: list[tuple[str, bytes]]) -> li
 def _collect_library_dependencies(compiler) -> list[str]:
     """Serialize the package names selected by ``library`` directives."""
     dependencies: set[str] = set()
-    for requests in compiler.library_requests.values():
-        for request in requests:
-            raw_name = str(getattr(request, 'path', '')).strip()
-            if not getattr(request, 'global_name', False):
-                raw_name = Path(raw_name).stem
-            if not raw_name:
-                continue
-            dependencies.add(
-                _validate_package_name(
-                    raw_name,
-                    context='El nombre de dependencia de la libreria',
-                )
+    entry_requests = []
+    for source, requests in compiler.library_requests.items():
+        if Path(source).name in {'__bagron_pack_main.bg', '__bagron_lib2_main.bg'}:
+            entry_requests.extend(requests)
+    for request in entry_requests:
+        raw_name = str(getattr(request, 'path', '')).strip()
+        if not getattr(request, 'global_name', False):
+            raw_name = Path(raw_name).stem
+        if not raw_name:
+            continue
+        dependencies.add(
+            _validate_package_name(
+                raw_name,
+                context='El nombre de dependencia de la libreria',
             )
+        )
     return sorted(dependencies, key=str.casefold)
 
 

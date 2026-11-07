@@ -53,6 +53,13 @@ def _validate(data: object) -> dict[str, object]:
         value = target.get(field, 'auto')
         if not isinstance(value, str) or not value.strip():
             raise LockfileError(f'El target del lockfile contiene {field} invalido')
+    central_tuf = data.get('central_tuf')
+    if central_tuf is not None:
+        if not isinstance(central_tuf, dict):
+            raise LockfileError('central_tuf del lockfile no es valido')
+        metadata_version = central_tuf.get('targets_version')
+        if isinstance(metadata_version, bool) or not isinstance(metadata_version, int) or metadata_version <= 0:
+            raise LockfileError('La version TUF del lockfile no es valida')
     seen_names: set[str] = set()
     for raw_name, raw_entry in packages.items():
         name = _package_name(raw_name)
@@ -256,6 +263,7 @@ def update_lockfile(
     dependencies: list[str] | None = None,
     system: str = 'auto',
     architecture: str = 'auto',
+    tuf_version: int | None = None,
 ) -> Path:
     """Atomically add one verified package entry to a lockfile."""
     raw_lock_path = Path(path)
@@ -268,6 +276,10 @@ def update_lockfile(
         raise LockfileError('El origen del lockfile debe ser textual')
     if package_format not in {'lib1', 'lib2'}:
         raise LockfileError('El formato del lockfile no es valido')
+    if tuf_version is not None and (
+        isinstance(tuf_version, bool) or not isinstance(tuf_version, int) or tuf_version <= 0
+    ):
+        raise LockfileError('La version TUF del lockfile no es valida')
     if dependencies is not None and not isinstance(dependencies, list):
         raise LockfileError('Las dependencias del lockfile deben ser una lista')
     dependency_names = sorted({_package_name(item) for item in (dependencies or [])})
@@ -281,6 +293,13 @@ def update_lockfile(
         }
         packages = payload.setdefault('packages', {})
         assert isinstance(packages, dict)
+        existing_tuf = payload.get('central_tuf')
+        if tuf_version is not None:
+            if isinstance(existing_tuf, dict):
+                previous_tuf_version = existing_tuf.get('targets_version')
+                if isinstance(previous_tuf_version, int) and tuf_version < previous_tuf_version:
+                    raise LockfileError('La version TUF nueva es anterior a la del lockfile')
+            payload['central_tuf'] = {'targets_version': tuf_version}
         packages[package_name] = {
             'version': version,
             'source': source,

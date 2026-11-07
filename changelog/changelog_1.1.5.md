@@ -27,3 +27,5 @@
 - Central downloads enforce HTTPS redirects, bounded responses, package identity and format checks, and atomic replacement only after `.lib` verification.
 - Central can provide expiring Ed25519/TUF-style metadata that binds each artifact to its name, version, target format, size, and SHA-256 digest.
 - Central metadata now rejects non-target statements, invalid versions or lengths, expired metadata, and thresholds that are not met by distinct trusted signatures.
+- Central can also publish a complete TUF root, timestamp, snapshot, and targets chain; role thresholds and metadata-version relationships are verified before installation.
+- Projects with a lockfile reject Central targets metadata older than the version already accepted for that project.

@@ -2,5 +2,11 @@
   "format": "bagron-central-root@1",
   "keys": {
     "central-root-2026-01": "/syo5ogUzLZUpaWYgt9WZh6utxVZW81y5hKTb6e8REM="
+  },
+  "roles": {
+    "root": {"keyids": ["central-root-2026-01"], "threshold": 1},
+    "timestamp": {"keyids": ["central-root-2026-01"], "threshold": 1},
+    "snapshot": {"keyids": ["central-root-2026-01"], "threshold": 1},
+    "targets": {"keyids": ["central-root-2026-01"], "threshold": 1}
   }
 }

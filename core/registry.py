@@ -198,6 +198,11 @@ def _normalise_checksum(value: str | None, *, required: bool = True) -> str | No
 
 def _get_headers(client_id: str = DEFAULT_CLIENT_ID, public_id: str = DEFAULT_PUBLIC_ID) -> dict[str, str]:
     """Genera las cabeceras requeridas para consultar y descargar desde Central."""
+    for value, field in ((client_id, 'Client ID'), (public_id, 'Public ID')):
+        if not isinstance(value, str) or not value.strip() or any(
+            character in value for character in '\r\n'
+        ):
+            raise RegistryError(f'El {field} de Central no es valido.')
     return {
         'User-Agent': 'Bagron-CLI/Official',
         'Accept': 'application/json',
@@ -262,7 +267,7 @@ def resolve_package(
         raise RegistryError(f'Error del servidor Central (HTTP {error.code}): {error.reason}') from error
     except urllib.error.URLError as error:
         raise RegistryError(f'No se pudo conectar con el registro Central ({registry_url}): {error.reason}') from error
-    except json.JSONDecodeError as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RegistryError(f'Respuesta no válida del registro Central: {error}') from error
 
 
@@ -428,7 +433,24 @@ def install_package(
         public_id=public_id,
         credential_origin=registry_origin,
     )
-    from core.signing import CentralSignatureError, verify_central_artifact
+    minimum_tuf_version = None
+    if lock_path is not None:
+        from core.lockfile import LockfileError, load_lockfile
+        try:
+            current_lock = load_lockfile(lock_path)
+        except LockfileError as error:
+            raise RegistryError(f'No se pudo leer bagron.lock: {error}') from error
+        if isinstance(current_lock, dict):
+            current_central_tuf = current_lock.get('central_tuf')
+            if isinstance(current_central_tuf, dict):
+                minimum_tuf_version = current_central_tuf.get('targets_version')
+
+    from core.signing import (
+        CentralSignatureError,
+        central_metadata_version,
+        verify_central_artifact,
+    )
+    tuf_version = None
     try:
         verify_central_artifact(
             package_info,
@@ -437,7 +459,9 @@ def install_package(
             resolved_version=resolved_version,
             package_format=package_format,
             require=os.environ.get('BAGRON_REQUIRE_CENTRAL_SIGNATURES', '').strip() == '1',
+            minimum_version=minimum_tuf_version,
         )
+        tuf_version = central_metadata_version(package_info)
     except CentralSignatureError as error:
         raise RegistryError(f'La firma de Central no es valida: {error}') from error
 
@@ -519,6 +543,7 @@ def install_package(
                         package_format=package_format,
                         data=data_to_publish,
                         dependencies=[str(item) for item in dependencies],
+                        tuf_version=tuf_version,
                     )
                 except LockfileError as error:
                     raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
@@ -632,7 +657,7 @@ def search_packages(
     base_url = _validate_https_url(registry_url, field='El registro Central')
     endpoint = f'{base_url}/api/bagron/packages'
     if query.strip():
-        endpoint = f'{endpoint}?search={urllib.parse.quote(query.strip())}'
+        endpoint = f'{endpoint}?search={urllib.parse.quote(query.strip(), safe="")}'
 
     req = urllib.request.Request(endpoint, headers=_get_headers(client_id, public_id))
 
