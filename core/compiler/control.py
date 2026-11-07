@@ -77,6 +77,14 @@ class CompilerState(Diagnostics):
             Path(path),
             allow=(
                 Path(path).resolve() == getattr(self, 'main_module_path', None)
+                # NOTA: el main.bg de una libreria tambien es un modulo del
+                # paquete; solo el de la raiz del proyecto de validacion puede
+                # declarar library.
+                or (
+                    Path(path).name in ('main.bg', '_main.bg')
+                    and Path(path).resolve().parent
+                    == getattr(self, 'project_root', None)
+                )
                 or any(
                     Path(path).resolve().is_relative_to(root)
                     for root in getattr(self, 'library_source_roots', ())

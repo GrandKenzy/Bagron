@@ -627,7 +627,6 @@ def _validate_source_tree(
         relative for relative, _ in files
         if relative.endswith('.bg')
         and not _is_reserved_native_path(relative)
-        and Path(relative).name not in {'main.bg', '_main.bg'}
     ]
     if not bg_files:
         return
@@ -754,7 +753,7 @@ def _collect_compiler_symbols(
         if (
             module.startswith(('build/', '.bagron/'))
             or Path(module).parts[0] in {'build', '.bagron'}
-            or Path(module).name in {'__bagron_pack_main.bg', '__bagron_lib2_main.bg', 'main.bg', '_main.bg'}
+            or Path(module).name in {'__bagron_pack_main.bg', '__bagron_lib2_main.bg'}
         ):
             continue
         if allowed_modules is not None and module not in allowed_modules:
@@ -1048,7 +1047,6 @@ def pack_library(
     )
     allowed_modules = {
         Path(relative).as_posix() for relative, _ in bg_files
-        if Path(relative).name not in {'main.bg', '_main.bg'}
     }
     modules, _, targets = _collect_source_data(source_root, bg_files)
     symbols = _collect_compiler_symbols(
@@ -1081,7 +1079,6 @@ def pack_library(
         'targets': targets,
         'modules': [
             f'source/{relative}' for relative, _ in bg_files
-            if Path(relative).name not in {'main.bg', '_main.bg'}
         ],
         'files': [
             {'path': _zip_path(relative), 'sha256': _sha_hex(data), 'size': len(data)}
