@@ -6,8 +6,6 @@ import subprocess
 import sys
 import tempfile
 
-# NOTA: Asegurar que la raíz de Bagron encabece sys.path y filtrar cualquier
-# subcarpeta de dependencia vendoreada (como vendor/gram) que colisione con módulos del núcleo (core).
 _PROJECT_ROOT = Path(__file__).resolve().parent
 _VENDOR_GRAM = _PROJECT_ROOT / 'vendor' / 'gram'
 
@@ -419,7 +417,6 @@ def _install_command(argv: list[str]) -> int:
             print(f'Error: Ruta no válida para módulo: {module_path_str}', file=sys.stderr)
             return 1
 
-    # Modo librería
     v1 = '--v1' in tokens
     v2 = '--v2' in tokens
     if v1 and v2:

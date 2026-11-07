@@ -461,12 +461,11 @@ def _x64_abi_spec(
             'Las funciones @assembler requieren arquitectura x86_64 en esta fase'
         )
     if any(token in normalized for token in ('windows', 'win32', 'msvc', 'mingw')):
-        # NOTA: Windows x64 ABI reserva 32 bytes de shadow space + 8 bytes de
-        # direccion de retorno (0x28).
+        # Windows x64 reserva 32 bytes de shadow space y 8 de retorno (0x28).
         return _WINDOWS_X64_REGISTERS, 0x28
     if any(token in normalized for token in ('linux', 'gnu', 'musl', 'freebsd')):
-        # NOTA: System V AMD64 ABI pasa 6 registros y el 7.o argumento inicia
-        # tras los 8 bytes de la direccion de retorno (0x08), sin shadow space.
+        # System V AMD64 pasa seis registros; el séptimo argumento empieza
+        # después de los 8 bytes de retorno (0x08), sin shadow space.
         return _SYSV_X64_REGISTERS, 0x08
     if any(token in normalized for token in ('elf', 'none')):
         if str(abi or '').strip().lower() == 'sysv_amd64':
@@ -623,7 +622,6 @@ def _render_assembly_lines(
         and getattr(return_type, 'pointer_level', 0) == 0
         and getattr(return_type, 'array_depth', 0) == 0
     )
-    # NOTA: Las funciones void y Never no retornan codigo de estado ABI.
     status_setup = None if (is_void or is_never) else (
         'mov eax, 1' if dialect == 'intel' else 'movl $1, %eax'
     )

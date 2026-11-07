@@ -70,8 +70,8 @@ def build_parser(gram_path: Path, output_dir: Path, clang: str | None) -> Path:
         except OSError:
             remaining.append(entry)
             continue
-        # NOTA: vnma puede proyectar vendor/gram antes que el checkout del
-        # proyecto; esa ruta también contiene ``core`` y oculta Bagron.
+        # vnma puede anteponer vendor/gram; esa ruta también contiene ``core``
+        # y ocultaría el paquete del proyecto.
         if resolved == repository_root or resolved == gram_path or resolved == vendored_gram:
             continue
         remaining.append(entry)

@@ -19,57 +19,70 @@
 
 ## ¿Qué es Bagron?
 
-**Bagron** recibe archivos `.bg`, valida tipos, ámbitos, flujo, ownership y
-reglas de acceso, y genera LLVM IR antes de producir objetos y enlazar el
-artefacto para el target elegido. El parser de la ruta actual es Gram mediante
-su interfaz AOT/FFI.
+**Bagron** recibe archivos `.bg`, valida tipos, ámbitos, flujo, propiedad
+(`ownership`) y reglas de acceso, y genera LLVM IR antes de producir el objeto
+y enlazar el programa para el destino elegido. El parser actual es Gram, a
+través de su interfaz AOT/FFI.
 
-No usa una máquina virtual de Bagron ni un recolector de basura integrado. Los
-`buffer` siguen reglas explícitas de ownership y liberación; los punteros
-crudos, `extern` y el ensamblador son fronteras que pueden salir de las
+Bagron no usa una máquina virtual ni incluye un recolector de basura. Los
+`buffer` siguen reglas explícitas de propiedad y liberación; los punteros
+crudos, `extern` y el ensamblador son fronteras que pueden quedar fuera de las
 comprobaciones estáticas.
 
 La explicación completa del flujo y de los límites de seguridad está en
 [Cómo funciona Bagron](docs/es/01-Funcionamiento.md).
 
+## Primer programa
+
+Un programa mínimo necesita una función `main` que devuelva `int32`:
+
+```bg
+func main() int32:
+    return 0
+```
+
+Guárdalo como `hola.bg` y compílalo con:
+
+```powershell
+bagron hola.bg -o build/hola --execute
+```
+
+Puedes ver más ejemplos en [`examples/`](examples/README.md) y consultar el
+[índice de la documentación](docs/es/index.md) para conocer cada parte del
+lenguaje.
+
 ---
 
 ## Estado actual
 
-La ruta principal de análisis estático, emisión de LLVM IR y generación de
-artefactos nativos para los targets implementados está disponible. Bagron
+El compilador analiza el código, emite LLVM IR y genera artefactos nativos para
+los destinos implementados. Bagron
 también puede generar ejecutables ELF para Android mediante el NDK, en los
-targets `aarch64-linux-android<api>` y `x86_64-linux-android<api>`.
+destinos `aarch64-linux-android<api>` y `x86_64-linux-android<api>`.
 
-La compilación requiere la biblioteca AOT/FFI de Gram configurada; el frontend
-no activa silenciosamente un parser alternativo si falta.
+Para compilar, la biblioteca AOT/FFI de Gram debe estar disponible; si falta,
+el frontend muestra un error en lugar de cambiar silenciosamente de parser.
 
-El comportamiento estricto forma parte del flujo normal. La CLI actual no
+Las comprobaciones estrictas forman parte del flujo normal. La CLI actual no
 expone un modo global `strict`; `@unsafe` es una excepción localizada por
 función y no elimina las reglas de tipos, ABI ni de `main`.
 
-Las pruebas rápidas viven en `tests/light/` y las pruebas costosas o de
-backend en `tests/aggressive/`, con los archivos de soporte de integración en
-`tests/aggressive/fixtures/`. Se ejecutan por ruta con `vnma test <ruta>`;
-`vnma test tests/light` es la comprobación habitual y
-`vnma test tests/aggressive` cubre los casos integrales.
-
 ---
 
-## Características Principales
+## Características principales
 
-* **Compilación directa a LLVM IR:** El compilador emite LLVM IR mediante `llvmlite` para su verificación y generación de código nativo.
+* **Compilación a código nativo:** Bagron emite LLVM IR, lo verifica y genera el artefacto nativo del destino seleccionado.
 
-* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`; su expresión entera de retorno se usa como código de salida, salvo que el flujo termine mediante una llamada `Never`. Los métodos de clase no cuentan como entrypoint.
+* **Punto de entrada obligatorio:** Cada módulo ejecutable debe declarar `func main() int32:`. Su retorno entero se usa como código de salida, salvo que el flujo termine mediante una llamada `Never`. Los métodos de clase no cuentan como punto de entrada.
 
 * **Sintaxis indentada:** Los fuentes usan archivos `.bg` y bloques delimitados por indentación.
 
-* **Validación semántica:** El frontend registra y valida tipos, variables y scopes antes de emitir LLVM IR.
+* **Validación semántica:** El frontend comprueba tipos, variables y ámbitos antes de emitir LLVM IR.
 
 * **Datos globales visibles:** Las funciones y métodos resuelven automáticamente
-  los globals públicos de su módulo y de módulos importados; `private` sigue
-  bloqueando el acceso entre módulos. La declaración `global` no forma parte
-  de la sintaxis.
+  las variables globales públicas de su módulo y de los módulos importados;
+  `private` sigue bloqueando el acceso entre módulos. La declaración `global`
+  no forma parte de la sintaxis.
 
 * **Terminación explícita:** `Never` es un tipo de retorno para funciones que
   no regresan; una llamada a una función `Never` termina el flujo actual y no
@@ -84,46 +97,26 @@ backend en `tests/aggressive/`, con los archivos de soporte de integración en
   los índices dinámicos requieren `@unsafe`; `@assembler` ya implica ese
   decorador.
 
-* **Estructuras, Enumeraciones y Clases:**
+* **Estructuras, enumeraciones y clases:**
   * `struct`, `mold` y `flags`: Tipos nominales emitidos a LLVM con acceso a
     miembros; `mold` comparte almacenamiento como una unión y `flags` usa una
     base entera explícita (`flags Nombre uint8:`) con campos de bits.
   * `enum`: Enumeraciones con base entera `int32` por defecto o un tipo entero explícito, además de valores implícitos/explícitos.
-  * `class`: Tipos nominales respaldados por `struct`; sus atributos se definen
-    con un unico iniciador `func __init__(...) void:` o
-    `func __frontend__(...) void:`. El segundo permite conversiones como
-    `element: Clase = "Hola"`. Sus métodos se declaran indentados dentro de la
-    clase y reciben la instancia implícitamente; `@static` queda encapsulado
-    en la clase. Admite herencia simple estática (`class Hija(Padre):`): los
-    campos se aplanan en el layout y los métodos se resuelven en compilación;
-    `super.__init__(...)` inicializa explícitamente al padre. No hay vtables ni
-    estado de herencia en runtime. Incluye hooks mágicos opcionales:
-    `__ongetter__(nombre: chain, longitud: Len_t) int32` y
-    `__onsetter__(nombre: chain, longitud: Len_t) int32`; deben retornar `1`
-    para permitir el flujo y `0` para detenerlo. `__eq__() bool` se usa
-    automáticamente cuando una instancia aparece como condición y, si no se
-    declara, la condición vale `false`. Estos hooks solo se insertan desde
-    fuera de la clase; los accesos internos no los disparan. `@after` mueve
-    cualquiera de esos dos hooks después de la lectura o escritura. Las
-    operaciones matemáticas pueden sobrecargarse con `__add__`, `__sub__`,
-    `__mul__`, `__div__`/`__truediv__`, `__mod__`, `__pos__` y `__neg__`;
-    también se reconocen los operadores bitwise equivalentes. `Del instancia`
-    llama a `__deletion__() void` si la clase lo define; sin ese método, `Del`
-    no ejecuta ninguna acción automática. `@frozen` permite inicializar sus
-    atributos únicamente en `__init__` o `__frontend__`; después rechaza
-    escrituras directas, compuestas y alias de puntero conocidos. La
-    congelación es superficial y se propaga por la herencia.
+  * `class`: Tipos nominales respaldados por `struct`, con métodos, herencia
+    estática, conversión mediante `__frontend__`, hooks opcionales y el
+    decorador `@frozen`. Consulta la [guía de clases](docs/es/06-clases/index.md)
+    para los detalles de construcción, privacidad y destrucción.
 
-* **Modulos y dependencias nativas:** `import` carga archivos `.bg`; `extern`
+* **Módulos y dependencias nativas:** `import` carga archivos `.bg`; `extern`
   declara firmas ABI y `#link "./directorio"` añade rutas locales, relativas y
   acotadas al proyecto para librerías compiladas sin alterar el entorno global.
 
-* **Control de Flujo Expresivo:**
+* **Control de flujo:**
   * Condicionales: `if`, `elif`, `else`, `not`.
   * Bucles condicionales: `while condicion:`.
   * Iteración numérica tipada con `ran` y recorrido de arrays con `for i: int32 in values:`.
 
-* **Targets multiplataforma:** Las cláusulas `System`, `Arch` y `ARCHB`
+* **Destinos multiplataforma:** Las cláusulas `System`, `Arch` y `ARCHB`
   distinguen el sistema objetivo, la arquitectura normalizada y su ancho en
   bits. Android requiere un triple LLVM explícito y un Android NDK disponible;
   Bagron genera ELF nativo, no APK.
@@ -131,7 +124,8 @@ backend en `tests/aggressive/`, con los archivos de soporte de integración en
 * **CLI verificable:** `bagron --version` muestra la versión canónica del
   compilador y `bagron --help` lista las operaciones disponibles.
 
-* **Herramientas del proyecto:** El compilador usa Gram para el parseo y vnma para gestionar dependencias y binarios.
+* **Herramientas del proyecto:** Bagron usa Gram para el parseo y vnma para
+  gestionar dependencias y binarios.
 
 ## Seguridad y límites
 
@@ -141,39 +135,40 @@ acceder dinámicamente a arrays sin una prueba de rango o llamar a una función
 insegura. Los `buffer` tienen comprobaciones de capacidad y los accesos nulos
 detectados por el backend producen una trampa.
 
-Esto no convierte a Bagron en un lenguaje formalmente memory-safe. `@unsafe`,
-`@assembler` y `extern` permiten cruzar la frontera estática; la validez de
-direcciones, lifetimes, ABI y código extranjero queda fuera de esa garantía.
+Esto no convierte a Bagron en un lenguaje formalmente seguro frente a errores
+de memoria. `@unsafe`, `@assembler` y `extern` permiten cruzar la frontera
+estática; la validez de direcciones, ciclos de vida, ABI y código extranjero
+queda fuera de esa garantía.
 Los perfiles `dev`, `prod` y `high` cambian optimización, no las reglas de
 seguridad.
 
 ---
 
-## Requisitos / Requirements
+## Requisitos
 
 * **Python:** 3.14 o superior.
 * **llvmlite:** 0.50.0, gestionado mediante vnma.
 * **LLVM/Clang/LLD:** La compilación genera y verifica `.ll`, produce `.obj` y
-  enlaza un ejecutable nativo para targets de sistema; con `System "baremetal"` genera
-  objetos ELF `.o`, un linker script y un binario plano `.bin`. El perfil
+  enlaza un ejecutable nativo para los destinos de sistema. Con `System "baremetal"`
+  genera objetos ELF `.o`, un linker script y un binario plano `.bin`. El perfil
   `Boot "multiboot2"` añade la ISO `.iso`; requiere `grub-mkrescue` y
   `xorriso` en `PATH` o instalados dentro de WSL. `Boot "none"` deja la
   imagen plana sin empaquetarla.
-* **Android NDK (opcional):** Necesario solo para targets Android. Define
+* **Android NDK (opcional):** Solo es necesario para destinos Android. Define
   `ANDROID_NDK_HOME` o `ANDROID_NDK_ROOT` apuntando al NDK instalado; Bagron
   resuelve automáticamente `clang`, `ld.lld` y el sysroot de la API indicada
   por el triple.
 
 ---
 
-## Herramientas
+## Herramientas del ecosistema
 
-El compilador se apoya en dos herramientas del mismo ecosistema:
+Bagron se apoya principalmente en dos herramientas:
 
-* **[Gram](https://github.com/GrandKenzy/Gram):** motor de parseo del frontend. Define las reglas gramaticales BNF combinatorias del lenguaje (`core/frontend/syntax/`). Se instala con vnma.
-* **[vnma](https://github.com/GrandKenzy/vnma) (Vendor Manager):** gestor de dependencias y empaquetado para proyectos Python. Descarga, construye y extrae wheels compatibles con la plataforma directamente en el proyecto, con aislamiento de rutas en tiempo de ejecución y compatibilidad con binarios nativos.
+* **[Gram](https://github.com/GrandKenzy/Gram):** motor de parseo del frontend y fuente de las reglas gramaticales del lenguaje. Se instala con vnma.
+* **[vnma](https://github.com/GrandKenzy/vnma):** gestor de dependencias y empaquetado para proyectos Python. Descarga y prepara las dependencias dentro del proyecto, con rutas aisladas y soporte para binarios nativos.
   * Instala desde PyPI, rutas locales (monorepos) y repositorios Git.
-  * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios, para builds reproducibles.
+  * Genera un `vnma.lock` determinista con versiones, orígenes y metadatos binarios para compilaciones reproducibles.
   * Instalación: `pip install vnma`.
 
 Para comprobar una instalación de Bagron:
@@ -195,7 +190,7 @@ python installer.py
 El instalador crea `bagron.cmd` y `bagron.ps1` y registra la carpeta `bin/`
 en el PATH del usuario.
 
-Desde una instalación existente puedes actualizar a la última release estable
+Desde una instalación existente puedes actualizar a la última versión estable
 publicada en GitHub con:
 
 ```powershell
@@ -210,11 +205,11 @@ desinstalar limpiamente la instalación y retirar sus lanzadores usa:
 bagron --uninstall
 ```
 
-Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.5-Setup.exe` y ejecutarlo directamente. La release solo publica
+Desde la versión publicada puedes descargar el instalador compilado
+`Bagron-1.1.5-Setup.exe` y ejecutarlo directamente. La versión publicada solo incluye
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
-El instalador compilado incluye un runtime portable de Python 3.14 con
+El instalador compilado incluye un entorno portable de Python 3.14 con
 `vnma`, Gram, `llvmlite` y el parser AOT ya preparados. Los extrae en
 `.runtime/` y `vendor/` sin ejecutar `pip`, descargar Gram o reconstruir el
 parser; no necesita Python, vnma ni Gram instalados globalmente. LLVM/Clang/LLD
@@ -222,30 +217,30 @@ sigue siendo necesario para compilar programas nativos.
 
 La ejecución directa desde una copia del repositorio (`python installer.py`)
 sigue siendo una ruta de desarrollo y usa Python 3.14+ del sistema para crear
-su runtime local.
+su entorno local.
 
 ### Linux
 
-El instalador Linux compilado incluye un runtime portable de Python 3.14 con
+El instalador compilado para Linux incluye un entorno portable de Python 3.14 con
 `vnma`, Gram, `llvmlite` y el parser AOT ya preparados. Los extrae en
 `.runtime/` y `vendor/` sin red ni reconstrucción; no requiere Python, vnma ni
-Gram globales. LLVM/Clang/LLD sigue siendo necesario para compilar programas;
-los proyectos que usen `net` con HTTPS necesitan `libcurl.so.4`. Puede ejecutarse directamente desde el
-release publicado:
+Gram instalados globalmente. LLVM/Clang/LLD sigue siendo necesario para
+compilar programas; los proyectos que usen `net` con HTTPS necesitan
+`libcurl.so.4`. Puedes instalarlo desde la versión publicada:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.5/install.sh | bash
 ```
 
-Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.5-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+Desde la versión publicada puedes descargar el instalador compilado
+`Bagron-1.1.5-linux-x86_64`, darle permisos de ejecución y ejecutarlo:
 
 ```bash
 chmod +x Bagron-1.1.5-linux-x86_64
 ./Bagron-1.1.5-linux-x86_64
 ```
 
-La release solo publica este ejecutable Linux. El instalador coloca los
+La versión publicada incluye este ejecutable para Linux. El instalador coloca el
 lanzador `bagron` en `~/.local/bin`; si esa carpeta no está en el
 PATH, añádela en el perfil de tu shell:
 
@@ -267,9 +262,9 @@ bagron --update
 
 ## Instaladores preconstruidos
 
-Los instaladores de la release 1.1.5 incorporan los componentes preparados
+Los instaladores de la versión 1.1.5 incorporan los componentes preparados
 por GitHub Actions para cada plataforma: fuentes del compilador, Python 3.14
-portable, `vnma`, dependencias locales (Gram y `llvmlite`) y la biblioteca
+portable, `vnma`, las dependencias locales (Gram y `llvmlite`) y la biblioteca
 Gram AOT junto con su manifiesto. Su instalación no necesitará descargar
 Gram ni ejecutar `vnma install` o reconstruir el parser; el instalador
 comprobará el bundle antes de crear los lanzadores. La ruta de instalación
@@ -280,8 +275,8 @@ paquetes BagronLab ya no se distribuyen por defecto. Instala las dependencias
 del proyecto explícitamente con `bagron package install` o proporciona tus
 propios archivos `.lib` locales.
 
-El empaquetado omite alias duplicados del runtime: Linux reconstruye los
-enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
+El empaquetado omite alias duplicados del entorno de ejecución: Linux reconstruye
+los enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
 crea enlaces físicos cuando el sistema de archivos lo admite (o conserva
 copias independientes como alternativa). Se verifican las rutas del manifiesto
 antes de restaurarlas; esto no modifica el Python global del usuario.
@@ -289,7 +284,7 @@ antes de restaurarlas; esto no modifica el Python global del usuario.
 **Importante:** instalar sin Internet no equivale a compilar sin herramientas
 externas. Para generar y enlazar ejecutables nativos siguen siendo necesarias
 las herramientas LLVM/Clang/LLD correspondientes; Android necesita su NDK.
-Las releases anteriores a 1.1.4 conservan el mecanismo anterior.
+Las versiones anteriores a 1.1.4 conservan el mecanismo anterior.
 
 ## Extensión para VS Code
 
@@ -308,7 +303,8 @@ para preparar el NDK, seleccionar `aarch64-linux-android35` o
 
 ## Licencia
 
-Este proyecto está bajo la Licencia Apache 2.0 con el rider de no-derivados y uso comercial.
+Este proyecto se distribuye bajo la Licencia Apache 2.0 y las condiciones
+adicionales de no derivados y uso comercial indicadas en `LICENSE`.
 Consulta el archivo `LICENSE` para más detalles.
 
 <p align="center">

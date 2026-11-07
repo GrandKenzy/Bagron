@@ -155,8 +155,8 @@ def _resolve_method_call(
     owner_type = getattr(current_function, 'owner_type', None)
     method_name = _identifier_from_node(primary)
     if owner_type and method_name:
-        # NOTA: Si existe una funcion o extern en el modulo con el mismo nombre y la llamada
-        # no uso self.<metodo>, se prioriza la funcion a nivel de modulo.
+        # Una función o extern del módulo tiene prioridad si la llamada no usa
+        # ``self.<método>``.
         if hasattr(owner, 'resolve_function_for_module'):
             active_func = owner.resolve_function_for_module(
                 method_name,

@@ -27,10 +27,6 @@ from core.version import BAGRON_VERSION
 from tools.deduplicate_portable_python import restore_aliases, verify_manifest
 
 
-# ============================================================================
-# Constantes y repositorios remotos
-# ============================================================================
-
 DEFAULT_INSTALL_NAME = 'Bagron'
 BAGRON_REPO_URL = 'https://github.com/GrandKenzy/Bagron.git'
 BAGRON_ZIP_URL = f'https://github.com/GrandKenzy/Bagron/archive/refs/tags/{BAGRON_VERSION}.zip'
@@ -56,10 +52,6 @@ FILES_TO_COPY = (
 )
 EMPTY_DIRS = ('libs',)
 
-
-# ============================================================================
-# Entorno local de vnma
-# ============================================================================
 
 def _runtime_python_path(runtime_dir: Path) -> Path:
     """Devuelve el intérprete Python del runtime según la plataforma actual."""
@@ -147,8 +139,7 @@ def _bootstrap_vnma(target_dir: Path) -> Path | None:
             print(f'Error: no se pudo extraer el Python portable: {error}', file=sys.stderr)
             return None
     else:
-        # NOTA: Solo el modo fuente usa una venv del Python del sistema. El
-        # ejecutable compilado debe llevar siempre portable-python dentro.
+        # El instalador compilado debe incluir su propio Python portable.
         if getattr(sys, 'frozen', False):
             print(
                 'Error: el instalador compilado no contiene su runtime Python portable.',
@@ -245,13 +236,8 @@ def _bootstrap_vnma(target_dir: Path) -> Path | None:
     return vnma_bin.resolve()
 
 
-# ============================================================================
-# Registro y PATH en Windows
-# ============================================================================
-
 def _add_to_windows_user_path(bin_path: Path) -> bool:
     """Añade bin_path al PATH de usuario en el registro de Windows si no está presente."""
-    # NOTA: Solo aplica a plataformas Windows; en otros sistemas se reporta el path sugerido.
     if sys.platform != 'win32':
         return False
 
@@ -288,7 +274,7 @@ def _add_to_windows_user_path(bin_path: Path) -> bool:
         new_path = ';'.join(entries)
         winreg.SetValueEx(key, 'Path', 0, path_type, new_path)
 
-    # CUIDADO: Es necesario propagar WM_SETTINGCHANGE para que nuevas consolas detecten el cambio.
+    # Notifica el cambio para que las nuevas consolas recarguen el entorno.
     try:
         HWND_BROADCAST = 0xFFFF
         WM_SETTINGCHANGE = 0x001A
@@ -470,16 +456,11 @@ def _remove_legacy_posix_user_launcher(bin_path: Path) -> bool:
         return False
 
 
-# ============================================================================
-# Generación de lanzadores de comandos
-# ============================================================================
-
 def _create_launchers(bin_dir: Path) -> None:
     """Crea los lanzadores nativos para Windows o sistemas POSIX."""
     bin_dir.mkdir(parents=True, exist_ok=True)
 
-    # NOTA: Las instalaciones anteriores podían dejar aliases con mayúscula.
-    # Se eliminan solo dentro de este bin administrado antes de escribir el CLI canónico.
+    # Limpia alias antiguos solo dentro del directorio administrado.
     for legacy_name in ('Bagron', 'Bagron.cmd', 'Bagron.ps1'):
         legacy_launcher = bin_dir / legacy_name
         if legacy_launcher.is_file() or legacy_launcher.is_symlink():
@@ -557,14 +538,9 @@ exec "$python_bin" -m vnma run main.py "$@"
         'exit $code\r\n'
     )
 
-    # NOTA: El nombre de CLI es canónico y único; la marca sigue usando ``Bagron``.
     (bin_dir / 'bagron.cmd').write_text(cmd_content, encoding='utf-8')
     (bin_dir / 'bagron.ps1').write_text(ps1_content, encoding='utf-8')
 
-
-# ============================================================================
-# Descarga y sincronización desde GitHub
-# ============================================================================
 
 def _fetch_from_github(target_dir: Path) -> None:
     """Descarga o clona Bagron desde GitHub en target_dir."""
@@ -828,13 +804,8 @@ def update(target_dir: Path | None = None) -> int:
     return 0
 
 
-# ============================================================================
-# Configuración de vnma.toml
-# ============================================================================
-
 def _configure_vnma_toml(target_dir: Path) -> None:
     """Configura vnma.toml para apuntar a la dependencia remota de Gram."""
-    # NOTA: Se asegura que gram use la URL canónica de GitHub con rama main.
     vnma_toml_content = (
         '[project]\n'
         'name = "Bagron"\n'
@@ -850,7 +821,7 @@ def _configure_vnma_toml(target_dir: Path) -> None:
     (target_dir / 'vnma.toml').write_text(vnma_toml_content, encoding='utf-8')
     stale_lock = target_dir / 'vnma.lock'
     if stale_lock.exists():
-        # CUIDADO: un lock local puede contener Gram editable desde ~/Desktop/Gram.
+        # No reutiliza locks que apunten a un checkout editable de Gram.
         stale_lock.unlink()
 
 
@@ -930,10 +901,6 @@ def _build_aot_parser(target_dir: Path, vnma_bin: Path | None) -> bool:
     print('  [OK] Biblioteca AOT de Gram construida.')
     return True
 
-
-# ============================================================================
-# Instalación desde el compilador y las dependencias preconstruidas
-# ============================================================================
 
 def _bundled_compiler_dir() -> Path | None:
     """Directorio con Bagron, vendor y Gram AOT dentro del instalador."""
@@ -1079,10 +1046,6 @@ def _install_prebuilt(target_dir: Path) -> int:
     print(f'Instalación preconstruida completada: {target_dir}')
     return 0
 
-
-# ============================================================================
-# Proceso principal de instalación
-# ============================================================================
 
 def install(
     target_dir: Path | None = None,

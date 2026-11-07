@@ -6,8 +6,6 @@ from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.value import RETURN, TYPE, VALUE
 from core.frontend.syntax.items.var_decl import FIELD_DECLARATION, VAR, VAR_ASSIGNATION
 
-# BASE
-
 class WHILE(cmb.RuleItem):
     nodeable = True
     
@@ -23,17 +21,9 @@ class ELIF(cmb.RuleItem):
 class ELSE(cmb.RuleItem):
     nodeable = True
   
-# TODO: Pendiente  
-# class SWITCH(cmb.RuleItem):
-#     nodeable = True
-    
-# ENCAPSULAR CONDICIÓN
-    
 class CONDITION(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Ref(VALUE)
-    
-# SIGNATUREAS
     
 class WHILE_SIGNATURE(cmb.RuleItem):
     nodeable = True
@@ -107,8 +97,6 @@ class SIMPLE_STATEMENT(cmb.RuleItem):
         cmb.MatchKeyword('pass'),
     )
     
-# for i: uint32 ran (inicio, limite, paso):
-# for i: int32 in values:
 class FOR_SIGNATURE(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Alt(
@@ -138,8 +126,6 @@ class FOR_SIGNATURE(cmb.RuleItem):
         ),
     )
     
-# CUERPOS
-
 class STATEMENT_BODY(cmb.RuleItem):
     nodeable = True
     entrypoint = cmb.Seq(

@@ -57,27 +57,6 @@ class VAR_INITIALIZATION(cmb.RuleItem):
     nodeable = True
 
 
-# TODO: Revisar integración de asignaciones múltiples.
-# class VAR_MULTI_DECL(cmb.RuleItem):
-#     entrypoint = cmb.Seq(
-#         cmb.Opt(cmb.Ref(PTR_MODIFIER)),
-#         cmb.Separator(
-#             values=cmb.MatchToken('IDENT'),
-#             min=2,
-#             allow_trailing=False,
-#         ),
-#         cmb.MatchToken('COLON'),
-#         cmb.Ref(SEGMENT_TYPE),
-#         cmb.MatchToken('ASSIGN'),
-#         cmb.Separator(
-#             values=cmb.Ref(VALUE),
-#             min=1,
-#             allow_trailing=False,
-#         ),
-#     )
-#     nodeable = True
-
-
 class VAR(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchGroup('privacy')),

@@ -1,7 +1,7 @@
 # Intrínsecos
 
-Catálogo de **Intrínsecos Estrictos** del lenguaje Bagron. Solo se incluyen
-tipos cuyo ancho está fijado explícitamente.
+Catálogo de los **tipos intrínsecos estrictos** de Bagron. Aquí solo aparecen
+los tipos cuyo ancho está fijado explícitamente.
 
 | Familia | Tipo | Ancho | Descripción |
 |:---|:---|---:|:---|
@@ -187,7 +187,7 @@ a un entero, ni un flotante de mayor ancho a uno menor.
 
 Un literal entero es un valor conocido durante la compilación. Puede inicializar
 un tipo entero más pequeño si su valor cabe exactamente en el rango del destino;
-esto no es una conversión de un valor almacenado ni una reducción en runtime:
+esto no es una conversión de un valor almacenado ni una reducción durante la ejecución:
 
 ```bg
 small: int8 = 127       ; válido: el literal cabe en -128..127
@@ -259,8 +259,8 @@ por esta forma.
 
 `usize` e `isize` son los tipos destinados a representar tamaños, índices,
 capacidades y distancias relacionadas con memoria. Su ancho cambia con el
-target: normalmente son de 32 bits en targets de 32 bits y de 64 bits en
-targets de 64 bits.
+destino: normalmente son de 32 bits en destinos de 32 bits y de 64 bits en
+destinos de 64 bits.
 
 Como regla práctica, todo valor cuyo tamaño deba seguir la arquitectura debería
 declararse con estas palabras:
@@ -277,8 +277,8 @@ parte del contrato.
 `Len_t`, `Size_t`, `Signed_t` y `Region_t` no son valores que el usuario
 proporcione en una llamada. Son metatipos expansivos que aparecen en firmas de
 funciones y cuyos argumentos se generan automáticamente durante la compilación.
-Internamente usan el ancho de `usize` del target, salvo `Region_t`, que es
-metadata semántica inmutable y no añade un argumento runtime al ABI.
+Internamente usan el ancho de `usize` del destino, salvo `Region_t`, que es
+metadato semántico inmutable y no añade un argumento de ejecución al ABI.
 
 `Len_t` representa la longitud exacta del dato asociado. Funciona con arrays,
 con `buffer` y con el caso especial de `chain`, que es estático, inmutable y
@@ -325,7 +325,7 @@ foo(name)                 ; Bagron expande Len_t a 16 y Size_t a 1
 - en un array, usa el ancho en bytes de una unidad exterior; en una matriz,
   esa unidad incluye sus dimensiones interiores;
 - en un escalar, usa el tamaño en bytes del tipo;
-- en un puntero, usa el tamaño del puntero del target.
+- en un puntero, usa el tamaño del puntero del destino.
 
 Para obtener el tamaño total de un array se multiplican ambos metadatos:
 

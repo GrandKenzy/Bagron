@@ -81,7 +81,7 @@ def extract_link_directives(
             transformed.append(_blank_line(line))
             continue
 
-        # NOTA: 1) Probar primero relativo al proyecto local
+        # Primero busca una ruta relativa al proyecto.
         project_target = (source.parent / candidate).resolve()
         resolved: Path | None = None
 
@@ -96,7 +96,7 @@ def extract_link_directives(
                 transformed.append(_blank_line(line))
                 continue
 
-        # NOTA: 2) Si no existe en el proyecto local, buscar en las carpetas de Bagron
+        # Si no existe allí, busca en las carpetas administradas por Bagron.
         if resolved is None:
             from core.globvars import BAGRON_ROOT
             bagron_root = BAGRON_ROOT.resolve()

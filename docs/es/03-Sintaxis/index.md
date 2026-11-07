@@ -9,7 +9,7 @@
 5. [Diagnóstico y sintaxis retirada](05-diagnostico-y-sintaxis-retirada.md)
 6. [Directivas condicionales](06-directivas-condicionales.md)
 7. [Directivas de enlace y librerías](07-directivas-de-enlace-y-librerias.md)
-8. [Cláusulas de target y configuración](08-clausulas-de-target.md)
+8. [Cláusulas de destino y configuración](08-clausulas-de-target.md)
 9. [Directivas de ensamblador](09-directivas-de-ensamblador.md)
 10. [Imports y namespaces](10-imports-y-namespaces.md)
 
@@ -44,13 +44,13 @@ clause Optimizations 'prod'
 
 `System`, `Arch`, `Boot`, `ABI` y `Optimizations` se validan antes de generar
 LLVM.
-Los módulos importados heredan el target del módulo de entrada cuando no
+Los módulos importados heredan el destino del módulo de entrada cuando no
 declaran sus propias cláusulas. Una cláusula explícita incompatible detiene la
-compilación; los imports nunca cambian el target global.
+compilación; los imports nunca cambian el destino global.
 
 ## Formas retiradas
 
-- `global`: los globals públicos se resuelven automáticamente.
+- `global`: las variables globales públicas se resuelven automáticamente.
 - `extern "biblioteca":`: ahora se declara el dominio, por ejemplo
   `extern windows "kernel32":`.
 - `package` y `package2`: la creación de librerías usa `library --v1` o

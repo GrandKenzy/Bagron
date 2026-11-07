@@ -416,10 +416,7 @@ class MemoryExpressionMixin:
         right_data, right_length = self._buffer_data_and_length(right, builder)
         size_type = self._size_integer_type()
 
-        # CUIDADO: ``usize`` arithmetic wraps in LLVM.  Without this guard a
-        # concatenation near the address-space limit could allocate the
-        # wrapped size and then copy the original lengths into a smaller
-        # object.
+        # Comprueba el desbordamiento antes de reservar el resultado.
         function = builder.function
         if function is None:
             raise FunctionEmissionError(

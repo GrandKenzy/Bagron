@@ -1,8 +1,8 @@
 # Cómo funciona Bagron
 
-Este documento describe la implementación actual del compilador y sus límites.
-No debe interpretarse como una garantía formal de seguridad ni como una
-promesa sobre funcionalidades que todavía no estén implementadas.
+Este documento resume cómo funciona el compilador y cuáles son sus límites.
+No es una garantía formal de seguridad ni una promesa sobre funcionalidades
+que todavía no estén implementadas.
 
 ## Qué es Bagron
 
@@ -13,7 +13,7 @@ integrado.
 
 El control de memoria es explícito en los tipos que lo necesitan: un
 `buffer` se reserva y libera con las operaciones previstas por el lenguaje,
-mientras que un puntero crudo no lleva longitud ni ownership implícitos. Los
+mientras que un puntero crudo no lleva longitud ni propiedad implícitas. Los
 punteros crudos, `extern` y el ensamblador son fronteras en las que el programa
 puede salir de las comprobaciones estáticas de Bagron.
 
@@ -27,10 +27,10 @@ Para un módulo ejecutable, el flujo es, en términos prácticos, el siguiente:
    convierte ese resultado en su árbol interno. La ruta actual requiere que
    la biblioteca nativa de esa interfaz esté disponible; no usa un parser
    Python alternativo silencioso cuando falta.
-3. Se cargan los imports, se comprueban las rutas y los targets de los
+3. Se cargan los imports, se comprueban las rutas y los destinos de los
    módulos, y se registran sus declaraciones públicas y privadas.
 4. Se ejecutan las comprobaciones semánticas: tipos, firmas, ámbitos, flujo,
-   reglas de punteros y arrays, llamadas `@unsafe`, ownership y metadatos
+   reglas de punteros y arrays, llamadas `@unsafe`, propiedad y metadatos
    implícitos como `Len_t`, `Size_t` y `Region_t`.
 5. El backend genera LLVM IR y lo verifica. Según el perfil seleccionado,
    conserva ese IR o aplica optimizaciones; el IR resultante vuelve a
@@ -38,14 +38,14 @@ Para un módulo ejecutable, el flujo es, en términos prácticos, el siguiente:
 
 Un módulo ejecutable debe tener `func main() int32:`. Su retorno entero es el
 código de salida, salvo que el flujo termine mediante una función `Never`.
-Los módulos importados no pueden cambiar el target ni el perfil elegidos por
+Los módulos importados no pueden cambiar el destino ni el perfil elegidos por
 el módulo de entrada.
 
 La interfaz de línea de comandos actual no expone una opción independiente
 `strict`. Las opciones antiguas con ese nombre no deben documentarse como
 parte del flujo vigente.
 
-## Qué significa el modo estricto
+## Comprobaciones estrictas
 
 En la implementación actual, las comprobaciones estrictas forman parte del
 camino normal del compilador; no hay un modo permisivo paralelo. Entre otras
@@ -81,7 +81,7 @@ elimina las reglas de tipos, formas, firmas, metadatos ni el contrato de
 - Los límites de un `buffer` en tiempo de ejecución; un índice literal fuera
   de su capacidad se rechaza en compilación.
 - Que una función segura no llame a código marcado como inseguro.
-- Reglas conservadoras de ownership para `buffer` y handles `opaque`,
+- Reglas conservadoras de propiedad para `buffer` y handles `opaque`,
   incluyendo estados consumidos o cerrados.
 - Trampas para casos que el backend detecta en ejecución, como una
   desreferencia nula, un paso inválido o ciertos límites de destino.
@@ -93,9 +93,9 @@ los errores de memoria, errores lógicos, carreras, fallos del sistema o
 comportamientos incorrectos en código extranjero. En particular:
 
 - `@unsafe`, `@assembler` y `extern` atraviesan la frontera de las pruebas
-  estáticas. La validez de direcciones externas, lifetime, ABI y efectos del
+  estáticas. La validez de direcciones externas, ciclos de vida, ABI y efectos del
   código extranjero queda bajo responsabilidad del programa y de su entorno.
-- Un puntero crudo no contiene por sí mismo longitud, ownership ni una prueba
+- Un puntero crudo no contiene por sí mismo longitud, propiedad ni una prueba
   de que el objeto siga vivo.
 - `@unsafe` no vuelve válido un puntero nulo o colgante; solamente permite que
   el cuerpo realice operaciones que el modo seguro no puede justificar.
@@ -103,12 +103,13 @@ comportamientos incorrectos en código extranjero. En particular:
   entradas maliciosas, fallos de lógica o defectos del propio compilador.
 
 Por tanto, “seguro” en Bagron significa “sujeto a las comprobaciones estáticas
-y dinámicas implementadas para esa operación”, no “memory-safe en cualquier
-circunstancia”.
+y dinámicas implementadas para esa operación”, no “seguro frente a errores de
+memoria en cualquier circunstancia”.
 
-## Memoria y ownership
+## Memoria y propiedad
 
-El compilador mantiene estados de ownership durante el análisis; esos estados
+El compilador mantiene estados de propiedad (`ownership`) durante el análisis;
+esos estados
 son metadatos semánticos y no se emiten como campos ocultos en el ABI.
 
 - Un `buffer` posee almacenamiento y capacidad. Las variables locales y
@@ -141,12 +142,12 @@ Los perfiles cambian el IR y el coste de generación, no las reglas
 semánticas ni el límite entre código seguro e inseguro. Todos pasan por la
 verificación de LLVM correspondiente.
 
-## Módulos, targets y ABI
+## Módulos, destinos y ABI
 
 Los imports se resuelven dentro de la raíz del proyecto y se rechazan las
 rutas absolutas, el traversal y los enlaces que terminen fuera de esa raíz.
 Los ciclos de imports son errores. Las cláusulas `System`, `Arch`, `Boot` y
-`ABI` de los módulos se contrastan con el target elegido por el módulo de
+`ABI` de los módulos se contrastan con el destino elegido por el módulo de
 entrada. Baremetal AMD64 requiere `clause ABI "sysv_amd64"`; la ABI no se
 infiere ni permite convenciones definidas por el usuario.
 
@@ -164,7 +165,7 @@ ensamblador, se considera una llamada insegura desde una función segura.
 - No hay recolector de basura, `int` genérico, retorno directo de punteros
   crudos, ni conversiones implícitas generales para hacer más permisivo el
   lenguaje.
-- Los detalles de targets, perfiles, tipos, arrays, punteros, ownership y
+- Los detalles de destinos, perfiles, tipos, arrays, punteros, propiedad y
   ABI deben consultarse en sus documentos específicos; este archivo resume
   sus contratos y no los sustituye.
 
@@ -174,5 +175,5 @@ ensamblador, se considera una llamada insegura desde una función segura.
 - [Especificadores y calificadores](02-Básico/03-Especificadores%20y%20Calificadores.md)
 - [Punteros](02-Básico/05-Punteros.md)
 - [Módulos e imports](02-Básico/07-Módulos%20e%20Imports.md)
-- [Buffers y ownership](02-Básico/08-buffer.md)
+- [Buffers y propiedad](02-Básico/08-buffer.md)
 

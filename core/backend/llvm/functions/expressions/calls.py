@@ -162,7 +162,7 @@ class CallExpressionMixin:
                 and self.type_registry.aggregate(source_name) is not None
             )
         ):
-            # NOTA: Si existe una funcion de modulo con este nombre, no interceptar como metodo.
+            # Una función de módulo con este nombre no debe resolverse como método.
             module_func = next(
                 (
                     c for c in self._symbols_by_source.get(source_name, ())

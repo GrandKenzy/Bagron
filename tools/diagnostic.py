@@ -36,10 +36,6 @@ class Diagnostics(utilities.Diagnostics):
             generate_on_error=generate_on_error,
         )
 
-    # ----------------------------------------------------------------------
-    # Gestión de etapas (Stages) durante el procesamiento
-    # ----------------------------------------------------------------------
-
     def start_stage(self, stage_name: str, description: str = "") -> Node:
         """Inicia una etapa de procesamiento creando y apilando un nodo de telemetría."""
         return self.node(stage_name, description=description, set_target=True)
@@ -56,10 +52,6 @@ class Diagnostics(utilities.Diagnostics):
             yield node
         finally:
             self.end_stage()
-
-    # ----------------------------------------------------------------------
-    # Registro de notas y eventos de telemetría
-    # ----------------------------------------------------------------------
 
     def last_note(self):
         current = self.current()
@@ -92,10 +84,6 @@ class Diagnostics(utilities.Diagnostics):
     def debug(self, note: str):
         """Registra un mensaje de debug en el nodo activo."""
         self.sender(note, "normal")
-    # ----------------------------------------------------------------------
-    # Control de estado y persistencia de logs
-    # ----------------------------------------------------------------------
-
     @property
     def has_errors(self) -> bool:
         """Indica si se han acumulado errores en este diagnóstico."""

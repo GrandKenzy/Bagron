@@ -1019,8 +1019,8 @@ def _bind_parameters(compiler: Compiler, symbol: FunctionSymbol) -> None:
             parameter.type_spec,
             kind='parameter',
         )
-        # NOTA: un parametro de una funcion @consume recibe la propiedad del
-        # descriptor; en el resto de funciones sigue siendo un prestamo.
+        # ``@consume`` recibe la propiedad del descriptor; las demás funciones
+        # lo reciben prestado.
         if has_consume_decorator(symbol) and is_opaque_symbol(variable):
             variable.opaque_state = OWNED
         scope.add(parameter.name, variable)
@@ -2407,8 +2407,7 @@ def _process_body_node(
                 block_scope,
                 loop_depth,
             )
-        # NOTA: un buffer o descriptor declarado en este bloque no puede
-        # sobrevivir a su ambito.
+        # Un buffer o descriptor local no puede sobrevivir a este ámbito.
         _report_leaks(compiler, symbol, list(block_scope.namespace.values()))
         return
 

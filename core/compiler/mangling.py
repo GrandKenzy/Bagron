@@ -26,7 +26,6 @@ def _part(value: object) -> str:
 
 
 def module_key(module_path: object | None, project_root: object | None = None) -> str:
-    # NOTA: Produce una clave canonica del modulo relativa a la raiz del proyecto o de Bagron.
     if module_path is None:
         return 'module'
     path = str(module_path).replace('\\', '/')

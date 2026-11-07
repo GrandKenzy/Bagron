@@ -367,8 +367,7 @@ def _candidate_paths(
     project_root: Path,
     library_roots: tuple[Path, ...] = (),
 ) -> list[Path]:
-    # NOTA: Un modulo solo puede ver el arbol de su propietario. Esto evita
-    # que un paquete cambie accidentalmente el modulo seleccionado por otro.
+    # Cada módulo solo puede buscar dentro del árbol de su propietario.
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
 

@@ -1,7 +1,8 @@
-# Ejemplos pequeños de Bagron
+# Ejemplos de Bagron
 
-Estos archivos son muestras independientes de sintaxis. Cada uno enseña una
-familia concreta del lenguaje; no forman una aplicación grande.
+Estas muestras son independientes y cada una presenta una parte concreta del
+lenguaje. No forman una aplicación completa: sirven para leer la sintaxis,
+probar una característica y partir de ahí.
 
 ## Recorrido rápido
 
@@ -15,19 +16,19 @@ familia concreta del lenguaje; no forman una aplicación grande.
 | `06_buffer.bg` | buffers dinámicos, concatenación, `Len_t` y `Del` |
 | `07_clases.bg` | clases, métodos, herencia, `@static`, `@frozen` y hooks |
 | `08_modulos/` | imports por namespace, alias y selección de símbolos |
-| `09_preprocesador.bg` | cláusulas de target y preprocesador condicional |
-| `10_ffi_y_assembler.bg` | `opaque`, `extern` y `@assembler` (dependiente del target) |
+| `09_preprocesador.bg` | cláusulas de destino y preprocesador condicional |
+| `10_ffi_y_assembler.bg` | `opaque`, `extern` y `@assembler` (depende del destino) |
 
-Los primeros ocho ejemplos están pensados para leerse y compilarse sin
-dependencias nativas adicionales. El último muestra fronteras de integración:
-requiere un target Windows x64 y las herramientas de Clang disponibles.
+Todos los ejemplos, salvo el último, están pensados para compilarse sin
+dependencias nativas adicionales. El último muestra una frontera de integración
+y requiere un destino Windows x64 con las herramientas de Clang disponibles.
 
 ```powershell
-vnma run main.py examples/01_basico.bg
-vnma run main.py examples/07_clases.bg
-vnma run main.py examples/08_modulos/main.bg
+bagron examples/01_basico.bg -o build/01_basico --execute
+bagron examples/07_clases.bg -o build/07_clases --execute
+bagron examples/08_modulos/main.bg -o build/08_modulos --execute
 ```
 
-La sintaxis intencionadamente inválida no se mezcla con los programas
-ejecutables; las restricciones se explican en `docs/es/` y se prueban en
-`tests/`.
+Los casos de sintaxis inválida no se mezclan con los programas ejecutables. Las
+restricciones se explican en [`docs/es/`](../docs/es/index.md) y sus validaciones
+automatizadas viven en `tests/`.

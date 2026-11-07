@@ -372,8 +372,6 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         )
         if same_sign and target_width > source_width:
             return True
-        # NOTA: Los enteros sin signo escalan de forma segura a usize cuando caben en el ancho
-        # de palabra del target, y de forma analoga los enteros con signo hacia isize.
         if target.name == 'usize' and source_type.name in UNSIGNED_INTEGER_TYPES:
             return target_width >= source_width
         if target.name == 'isize' and source_type.name in SIGNED_INTEGER_TYPES:

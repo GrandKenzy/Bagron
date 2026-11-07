@@ -90,15 +90,15 @@ INTRINSIC_TYPES = {
     'float': '#3B82F6',
     'double': '#3B82F6',
 
-    # Caracteres, cadenas, booleanos y tipos especiales
+    # Texto, booleanos y tipos especiales
     'char': '#3B82F6',
-    'chain': '#3B82F6', # array de carácteres
+    'chain': '#3B82F6',
     'bool': '#3B82F6',
     'void': '#3B82F6',
     'Never': '#3B82F6',
-    'Len_t': '#3B82F6', # hidden compile-time array length parameter
-    'Size_t': '#3B82F6', # hidden compile-time byte-size parameter
-    'Region_t': '#3B82F6', # hidden immutable provenance parameter
+    'Len_t': '#3B82F6',
+    'Size_t': '#3B82F6',
+    'Region_t': '#3B82F6',
     'Bint': '#3B82F6',
     'uBint': '#3B82F6',
 
@@ -163,11 +163,9 @@ KEYWORDS_BY_GROUP = {
 
 def register_keywords(session: Session) -> None:
     """Register Bagron's lexical catalog in an isolated Gram session."""
-    # 1. Registrar grupos
     for group, color in GROUPS.items():
         session.add_group(group, color_group=color or '#FFA500')
 
-    # 2. Registrar tipos intrínsecos en el grupo `types`
     for keyword in TYPES:
         color = INTRINSIC_TYPES.get(keyword, GROUPS['types'])
         session.add_keyword(
@@ -177,7 +175,6 @@ def register_keywords(session: Session) -> None:
             allow_override=True,
         )
 
-    # 3. Registrar palabras clave por grupo
     for group, words in KEYWORDS_BY_GROUP.items():
         for word in words:
             color = KEYWORDS.get(word, GROUPS.get(group, '#FFFFFF'))
@@ -188,7 +185,6 @@ def register_keywords(session: Session) -> None:
                 allow_override=True,
             )
 
-    # 4. Registrar palabras clave individuales restantes
     for kw, color in KEYWORDS.items():
         if session.get_keyword(kw) is None:
             session.add_keyword(

@@ -15,8 +15,7 @@ DEAD = 'dead'
 CLOSED = 'closed'
 MOVED = 'moved'
 BUFFER_STATES = frozenset({OWNED, BORROWED, DEAD})
-# NOTA: estados "quizas": el recurso esta consumido en algunas rutas de control
-# que confluyen y vivo en otras. Solo nacen de ``merge``.
+# Estos estados aparecen cuando una rama consume el recurso y otra lo conserva.
 MAYBE_DEAD = 'maybe_dead'
 MAYBE_CLOSED = 'maybe_closed'
 MAYBE_MOVED = 'maybe_moved'
@@ -24,8 +23,7 @@ RESOURCE_STATES = frozenset({
     OWNED, BORROWED, DEAD, CLOSED, MOVED,
     MAYBE_DEAD, MAYBE_CLOSED, MAYBE_MOVED,
 })
-# NOTA: estados que ya no pueden usarse; el orden fija cual se informa cuando
-# dos rutas de control consumen el recurso de forma distinta.
+# El orden fija qué estado se informa cuando las ramas consumen de forma distinta.
 _CONSUMED_STATES = (CLOSED, MOVED, DEAD)
 _MAYBE_OF = {DEAD: MAYBE_DEAD, CLOSED: MAYBE_CLOSED, MOVED: MAYBE_MOVED}
 _MAYBE_KIND = {maybe: kind for kind, maybe in _MAYBE_OF.items()}

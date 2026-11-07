@@ -338,9 +338,8 @@ class ValueExpressionMixin:
             if operator == 'DOLLAR':
                 return self._compile_address(current.operand, builder, values)
 
-            # NOTA: un literal usado por un operador unario debe conservar el
-            # ancho esperado; de lo contrario un valor int64 se trunca antes
-            # de aplicar el signo.
+            # El literal debe conservar el ancho esperado antes de aplicar el
+            # signo; de lo contrario un int64 se truncaría.
             operand = self._compile_expression(
                 current.operand,
                 builder,
