@@ -7,7 +7,8 @@
 
 ## CLI
 
-- **Local Installation Command (`bagron install`)**: Added `bagron install` to install libraries and modules directly into project-local directories, replacing existing targets:
+- **Local Installation Command (`bagron install`) [Temporary]**: Added a temporary `bagron install` command to install libraries and modules directly into project-local directories, replacing existing targets:
   - `bagron install --library --v1 <source>` builds (or copies) and installs a `lib1` library package into the local `libs/` directory.
   - `bagron install --library --v2 <source>` compiles and installs a `lib2` library package into `libs/`.
   - `bagron install --module <source.bg|dir>` installs a source module or module folder directly into the local `modules/` directory.
+  *Note: This command is currently provided as a temporary convenience for local workflow management and may evolve in future releases.*

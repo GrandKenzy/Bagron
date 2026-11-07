@@ -30,3 +30,24 @@ Durante una compilación, `extract_library()` usa una carpeta de caché por
 
 Cualquier alteración en los archivos empaquetados o divergencia en los hashes
 detiene el proceso de verificación y previene el consumo de una biblioteca corrupta.
+
+## Instalación local (temporal)
+
+El comando CLI `bagron install` permite empaquetar o copiar librerías y módulos directamente dentro de las carpetas locales del proyecto (`libs/` o `modules/`), sustituyendo cualquier versión previa:
+
+```powershell
+# Instala una librería como lib1 en libs/
+bagron install --library --v1 ruta/a/libreria [--name Nombre] [--version 1.0.0]
+
+# Compila e instala una librería como lib2 nativa en libs/
+bagron install --library --v2 ruta/a/libreria [--name Nombre] [--version 1.0.0]
+
+# Copia un archivo .lib existente directamente en libs/
+bagron install --library ruta/a/paquete.lib
+
+# Instala un módulo (.bg o carpeta de módulo) directamente en modules/
+bagron install --module ruta/a/modulo.bg
+```
+
+> [!NOTE]
+> Este comando es una funcionalidad temporal orientada a facilitar el flujo de trabajo y la gestión local de librerías y módulos mientras se estandariza el mecanismo definitivo de distribución y paquetes.

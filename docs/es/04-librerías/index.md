@@ -13,6 +13,9 @@ La interfaz actual para crear y gestionar paquetes `.lib` es:
 ```powershell
 bagron library --v1 source -o libs/Math.lib --name Math --version 1.0.0
 bagron library --v2 source -o libs/Math.lib --name Math --version 2.0.0
+bagron install --library --v1 source
+bagron install --library --v2 source
+bagron install --module modulo.bg
 bagron inspect libs/Math.lib
 bagron verify libs/Math.lib
 bagron unpack libs/Math.lib unpacked
