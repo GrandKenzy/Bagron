@@ -380,7 +380,6 @@ class LibraryTests(unittest.TestCase):
             root = Path(directory)
             package_path = root / 'My.lib'
             source = self._source(root)
-            expected = (source / 'string.bg').read_bytes()
             pack_library(source, package_path)
 
             def add_extra(entries):
@@ -450,7 +449,9 @@ class LibraryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             package_path = root / 'My.lib'
-            pack_library(self._source(root), package_path)
+            source = self._source(root)
+            expected = (source / 'string.bg').read_bytes()
+            pack_library(source, package_path)
             _, extracted = extract_library(package_path, root / 'cache')
             marker = extracted / '.complete'
             marker.unlink()
