@@ -220,7 +220,7 @@ class LinkDirectiveTests(unittest.TestCase):
             self.assertEqual([], errors)
             self.assertEqual([(fake_bagron / 'libs' / 'SDL3').resolve()], links)
 
-    def test_link_resolves_folder_from_bagron_root_modules(self):
+    def test_link_does_not_resolve_folder_from_bagron_root_modules(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
             fake_bagron = Path(fake_bagron_dir)
             (fake_bagron / 'modules' / 'shared_bins').mkdir(parents=True)
@@ -236,8 +236,8 @@ class LinkDirectiveTests(unittest.TestCase):
                     allow=True,
                 )
 
-            self.assertEqual([], errors)
-            self.assertEqual([(fake_bagron / 'modules' / 'shared_bins').resolve()], links)
+            self.assertEqual([], links)
+            self.assertTrue(errors)
 
     def test_link_prefers_local_project_over_bagron_root(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:

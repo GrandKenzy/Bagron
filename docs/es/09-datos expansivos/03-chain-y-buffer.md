@@ -12,6 +12,11 @@ func main() int32:
 ```
 
 La longitud incluye el byte `NUL`. Para el literal `"Hola"`, `Len_t` vale `5`.
+De forma similar, cuando un literal de texto se pasa como `char[]`, el valor
+`Len_t` sintetizado por el compilador representa la capacidad total del buffer
+incluyendo el terminador `NUL`. Las funciones de procesamiento de texto o de
+formateo en librerías deben iterar hasta el primer byte `\0` o `length` para
+determinar la longitud lógica del contenido.
 Un `chain` no puede declararse como puntero y el compilador solo puede calcular
 su longitud directamente cuando el valor es constante o cuando la expansión
 ya fue propagada.

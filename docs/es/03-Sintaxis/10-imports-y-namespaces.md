@@ -33,7 +33,7 @@ Funciones, variables globales y tipos públicos pueden seleccionarse.
 
 ## Resolución de archivos
 
-Para `import nombre`, el compilador busca:
+Para `import nombre`, el compilador busca módulos fuente locales:
 
 1. `nombre.bg` o `nombre/main.bg` junto al módulo importador cuando este vive
    bajo `modules/`;
@@ -43,7 +43,8 @@ Para `import nombre`, el compilador busca:
 
 La ruta final debe permanecer dentro de la raíz del proyecto. `libs/` no es una
 raíz implícita para módulos `.bg`; se reserva para archivos `.lib` declarados
-con `library`.
+con `library`. La instalación de Bagron no publica módulos `.bg` sueltos: sus
+APIs distribuidas se consumen como librerías completas mediante `library`.
 
 ## Exportaciones y privacidad
 

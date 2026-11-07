@@ -114,12 +114,15 @@ def render_packages_toml(
     packages: list[dict[str, object]],
 ) -> str:
     """Genera el contenido de discentra_central/packages.toml."""
+    repo_name = repository.get("name", "bagronlab")
+    repo_desc = repository.get("description", "Suite de paquetes Bagron")
+    repo_author = repository.get("author", "Discentra Community")
     lines = [
-        '# Configuración de integración de BagronLab con Central',
+        f'# Configuración de integración de {repo_name} con Central',
         '[repository]',
-        f'name = "{repository.get("name", "bagronlab")}"',
-        f'description = "{repository.get("description", "Monorepo con la suite oficial de librerías y utilidades para Bagron")}"',
-        f'author = "{repository.get("author", "Discentra Community")}"',
+        f'name = "{repo_name}"',
+        f'description = "{repo_desc}"',
+        f'author = "{repo_author}"',
         '',
     ]
 
@@ -168,6 +171,193 @@ def render_manifest_toml(
     return '\r\n'.join(lines).rstrip() + '\r\n'
 
 
+
+
+def _update_toml_field(text: str, key: str, value: str, section: str = 'package') -> str:
+    """Actualiza o inserta un campo dentro de una seccion de un archivo TOML."""
+    pattern = r"(?m)(^\s*" + re.escape(key) + r"\s*=\s*)(?:\"[^\"]*\"|'[^']*'|[^\r\n#]+)"
+    if re.search(pattern, text):
+        return re.sub(pattern, r'\g<1>"' + value + r'"', text, count=1)
+    sec_pattern = r'(\[\s*' + re.escape(section) + r'\s*\][^\r\n]*[\r\n]+)'
+    if re.search(sec_pattern, text):
+        return re.sub(sec_pattern, r'\g<1>' + key + r' = "' + value + r'"\n', text, count=1)
+    return text.rstrip() + f'\n\n[{section}]\n{key} = "{value}"\n'
+
+
+def _run_hostutils_dedicated(
+    base: Path,
+    pkg_toml_path: Path,
+    *,
+    auto_patch: bool = False,
+    dry_run: bool = False,
+    set_versions: dict[str, str] | None = None,
+    input_fn: Callable[[str], str] = input,
+    print_fn: Callable[[str], None] = print,
+) -> int:
+    """Sincroniza una librería dedicada donde todo el repositorio es un paquete."""
+    import core.compiler
+    from core.library import LibraryError, compute_library_signature, pack_compiled_library, pack_library
+
+    raw_text = pkg_toml_path.read_text(encoding='utf-8')
+    try:
+        pkg_data = tomllib.loads(raw_text)
+    except Exception as exc:
+        raise HostingError(f'Error al leer {pkg_toml_path}: {exc}') from exc
+
+    pkg_section = pkg_data.get('package', {}) if isinstance(pkg_data.get('package'), dict) else {}
+    author_section = pkg_data.get('author', {}) if isinstance(pkg_data.get('author'), dict) else {}
+
+    name = str(pkg_section.get('name') or base.name)
+    current_version = str(pkg_section.get('version') or '1.0.0')
+    kind = str(pkg_section.get('kind') or 'librería')
+    format_name = str(pkg_section.get('format') or 'lib1')
+    description = str(pkg_section.get('description') or f'Biblioteca {name} para Bagron')
+    license_name = str(pkg_section.get('license') or 'MIT')
+    author = str(author_section.get('name') or 'Discentra Community')
+    declared_sig = str(author_section.get('signature') or '')
+
+    build_dir = base / 'build'
+    central_dir = base / 'discentra_central'
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    central_dir.mkdir(parents=True, exist_ok=True)
+
+    file_name = f'{name}.lib' if format_name in {'lib1', 'lib2'} or kind == 'librería' else name
+    artifact_path = build_dir / file_name
+
+    # Si el artefacto no existe en build/, intentar empaquetarlo automáticamente
+    if not artifact_path.is_file():
+        if format_name in {'lib1', 'lib2'} or kind == 'librería':
+            print_fn(f'  [hostutils] Empaquetando librería dedicada {name} en build/{file_name}...')
+            try:
+                packer = pack_compiled_library if format_name == 'lib2' else pack_library
+                packer(base, artifact_path, name=name, version=current_version)
+            except Exception as exc:
+                raise HostingError(
+                    f'El artefacto {file_name} no existe en {build_dir} y la compilación falló:\n{exc}'
+                ) from exc
+        else:
+            raise HostingError(f'No se encontró el artefacto {artifact_path.name} en {build_dir}')
+
+    art = inspect_build_artifact(artifact_path)
+    curr_sha = str(art['sha256'])
+    curr_size = int(art['size_bytes'])
+    source_sha = str(art['source_sha'])
+
+    manifest_toml_path = central_dir / 'manifest.toml'
+    packages_toml_path = central_dir / 'packages.toml'
+
+    prev_sha = None
+    prev_sig = None
+    if manifest_toml_path.is_file():
+        try:
+            man_content = tomllib.loads(manifest_toml_path.read_text(encoding='utf-8'))
+            for p in man_content.get('packages', []):
+                if isinstance(p, dict) and p.get('name') == name:
+                    prev_sha = str(p.get('sha256', ''))
+                    prev_sig = str(p.get('signature', ''))
+                    break
+        except Exception:
+            pass
+
+    is_modified = (prev_sha is None) or (prev_sha != curr_sha)
+    set_versions = set_versions or {}
+
+    print_fn(f'Auditando repositorio dedicado para paquete {name}...')
+
+    if not is_modified:
+        print_fn(f'  [hostutils] {name}: sin cambios (SHA256: {curr_sha[:16]}...)')
+        version = current_version
+        signature = prev_sig or declared_sig or compute_author_signature(author, name, version, source_sha)
+    else:
+        suggested = bump_semver_patch(current_version) if prev_sha is not None else current_version
+
+        if name in set_versions:
+            version = set_versions[name]
+            print_fn(f'  [hostutils] {name}: versión fijada a {version}')
+        elif auto_patch:
+            version = suggested
+            print_fn(f'  [hostutils] {name}: cambio detectado -> auto-bump patch {current_version} -> {version}')
+        else:
+            prompt_label = (
+                f'\n[hostutils] Paquete modificado detectado: {artifact_path.name}\n'
+                f'  Versión actual : {current_version}\n'
+                f'  SHA256 anterior: {prev_sha or "(nuevo)"}\n'
+                f'  SHA256 nuevo   : {curr_sha}\n'
+                f'  Sugerencia     : {suggested}\n'
+                f"Nueva versión para '{name}' [{suggested}]: "
+            )
+            user_val = input_fn(prompt_label).strip()
+            version = user_val if user_val else suggested
+
+        # Si cambió la versión y es librería, re-empaquetamos para actualizar la versión interna
+        if version != current_version and (format_name in {'lib1', 'lib2'} or kind == 'librería'):
+            try:
+                packer = pack_compiled_library if format_name == 'lib2' else pack_library
+                packer(base, artifact_path, name=name, version=version)
+                art = inspect_build_artifact(artifact_path)
+                curr_sha = str(art['sha256'])
+                curr_size = int(art['size_bytes'])
+                source_sha = str(art['source_sha'])
+            except Exception:
+                pass
+
+        try:
+            signature, _ = compute_library_signature(base, author=author, name=name, version=version)
+        except LibraryError:
+            signature = compute_author_signature(author, name, version, source_sha)
+
+    new_toml_text = _update_toml_field(raw_text, 'version', version, section='package')
+    new_toml_text = _update_toml_field(new_toml_text, 'signature', signature, section='author')
+
+    pkg_item = {
+        'name': name,
+        'file': file_name,
+        'version': version,
+        'kind': kind,
+        'format': format_name,
+        'description': description,
+        'license': license_name,
+        'sha256': curr_sha,
+        'size_bytes': curr_size,
+        'signature': signature,
+    }
+
+    repo_meta = {
+        'name': name,
+        'description': description,
+        'author': author,
+    }
+    man_meta = {
+        'format': 'bagron-manifest@1',
+        'hash_algorithm': 'sha256',
+        'author': author,
+    }
+
+    packages_toml_content = render_packages_toml(repo_meta, [pkg_item])
+    manifest_toml_content = render_manifest_toml(man_meta, [pkg_item])
+
+    if dry_run:
+        print_fn('\n[DRY RUN] Sincronización dedicada que se habría aplicado:')
+        print_fn(f'  Paquete    : {name} v{version}')
+        print_fn(f'  SHA256     : {curr_sha}')
+        print_fn(f'  Firma      : {signature}')
+        return 0
+
+    pkg_toml_path.write_text(new_toml_text, encoding='utf-8')
+    packages_toml_path.write_text(packages_toml_content, encoding='utf-8')
+    manifest_toml_path.write_text(manifest_toml_content, encoding='utf-8')
+
+    print_fn(f'\nSincronización completada exitosamente (librería dedicada):')
+    print_fn(f'  Paquete sincronizado : {name} v{version}')
+    print_fn(f'  Artefacto verificado : {artifact_path}')
+    print_fn(f'  Actualizado: {pkg_toml_path}')
+    print_fn(f'  Actualizado: {packages_toml_path}')
+    print_fn(f'  Actualizado: {manifest_toml_path}')
+
+    return 0
+
+
 def run_hostutils(
     target_dir: str | Path = '.',
     *,
@@ -179,6 +369,18 @@ def run_hostutils(
 ) -> int:
     """Ejecuta la sincronización de artefactos y generación de manifiestos en el repositorio."""
     base = Path(target_dir).resolve()
+    pkg_toml_path = base / 'package.toml'
+    if pkg_toml_path.is_file():
+        return _run_hostutils_dedicated(
+            base,
+            pkg_toml_path,
+            auto_patch=auto_patch,
+            dry_run=dry_run,
+            set_versions=set_versions,
+            input_fn=input_fn,
+            print_fn=print_fn,
+        )
+
     build_dir = base / 'build'
     central_dir = base / 'discentra_central'
 

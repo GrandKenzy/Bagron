@@ -94,7 +94,7 @@ def build_package(source_root: Path, output: Path) -> Path:
 
                 # Las carpetas vacías son creadas también por installer.py, pero
                 # mantenerlas en el paquete hace más claro su layout para inspección.
-                for relative in ('libs', 'modules'):
+                for relative in ('libs',):
                     info = tarfile.TarInfo(f'{package_root}/{relative}/')
                     info.type = tarfile.DIRTYPE
                     info.mode = 0o755

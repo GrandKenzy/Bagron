@@ -1,9 +1,16 @@
 # Changelog 1.1.4
 
+## Standard Library Distribution
+
+- Bagron installations no longer publish a global `modules/` directory. Standard APIs are consumed as complete `.lib` packages from `libs/`; local project modules and modules embedded inside `lib1` sources remain supported.
+
 ## Library Resolution and Packaging
 
 - **Transitive Library Dependencies**: Library packages declaring dependency directives in their root `main.bg` (such as target layers like `library "windows.lib" as Win` or `library "gnulibrary.lib" as Gnu`) now have those dependencies automatically resolved and loaded when consumed by another module or application. Quoted library directives inside extracted packages search the package's own `libs/` directory and fall back to the canonical Bagron library path.
 - **Export Symbol Isolation**: Packaging a library with `bagron library` now strictly isolates public symbols to the modules belonging to the library being built. Dependency symbols from intermediate build directories or nested packages are no longer leaked into the parent package's public export table, preventing unresolved symbol errors when consumers import the library.
+- **Library Alias Import Resolution**: `import { ... } from Alias` now prioritizes the library alias defined via `library <target> as Alias` before checking project directories on disk, allowing clean consumption when a local folder shares the library's name.
+- **Explicit Library Type Imports**: Types exported from libraries are no longer leaked implicitly into the consumer's global namespace; consumers must explicitly import them using `import { TypeName } from Alias` to use them unqualified.
+- **Duplicate Symbol Rejection at Packaging Time**: `bagron library` now validates that no conflicting duplicate non-method public symbol exports exist across different modules within a library, raising a packaging error early if duplicate names are detected.
 
 ## CLI
 
@@ -18,7 +25,8 @@
   - `bagron install --library --v2 <source>` compiles and installs a `lib2` library package into `libs/`.
   - `bagron install --module <source.bg|dir>` installs a source module or module folder directly into the local `modules/` directory.
   *Note: This command is currently provided as a temporary convenience for local workflow management and may evolve in future releases.*
-- **Hosting Repository Synchronization (`bagron build --hostutils`)**: Added CLI automation for multi-package hosting monorepositories:
+- **Hosting Repository Synchronization (`bagron build --hostutils`)**: Added CLI automation for multi-package hosting monorepositories and dedicated single-library repositories:
+  - Automatically detects dedicated single-package repositories (`package.toml` at the repository root), builds `build/<name>.lib` respecting `[build]` (`entry` and `modules`) while excluding `tests/` and standalone root scripts, updates `version` and `signature` in `package.toml`, and synchronizes `discentra_central/packages.toml` and `discentra_central/manifest.toml`.
   - Scans `build/` artifacts, compares SHA-256 hashes against `discentra_central/manifest.toml`, and interactively prompts for new semantic versions only for modified packages.
   - Automatically identifies library formats (`lib1` vs `lib2`), sizes, hashes, and canonical cryptographic signatures.
   - Consumes metadata from `discentra_central/manifest.json` to atomically synchronize `discentra_central/packages.toml` and `discentra_central/manifest.toml`.
@@ -27,3 +35,7 @@
   - `bagron package install <name>[@version]` resolves packages from Central, authenticates downloads with official CLI client credentials, verifies SHA-256 integrity checksums, and installs `.lib` packages directly into the local `libs/` directory.
   - `bagron package info <name>[@version]` queries Central and displays comprehensive package metadata, including author, target architecture, format, license, and download statistics.
   - `bagron package search <query>` performs searches across the public Central package catalog.
+
+## Release
+
+Released as Bagron `1.1.4` on 2026-11-07.

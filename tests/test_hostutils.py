@@ -88,5 +88,86 @@ class TestHostUtils(unittest.TestCase):
             self.assertNotEqual(manifest_toml, manifest_toml_3)
 
 
+    def test_run_hostutils_dedicated_repo(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            pkg_toml = base / 'package.toml'
+            pkg_toml.write_text(
+                '[package]\n'
+                'name = "mylib"\n'
+                'version = "1.0.0"\n'
+                'kind = "librería"\n'
+                'format = "lib1"\n'
+                'description = "Dedicated test library"\n'
+                'license = "MIT"\n'
+                '\n'
+                '[author]\n'
+                'name = "Tester"\n'
+                'signature = ""\n'
+                '\n'
+                '[build]\n'
+                'entry = "main.bg"\n'
+                'modules = "modules"\n',
+                encoding='utf-8',
+            )
+
+            main_file = base / 'main.bg'
+            main_file.write_text(
+                'func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+
+            modules_dir = base / 'modules'
+            modules_dir.mkdir()
+            sub_file = modules_dir / 'sub.bg'
+            sub_file.write_text(
+                'func extra() int32:\n    return 10\n',
+                encoding='utf-8',
+            )
+
+            # First run: should automatically package mylib.lib and generate manifests
+            ret = run_hostutils(base, auto_patch=True)
+            self.assertEqual(ret, 0)
+
+            built_lib = base / 'build' / 'mylib.lib'
+            self.assertTrue(built_lib.is_file())
+
+            central_dir = base / 'discentra_central'
+            packages_toml = (central_dir / 'packages.toml').read_text(encoding='utf-8')
+            manifest_toml = (central_dir / 'manifest.toml').read_text(encoding='utf-8')
+            updated_pkg_toml = pkg_toml.read_text(encoding='utf-8')
+
+            self.assertIn('name = "mylib"', packages_toml)
+            self.assertIn('version = "1.0.0"', packages_toml)
+            self.assertIn('file = "mylib.lib"', packages_toml)
+            self.assertIn('name = "mylib"', manifest_toml)
+            self.assertIn('file = "mylib.lib"', manifest_toml)
+            self.assertIn('sha256:', updated_pkg_toml)
+
+            # Second run: unchanged
+            ret2 = run_hostutils(base, auto_patch=True)
+            self.assertEqual(ret2, 0)
+            self.assertEqual(packages_toml, (central_dir / 'packages.toml').read_text(encoding='utf-8'))
+
+            # Modify module file and delete artifact so hostutils repacks with new source
+            sub_file.write_text(
+                'func extra() int32:\n    return 20\n',
+                encoding='utf-8',
+            )
+            built_lib.unlink()
+
+            # Run hostutils with auto-bump
+            ret3 = run_hostutils(base, auto_patch=True)
+            self.assertEqual(ret3, 0)
+
+            packages_toml_3 = (central_dir / 'packages.toml').read_text(encoding='utf-8')
+            manifest_toml_3 = (central_dir / 'manifest.toml').read_text(encoding='utf-8')
+            updated_pkg_toml_3 = pkg_toml.read_text(encoding='utf-8')
+
+            # Version should bump to 1.0.1
+            self.assertIn('version = "1.0.1"', packages_toml_3)
+            self.assertIn('version = "1.0.1"', updated_pkg_toml_3)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -27,5 +27,35 @@ Las rutas entre comillas se resuelven únicamente en `project_root/libs`. Para
 dependencias distribuidas con Bagron puede usarse un nombre global sin comillas,
 como `library gnulibrary as gnu`; esa forma busca únicamente
 `BAGRON_ROOT/libs/gnulibrary.lib`. `lib/` o una ruta junto a `main.bg` no son
-raíces implícitas de librerías; separar `modules/`, `libs/` y `bins/` evita
+raíces implícitas de librerías; separar los módulos fuente locales, `libs/` y
+`bins/` evita
 resolver artefactos obsoletos por accidente.
+
+## Tipos e importaciones explícitas
+
+Los tipos declarados dentro de una librería no se filtran automáticamente al
+ámbito global del código consumidor. Para utilizarlos sin cualificación, deben
+importarse explícitamente desde el alias de la librería:
+
+```bg
+library time as Time
+import { DateTime, Duration, Stopwatch } from Time
+
+func main() int32:
+    dt: DateTime = Time.now_datetime()
+    return 0
+```
+
+Si en la raíz del proyecto existe una carpeta con el mismo identificador que la
+librería consumida (por ejemplo, una carpeta `time/`), la declaración
+`import { ... } from Time` resuelve prioritariamente el alias vinculado por
+`library time as Time` en lugar del directorio en disco.
+
+## Espacio de nombres y prevención de colisiones
+
+Todos los módulos que componen una librería comparten el espacio de exportación
+público cuando la librería se consume bajo su alias cualificado. Al empaquetar con
+`bagron library`, el compilador valida y rechaza exportaciones de símbolos
+públicos no-método duplicados entre módulos distintos. Se recomienda utilizar
+prefijos consistentes por submódulo (por ejemplo, `duration_*`, `stopwatch_*`)
+para mantener la claridad y evitar colisiones entre áreas funcionales.

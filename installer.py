@@ -54,7 +54,7 @@ FILES_TO_COPY = (
     'LICENSE',
     'install.sh',
 )
-EMPTY_DIRS = ('libs', 'modules')
+EMPTY_DIRS = ('libs',)
 
 
 # ============================================================================
@@ -1013,8 +1013,8 @@ def _install_prebuilt(target_dir: Path) -> int:
 
     print('\n[1/3] Instalando compilador, vendor y Gram AOT preparados...')
     try:
-        # Solo se regeneran directorios administrados por Bagron. No se borra
-        # modules/, que puede contener código local del usuario.
+        # Solo se regeneran directorios administrados por Bagron. Los módulos
+        # locales del usuario quedan fuera del runtime global y no se tocan.
         for relative in ('core', 'tools', 'vendor', '.runtime', 'build/aot'):
             existing = target_dir / relative
             if existing.is_symlink():
@@ -1188,8 +1188,8 @@ def install(
         )
         return 1
 
-    # Paso 6: Creación de carpetas base libs/ y modules/
-    print('\n[6/7] Creando carpetas base libs/ y modules/...')
+    # Paso 6: Creación de la carpeta base de librerías
+    print('\n[6/7] Creando la carpeta base libs/...')
     for empty_name in EMPTY_DIRS:
         empty_path = target_dir / empty_name
         empty_path.mkdir(parents=True, exist_ok=True)

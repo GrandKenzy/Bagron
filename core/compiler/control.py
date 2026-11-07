@@ -3,7 +3,6 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.links import extract_link_directives
-from core.library import extract_library_directives
 from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
 from tools.diagnostic import Diagnostics
@@ -72,11 +71,20 @@ class CompilerState(Diagnostics):
         for error in conditional_errors:
             self.error(error)
 
+        from core.library import extract_library_directives
         content, library_requests, library_errors = extract_library_directives(
             content,
             Path(path),
             allow=(
                 Path(path).resolve() == getattr(self, 'main_module_path', None)
+                # NOTA: el main.bg de una libreria tambien es un modulo del
+                # paquete; solo el de la raiz del proyecto de validacion puede
+                # declarar library.
+                or (
+                    Path(path).name in ('main.bg', '_main.bg')
+                    and Path(path).resolve().parent
+                    == getattr(self, 'project_root', None)
+                )
                 or any(
                     Path(path).resolve().is_relative_to(root)
                     for root in getattr(self, 'library_source_roots', ())

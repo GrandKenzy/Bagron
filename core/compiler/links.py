@@ -102,7 +102,6 @@ def extract_link_directives(
             bagron_root = BAGRON_ROOT.resolve()
             bagron_candidates = [
                 (bagron_root / 'libs' / candidate).resolve(),
-                (bagron_root / 'modules' / candidate).resolve(),
                 (bagron_root / candidate).resolve(),
             ]
             parts = candidate.parts
