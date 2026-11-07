@@ -18,7 +18,7 @@ import urllib.request
 from typing import Callable
 
 
-DEFAULT_REGISTRY_URL = os.environ.get('BAGRON_REGISTRY_URL', 'https://central.discentra.com').rstrip('/')
+DEFAULT_REGISTRY_URL = os.environ.get('BAGRON_REGISTRY_URL', 'https://central.discentra.net').rstrip('/')
 DEFAULT_CLIENT_ID = os.environ.get('BAGRON_CLIENT_ID', 'bagron-cli')
 DEFAULT_PUBLIC_ID = os.environ.get('BAGRON_PUBLIC_ID', 'bg_pub_official_2026')
 
@@ -142,11 +142,15 @@ def install_package(
     print_fn: Callable[[str], None] = print,
 ) -> Path:
     """Resuelve, descarga e instala una librería en el directorio local libs/."""
-    # Soporta sintaxis nombre@version o argumentos separados
+    # Soporta sintaxis nombre@version, nombre==version o argumentos separados
     name = package_spec.strip()
     version = version_arg.strip() if version_arg else None
 
-    if '@' in name and version is None:
+    if '==' in name and version is None:
+        parts = name.split('==', 1)
+        name = parts[0].strip()
+        version = parts[1].strip()
+    elif '@' in name and version is None:
         parts = name.split('@', 1)
         name = parts[0].strip()
         version = parts[1].strip()

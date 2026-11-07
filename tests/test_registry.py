@@ -93,6 +93,18 @@ class TestRegistryClient(unittest.TestCase):
                 self.assertEqual(installed_file.name, 'network.lib')
                 self.assertEqual(installed_file.read_bytes(), content)
 
+                # También soporta sintaxis con doble igual (==)
+                installed_file_eq = install_package(
+                    'network==2.0.0',
+                    target_dir=dest,
+                    registry_url='https://central.example.com',
+                )
+                self.assertTrue(installed_file_eq.is_file())
+
+    def test_default_registry_url_is_discentra_net(self):
+        from core.registry import DEFAULT_REGISTRY_URL
+        self.assertEqual(DEFAULT_REGISTRY_URL, 'https://central.discentra.net')
+
 
 if __name__ == '__main__':
     unittest.main()
