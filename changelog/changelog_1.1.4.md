@@ -18,3 +18,8 @@
   - `bagron install --library --v2 <source>` compiles and installs a `lib2` library package into `libs/`.
   - `bagron install --module <source.bg|dir>` installs a source module or module folder directly into the local `modules/` directory.
   *Note: This command is currently provided as a temporary convenience for local workflow management and may evolve in future releases.*
+- **Hosting Repository Synchronization (`bagron build --hostutils`)**: Added CLI automation for multi-package hosting monorepositories:
+  - Scans `build/` artifacts, compares SHA-256 hashes against `discentra_central/manifest.toml`, and interactively prompts for new semantic versions only for modified packages.
+  - Automatically identifies library formats (`lib1` vs `lib2`), sizes, hashes, and canonical cryptographic signatures.
+  - Consumes metadata from `discentra_central/manifest.json` to atomically synchronize `discentra_central/packages.toml` and `discentra_central/manifest.toml`.
+  - Supports `--auto-patch` for non-interactive CI/CD bumping, `--dry-run` for previews, and `--set-version PKG=VER` for explicit version assignment.

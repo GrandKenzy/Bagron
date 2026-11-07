@@ -66,7 +66,9 @@ def _main_help() -> str:
         'Soporte de editor (VS Code):\n'
         '  bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'
-        + _library_help()
+        + _library_help() + '\n\n'
+        'Repositorios de alojamiento:\n'
+        '  bagron build --hostutils [ruta]          Sincroniza versiones y hashes de build/ en discentra_central/.'
     )
 
 
@@ -492,6 +494,62 @@ def _install_command(argv: list[str]) -> int:
         return 1
 
 
+def _build_help() -> str:
+    return (
+        'Uso:\n'
+        '  bagron build --hostutils [directorio] [--auto-patch] [--dry-run] [--set-version PKG=VER]\n\n'
+        '  Sincroniza los artefactos de build/ con discentra_central/ (packages.toml y manifest.toml).'
+    )
+
+
+def _build_command(argv: list[str]) -> int:
+    tokens = argv[1:]
+    if not tokens or '--help' in tokens or '-h' in tokens:
+        print(_build_help())
+        return 0
+
+    if '--hostutils' in tokens or 'hostutils' in tokens:
+        from core.hosting import HostingError, run_hostutils
+
+        caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+        auto_patch = '--auto-patch' in tokens
+        dry_run = '--dry-run' in tokens
+        set_versions: dict[str, str] = {}
+        target_dir = caller_dir
+
+        idx = 0
+        while idx < len(tokens):
+            tok = tokens[idx]
+            if tok in {'--hostutils', 'hostutils', '--auto-patch', '--dry-run'}:
+                idx += 1
+            elif tok == '--set-version' and idx + 1 < len(tokens):
+                val = tokens[idx + 1]
+                if '=' in val:
+                    pkg_k, pkg_v = val.split('=', 1)
+                    set_versions[pkg_k.strip()] = pkg_v.strip()
+                idx += 2
+            elif not tok.startswith('-'):
+                target_dir = (caller_dir / tok).resolve()
+                idx += 1
+            else:
+                idx += 1
+
+        try:
+            return run_hostutils(
+                target_dir,
+                auto_patch=auto_patch,
+                dry_run=dry_run,
+                set_versions=set_versions,
+            )
+        except HostingError as error:
+            print(f'Error en hostutils: {error}', file=sys.stderr)
+            return 1
+
+    print(f'Error: Opcion desconocida para build: {" ".join(tokens)}', file=sys.stderr)
+    print(_build_help(), file=sys.stderr)
+    return 2
+
+
 def main(*args):
     argv = list(args[0])
     if not argv:
@@ -514,6 +572,12 @@ def main(*args):
 
     if argv[0] == 'install':
         return _install_command(argv)
+
+    if argv[0] == 'build':
+        return _build_command(argv)
+
+    if argv[0] == '--hostutils':
+        return _build_command(['build', *argv])
 
     strict_ownership = '--strict-ownership' in argv
     argv = [arg for arg in argv if arg != '--strict-ownership']

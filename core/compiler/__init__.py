@@ -706,6 +706,7 @@ class Compiler(CompilerState):
                 for item in package.symbols.get('exports', ())
                 if isinstance(item, dict)
                 and item.get('name')
+                and item.get('kind') != 'method'
                 and not str(item.get('module', '')).startswith(('build/', '.bagron/'))
             }
             self.module_exports[synthetic] = exports
@@ -816,7 +817,7 @@ class Compiler(CompilerState):
             exports = {
                 str(item.get('name'))
                 for item in package.symbols.get('exports', ())
-                if isinstance(item, dict) and item.get('name')
+                if isinstance(item, dict) and item.get('name') and item.get('kind') != 'method'
             }
             self.module_exports[synthetic] = exports
             targets = package.targets
