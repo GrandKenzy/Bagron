@@ -371,8 +371,7 @@ def _candidate_paths(
     # 1) Modulos hermanos si el archivo esta dentro de un arbol de modulos reconocido.
     # 2) Carpeta modules/ del proyecto local.
     # 3) Raiz del proyecto local (compatibilidad legacy).
-    # 4) Carpeta modules/ de la instalacion de Bagron.
-    # 5) Carpeta libs/ de la instalacion de Bagron.
+    # 4) Carpeta libs/ de la instalacion de Bagron (paquetes .lib).
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
 
@@ -381,7 +380,6 @@ def _candidate_paths(
     relative = Path(name)
     filename = relative.with_suffix('.bg')
     modules_root = project_root / 'modules'
-    bagron_modules = BAGRON_ROOT / 'modules'
     bagron_libs = BAGRON_ROOT / 'libs'
 
     roots: list[Path] = [modules_root]
@@ -393,7 +391,6 @@ def _candidate_paths(
         modules_root,
         *library_module_roots,
         *library_roots,
-        bagron_modules,
         bagron_libs,
     ):
         try:
@@ -415,9 +412,7 @@ def _candidate_paths(
         if root not in roots:
             roots.append(root)
 
-    # Carpetas globales de Bagron: modules/ y libs/.
-    if bagron_modules not in roots:
-        roots.append(bagron_modules)
+    # La instalacion global solo publica paquetes .lib en libs/.
     if bagron_libs not in roots:
         roots.append(bagron_libs)
 

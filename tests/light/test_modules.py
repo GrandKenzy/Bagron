@@ -916,7 +916,7 @@ class ModuleTests(unittest.TestCase):
         self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_from_right_[^"\s]*"?\(\)')
 
 
-    def test_import_resolves_module_from_bagron_root_modules(self):
+    def test_import_does_not_resolve_module_from_bagron_root_modules(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
             fake_bagron = Path(fake_bagron_dir)
             (fake_bagron / 'modules').mkdir()
@@ -937,11 +937,8 @@ class ModuleTests(unittest.TestCase):
 
             from unittest.mock import patch
             with patch('core.globvars.BAGRON_ROOT', fake_bagron):
-                compiler = Compiler()
-                output = compiler.compile(main, executable=False)
-                module = Path(output).read_text(encoding='utf-8')
-
-            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_tool_[^"\s]*"?\(\)')
+                with self.assertRaisesRegex(CompilationError, 'No se encontro el modulo'):
+                    Compiler().compile(main, executable=False)
 
     def test_import_resolves_module_from_bagron_root_libs(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
@@ -970,49 +967,9 @@ class ModuleTests(unittest.TestCase):
 
             self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_answer_[^"\s]*"?\(\)')
 
-    def test_module_inside_bagron_modules_can_import_sibling(self):
+    def test_local_project_module_remains_available(self):
         with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
             fake_bagron = Path(fake_bagron_dir)
-            (fake_bagron / 'modules').mkdir()
-            (fake_bagron / 'modules' / 'dep.bg').write_text(
-                'public func dep_val() int32:\n'
-                '    return 10\n',
-                encoding='utf-8',
-            )
-            (fake_bagron / 'modules' / 'top.bg').write_text(
-                'import dep\n'
-                'public func top_val() int32:\n'
-                '    return dep.dep_val() + 5\n',
-                encoding='utf-8',
-            )
-
-            root = Path(project_dir)
-            main = root / '_main.bg'
-            main.write_text(
-                'import top\n'
-                'func main() int32:\n'
-                '    return top.top_val()\n',
-                encoding='utf-8',
-            )
-
-            from unittest.mock import patch
-            with patch('core.globvars.BAGRON_ROOT', fake_bagron):
-                compiler = Compiler()
-                output = compiler.compile(main, executable=False)
-                module = Path(output).read_text(encoding='utf-8')
-
-            self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_top_val_[^"\s]*"?\(\)')
-
-
-    def test_local_project_module_overrides_bagron_root_module(self):
-        with tempfile.TemporaryDirectory() as fake_bagron_dir, tempfile.TemporaryDirectory() as project_dir:
-            fake_bagron = Path(fake_bagron_dir)
-            (fake_bagron / 'modules').mkdir()
-            (fake_bagron / 'modules' / 'io.bg').write_text(
-                'public func ping() int32:\n'
-                '    return 1\n',
-                encoding='utf-8',
-            )
 
             root = Path(project_dir)
             (root / 'modules').mkdir()

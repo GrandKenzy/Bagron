@@ -1,5 +1,9 @@
 # Changelog 1.1.4
 
+## Standard Library Distribution
+
+- Bagron installations no longer publish a global `modules/` directory. Standard APIs are consumed as complete `.lib` packages from `libs/`; local project modules and modules embedded inside `lib1` sources remain supported.
+
 ## Library Resolution and Packaging
 
 - **Transitive Library Dependencies**: Library packages declaring dependency directives in their root `main.bg` (such as target layers like `library "windows.lib" as Win` or `library "gnulibrary.lib" as Gnu`) now have those dependencies automatically resolved and loaded when consumed by another module or application. Quoted library directives inside extracted packages search the package's own `libs/` directory and fall back to the canonical Bagron library path.

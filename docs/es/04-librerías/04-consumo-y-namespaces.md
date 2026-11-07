@@ -27,5 +27,6 @@ Las rutas entre comillas se resuelven únicamente en `project_root/libs`. Para
 dependencias distribuidas con Bagron puede usarse un nombre global sin comillas,
 como `library gnulibrary as gnu`; esa forma busca únicamente
 `BAGRON_ROOT/libs/gnulibrary.lib`. `lib/` o una ruta junto a `main.bg` no son
-raíces implícitas de librerías; separar `modules/`, `libs/` y `bins/` evita
+raíces implícitas de librerías; separar los módulos fuente locales, `libs/` y
+`bins/` evita
 resolver artefactos obsoletos por accidente.

@@ -78,7 +78,7 @@ def build_package(source_root: Path, output: Path) -> Path:
         for relative in PACKAGE_FILES:
             _add_file(archive, source_root / relative, f'{package_root}/{relative}')
 
-        for relative in ('libs', 'modules'):
+        for relative in ('libs',):
             archive.writestr(_zip_info(f'{package_root}/{relative}/', 0o755), b'')
 
     return output

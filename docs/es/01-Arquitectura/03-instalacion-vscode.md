@@ -11,7 +11,8 @@ finales; no reindenta automáticamente código cuya indentación tiene significa
 
 El autocompletado, Hover y Definition siguen las mismas raíces principales que
 el compilador: `modules/` y la raíz del proyecto, fuentes `lib1` ya extraídas y
-`modules/`/`libs/` de la instalación de Bagron. También reconoce
+`libs/` de la instalación de Bagron. La instalación no contiene una carpeta
+global de módulos `.bg` sueltos. También reconoce
 `library "archivo.lib" as Alias` y `library nombre_global as Alias`, obtiene
 sus exports con `bagron inspect` y permite completar los miembros de `Alias`
 sin ejecutar código de la librería.

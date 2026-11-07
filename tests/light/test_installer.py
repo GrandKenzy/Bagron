@@ -426,6 +426,9 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(f'Bagron-{installer.BAGRON_VERSION}/installer.py', names)
             self.assertIn(f'Bagron-{installer.BAGRON_VERSION}/install.sh', names)
             self.assertTrue(
+                any(name.rstrip('/') == f'Bagron-{installer.BAGRON_VERSION}/libs' for name in names)
+            )
+            self.assertFalse(
                 any(name.rstrip('/') == f'Bagron-{installer.BAGRON_VERSION}/modules' for name in names)
             )
             self.assertNotIn('Bagron-1.1.1/vendor/', names)
@@ -547,7 +550,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.1.2.md', names)
         self.assertIn('changelog_1.1.3.md', names)
         self.assertEqual(
-            8,
+            9,
             sum(name.startswith('changelog_') for name in names),
         )
 
