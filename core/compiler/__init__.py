@@ -30,6 +30,7 @@ from core.library import (
 from core.lockfile import (
     LockfileError,
     load_lockfile,
+    validate_lock_graph,
     validate_lock_target,
     validate_locked_package,
 )
@@ -75,6 +76,8 @@ class Compiler(CompilerState):
         self.library_targets: dict[Path, Path] = {}
         self.library_packages: dict[Path, tuple[object, Path]] = {}
         self._loading_library_paths: list[Path] = []
+        self._library_alias_targets: dict[tuple[Path | None, str], set[Path]] = {}
+        self._module_path_cache: dict[tuple[str, Path], Path | None] = {}
         self.lock_data: dict[str, object] | None = None
         self.module_package_ids: dict[Path, str] = {}
         self.module_package_relatives: dict[Path, str] = {}
@@ -444,44 +447,47 @@ class Compiler(CompilerState):
                 except ValueError as error:
                     self.error(str(error))
 
-    def _library_alias_target(self, path: Path, name: str) -> Path | None:
-        """Return the library module behind ``library X as name`` if any."""
-        def owner(module_path: Path | None) -> Path | None:
-            if module_path is None:
-                return None
-            resolved = Path(module_path).resolve()
-            package_roots = sorted(
-                (Path(root).resolve() for root in self.library_source_roots),
-                key=lambda item: len(item.parts),
-                reverse=True,
-            )
-            for root in package_roots:
-                if root == resolved or root in resolved.parents:
-                    return root
-            if self.project_root is not None and (
-                self.project_root == resolved or self.project_root in resolved.parents
-            ):
-                return self.project_root.resolve()
+    def _library_owner(self, module_path: Path | None) -> Path | None:
+        """Return the package or project root owning a source module."""
+        if module_path is None:
             return None
+        resolved = Path(module_path).resolve()
+        package_roots = sorted(
+            (Path(root).resolve() for root in self.library_source_roots),
+            key=lambda item: len(item.parts),
+            reverse=True,
+        )
+        for root in package_roots:
+            if root == resolved or root in resolved.parents:
+                return root
+        if self.project_root is not None and (
+            self.project_root == resolved or self.project_root in resolved.parents
+        ):
+            return self.project_root.resolve()
+        return None
 
-        path_owner = owner(path)
-        libs = set(self.library_targets.values())
-        matches = [
-            r for r in self.import_requests
-            if r.alias == name
-            and r.target in libs
-            and owner(r.source) == path_owner
-        ]
-        if not matches:
+    def _register_library_alias(self, request: object) -> None:
+        """Index one explicit library alias by its owner before symbol binding."""
+        alias = getattr(request, 'alias', None)
+        target = getattr(request, 'target', None)
+        if not isinstance(alias, str) or target is None:
+            return
+        key = (self._library_owner(getattr(request, 'source', None)), alias)
+        self._library_alias_targets.setdefault(key, set()).add(Path(target).resolve())
+
+    def _library_alias_target(self, path: Path, name: str) -> Path | None:
+        """Return the indexed library module behind ``library X as name``."""
+        path_owner = self._library_owner(path)
+        targets = self._library_alias_targets.get((path_owner, name), set())
+        if not targets:
             return None
-        targets = {r.target for r in matches}
         if len(targets) > 1:
             rendered = ', '.join(sorted(str(target) for target in targets))
             self.error(
                 f'El alias de libreria {name!r} se declara con destinos distintos '
                 f'en {path}: {rendered}'
             )
-        return matches[0].target
+        return next(iter(targets))
 
     def _load_module_tree(self, path: Path):
         path = path.resolve()
@@ -536,6 +542,8 @@ class Compiler(CompilerState):
                     )
                     if request is not None:
                         self.import_requests.append(request)
+                        if is_library_alias:
+                            self._register_library_alias(request)
                     if not is_library_alias:
                         ordered.extend(self._load_module_tree(imported_path))
 
@@ -587,6 +595,8 @@ class Compiler(CompilerState):
                     )
                     if request is not None:
                         self.import_requests.append(request)
+                        if is_library_alias:
+                            self._register_library_alias(request)
                     if not is_library_alias:
                         ordered.extend(self._load_module_tree(imported_path))
 
@@ -633,12 +643,14 @@ class Compiler(CompilerState):
                 synthetic = self.library_targets.get(package_path)
                 if synthetic is not None:
                     from core.frontend.tools.imports import ImportRequest
-                    self.import_requests.append(ImportRequest(
+                    alias_request = ImportRequest(
                         package.name,
                         alias=request.alias,
                         target=synthetic,
                         source=source,
-                    ))
+                    )
+                    self.import_requests.append(alias_request)
+                    self._register_library_alias(alias_request)
             return []
 
         cache_root = (
@@ -809,12 +821,14 @@ class Compiler(CompilerState):
             self._loaded_module_paths.add(synthetic)
             self.storage.loaded_modules.append(str(package_path))
 
-        self.import_requests.append(ImportRequest(
+        alias_request = ImportRequest(
             package.name,
             alias=request.alias,
             target=synthetic,
             source=source,
-        ))
+        )
+        self.import_requests.append(alias_request)
+        self._register_library_alias(alias_request)
         self._loading_library_paths.pop()
         return ordered
 
@@ -983,12 +997,14 @@ class Compiler(CompilerState):
             self._loaded_module_paths.add(synthetic)
             self.storage.loaded_modules.append(str(package.path))
 
-        self.import_requests.append(ImportRequest(
+        alias_request = ImportRequest(
             package.name,
             alias=request.alias,
             target=synthetic,
             source=Path(request.source).resolve(),
-        ))
+        )
+        self.import_requests.append(alias_request)
+        self._register_library_alias(alias_request)
 
     def compile(
         self,
@@ -1032,6 +1048,8 @@ class Compiler(CompilerState):
         self.library_targets.clear()
         self.library_packages.clear()
         self._loading_library_paths.clear()
+        self._library_alias_targets.clear()
+        self._module_path_cache.clear()
         self.precompiled_modules.clear()
         self.module_package_ids.clear()
         self.module_package_relatives.clear()
@@ -1062,6 +1080,14 @@ class Compiler(CompilerState):
         self.storage.root = str(path)
 
         AST = self._load_module_tree(path)
+
+        try:
+            validate_lock_graph(
+                self.lock_data,
+                (package for package, _ in self.library_packages.values()),
+            )
+        except LockfileError as error:
+            raise CompilationError(str(error)) from error
 
         self._validate_module_targets()
         if self.semantic_errors:

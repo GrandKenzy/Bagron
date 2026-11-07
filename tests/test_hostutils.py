@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from core.hosting import (
     _atomic_write_texts,
+    _pack_library_atomically,
     bump_semver_patch,
     compute_author_signature,
     inspect_build_artifact,
@@ -34,7 +35,7 @@ class TestHostUtils(unittest.TestCase):
             central_dir.mkdir()
 
             # Create dummy build artifact
-            art_file = build_dir / 'sample.lib'
+            art_file = build_dir / 'sample'
             art_file.write_bytes(b'dummy content 1')
 
             # Create manifest.json
@@ -89,6 +90,34 @@ class TestHostUtils(unittest.TestCase):
 
             self.assertIn('version = "1.2.0"', packages_toml_3)
             self.assertNotEqual(manifest_toml, manifest_toml_3)
+
+    def test_atomic_library_packaging_preserves_existing_artifact_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            source = base / 'source'
+            source.mkdir()
+            destination = base / 'build' / 'sample.lib'
+            destination.parent.mkdir()
+            destination.write_bytes(b'previous valid artifact')
+
+            def failing_packer(source_path, output_path, *, name, version):
+                Path(output_path).write_bytes(b'partial artifact')
+                raise RuntimeError('simulated pack failure')
+
+            with self.assertRaises(RuntimeError):
+                _pack_library_atomically(
+                    failing_packer,
+                    source,
+                    destination,
+                    name='sample',
+                    version='1.0.0',
+                )
+
+            self.assertEqual(b'previous valid artifact', destination.read_bytes())
+            self.assertEqual(
+                [],
+                [item for item in destination.parent.iterdir() if item.name.startswith('.sample')],
+            )
 
 
     def test_run_hostutils_dedicated_repo(self):

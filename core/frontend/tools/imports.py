@@ -433,6 +433,11 @@ def resolve_module_path(
         )
         return None
 
+    path_cache = getattr(compiler, '_module_path_cache', None)
+    cache_key = (name, current_file)
+    if isinstance(path_cache, dict) and cache_key in path_cache:
+        return path_cache[cache_key]
+
     owner_roots = [root for root in library_roots if _is_within(current_file, root)]
     allowed_roots = [max(owner_roots, key=lambda item: len(item.parts))] if owner_roots else [project_root]
     if not any(_is_within(current_file, root) for root in allowed_roots):
@@ -450,8 +455,12 @@ def resolve_module_path(
     ):
         candidate = candidate.resolve()
         if candidate.suffix == '.bg' and any(_is_within(candidate, root) for root in allowed_roots) and candidate.is_file():
+            if isinstance(path_cache, dict):
+                path_cache[cache_key] = candidate
             return candidate
 
+    if isinstance(path_cache, dict):
+        path_cache[cache_key] = None
     compiler.error(
         f'No se encontro el modulo Bagron {name!r} desde {current_file}'
     )

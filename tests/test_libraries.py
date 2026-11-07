@@ -12,6 +12,7 @@ from unittest.mock import patch
 from core.compiler import CompilationError, Compiler
 from core.frontend.aot import AotInMemoryParser
 from core.lockfile import update_lockfile
+from core.lockfile import LockfileError, validate_lock_graph
 from core.library import (
     HEADER,
     LibraryError,
@@ -387,6 +388,49 @@ class LibraryTests(unittest.TestCase):
             with self.assertRaisesRegex(LibraryError, 'no coincide exactamente'):
                 verify_library(package_path)
 
+    def test_package_rejects_nontextual_manifest_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'My.lib'
+            pack_library(self._source(root), package_path)
+
+            def replace_path_with_number(entries):
+                manifest = json.loads(entries['manifest.json'])
+                manifest['files'][0]['path'] = 7
+                entries['manifest.json'] = json.dumps(
+                    manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+                ).encode('utf-8')
+                return entries
+
+            self._rewrite_zip_payload(package_path, replace_path_with_number)
+            with self.assertRaisesRegex(LibraryError, 'ruta textual'):
+                verify_library(package_path)
+
+    def test_lock_graph_rejects_missing_transitive_package(self):
+        from types import SimpleNamespace
+
+        package = SimpleNamespace(
+            name='root',
+            manifest={'version': '1.0.0', 'dependencies': ['child']},
+            archive_sha256='a' * 64,
+            library_version=1,
+        )
+        lock_data = {
+            'format': 'bagron-lock@1',
+            'target': {'system': 'auto', 'architecture': 'auto'},
+            'packages': {
+                'root': {
+                    'version': '1.0.0',
+                    'source': 'local:root.lib',
+                    'sha256': 'a' * 64,
+                    'package_format': 'lib1',
+                    'dependencies': ['child'],
+                },
+            },
+        }
+        with self.assertRaisesRegex(LockfileError, 'transitiva'):
+            validate_lock_graph(lock_data, [package])
+
     def test_extraction_rebuilds_a_tampered_cache_entry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -398,6 +442,47 @@ class LibraryTests(unittest.TestCase):
             package_again, extracted_again = extract_library(package_path, root / 'cache')
             self.assertEqual(package.archive_sha256, package_again.archive_sha256)
             self.assertEqual(original, (extracted_again / 'source' / 'string.bg').read_bytes())
+
+    def test_extraction_does_not_reuse_a_symlink_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'My.lib'
+            pack_library(self._source(root), package_path)
+            _, extracted = extract_library(package_path, root / 'cache')
+            marker = extracted / '.complete'
+            marker.unlink()
+            try:
+                marker.symlink_to(root / 'source' / 'string.bg')
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f'symlinks unavailable: {error}')
+
+            _, rebuilt = extract_library(package_path, root / 'cache')
+            self.assertFalse((rebuilt / '.complete').is_symlink())
+            self.assertEqual(
+                b'public func convert() int32:\n'
+                b'    return 42\n'
+                b'public Answer: const int32 = 42\n'
+                b'private func hidden() int32:\n'
+                b'    return 7\n',
+                (rebuilt / 'source' / 'string.bg').read_bytes(),
+            )
+
+    def test_unpack_rejects_symlink_destination(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_path = root / 'My.lib'
+            pack_library(self._source(root), package_path)
+            outside = root / 'outside'
+            outside.mkdir()
+            destination = root / 'unpacked'
+            try:
+                destination.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f'symlinks unavailable: {error}')
+
+            with self.assertRaisesRegex(LibraryError, 'enlace simbólico'):
+                unpack_library(package_path, destination)
+            self.assertFalse((outside / 'source').exists())
 
     def test_compilation_honors_bagron_lock_digest(self):
         with tempfile.TemporaryDirectory() as directory:

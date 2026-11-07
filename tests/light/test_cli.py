@@ -81,6 +81,31 @@ class CliVersionTests(unittest.TestCase):
             self.assertTrue(dest_lib.is_file())
             self.assertEqual(src_lib.read_bytes(), dest_lib.read_bytes())
 
+    def test_install_library_rejects_name_path_traversal(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            src_lib = work_dir / 'sample.lib'
+            source = work_dir / 'source'
+            source.mkdir()
+            (source / 'sample.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+            from core.library import pack_library
+            pack_library(source, src_lib, name='sample', version='0.1.0')
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                ret = main.main([
+                    'install', '--library', str(src_lib), '--name', '..\\outside',
+                ])
+
+            self.assertEqual(2, ret)
+            self.assertFalse((work_dir / 'outside.lib').exists())
+
     def test_install_library_v1_packs_directory(self):
         import tempfile
         import os

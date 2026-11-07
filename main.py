@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 
 # NOTA: Asegurar que la raíz de Bagron encabece sys.path y filtrar cualquier
 # subcarpeta de dependencia vendoreada (como vendor/gram) que colisione con módulos del núcleo (core).
@@ -463,7 +464,14 @@ def _install_command(argv: list[str]) -> int:
         print(f'Error: No se encontró la librería: {library_path_str}', file=sys.stderr)
         return 1
 
-    dest_dir = caller_dir / 'libs'
+    raw_dest_dir = caller_dir / 'libs'
+    if raw_dest_dir.is_symlink():
+        print(
+            f'Error de seguridad: el directorio de librerías es un enlace simbólico: {raw_dest_dir}',
+            file=sys.stderr,
+        )
+        return 1
+    dest_dir = raw_dest_dir.resolve()
 
     if name is None:
         if source_path.is_file() and source_path.suffix.lower() == '.lib':
@@ -471,23 +479,37 @@ def _install_command(argv: list[str]) -> int:
         else:
             name = source_path.name
 
+    from core.registry import RegistryError, _validate_package_name
+    try:
+        name = _validate_package_name(name, field='Nombre de librería local')
+    except RegistryError as error:
+        print(f'Error de seguridad: {error}', file=sys.stderr)
+        return 2
+
+    if dest_dir.exists() and (not dest_dir.is_dir() or dest_dir.is_symlink()):
+        print(
+            f'Error de seguridad: el directorio de librerías no es un directorio local seguro: {dest_dir}',
+            file=sys.stderr,
+        )
+        return 1
     dest_file = dest_dir / f'{name}.lib'
+    if dest_file.resolve().parent != dest_dir or dest_file.is_symlink():
+        print('Error de seguridad: la ruta de instalación escapa del directorio libs.', file=sys.stderr)
+        return 1
 
     if source_path.is_file() and source_path.suffix.lower() == '.lib':
         dest_dir.mkdir(parents=True, exist_ok=True)
+        temporary_root = Path(tempfile.mkdtemp(prefix=f'.{dest_file.stem}.', dir=dest_dir))
+        temporary = temporary_root / dest_file.name
         try:
             verify_library(source_path)
-        except LibraryError as error:
-            print(f'Error de seguridad: el paquete .lib no es válido: {error}', file=sys.stderr)
-            return 1
-        temporary = dest_dir / f'.{dest_file.name}.tmp'
-        try:
             shutil.copy2(source_path, temporary)
             os.replace(temporary, dest_file)
-        except OSError as error:
-            temporary.unlink(missing_ok=True)
+        except (LibraryError, OSError) as error:
             print(f'Error al instalar la librería: {error}', file=sys.stderr)
             return 1
+        finally:
+            shutil.rmtree(temporary_root, ignore_errors=True)
         print(dest_file)
         return 0
 
@@ -512,21 +534,26 @@ def _install_command(argv: list[str]) -> int:
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     packer = pack_compiled_library if v2 else pack_library
-    temporary = dest_dir / f'.{dest_file.name}.tmp'
+    temporary_root = Path(tempfile.mkdtemp(prefix=f'.{dest_file.stem}.', dir=dest_dir))
+    temporary = temporary_root / dest_file.name
     try:
         result = packer(source_path, temporary, name=name, version=version)
-        verify_library(result)
+        package = verify_library(result)
+        if package.name != name or str(package.manifest.get('version', '')) != version:
+            raise LibraryError(
+                'La metadata interna de la librería no coincide con el nombre o versión solicitados.'
+            )
         os.replace(result, dest_file)
         print(dest_file)
         return 0
     except LibraryError as error:
-        temporary.unlink(missing_ok=True)
         print(f'Library failed: {error}', file=sys.stderr)
         return 1
     except OSError as error:
-        temporary.unlink(missing_ok=True)
         print(f'Library failed: {error}', file=sys.stderr)
         return 1
+    finally:
+        shutil.rmtree(temporary_root, ignore_errors=True)
 
 
 def _build_help() -> str:

@@ -16,9 +16,10 @@ from core.registry import (
     download_package_artifact,
     install_package,
     resolve_package,
+    search_packages,
 )
 from core.library import pack_library
-from core.signing import verify_central_artifact
+from core.signing import CentralSignatureError, verify_central_artifact
 
 
 class TestRegistryClient(unittest.TestCase):
@@ -92,6 +93,78 @@ class TestRegistryClient(unittest.TestCase):
                 'http://central.example.com/download',
                 expected_checksum='0' * 64,
             )
+
+    def test_https_rejects_embedded_credentials_and_fragments(self):
+        for url in (
+            'https://user:password@central.example.com/pkg',
+            'https://central.example.com/pkg#fragment',
+            'https://central.example.com:invalid/pkg',
+        ):
+            with self.subTest(url=url), self.assertRaises(RegistryError):
+                download_package_artifact(url, expected_checksum='0' * 64)
+
+    def test_install_uses_real_resolver_and_keeps_central_credentials_on_origin(self):
+        content = self._library_bytes('network', '2.0.0')
+        package_info = {
+            'name': 'network',
+            'version': '2.0.0',
+            'package_format': 'lib1',
+            'artifact_checksum': hashlib.sha256(content).hexdigest(),
+            'download_url': 'https://central.example.com/pkg/download',
+        }
+        resolve_response = io.BytesIO(json.dumps({
+            'exists': True,
+            'package': package_info,
+        }).encode('utf-8'))
+        download_response = io.BytesIO(content)
+
+        with tempfile.TemporaryDirectory() as tmp_dir, patch(
+            'core.registry._open_url',
+            side_effect=[resolve_response, download_response],
+        ) as open_url:
+            installed = install_package(
+                'network@2.0.0',
+                target_dir=Path(tmp_dir) / 'libs',
+                registry_url='https://central.example.com',
+            )
+            self.assertTrue(installed.is_file())
+            self.assertEqual(2, open_url.call_count)
+            download_request = open_url.call_args_list[1].args[0]
+            self.assertEqual(
+                'bagron-cli',
+                download_request.headers.get('X-central-client-id'),
+            )
+
+    def test_search_uses_secure_opener_and_validates_results(self):
+        response = io.BytesIO(json.dumps({
+            'data': [{
+                'name': 'network',
+                'latest_version': '2.0.0',
+                'package_format': 'lib1',
+                'description': 'Network helpers',
+            }],
+        }).encode('utf-8'))
+        output: list[str] = []
+        with patch('core.registry._open_url', return_value=response), patch(
+            'core.registry.urllib.request.urlopen',
+            side_effect=AssertionError('search bypassed the Central opener'),
+        ):
+            result = search_packages(
+                'network',
+                registry_url='https://central.example.com',
+                print_fn=output.append,
+            )
+
+        self.assertEqual(0, result)
+        self.assertTrue(any('network' in line for line in output))
+
+    def test_search_rejects_invalid_result_schema(self):
+        response = io.BytesIO(json.dumps({
+            'packages': [{'name': '../outside', 'version': '1.0.0'}],
+        }).encode('utf-8'))
+        with patch('core.registry._open_url', return_value=response):
+            with self.assertRaises(RegistryError):
+                search_packages(registry_url='https://central.example.com')
 
     def test_install_rejects_path_traversal_name_from_registry(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -229,6 +302,47 @@ class TestRegistryClient(unittest.TestCase):
                 package_format='lib1',
                 require=True,
             ))
+
+    def test_central_tuf_threshold_requires_distinct_trusted_signatures(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        private_key = Ed25519PrivateKey.generate()
+        artifact = b'central artifact'
+        signed = {
+            '_type': 'targets',
+            'version': 1,
+            'expires': '2099-01-01T00:00:00Z',
+            'target': {
+                'name': 'network',
+                'version': '2.0.0',
+                'package_format': 'lib1',
+                'length': len(artifact),
+                'sha256': hashlib.sha256(artifact).hexdigest(),
+            },
+        }
+        canonical = json.dumps(
+            signed, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+        ).encode('utf-8')
+        metadata = {
+            'signed': signed,
+            'threshold': 2,
+            'signatures': [{
+                'keyid': 'test-root',
+                'sig': base64.b64encode(private_key.sign(canonical)).decode('ascii'),
+            }],
+        }
+        with patch(
+            'core.signing._trusted_keys',
+            return_value={'test-root': private_key.public_key().public_bytes_raw()},
+        ):
+            with self.assertRaisesRegex(CentralSignatureError, 'threshold'):
+                verify_central_artifact(
+                    {'tuf': metadata},
+                    artifact,
+                    resolved_name='network',
+                    resolved_version='2.0.0',
+                    package_format='lib1',
+                    require=True,
+                )
 
     def test_source_zip_rejects_path_traversal_before_install(self):
         payload = io.BytesIO()

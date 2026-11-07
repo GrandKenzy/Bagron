@@ -80,6 +80,11 @@ class LibraryPackage:
     ir: dict[str, object]
     artifacts: dict[str, object] = field(default_factory=dict)
     archive_sha256: str = ''
+    archive_members: dict[str, zipfile.ZipInfo] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def kind(self) -> str:
@@ -158,14 +163,18 @@ def _safe_member(name: str) -> PurePosixPath:
 
 
 def _validate_package_name(name: object, *, context: str) -> str:
-    value = str(name)
+    if not isinstance(name, str):
+        raise LibraryError(f'{context} invalido: se esperaba texto')
+    value = name
     if _PACKAGE_NAME_RE.fullmatch(value) is None:
         raise LibraryError(f'{context} invalido: {value!r}')
     return value
 
 
 def _validate_sha256(value: object, *, context: str) -> str:
-    digest = str(value).lower()
+    if not isinstance(value, str):
+        raise LibraryError(f'{context} no contiene un SHA-256 textual valido')
+    digest = value.lower()
     if _HEX64_RE.fullmatch(digest) is None:
         raise LibraryError(f'{context} no contiene un SHA-256 valido')
     return digest
@@ -321,6 +330,11 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         target_value = manifest.get(target_field)
         if target_value is not None and not isinstance(target_value, dict):
             raise LibraryError(f'El manifest contiene un {target_field} invalido')
+        if isinstance(target_value, dict) and any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in target_value.items()
+        ):
+            raise LibraryError(f'El manifest contiene un {target_field} no textual')
     for links_field in ('links', 'native_links'):
         links_value = manifest.get(links_field, [])
         if not isinstance(links_value, list) or any(not isinstance(item, str) for item in links_value):
@@ -328,6 +342,20 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         if links_field == 'links':
             for link in links_value:
                 _safe_member(link)
+    dependencies = manifest.get('dependencies', [])
+    if not isinstance(dependencies, list):
+        raise LibraryError('El manifest contiene una lista dependencies invalida')
+    seen_dependencies: set[str] = set()
+    for dependency in dependencies:
+        dependency_name = _validate_package_name(
+            dependency,
+            context='El nombre de dependencia',
+        )
+        if dependency_name.casefold() in seen_dependencies:
+            raise LibraryError(
+                f'El manifest contiene dependencias duplicadas: {dependency_name!r}'
+            )
+        seen_dependencies.add(dependency_name.casefold())
     package_name = _validate_package_name(
         manifest.get('name', ''), context='El nombre de la libreria'
     )
@@ -336,10 +364,9 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
     )
     if package_id != header['package_sha']:
         raise LibraryError('La identidad SHA del paquete no coincide con el header')
-    try:
-        manifest_library_version = int(manifest.get('library_version', -1))
-    except (TypeError, ValueError) as error:
-        raise LibraryError('La version del manifest no es valida') from error
+    manifest_library_version = manifest.get('library_version', -1)
+    if isinstance(manifest_library_version, bool) or not isinstance(manifest_library_version, int):
+        raise LibraryError('La version del manifest no es valida')
     if manifest_library_version != int(header['library_version']):
         raise LibraryError('La version del manifest no coincide con el tipo del paquete')
     if not isinstance(manifest.get('version'), str) or not manifest['version'].strip():
@@ -357,7 +384,7 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         _safe_member(module_name)
         if not isinstance(symbol_name, str) or not symbol_name:
             raise LibraryError('La tabla de simbolos contiene un nombre invalido')
-    if str(symbols.get('package_id', '')) != package_id:
+    if not isinstance(symbols.get('package_id'), str) or symbols['package_id'] != package_id:
         raise LibraryError('La tabla de simbolos no coincide con el paquete')
     if symbols.get('mangling') != MANGLE_VERSION:
         raise LibraryError(
@@ -370,16 +397,24 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
     for item in manifest_files:
         if not isinstance(item, dict):
             raise LibraryError('El manifest contiene una entrada de archivo invalida')
-        member = str(item.get('path', ''))
+        member = item.get('path')
+        if not isinstance(member, str):
+            raise LibraryError('La entrada de archivo no contiene una ruta textual')
         safe_member = _safe_member(member).as_posix()
         if safe_member in required_names:
             raise LibraryError(f'El manifest intenta declarar una seccion interna: {member!r}')
         if safe_member in declared_members:
             raise LibraryError(f'El manifest contiene archivos duplicados: {member!r}')
         declared_members[safe_member] = item
-        _validate_sha256(item.get('sha256', ''), context=f'La entrada {member!r}')
+        expected_sha = _validate_sha256(
+            item.get('sha256', ''),
+            context=f'La entrada {member!r}',
+        )
         try:
-            expected_size = int(item.get('size', -1))
+            raw_size = item.get('size', -1)
+            if isinstance(raw_size, bool) or not isinstance(raw_size, int):
+                raise ValueError('se esperaba un entero')
+            expected_size = raw_size
         except (TypeError, ValueError) as error:
             raise LibraryError(f'El tamaño de la entrada {member!r} no es valido') from error
         if expected_size < 0:
@@ -393,7 +428,6 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
             member_data = archive.read(member_info)
         except (OSError, KeyError, RuntimeError) as error:
             raise LibraryError(f'No se pudo leer el archivo del paquete: {member}') from error
-        expected_sha = _validate_sha256(item.get('sha256', ''), context=f'La entrada {member!r}')
         if _sha_hex(member_data) != expected_sha:
             raise LibraryError(f'La SHA del archivo lib1 no coincide: {member}')
 
@@ -419,7 +453,10 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         for module in metadata.get('modules', ()):
             if not isinstance(module, dict):
                 raise LibraryError('La IR del paquete contiene un modulo invalido')
-            module_name = _safe_member(str(module.get('path', ''))).as_posix()
+            module_path = module.get('path')
+            if not isinstance(module_path, str):
+                raise LibraryError('La IR del paquete contiene una ruta de modulo invalida')
+            module_name = _safe_member(module_path).as_posix()
             if not module_name.startswith('source/'):
                 module_name = f'source/{module_name}'
             if module_name not in declared_members:
@@ -461,6 +498,7 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
         metadata if header['library_version'] == 1 else {},
         metadata if header['library_version'] == 2 else {},
         _sha_hex(data),
+        members,
     ), archive, payload
 
 
@@ -491,6 +529,8 @@ def _cache_lock(lock_path: Path):
                 os.close(lock_fd)
             acquired = True
         except FileExistsError:
+            if lock_path.is_symlink():
+                raise LibraryError(f'El bloqueo de cache es un enlace simbólico: {lock_path}')
             try:
                 owner_pid = int(lock_path.read_text(encoding='ascii').strip())
                 if owner_pid != os.getpid():
@@ -518,6 +558,8 @@ def _cache_matches(
     if not destination.is_dir() or destination.is_symlink():
         return False
     marker = destination / '.complete'
+    if marker.is_symlink() or not marker.is_file():
+        return False
     try:
         if marker.read_text(encoding='ascii').strip() != archive_sha256:
             return False
@@ -912,6 +954,25 @@ def _collect_link_paths(source_root: Path, files: list[tuple[str, bytes]]) -> li
                 ) from error
             links.add(package_relative)
     return sorted(links)
+
+
+def _collect_library_dependencies(compiler) -> list[str]:
+    """Serialize the package names selected by ``library`` directives."""
+    dependencies: set[str] = set()
+    for requests in compiler.library_requests.values():
+        for request in requests:
+            raw_name = str(getattr(request, 'path', '')).strip()
+            if not getattr(request, 'global_name', False):
+                raw_name = Path(raw_name).stem
+            if not raw_name:
+                continue
+            dependencies.add(
+                _validate_package_name(
+                    raw_name,
+                    context='El nombre de dependencia de la libreria',
+                )
+            )
+    return sorted(dependencies, key=str.casefold)
 
 
 def _validate_source_tree(
@@ -1398,6 +1459,7 @@ def pack_library(
         link_paths,
         package_id,
     )
+    dependencies = _collect_library_dependencies(compiler)
     allowed_modules = {
         Path(relative).as_posix() for relative, _ in bg_files
     }
@@ -1430,6 +1492,7 @@ def pack_library(
         'version': version,
         'name': package_name,
         'package_id': package_id,
+        'dependencies': dependencies,
         'targets': targets,
         'modules': [
             f'source/{relative}' for relative, _ in bg_files
@@ -1610,6 +1673,8 @@ def pack_compiled_library(
         except (CompilationError, BackendError) as error:
             raise LibraryError(f'La compilacion de la lib2 fallo: {error}') from error
 
+        dependencies = _collect_library_dependencies(compiler)
+
         allowed_modules = {
             Path(relative).as_posix() for relative, _ in files
             if relative.endswith('.bg')
@@ -1650,6 +1715,7 @@ def pack_compiled_library(
             'name': package_name,
             'version': version,
             'package_id': package_id,
+            'dependencies': dependencies,
             'target': {
                 'triple': target_triple,
                 'System': str(compiler.storage.system),
@@ -1714,7 +1780,9 @@ def verify_library(path: str | Path) -> LibraryPackage:
     for item in package.manifest.get('files', ()):
         if not isinstance(item, dict):
             raise LibraryError('El manifest contiene una entrada de archivo invalida')
-        name = str(item.get('path', ''))
+        name = item.get('path')
+        if not isinstance(name, str):
+            raise LibraryError('El manifest contiene una ruta de archivo no textual')
         _safe_member(name)
     return package
 
@@ -1735,17 +1803,36 @@ def inspect_library(path: str | Path) -> dict[str, object]:
 
 def unpack_library(path: str | Path, destination: str | Path) -> Path:
     package, archive, _ = _load_zip(_resolve_relative_path(path))
-    target = _resolve_relative_path(destination)
+    raw_target = Path(destination)
+    if not raw_target.is_absolute():
+        raw_target = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())) / raw_target
+    for candidate in (raw_target, *raw_target.parents):
+        if candidate.is_symlink():
+            archive.close()
+            raise LibraryError(
+                f'La ruta de extracción contiene un enlace simbólico: {candidate}'
+            )
+    target = raw_target.resolve()
+    if target.is_symlink():
+        archive.close()
+        raise LibraryError(f'El destino de extracción es un enlace simbólico: {target}')
     target.mkdir(parents=True, exist_ok=True)
     try:
         for name in archive.namelist():
             safe = _safe_member(name)
+            parent = target
+            for part in safe.parts[:-1]:
+                parent /= part
+                if parent.is_symlink():
+                    raise LibraryError(f'La ruta de extracción contiene un enlace simbólico: {name!r}')
             output = (target / Path(*safe.parts)).resolve()
             if target not in output.parents and output != target:
                 raise LibraryError(f'La ruta del paquete escapa de destino: {name!r}')
             if name.endswith('/'):
                 output.mkdir(parents=True, exist_ok=True)
                 continue
+            if output.is_symlink():
+                raise LibraryError(f'La ruta de extracción es un enlace simbólico: {name!r}')
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(archive.read(name))
     finally:
@@ -1756,11 +1843,19 @@ def unpack_library(path: str | Path, destination: str | Path) -> Path:
 def extract_library(path: str | Path, cache_root: str | Path) -> tuple[LibraryPackage, Path]:
     package_path = Path(path).resolve()
     package, archive, _ = _load_zip(package_path)
-    cache_directory = Path(cache_root).resolve()
+    raw_cache_directory = Path(cache_root)
+    for candidate in (raw_cache_directory, *raw_cache_directory.parents):
+        if candidate.is_symlink():
+            archive.close()
+            raise LibraryError(f'La raíz de cache contiene un enlace simbólico: {candidate}')
+    cache_directory = raw_cache_directory.resolve()
     cache_directory.mkdir(parents=True, exist_ok=True)
+    if cache_directory.is_symlink() or not cache_directory.is_dir():
+        archive.close()
+        raise LibraryError(f'La raíz de cache no es un directorio seguro: {cache_directory}')
     destination = cache_directory / package.archive_sha256
     lock_path = cache_directory / f'.{package.archive_sha256}.lock'
-    members = _archive_members(archive, package_path)
+    members = package.archive_members
     manifest_hashes = {
         str(item.get('path')): (
             int(item.get('size', -1)),
@@ -1796,8 +1891,12 @@ def extract_library(path: str | Path, cache_root: str | Path) -> tuple[LibraryPa
                     package.archive_sha256,
                     encoding='ascii',
                 )
+                if (temporary / '.complete').is_symlink():
+                    raise LibraryError('El marcador de cache no puede ser un enlace simbólico')
                 if destination.exists():
-                    if destination.is_dir() and not destination.is_symlink():
+                    if destination.is_symlink():
+                        raise LibraryError(f'La entrada de cache es un enlace simbólico: {destination}')
+                    if destination.is_dir():
                         shutil.rmtree(destination)
                     else:
                         destination.unlink()

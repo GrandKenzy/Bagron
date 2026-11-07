@@ -38,6 +38,12 @@ def _decode_signature(value: object) -> bytes:
     return raw
 
 
+def _positive_int(value: object, *, context: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise CentralSignatureError(f'{context} debe ser un entero positivo')
+    return value
+
+
 def _trusted_keys() -> dict[str, bytes]:
     root_path = Path(__file__).with_name('central_root.json')
     try:
@@ -91,8 +97,9 @@ def verify_central_artifact(
     signatures = metadata.get('signatures')
     if not isinstance(signed, dict) or not isinstance(signatures, list):
         raise CentralSignatureError('Los metadatos TUF no tienen signed y signatures validos')
-    if signed.get('_type') not in {'targets', 'snapshot'}:
+    if signed.get('_type') != 'targets':
         raise CentralSignatureError('El tipo de metadatos TUF no es targets')
+    _positive_int(signed.get('version'), context='La version TUF')
     expires = str(signed.get('expires', ''))
     try:
         expiry = datetime.fromisoformat(expires.replace('Z', '+00:00'))
@@ -131,15 +138,23 @@ def verify_central_artifact(
             actual = custom.get(field)
         if field == 'sha256':
             actual = hashes.get('sha256', target.get('sha256'))
-        if str(actual) != str(value):
+        if field == 'length':
+            if isinstance(actual, bool) or not isinstance(actual, int):
+                raise CentralSignatureError('Los metadatos TUF contienen un length invalido')
+        elif field in {'name', 'version', 'package_format', 'sha256'} and not isinstance(actual, str):
+            raise CentralSignatureError(f'Los metadatos TUF contienen {field} invalido')
+        if actual != value:
             raise CentralSignatureError(f'Los metadatos TUF no coinciden en {field}')
 
     signed_bytes = _canonical(signed)
     keys = _trusted_keys()
-    verified = False
+    signatures = [item for item in signatures if isinstance(item, dict)]
+    if not signatures:
+        raise CentralSignatureError('Los metadatos TUF no contienen firmas')
+    raw_threshold = metadata.get('threshold', 1)
+    threshold = _positive_int(raw_threshold, context='El threshold TUF')
+    verified_key_ids: set[str] = set()
     for item in signatures:
-        if not isinstance(item, dict):
-            continue
         key_id = str(item.get('keyid', ''))
         public_bytes = keys.get(key_id)
         if public_bytes is None:
@@ -151,10 +166,11 @@ def verify_central_artifact(
             )
         except Exception as error:
             raise CentralSignatureError('La firma TUF de Central no es valida') from error
-        verified = True
-        break
-    if not verified:
-        raise CentralSignatureError('No se encontro una firma TUF de una clave raíz confiable')
+        verified_key_ids.add(key_id)
+    if len(verified_key_ids) < threshold:
+        raise CentralSignatureError(
+            'No se alcanzo el threshold de firmas TUF de claves raíz confiables'
+        )
     return True
 
 

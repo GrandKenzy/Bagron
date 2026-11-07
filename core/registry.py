@@ -28,6 +28,8 @@ _SHA256_RE = re.compile(r'^[0-9a-fA-F]{64}$')
 _MAX_DOWNLOAD_BYTES = 256 * 1024 * 1024
 _MAX_SOURCE_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 _MAX_SOURCE_ENTRIES = 20_000
+_MAX_SEARCH_RESULTS = 10_000
+_MAX_SEARCH_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class RegistryError(RuntimeError):
@@ -128,6 +130,8 @@ def _validate_source_zip(data: bytes) -> set[str]:
 
 def _validate_package_name(value: str, *, field: str = 'nombre de paquete') -> str:
     """Valida un identificador que también se usará como nombre de archivo local."""
+    if not isinstance(value, str):
+        raise RegistryError(f'{field.capitalize()} inválido: se esperaba texto.')
     name = value.strip()
     if not _PACKAGE_NAME_RE.fullmatch(name) or name in {'.', '..'}:
         raise RegistryError(
@@ -138,12 +142,43 @@ def _validate_package_name(value: str, *, field: str = 'nombre de paquete') -> s
 
 
 def _validate_https_url(value: str, *, field: str) -> str:
-    """Rechaza destinos de red que no sean HTTPS absolutos."""
+    """Rechaza destinos HTTPS ambiguos o que puedan filtrar credenciales."""
     url = value.strip()
+    if not url or any(character.isspace() for character in url):
+        raise RegistryError(f'{field} debe usar una URL HTTPS absoluta.')
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme.lower() != 'https' or not parsed.netloc:
+    try:
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as error:
+        raise RegistryError(f'{field} contiene un puerto invalido.') from error
+    if (
+        parsed.scheme.lower() != 'https'
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
         raise RegistryError(f'{field} debe usar una URL HTTPS absoluta.')
     return url
+
+
+def _url_origin(value: str) -> str:
+    """Return a canonical host-and-port origin after HTTPS validation."""
+    parsed = urllib.parse.urlparse(
+        value if '://' in value else f'https://{value}'
+    )
+    hostname = (parsed.hostname or '').lower().rstrip('.')
+    port = parsed.port or 443
+    return f'{hostname}:{port}'
+
+
+def _reject_symlink_ancestors(path: Path) -> None:
+    """Keep registry writes inside a real directory tree."""
+    for candidate in (path, *path.parents):
+        if candidate.is_symlink():
+            raise RegistryError(f'La ruta de instalación contiene un enlace simbólico: {candidate}')
 
 
 def _normalise_checksum(value: str | None, *, required: bool = True) -> str | None:
@@ -202,7 +237,7 @@ def resolve_package(
                 raise PackageNotFoundError(f"El paquete '{name}' no existe en Central.")
             package = payload['package']
             returned_name = _validate_package_name(
-                str(package.get('name', '')),
+                package.get('name', ''),
                 field='Nombre devuelto por Central',
             )
             if returned_name != package_name:
@@ -210,7 +245,10 @@ def resolve_package(
                     f"Central devolvió el paquete {returned_name!r} para la solicitud {package_name!r}."
                 )
             if version and version.strip().lower() != 'latest':
-                returned_version = str(package.get('version', '')).strip()
+                returned_version = package.get('version', '')
+                if not isinstance(returned_version, str):
+                    raise RegistryError('Central devolvió una versión no textual.')
+                returned_version = returned_version.strip()
                 if returned_version != version.strip():
                     raise RegistryError(
                         f"Central devolvió la versión {returned_version!r}; se solicitó {version!r}."
@@ -247,7 +285,7 @@ def download_package_artifact(
 
     headers = _get_headers(client_id, public_id)
     headers['Accept'] = '*/*'
-    if credential_origin is None or urllib.parse.urlparse(download_url).netloc.lower() != credential_origin.lower():
+    if credential_origin is None or _url_origin(download_url) != _url_origin(credential_origin):
         headers.pop('X-Central-Client-Id', None)
         headers.pop('X-Central-Public-Id', None)
 
@@ -321,8 +359,10 @@ def install_package(
 
     _validate_package_name(name, field='Nombre solicitado')
 
-    dest_folder = Path(target_dir).resolve()
-    lock_path = Path(lockfile_path).resolve() if lockfile_path is not None else None
+    raw_dest_folder = Path(target_dir)
+    _reject_symlink_ancestors(raw_dest_folder)
+    dest_folder = raw_dest_folder.resolve()
+    lock_path = Path(lockfile_path) if lockfile_path is not None else None
 
     print_fn(f"Buscando '{name}'{' v' + version if version else ''} en Central ({registry_url})...")
     package_info = resolve_package(
@@ -331,21 +371,26 @@ def install_package(
         registry_url=registry_url,
         client_id=client_id,
         public_id=public_id,
-        credential_origin=urllib.parse.urlparse(
-            _validate_https_url(registry_url, field='El registro Central')
-        ).netloc,
+    )
+    registry_origin = _url_origin(
+        _validate_https_url(registry_url, field='El registro Central')
     )
 
     resolved_name = _validate_package_name(
-        str(package_info.get('name', name)),
+        package_info.get('name', name),
         field='Nombre devuelto por Central',
     )
     if resolved_name != name:
         raise RegistryError(
             f"Central devolvió el paquete {resolved_name!r}; se solicitó {name!r}."
         )
-    resolved_version = str(package_info.get('version', '1.0.0'))
-    package_format = str(package_info.get('package_format', 'lib1'))
+    resolved_version = package_info.get('version', '1.0.0')
+    if not isinstance(resolved_version, str):
+        raise RegistryError('Central devolvió una versión no textual.')
+    resolved_version = resolved_version.strip()
+    package_format = package_info.get('package_format', 'lib1')
+    if not isinstance(package_format, str):
+        raise RegistryError('Central devolvió un formato de paquete no textual.')
     if package_format not in {'lib1', 'lib2'}:
         raise RegistryError(
             f"Central devolvió un formato de paquete no soportado: {package_format!r}."
@@ -356,9 +401,17 @@ def install_package(
         raise RegistryError(
             f"Central devolvió la versión {resolved_version!r}; se solicitó {version!r}."
         )
-    expected_checksum = str(package_info.get('artifact_checksum', '')) or None
-    download_url = str(package_info.get('download_url', ''))
-    raw_fallback = str(package_info.get('raw_github_url', '')) or None
+    expected_checksum = package_info.get('artifact_checksum')
+    if expected_checksum is not None and not isinstance(expected_checksum, str):
+        raise RegistryError('Central devolvió un checksum no textual.')
+    expected_checksum = expected_checksum or None
+    download_url = package_info.get('download_url', '')
+    if not isinstance(download_url, str):
+        raise RegistryError('Central devolvió una URL de descarga no textual.')
+    raw_fallback = package_info.get('raw_github_url', '')
+    if raw_fallback is not None and not isinstance(raw_fallback, str):
+        raise RegistryError('Central devolvió una URL de fallback no textual.')
+    raw_fallback = raw_fallback or None
 
     if not download_url and not raw_fallback:
         raise RegistryError(f"El paquete '{resolved_name}' no tiene una URL de descarga configurada en Central.")
@@ -373,6 +426,7 @@ def install_package(
         allow_unverified=allow_unverified,
         client_id=client_id,
         public_id=public_id,
+        credential_origin=registry_origin,
     )
     from core.signing import CentralSignatureError, verify_central_artifact
     try:
@@ -388,8 +442,10 @@ def install_package(
         raise RegistryError(f'La firma de Central no es valida: {error}') from error
 
     dest_folder.mkdir(parents=True, exist_ok=True)
+    if not dest_folder.is_dir() or dest_folder.is_symlink():
+        raise RegistryError('El directorio de instalación no es seguro.')
     dest_file = dest_folder / f'{resolved_name}.lib'
-    if dest_file.resolve().parent != dest_folder:
+    if dest_file.is_symlink() or dest_file.resolve().parent != dest_folder:
         raise RegistryError('La ruta de instalación escapa del directorio destino.')
 
     def publish_verified(data_to_publish: bytes) -> Path:
@@ -421,14 +477,39 @@ def install_package(
                 raise RegistryError(
                     f'El formato declarado ({package_format}) no coincide con el artefacto ({actual_format}).'
                 )
-            if package.name != resolved_name or str(package.manifest.get('version', '')) != resolved_version:
+            if package.name != resolved_name or package.manifest.get('version') != resolved_version:
                 raise RegistryError(
                     'El nombre o la version del paquete no coinciden con la metadata de Central.'
                 )
             if lock_path is not None:
                 from core.lockfile import LockfileError, update_lockfile
-                raw_dependencies = package_info.get('dependencies', [])
-                dependencies = raw_dependencies if isinstance(raw_dependencies, list) else []
+                manifest_dependencies = package.manifest.get('dependencies', [])
+                central_dependencies = package_info.get('dependencies')
+                if central_dependencies is not None:
+                    if not isinstance(central_dependencies, list):
+                        raise RegistryError('Central devolvió dependencies con un formato inválido.')
+                    try:
+                        central_names = sorted(
+                            _validate_package_name(
+                                item,
+                                field='Nombre de dependencia de Central',
+                            )
+                            for item in central_dependencies
+                        )
+                        manifest_names = sorted(
+                            _validate_package_name(
+                                item,
+                                field='Nombre de dependencia del paquete',
+                            )
+                            for item in manifest_dependencies
+                        )
+                    except RegistryError:
+                        raise
+                    if central_names != manifest_names:
+                        raise RegistryError(
+                            'Las dependencias de Central no coinciden con el manifiesto del paquete.'
+                        )
+                dependencies = manifest_dependencies
                 try:
                     update_lockfile(
                         lock_path,
@@ -441,6 +522,8 @@ def install_package(
                     )
                 except LockfileError as error:
                     raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
+            if dest_file.is_symlink():
+                raise RegistryError('El destino de instalación es un enlace simbólico.')
             os.replace(temp_path, dest_file)
         except Exception:
             temp_path.unlink(missing_ok=True)
@@ -554,21 +637,58 @@ def search_packages(
     req = urllib.request.Request(endpoint, headers=_get_headers(client_id, public_id))
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            payload = json.loads(response.read().decode('utf-8'))
+        with _open_url(req, timeout=15) as response:
+            raw_payload = _read_limited(
+                response,
+                limit=_MAX_SEARCH_RESPONSE_BYTES,
+                context='La respuesta de búsqueda de Central',
+            )
+            payload = json.loads(raw_payload.decode('utf-8'))
+            if not isinstance(payload, dict):
+                raise RegistryError('La respuesta de búsqueda de Central no es un objeto JSON.')
             packages = payload.get('data') or payload.get('packages') or []
-            if not packages:
+            if not isinstance(packages, list):
+                raise RegistryError('La respuesta de búsqueda de Central no contiene una lista válida.')
+            if len(packages) > _MAX_SEARCH_RESULTS:
+                raise RegistryError('La respuesta de búsqueda de Central contiene demasiados resultados.')
+
+            validated: list[tuple[str, str, str, str]] = []
+            for package in packages:
+                if not isinstance(package, dict):
+                    raise RegistryError('La respuesta de búsqueda contiene una entrada inválida.')
+                name = _validate_package_name(
+                    package.get('name', ''),
+                    field='Nombre devuelto por Central',
+                )
+                version = package.get('latest_version') or package.get('version') or ''
+                if not isinstance(version, str) or not version.strip():
+                    raise RegistryError(f'El paquete {name!r} no tiene una versión válida.')
+                package_format = package.get('package_format', 'lib1')
+                if package_format not in {'lib1', 'lib2'}:
+                    raise RegistryError(
+                        f'El paquete {name!r} tiene un formato inválido: {package_format!r}.'
+                    )
+                description = package.get('description', '')
+                if not isinstance(description, str):
+                    raise RegistryError(f'La descripción de {name!r} no es textual.')
+                validated.append((name, version.strip(), package_format, description))
+
+            if not validated:
                 print_fn(f"No se encontraron paquetes para '{query}'.")
                 return 0
 
-            print_fn(f"\nPaquetes encontrados ({len(packages)}):")
-            for pkg in packages:
-                name = pkg.get('name', '')
-                ver = pkg.get('latest_version') or pkg.get('version', '')
-                fmt = pkg.get('package_format', 'lib1')
-                desc = pkg.get('description', '')
-                print_fn(f"  • {name} (v{ver}, {fmt}) - {desc}")
+            print_fn(f"\nPaquetes encontrados ({len(validated)}):")
+            for name, version, package_format, description in validated:
+                print_fn(f"  • {name} (v{version}, {package_format}) - {description}")
             print_fn('')
             return 0
-    except Exception as exc:
-        raise RegistryError(f'Error al buscar paquetes en Central: {exc}') from exc
+    except RegistryError:
+        raise
+    except urllib.error.HTTPError as error:
+        raise RegistryError(
+            f'Error del servidor Central al buscar (HTTP {error.code}): {error.reason}'
+        ) from error
+    except urllib.error.URLError as error:
+        raise RegistryError(f'No se pudo conectar con el registro Central: {error.reason}') from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RegistryError(f'Respuesta no válida del registro Central: {error}') from error

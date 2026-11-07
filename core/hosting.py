@@ -87,6 +87,72 @@ def _atomic_write_text(destination: Path, content: str) -> None:
     _atomic_write_texts([(destination, content)])
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Best-effort fsync for the directory containing a published artifact."""
+    if os.name == 'nt':
+        return
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _pack_library_atomically(
+    packer: Callable[..., Path],
+    source: Path,
+    destination: Path,
+    *,
+    name: str,
+    version: str,
+) -> Path:
+    """Package and verify a library before publishing it into ``build/``."""
+    from core.library import LibraryError, verify_library
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.is_symlink():
+        raise HostingError(f'El artefacto de destino es un enlace simbólico: {destination}')
+    temporary_root = Path(tempfile.mkdtemp(
+        prefix=f'.{destination.stem}.',
+        dir=destination.parent,
+    ))
+    temporary = temporary_root / destination.name
+    try:
+        result = Path(packer(source, temporary, name=name, version=version)).resolve()
+        if result != temporary.resolve() or not result.is_file():
+            raise HostingError('El empaquetador no produjo el artefacto temporal esperado.')
+        try:
+            package = verify_library(result)
+        except LibraryError as error:
+            raise HostingError(f'El artefacto generado no supera la verificación: {error}') from error
+        if package.name != name or str(package.manifest.get('version', '')) != version:
+            raise HostingError(
+                'El artefacto generado no coincide con el nombre o versión solicitados.'
+            )
+        with result.open('rb+') as handle:
+            os.fsync(handle.fileno())
+        os.replace(result, destination)
+        _fsync_directory(destination.parent)
+        return destination
+    finally:
+        shutil.rmtree(temporary_root, ignore_errors=True)
+
+
+def _inspect_hosted_artifact(file_path: Path) -> dict[str, object]:
+    """Inspect binaries and fully verify every Bagron library artifact."""
+    artifact = inspect_build_artifact(file_path)
+    if file_path.suffix.lower() == '.lib' or artifact['format'] in {'lib1', 'lib2'}:
+        from core.library import LibraryError, verify_library
+        try:
+            verify_library(file_path)
+        except LibraryError as error:
+            raise HostingError(f'El artefacto de librería {file_path.name} no es válido: {error}') from error
+    return artifact
+
+
 def bump_semver_patch(version: str) -> str:
     """Incrementa el componente patch de una versión SemVer (ej. 1.1.4 -> 1.1.5)."""
     parts = version.strip().split('.')
@@ -308,10 +374,16 @@ def _run_hostutils_dedicated(
                         )
                         temporary_artifact = Path(temp_dir) / file_name
                         packer(temporary_root, temporary_artifact, name=name, version=current_version)
-                        art = inspect_build_artifact(temporary_artifact)
+                        art = _inspect_hosted_artifact(temporary_artifact)
                 else:
-                    packer(base, artifact_path, name=name, version=current_version)
-                    art = inspect_build_artifact(artifact_path)
+                    _pack_library_atomically(
+                        packer,
+                        base,
+                        artifact_path,
+                        name=name,
+                        version=current_version,
+                    )
+                    art = _inspect_hosted_artifact(artifact_path)
             except Exception as exc:
                 raise HostingError(
                     f'El artefacto {file_name} no existe en {build_dir} y la compilación falló:\n{exc}'
@@ -319,7 +391,7 @@ def _run_hostutils_dedicated(
         else:
             raise HostingError(f'No se encontró el artefacto {artifact_path.name} en {build_dir}')
     else:
-        art = inspect_build_artifact(artifact_path)
+        art = _inspect_hosted_artifact(artifact_path)
     curr_sha = str(art['sha256'])
     curr_size = int(art['size_bytes'])
     source_sha = str(art['source_sha'])
@@ -374,13 +446,21 @@ def _run_hostutils_dedicated(
         if version != current_version and (format_name in {'lib1', 'lib2'} or kind == 'librería'):
             try:
                 packer = pack_compiled_library if format_name == 'lib2' else pack_library
-                packer(base, artifact_path, name=name, version=version)
-                art = inspect_build_artifact(artifact_path)
+                _pack_library_atomically(
+                    packer,
+                    base,
+                    artifact_path,
+                    name=name,
+                    version=version,
+                )
+                art = _inspect_hosted_artifact(artifact_path)
                 curr_sha = str(art['sha256'])
                 curr_size = int(art['size_bytes'])
                 source_sha = str(art['source_sha'])
-            except Exception:
-                pass
+            except Exception as error:
+                raise HostingError(
+                    f'No se pudo regenerar el artefacto {artifact_path.name}: {error}'
+                ) from error
 
         try:
             signature, _ = compute_library_signature(base, author=author, name=name, version=version)
@@ -530,7 +610,7 @@ def run_hostutils(
             continue
         if file_path.suffix.lower() == '.lib' or not file_path.suffix:
             # Archivo de librería .lib o binario sin extensión
-            artifacts.append(inspect_build_artifact(file_path))
+            artifacts.append(_inspect_hosted_artifact(file_path))
 
     if not artifacts:
         print_fn('No se encontraron artefactos (.lib o binarios) en build/.')
