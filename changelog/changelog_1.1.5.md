@@ -29,3 +29,7 @@
 - Central metadata now rejects non-target statements, invalid versions or lengths, expired metadata, and thresholds that are not met by distinct trusted signatures.
 - Central can also publish a complete TUF root, timestamp, snapshot, and targets chain; role thresholds and metadata-version relationships are verified before installation.
 - Projects with a lockfile reject Central targets metadata older than the version already accepted for that project.
+
+## Distribution
+
+- Compiled Bagron installers no longer bundle BagronLab `.lib` packages by default. Projects must install their required packages explicitly or provide project-local libraries.

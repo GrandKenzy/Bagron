@@ -85,41 +85,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes clang lld
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform linux --output-dir build/portable-python
-      - name: Checkout BagronLab prebuilt libraries
-        uses: actions/checkout@v4
-        with:
-          repository: GrandKenzy/BagronLab
-          ref: main
-          path: build/bagronlab
-          sparse-checkout: |
-            build
-          sparse-checkout-cone-mode: true
-      - name: Stage BagronLab libraries
-        shell: bash
-        run: |
-          set -euo pipefail
-          source_dir="build/bagronlab/build"
-          staging_dir="build/prebuilt-libs"
-          valid_libraries=(
-            gnulibrary
-            hashlib
-            io
-            math
-            os
-            string
-            time
-            windows
-          )
-          test -d "$source_dir"
-          mkdir -p "$staging_dir"
-          for name in "${valid_libraries[@]}"; do
-            source_path="$source_dir/$name.lib"
-            test -s "$source_path"
-            cp -f "$source_path" "$staging_dir/$name.lib"
-          done
-          staged_count="$(find "$staging_dir" -maxdepth 1 -type f -name '*.lib' | wc -l)"
-          test "$staged_count" -eq "${#valid_libraries[@]}"
-          find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -printf '%f\n' | sort
       - name: Install vnma in portable runtime
         run: build/portable-python/bin/python -m pip install --upgrade vnma
       - name: Prepare vnma project configuration
@@ -140,6 +105,9 @@ jobs:
         run: python tools/deduplicate_portable_python.py --platform linux --runtime build/portable-python
       - name: Assemble prebuilt Linux compiler payload
         run: python tools/prepare_release_payload.py --platform linux --output-dir build/release-payload
+      - name: Verify release payload has no default Bagron packages
+        shell: bash
+        run: test ! -e build/release-payload/libs
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
@@ -182,40 +150,6 @@ jobs:
         run: choco install llvm --yes --no-progress
       - name: Prepare portable Python runtime
         run: python tools/prepare_portable_python.py --platform windows --output-dir build/portable-python
-      - name: Checkout BagronLab prebuilt libraries
-        uses: actions/checkout@v4
-        with:
-          repository: GrandKenzy/BagronLab
-          ref: main
-          path: build/bagronlab
-          sparse-checkout: |
-            build
-          sparse-checkout-cone-mode: true
-      - name: Stage BagronLab libraries
-        shell: pwsh
-        run: |
-          $sourceDir = 'build/bagronlab/build'
-          $stagingDir = 'build/prebuilt-libs'
-          $validLibraries = @(
-            'gnulibrary'
-            'hashlib'
-            'io'
-            'math'
-            'os'
-            'string'
-            'time'
-            'windows'
-          )
-          if (-not (Test-Path -LiteralPath $sourceDir -PathType Container)) { throw "No existe $sourceDir" }
-          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-          foreach ($name in $validLibraries) {
-            $sourcePath = Join-Path $sourceDir "$name.lib"
-            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Falta $sourcePath" }
-            Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $stagingDir "$name.lib") -Force
-          }
-          $stagedLibraries = @(Get-ChildItem -LiteralPath $stagingDir -File -Filter '*.lib')
-          if ($stagedLibraries.Count -ne $validLibraries.Count) { throw "El staging contiene un conjunto de librerías inesperado" }
-          $stagedLibraries | Sort-Object Name | Select-Object -ExpandProperty Name
       - name: Install vnma in portable runtime
         shell: pwsh
         run: |
@@ -244,6 +178,12 @@ jobs:
         run: python tools/deduplicate_portable_python.py --platform windows --runtime build/portable-python
       - name: Assemble prebuilt Windows compiler payload
         run: python tools/prepare_release_payload.py --platform windows --output-dir build/release-payload
+      - name: Verify release payload has no default Bagron packages
+        shell: pwsh
+        run: |
+          if (Test-Path -LiteralPath 'build/release-payload/libs') {
+            throw 'El payload de release no debe incluir librerías Bagron por defecto'
+          }
       - name: Build compiled Windows installer
         shell: pwsh
         run: |
