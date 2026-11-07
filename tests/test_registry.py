@@ -64,6 +64,54 @@ class TestRegistryClient(unittest.TestCase):
                     expected_checksum='sha256:0000000000000000000000000000000000000000000000000000000000000000',
                 )
 
+    def test_download_requires_checksum_by_default(self):
+        with self.assertRaises(IntegrityError):
+            download_package_artifact('https://central.example.com/download')
+
+    def test_download_rejects_non_https_url(self):
+        with self.assertRaises(RegistryError):
+            download_package_artifact(
+                'http://central.example.com/download',
+                expected_checksum='0' * 64,
+            )
+
+    def test_install_rejects_path_traversal_name_from_registry(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            with patch(
+                'core.registry.resolve_package',
+                return_value={
+                    'name': '../outside',
+                    'version': '1.0.0',
+                    'artifact_checksum': '0' * 64,
+                    'download_url': 'https://central.example.com/download',
+                },
+            ), patch('core.registry.download_package_artifact') as download:
+                with self.assertRaises(RegistryError):
+                    install_package('network', target_dir=dest)
+                download.assert_not_called()
+            self.assertFalse((Path(tmp_dir) / 'outside.lib').exists())
+
+    def test_install_allows_explicit_unverified_development_package(self):
+        content = b'BGLIB1\0\0development package'
+        resolve_payload = {
+            'name': 'development',
+            'version': '0.1.0',
+            'package_format': 'lib1',
+            'download_url': 'https://central.example.com/pkg/download',
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            with patch('core.registry.resolve_package', return_value=resolve_payload), \
+                 patch('core.registry.download_package_artifact', return_value=content):
+                installed_file = install_package(
+                    'development',
+                    target_dir=dest,
+                    allow_unverified=True,
+                )
+            self.assertTrue(installed_file.is_file())
+            self.assertEqual(installed_file.read_bytes(), content)
+
     def test_install_package_to_directory(self):
         content = b'BGLIB1\0\0sample package bytes'
         content_sha = hashlib.sha256(content).hexdigest()

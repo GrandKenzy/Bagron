@@ -49,6 +49,12 @@ jobs:
         run: vnma run tools/build_aot_parser.py --gram-path gram-source --output-dir build/aot
       - name: Run fast tests
         run: vnma test tests/light
+      - name: Run library tests
+        run: vnma test tests/test_libraries.py
+      - name: Run registry tests
+        run: vnma test tests/test_registry.py
+      - name: Run hostutils tests
+        run: vnma test tests/test_hostutils.py
       - name: Compile smoke example
         shell: bash
         run: |

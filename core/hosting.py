@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import struct
+import tempfile
 import tomllib
 from typing import Callable
 import zipfile
@@ -22,6 +25,66 @@ class HostingError(RuntimeError):
 
 _BGLIB_MAGIC = b'BGLIB1\0\0'
 _BGLIB_HEADER = struct.Struct('<8sHHBBHQQ32s32s32s32s32s')
+
+
+def _atomic_write_texts(updates: list[tuple[Path, str]]) -> None:
+    """Publica varios archivos con temporales y rollback ante una sustitución fallida."""
+    staged: list[tuple[Path, Path, Path | None]] = []
+    replaced: list[Path] = []
+    try:
+        for destination, content in updates:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(
+                prefix=f'.{destination.stem}.',
+                suffix='.tmp',
+                dir=destination.parent,
+                text=True,
+            )
+            temp_path = Path(temp_name)
+            backup_path: Path | None = None
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8', newline='') as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if destination.exists():
+                    backup_fd, backup_name = tempfile.mkstemp(
+                        prefix=f'.{destination.stem}.',
+                        suffix='.bak',
+                        dir=destination.parent,
+                    )
+                    os.close(backup_fd)
+                    backup_path = Path(backup_name)
+                    shutil.copy2(destination, backup_path)
+            except Exception:
+                temp_path.unlink(missing_ok=True)
+                if backup_path:
+                    backup_path.unlink(missing_ok=True)
+                raise
+            staged.append((destination, temp_path, backup_path))
+
+        for destination, temp_path, _ in staged:
+            os.replace(temp_path, destination)
+            replaced.append(destination)
+    except Exception:
+        for destination, _, backup_path in reversed(staged):
+            if destination not in replaced:
+                continue
+            if backup_path is None:
+                destination.unlink(missing_ok=True)
+            else:
+                os.replace(backup_path, destination)
+        raise
+    finally:
+        for _, temp_path, backup_path in staged:
+            temp_path.unlink(missing_ok=True)
+            if backup_path:
+                backup_path.unlink(missing_ok=True)
+
+
+def _atomic_write_text(destination: Path, content: str) -> None:
+    """Publica un archivo de texto mediante un temporal del mismo directorio."""
+    _atomic_write_texts([(destination, content)])
 
 
 def bump_semver_patch(version: str) -> str:
@@ -219,27 +282,44 @@ def _run_hostutils_dedicated(
     build_dir = base / 'build'
     central_dir = base / 'discentra_central'
 
-    build_dir.mkdir(parents=True, exist_ok=True)
-    central_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        build_dir.mkdir(parents=True, exist_ok=True)
+        central_dir.mkdir(parents=True, exist_ok=True)
 
     file_name = f'{name}.lib' if format_name in {'lib1', 'lib2'} or kind == 'librería' else name
     artifact_path = build_dir / file_name
 
-    # Si el artefacto no existe en build/, intentar empaquetarlo automáticamente
+    # Si el artefacto no existe, dry-run empaqueta únicamente en un temporal.
     if not artifact_path.is_file():
         if format_name in {'lib1', 'lib2'} or kind == 'librería':
             print_fn(f'  [hostutils] Empaquetando librería dedicada {name} en build/{file_name}...')
             try:
                 packer = pack_compiled_library if format_name == 'lib2' else pack_library
-                packer(base, artifact_path, name=name, version=current_version)
+                if dry_run:
+                    with tempfile.TemporaryDirectory(prefix='bagron-hostutils-') as temp_dir:
+                        temporary_root = Path(temp_dir) / 'source'
+                        shutil.copytree(
+                            base,
+                            temporary_root,
+                            ignore=shutil.ignore_patterns(
+                                'build', 'log', 'discentra_central', '.git',
+                                '.bagron-cache', '__pycache__',
+                            ),
+                        )
+                        temporary_artifact = Path(temp_dir) / file_name
+                        packer(temporary_root, temporary_artifact, name=name, version=current_version)
+                        art = inspect_build_artifact(temporary_artifact)
+                else:
+                    packer(base, artifact_path, name=name, version=current_version)
+                    art = inspect_build_artifact(artifact_path)
             except Exception as exc:
                 raise HostingError(
                     f'El artefacto {file_name} no existe en {build_dir} y la compilación falló:\n{exc}'
                 ) from exc
         else:
             raise HostingError(f'No se encontró el artefacto {artifact_path.name} en {build_dir}')
-
-    art = inspect_build_artifact(artifact_path)
+    else:
+        art = inspect_build_artifact(artifact_path)
     curr_sha = str(art['sha256'])
     curr_size = int(art['size_bytes'])
     source_sha = str(art['source_sha'])
@@ -344,9 +424,11 @@ def _run_hostutils_dedicated(
         print_fn(f'  Firma      : {signature}')
         return 0
 
-    pkg_toml_path.write_text(new_toml_text, encoding='utf-8')
-    packages_toml_path.write_text(packages_toml_content, encoding='utf-8')
-    manifest_toml_path.write_text(manifest_toml_content, encoding='utf-8')
+    _atomic_write_texts([
+        (pkg_toml_path, new_toml_text),
+        (packages_toml_path, packages_toml_content),
+        (manifest_toml_path, manifest_toml_content),
+    ])
 
     print_fn(f'\nSincronización completada exitosamente (librería dedicada):')
     print_fn(f'  Paquete sincronizado : {name} v{version}')
@@ -556,9 +638,9 @@ def run_hostutils(
             },
         }
         if not dry_run:
-            manifest_json_path.write_text(
+            _atomic_write_text(
+                manifest_json_path,
                 json.dumps(default_manifest_json, indent=2, ensure_ascii=False) + '\n',
-                encoding='utf-8',
             )
             print_fn(f'Generado catálogo base: {manifest_json_path.name}')
 
@@ -582,8 +664,10 @@ def run_hostutils(
         print_fn(f'  Sin cambios: {unchanged_count}')
         return 0
 
-    packages_toml_path.write_text(packages_toml_content, encoding='utf-8')
-    manifest_toml_path.write_text(manifest_toml_content, encoding='utf-8')
+    _atomic_write_texts([
+        (packages_toml_path, packages_toml_content),
+        (manifest_toml_path, manifest_toml_content),
+    ])
 
     print_fn(f'\nSincronización completada exitosamente:')
     print_fn(f'  Artefactos analizados : {len(final_packages)}')

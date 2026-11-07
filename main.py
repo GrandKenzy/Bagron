@@ -48,8 +48,8 @@ def _library_help() -> str:
 def _install_help() -> str:
     return (
         'Uso:\n'
-        '  bagron install --library --v1 <source> [--name N] [--version V]\n'
-        '  bagron install --library --v2 <source> [--name N] [--version V]\n'
+        '  bagron install --library --v1 <source> [--name N] [--version V] [--allow-unverified]\n'
+        '  bagron install --library --v2 <source> [--name N] [--version V] [--allow-unverified]\n'
         '  bagron install --module <archivo.bg|carpeta>'
     )
 
@@ -428,6 +428,7 @@ def _install_command(argv: list[str]) -> int:
     name = None
     version = '0.1.0'
     library_path_str = None
+    allow_unverified = '--allow-unverified' in tokens
 
     idx = 0
     while idx < len(tokens):
@@ -440,6 +441,8 @@ def _install_command(argv: list[str]) -> int:
         elif tok == '--version' and idx + 1 < len(tokens):
             version = tokens[idx + 1]
             idx += 2
+        elif tok == '--allow-unverified':
+            idx += 1
         elif tok.startswith('-'):
             idx += 1
         else:
@@ -461,7 +464,6 @@ def _install_command(argv: list[str]) -> int:
         return 1
 
     dest_dir = caller_dir / 'libs'
-    dest_dir.mkdir(parents=True, exist_ok=True)
 
     if name is None:
         if source_path.is_file() and source_path.suffix.lower() == '.lib':
@@ -472,6 +474,7 @@ def _install_command(argv: list[str]) -> int:
     dest_file = dest_dir / f'{name}.lib'
 
     if source_path.is_file() and source_path.suffix.lower() == '.lib':
+        dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, dest_file)
         print(dest_file)
         return 0
@@ -481,13 +484,21 @@ def _install_command(argv: list[str]) -> int:
         print(_install_help(), file=sys.stderr)
         return 2
 
-    if source_path.is_dir() and (source_path / 'meta.toml').is_file():
+    if source_path.is_dir():
         is_valid, sig_msg = verify_library_signature(source_path)
         if not is_valid:
-            print(f'Advertencia de seguridad: {sig_msg}', file=sys.stderr)
+            if not allow_unverified:
+                print(f'Error de seguridad: {sig_msg}', file=sys.stderr)
+                print(
+                    'Use --allow-unverified solo para desarrollo local o fuentes de confianza explícita.',
+                    file=sys.stderr,
+                )
+                return 1
+            print(f'Advertencia de seguridad (omitida explícitamente): {sig_msg}', file=sys.stderr)
         else:
-            print(f'[info] Firma de la libreria verificada: {sig_msg}')
+            print(f'[info] Integridad SHA-256 de la librería verificada: {sig_msg}')
 
+    dest_dir.mkdir(parents=True, exist_ok=True)
     packer = pack_compiled_library if v2 else pack_library
     try:
         result = packer(source_path, dest_file, name=name, version=version)
@@ -557,7 +568,7 @@ def _build_command(argv: list[str]) -> int:
 def _package_help() -> str:
     return (
         'Uso:\n'
-        '  bagron package install <nombre>[@version] [--version V] [--dir D] [--registry URL]\n'
+        '  bagron package install <nombre>[@version] [--version V] [--dir D] [--registry URL] [--allow-unverified]\n'
         '  bagron package info <nombre>[@version] [--version V] [--registry URL]\n'
         '  bagron package search <consulta> [--registry URL]\n\n'
         'Gestión e instalación de paquetes desde el registro oficial Central.'
@@ -588,6 +599,7 @@ def _package_command(argv: list[str]) -> int:
     version = None
     target_dir = caller_dir / 'libs'
     spec = None
+    allow_unverified = False
 
     idx = 0
     while idx < len(subtokens):
@@ -602,6 +614,9 @@ def _package_command(argv: list[str]) -> int:
             d = Path(subtokens[idx + 1])
             target_dir = d if d.is_absolute() else (caller_dir / d).resolve()
             idx += 2
+        elif tok == '--allow-unverified':
+            allow_unverified = True
+            idx += 1
         elif not tok.startswith('-'):
             if spec is None:
                 spec = tok
@@ -622,6 +637,7 @@ def _package_command(argv: list[str]) -> int:
                 version,
                 target_dir=target_dir,
                 registry_url=registry_url,
+                allow_unverified=allow_unverified,
             )
             return 0
         except RegistryError as error:

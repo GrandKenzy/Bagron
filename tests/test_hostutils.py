@@ -1,8 +1,11 @@
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from core.hosting import (
+    _atomic_write_texts,
     bump_semver_patch,
     compute_author_signature,
     inspect_build_artifact,
@@ -167,6 +170,61 @@ class TestHostUtils(unittest.TestCase):
             # Version should bump to 1.0.1
             self.assertIn('version = "1.0.1"', packages_toml_3)
             self.assertIn('version = "1.0.1"', updated_pkg_toml_3)
+
+    def test_dedicated_dry_run_does_not_create_or_modify_repository_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            pkg_toml = base / 'package.toml'
+            pkg_toml.write_text(
+                '[package]\n'
+                'name = "drylib"\n'
+                'version = "1.0.0"\n'
+                'kind = "librería"\n'
+                'format = "lib1"\n\n'
+                '[author]\n'
+                'name = "Tester"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
+            (base / 'main.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+            original_pkg_toml = pkg_toml.read_bytes()
+
+            ret = run_hostutils(base, auto_patch=True, dry_run=True)
+
+            self.assertEqual(ret, 0)
+            self.assertEqual(pkg_toml.read_bytes(), original_pkg_toml)
+            self.assertFalse((base / 'build').exists())
+            self.assertFalse((base / 'discentra_central').exists())
+
+    def test_manifest_updates_roll_back_when_a_replacement_fails(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            first = base / 'packages.toml'
+            second = base / 'manifest.toml'
+            first.write_text('old packages\n', encoding='utf-8')
+            second.write_text('old manifest\n', encoding='utf-8')
+            real_replace = os.replace
+            calls = 0
+
+            def fail_second_replace(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError('simulated manifest replacement failure')
+                return real_replace(source, destination)
+
+            with patch('core.hosting.os.replace', side_effect=fail_second_replace):
+                with self.assertRaises(OSError):
+                    _atomic_write_texts([
+                        (first, 'new packages\n'),
+                        (second, 'new manifest\n'),
+                    ])
+
+            self.assertEqual(first.read_text(encoding='utf-8'), 'old packages\n')
+            self.assertEqual(second.read_text(encoding='utf-8'), 'old manifest\n')
 
 
 if __name__ == '__main__':

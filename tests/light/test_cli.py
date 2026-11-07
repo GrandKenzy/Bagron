@@ -87,13 +87,54 @@ class CliVersionTests(unittest.TestCase):
                 'public func answer() int32:\n    return 42\n',
                 encoding='utf-8',
             )
+            (lib_src / 'meta.toml').write_text(
+                '[package]\n'
+                'name = "MyLib"\n'
+                'version = "1.0.0"\n\n'
+                '[author]\n'
+                'name = "Tester"\n'
+                'signature = ""\n',
+                encoding='utf-8',
+            )
 
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
-                ret = main.main(['install', '--library', '--v1', str(lib_src)])
+                ret_sign = main.main(['sign', str(lib_src)])
+                ret = main.main(['install', '--library', '--v1', str(lib_src), '--version', '1.0.0'])
 
+            self.assertEqual(0, ret_sign)
             self.assertEqual(0, ret)
             dest_lib = work_dir / 'libs' / 'MyLib.lib'
             self.assertTrue(dest_lib.is_file())
+
+    def test_install_library_rejects_invalid_signature_without_override(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            lib_src = work_dir / 'MyLib'
+            (lib_src / 'modules').mkdir(parents=True)
+            (lib_src / 'modules' / 'helper.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+            (lib_src / 'meta.toml').write_text(
+                '[package]\nname = "MyLib"\nversion = "1.0.0"\n\n'
+                '[author]\nname = "Tester"\nsignature = "sha256:' + '0' * 64 + '"\n',
+                encoding='utf-8',
+            )
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                rejected = main.main(['install', '--library', '--v1', str(lib_src)])
+                allowed = main.main([
+                    'install', '--library', '--v1', str(lib_src),
+                    '--version', '1.0.0', '--allow-unverified',
+                ])
+
+            self.assertEqual(1, rejected)
+            self.assertEqual(0, allowed)
+            self.assertTrue((work_dir / 'libs' / 'MyLib.lib').is_file())
 
 
     def test_library_command_resolves_relative_paths_with_caller_dir(self):

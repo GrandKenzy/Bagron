@@ -30,11 +30,17 @@ valida que la firma declarada en `meta.toml` coincida exactamente con los fuente
 bagron sign ruta/a/libreria
 ```
 
-Calcula la firma canónica SHA-256 vinculando los archivos fuente `.bg` y la metadata
-del paquete (`author`, `name`, `version`), y escribe o actualiza automáticamente
-el campo `signature` dentro de `meta.toml`. Además, al empaquetar una librería con
-`bagron library` o instalarla con `bagron install`, Bagron sincroniza y valida
-automáticamente esta firma.
+Calcula una huella canónica SHA-256 vinculando los archivos fuente `.bg` y la
+metadata del paquete (`author`, `name`, `version`), y escribe o actualiza
+automáticamente el campo `signature` dentro de `meta.toml`. Esta huella detecta
+alteraciones o corrupción cuando se conserva una referencia confiable, pero no
+autentica criptográficamente al autor: cualquiera que modifique las fuentes
+podría recalcularla.
+
+Al empaquetar o instalar una librería desde un directorio de fuentes, Bagron
+rechaza por defecto una huella ausente o inválida. `--allow-unverified` permite
+continuar solo para desarrollo local o fuentes cuya confianza se haya confirmado
+por otro medio.
 
 ## Extracción
 
@@ -65,6 +71,19 @@ bagron install --library --v2 ruta/a/libreria [--name Nombre] [--version 1.0.0]
 bagron install --library ruta/a/paquete.lib
 
 ```
+
+Para una fuente local sin huella válida, la excepción debe solicitarse
+explícitamente:
+
+```powershell
+bagron install --library --v1 ruta/a/libreria --allow-unverified
+```
+
+Los paquetes descargados desde Central requieren HTTPS y un checksum SHA-256
+registrado. La instalación se detiene si falta el checksum, no coincide o el
+registro proporciona un nombre que no puede convertirse en un archivo seguro.
+`bagron package install ... --allow-unverified` queda reservado para registros
+privados o pruebas controladas.
 
 > [!NOTE]
 > `bagron install --module` queda reservado para proyectos que todavía
