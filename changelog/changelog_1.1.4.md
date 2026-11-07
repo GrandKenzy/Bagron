@@ -7,6 +7,7 @@
 
 ## CLI
 
+- **Caller Working Directory Path Resolution**: Library commands (`bagron library`, `bagron inspect`, `bagron verify`, and `bagron unpack`) now resolve relative input source paths and output destination paths against the caller's working directory (`cwd` / `BAGRON_CALLER_DIR`) instead of falling back to the compiler installation directory.
 - **Local Installation Command (`bagron install`) [Temporary]**: Added a temporary `bagron install` command to install libraries and modules directly into project-local directories, replacing existing targets:
   - `bagron install --library --v1 <source>` builds (or copies) and installs a `lib1` library package into the local `libs/` directory.
   - `bagron install --library --v2 <source>` compiles and installs a `lib2` library package into `libs/`.

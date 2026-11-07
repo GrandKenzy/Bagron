@@ -235,56 +235,80 @@ def _parse_compile_args(
 
 def _library_command(argv: list[str]) -> int:
     command = argv[0]
+    caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
     try:
         if command == 'library':
             selected = [flag for flag in ('--v1', '--v2') if flag in argv]
-            if len(selected) != 1:
+            if len(selected) != 1 or '-o' not in argv:
                 print(_library_help(), file=sys.stderr)
                 return 2
             version_flag = selected[0]
-            source_index = argv.index(version_flag) + 1
-            if source_index >= len(argv) or '-o' not in argv:
+
+            name = None
+            version = '0.1.0'
+            output = None
+            source = None
+
+            index = 1
+            while index < len(argv):
+                arg = argv[index]
+                if arg in ('--v1', '--v2'):
+                    index += 1
+                elif arg == '-o' and index + 1 < len(argv):
+                    output = argv[index + 1]
+                    index += 2
+                elif arg == '--name' and index + 1 < len(argv):
+                    name = argv[index + 1]
+                    index += 2
+                elif arg == '--version' and index + 1 < len(argv):
+                    version = argv[index + 1]
+                    index += 2
+                elif not arg.startswith('-') and source is None:
+                    source = arg
+                    index += 1
+                else:
+                    index += 1
+
+            if not source or not output:
                 print(_library_help(), file=sys.stderr)
                 return 2
-            source = argv[source_index]
-            output = argv[argv.index('-o') + 1]
-            caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+
             source_path = Path(source)
             if not source_path.is_absolute():
                 source_path = (caller_dir / source_path).resolve()
             output_path = Path(output)
             if not output_path.is_absolute():
                 output_path = (caller_dir / output_path).resolve()
-            name = None
-            version = '0.1.0'
-            index = 2
-            while index < len(argv):
-                if argv[index] == '--name' and index + 1 < len(argv):
-                    name = argv[index + 1]
-                    index += 2
-                    continue
-                if argv[index] == '--version' and index + 1 < len(argv):
-                    version = argv[index + 1]
-                    index += 2
-                    continue
-                index += 1
+
             packer = pack_compiled_library if version_flag == '--v2' else pack_library
             result = packer(source_path, output_path, name=name, version=version)
             print(result)
             return 0
         if command == 'inspect' and len(argv) == 2:
+            inspect_path = Path(argv[1])
+            if not inspect_path.is_absolute():
+                inspect_path = (caller_dir / inspect_path).resolve()
             print(json.dumps(
-                inspect_library(argv[1]),
+                inspect_library(inspect_path),
                 ensure_ascii=False,
                 indent=2,
             ))
             return 0
         if command == 'verify' and len(argv) == 2:
-            package = verify_library(argv[1])
+            verify_path = Path(argv[1])
+            if not verify_path.is_absolute():
+                verify_path = (caller_dir / verify_path).resolve()
+            package = verify_library(verify_path)
             print(f'OK {package.name} v{package.library_version} {package.package_id}')
             return 0
         if command == 'unpack' and len(argv) == 3:
-            print(unpack_library(argv[1], argv[2]))
+            unpack_src = Path(argv[1])
+            if not unpack_src.is_absolute():
+                unpack_src = (caller_dir / unpack_src).resolve()
+            unpack_dest = Path(argv[2])
+            if not unpack_dest.is_absolute():
+                unpack_dest = (caller_dir / unpack_dest).resolve()
+            print(unpack_library(unpack_src, unpack_dest))
             return 0
     except LibraryError as error:
         print(f'Library failed: {error}', file=sys.stderr)

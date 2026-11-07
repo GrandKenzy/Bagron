@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import hashlib
 import io
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -261,8 +262,16 @@ def _load_zip(path: Path) -> tuple[LibraryPackage, zipfile.ZipFile, bytes]:
     ), archive, payload
 
 
+def _resolve_relative_path(path: str | Path) -> Path:
+    caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+    target = Path(path)
+    if not target.is_absolute():
+        return (caller_dir / target).resolve()
+    return target.resolve()
+
+
 def read_library(path: str | Path) -> LibraryPackage:
-    package, archive, _ = _load_zip(Path(path).resolve())
+    package, archive, _ = _load_zip(_resolve_relative_path(path))
     archive.close()
     return package
 
@@ -848,13 +857,13 @@ def pack_library(
     name: str | None = None,
     version: str = '0.1.0',
 ) -> Path:
-    source_root = Path(source).resolve()
+    source_root = _resolve_relative_path(source)
     if source_root.is_file():
         source_root = source_root.parent
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
     files = _collect_files(source_root)
-    output_path = Path(output).resolve()
+    output_path = _resolve_relative_path(output)
     files = [
         (relative, data)
         for relative, data in files
@@ -985,14 +994,14 @@ def pack_compiled_library(
     from core.compiler import CompilationError, Compiler
     from core.backend.llvm.module import BackendError, LLVMBackend
 
-    source_root = Path(source).resolve()
+    source_root = _resolve_relative_path(source)
     if source_root.is_file():
         source_root = source_root.parent
     if not source_root.is_dir():
         raise LibraryError(f'La fuente de la libreria no es un directorio: {source_root}')
 
     files = _collect_files(source_root)
-    output_path = Path(output).resolve()
+    output_path = _resolve_relative_path(output)
     files = [
         (relative, data)
         for relative, data in files
@@ -1209,8 +1218,8 @@ def inspect_library(path: str | Path) -> dict[str, object]:
 
 
 def unpack_library(path: str | Path, destination: str | Path) -> Path:
-    package, archive, _ = _load_zip(Path(path).resolve())
-    target = Path(destination).resolve()
+    package, archive, _ = _load_zip(_resolve_relative_path(path))
+    target = _resolve_relative_path(destination)
     target.mkdir(parents=True, exist_ok=True)
     try:
         for name in archive.namelist():

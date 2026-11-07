@@ -44,6 +44,17 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         if node.name == 'EXTERN':
             tools.externs.collect(compiler, node)
 
+    global_nodes = [node for node in nodes if node.name == 'VAR']
+    for node in global_nodes:
+        compiler.activate_module(compiler.module_for_node(node))
+        # Register every global first so address initializers can refer to a
+        # declaration that appears later in the file.
+        tools.variable.collect_global(compiler, node, validate=False)
+
+    # Imported aliases must exist before validating global initializers.  This
+    # lets a module constant feed another constant without making mutable
+    # imported state implicitly visible inside function scopes.
+    tools.imports.bind_aliases(compiler)
     # Complete nominal aggregate/enum definitions before validating global
     # initializers.  A global such as ``ptr *: int = $point.x`` needs the
     # struct field table during semantic inference, even when the declaration
@@ -68,17 +79,6 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
 
     tools.structure.validate_value_cycles(compiler)
 
-    global_nodes = [node for node in nodes if node.name == 'VAR']
-    for node in global_nodes:
-        compiler.activate_module(compiler.module_for_node(node))
-        # Register every global first so address initializers can refer to a
-        # declaration that appears later in the file.
-        tools.variable.collect_global(compiler, node, validate=False)
-
-    # Imported aliases must exist before validating global initializers.  This
-    # lets a module constant feed another constant without making mutable
-    # imported state implicitly visible inside function scopes.
-    tools.imports.bind_aliases(compiler)
 
     for node in global_nodes:
         compiler.activate_module(compiler.module_for_node(node))

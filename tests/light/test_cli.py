@@ -95,5 +95,76 @@ class CliVersionTests(unittest.TestCase):
             self.assertTrue(dest_lib.is_file())
 
 
+    def test_library_command_resolves_relative_paths_with_caller_dir(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            lib_src = work_dir / 'windows'
+            (lib_src / 'modules').mkdir(parents=True)
+            (lib_src / 'modules' / 'helper.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                ret = main.main(['library', '--v1', 'windows', '-o', 'windowstest.lib'])
+
+            self.assertEqual(0, ret)
+            dest_lib = work_dir / 'windowstest.lib'
+            self.assertTrue(dest_lib.is_file())
+
+    def test_library_command_supports_alternative_argument_order(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            lib_src = work_dir / 'windows'
+            (lib_src / 'modules').mkdir(parents=True)
+            (lib_src / 'modules' / 'helper.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                ret = main.main(['library', 'windows', '--v1', '-o', 'windowstest2.lib'])
+
+            self.assertEqual(0, ret)
+            dest_lib = work_dir / 'windowstest2.lib'
+            self.assertTrue(dest_lib.is_file())
+
+    def test_library_inspect_verify_unpack_resolve_relative_paths(self):
+        import tempfile
+        import os
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            work_dir = Path(td)
+            lib_src = work_dir / 'windows'
+            (lib_src / 'modules').mkdir(parents=True)
+            (lib_src / 'modules' / 'helper.bg').write_text(
+                'public func answer() int32:\n    return 42\n',
+                encoding='utf-8',
+            )
+
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(work_dir)}):
+                ret_pack = main.main(['library', '--v1', 'windows', '-o', 'windowstest.lib'])
+                self.assertEqual(0, ret_pack)
+
+                ret_inspect = main.main(['inspect', 'windowstest.lib'])
+                self.assertEqual(0, ret_inspect)
+
+                ret_verify = main.main(['verify', 'windowstest.lib'])
+                self.assertEqual(0, ret_verify)
+
+                ret_unpack = main.main(['unpack', 'windowstest.lib', 'unpacked'])
+                self.assertEqual(0, ret_unpack)
+                self.assertTrue((work_dir / 'unpacked').is_dir())
+
+
 if __name__ == '__main__':
     unittest.main()
