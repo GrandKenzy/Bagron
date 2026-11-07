@@ -92,10 +92,25 @@ jobs:
           set -euo pipefail
           source_dir="build/bagronlab/build"
           staging_dir="build/prebuilt-libs"
+          valid_libraries=(
+            gnulibrary
+            hashlib
+            io
+            math
+            os
+            string
+            time
+            windows
+          )
           test -d "$source_dir"
           mkdir -p "$staging_dir"
-          find "$source_dir" -maxdepth 1 -type f -name '*.lib' -exec cp -f {} "$staging_dir/" \;
-          test -n "$(find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -print -quit)"
+          for name in "${valid_libraries[@]}"; do
+            source_path="$source_dir/$name.lib"
+            test -s "$source_path"
+            cp -f "$source_path" "$staging_dir/$name.lib"
+          done
+          staged_count="$(find "$staging_dir" -maxdepth 1 -type f -name '*.lib' | wc -l)"
+          test "$staged_count" -eq "${#valid_libraries[@]}"
           find "$staging_dir" -maxdepth 1 -type f -name '*.lib' -printf '%f\n' | sort
       - name: Install vnma in portable runtime
         run: build/portable-python/bin/python -m pip install --upgrade vnma
@@ -173,14 +188,26 @@ jobs:
         run: |
           $sourceDir = 'build/bagronlab/build'
           $stagingDir = 'build/prebuilt-libs'
+          $validLibraries = @(
+            'gnulibrary'
+            'hashlib'
+            'io'
+            'math'
+            'os'
+            'string'
+            'time'
+            'windows'
+          )
           if (-not (Test-Path -LiteralPath $sourceDir -PathType Container)) { throw "No existe $sourceDir" }
           New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-          $libraries = @(Get-ChildItem -LiteralPath $sourceDir -File -Filter '*.lib')
-          if ($libraries.Count -eq 0) { throw "No se encontraron .lib en $sourceDir" }
-          foreach ($library in $libraries) {
-            Copy-Item -LiteralPath $library.FullName -Destination (Join-Path $stagingDir $library.Name) -Force
+          foreach ($name in $validLibraries) {
+            $sourcePath = Join-Path $sourceDir "$name.lib"
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Falta $sourcePath" }
+            Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $stagingDir "$name.lib") -Force
           }
-          Get-ChildItem -LiteralPath $stagingDir -File -Filter '*.lib' | Sort-Object Name | Select-Object -ExpandProperty Name
+          $stagedLibraries = @(Get-ChildItem -LiteralPath $stagingDir -File -Filter '*.lib')
+          if ($stagedLibraries.Count -ne $validLibraries.Count) { throw "El staging contiene un conjunto de librerías inesperado" }
+          $stagedLibraries | Sort-Object Name | Select-Object -ExpandProperty Name
       - name: Install vnma in portable runtime
         shell: pwsh
         run: |
