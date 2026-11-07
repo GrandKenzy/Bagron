@@ -68,7 +68,11 @@ def _main_help() -> str:
         'Comandos de librería:\n'
         + _library_help() + '\n\n'
         'Repositorios de alojamiento:\n'
-        '  bagron build --hostutils [ruta]          Sincroniza versiones y hashes de build/ en discentra_central/.'
+        '  bagron build --hostutils [ruta]          Sincroniza versiones y hashes de build/ en discentra_central/.\n\n'
+        'Gestión de paquetes (Central):\n'
+        '  bagron package install <nombre>          Descarga e instala una librería desde Central.\n'
+        '  bagron package info <nombre>             Muestra información de un paquete en Central.\n'
+        '  bagron package search <consulta>         Busca paquetes en el catálogo de Central.'
     )
 
 
@@ -550,6 +554,104 @@ def _build_command(argv: list[str]) -> int:
     return 2
 
 
+def _package_help() -> str:
+    return (
+        'Uso:\n'
+        '  bagron package install <nombre>[@version] [--version V] [--dir D] [--registry URL]\n'
+        '  bagron package info <nombre>[@version] [--version V] [--registry URL]\n'
+        '  bagron package search <consulta> [--registry URL]\n\n'
+        'Gestión e instalación de paquetes desde el registro oficial Central.'
+    )
+
+
+def _package_command(argv: list[str]) -> int:
+    tokens = argv[1:]
+    if not tokens or '--help' in tokens or '-h' in tokens:
+        print(_package_help())
+        return 0
+
+    subcommand = tokens[0].lower()
+    subtokens = tokens[1:]
+
+    from core.registry import (
+        DEFAULT_CLIENT_ID,
+        DEFAULT_PUBLIC_ID,
+        DEFAULT_REGISTRY_URL,
+        RegistryError,
+        info_package,
+        install_package,
+        search_packages,
+    )
+
+    caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+    registry_url = DEFAULT_REGISTRY_URL
+    version = None
+    target_dir = caller_dir / 'libs'
+    spec = None
+
+    idx = 0
+    while idx < len(subtokens):
+        tok = subtokens[idx]
+        if tok == '--registry' and idx + 1 < len(subtokens):
+            registry_url = subtokens[idx + 1]
+            idx += 2
+        elif tok == '--version' and idx + 1 < len(subtokens):
+            version = subtokens[idx + 1]
+            idx += 2
+        elif tok == '--dir' and idx + 1 < len(subtokens):
+            d = Path(subtokens[idx + 1])
+            target_dir = d if d.is_absolute() else (caller_dir / d).resolve()
+            idx += 2
+        elif not tok.startswith('-'):
+            if spec is None:
+                spec = tok
+            elif version is None:
+                version = tok
+            idx += 1
+        else:
+            idx += 1
+
+    if subcommand == 'install':
+        if not spec:
+            print('Error: Se requiere especificar el nombre del paquete a instalar.', file=sys.stderr)
+            print(_package_help(), file=sys.stderr)
+            return 2
+        try:
+            install_package(
+                spec,
+                version,
+                target_dir=target_dir,
+                registry_url=registry_url,
+            )
+            return 0
+        except RegistryError as error:
+            print(f'Error al instalar paquete: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand == 'info':
+        if not spec:
+            print('Error: Se requiere especificar el nombre del paquete.', file=sys.stderr)
+            print(_package_help(), file=sys.stderr)
+            return 2
+        try:
+            return info_package(spec, version, registry_url=registry_url)
+        except RegistryError as error:
+            print(f'Error: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand in {'search', 'find'}:
+        query = spec or ''
+        try:
+            return search_packages(query, registry_url=registry_url)
+        except RegistryError as error:
+            print(f'Error: {error}', file=sys.stderr)
+            return 1
+
+    print(f'Error: Subcomando desconocido para package: {subcommand}', file=sys.stderr)
+    print(_package_help(), file=sys.stderr)
+    return 2
+
+
 def main(*args):
     argv = list(args[0])
     if not argv:
@@ -578,6 +680,9 @@ def main(*args):
 
     if argv[0] == '--hostutils':
         return _build_command(['build', *argv])
+
+    if argv[0] == 'package':
+        return _package_command(argv)
 
     strict_ownership = '--strict-ownership' in argv
     argv = [arg for arg in argv if arg != '--strict-ownership']

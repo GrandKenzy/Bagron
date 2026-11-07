@@ -23,3 +23,7 @@
   - Automatically identifies library formats (`lib1` vs `lib2`), sizes, hashes, and canonical cryptographic signatures.
   - Consumes metadata from `discentra_central/manifest.json` to atomically synchronize `discentra_central/packages.toml` and `discentra_central/manifest.toml`.
   - Supports `--auto-patch` for non-interactive CI/CD bumping, `--dry-run` for previews, and `--set-version PKG=VER` for explicit version assignment.
+- **Central Package Registry Integration (`bagron package install` / `info` / `search`)**: Added first-class commands to discover, inspect, and download packages from the official Central registry:
+  - `bagron package install <name>[@version]` resolves packages from Central, authenticates downloads with official CLI client credentials, verifies SHA-256 integrity checksums, and installs `.lib` packages directly into the local `libs/` directory.
+  - `bagron package info <name>[@version]` queries Central and displays comprehensive package metadata, including author, target architecture, format, license, and download statistics.
+  - `bagron package search <query>` performs searches across the public Central package catalog.
