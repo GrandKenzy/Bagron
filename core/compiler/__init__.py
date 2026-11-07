@@ -435,6 +435,18 @@ class Compiler(CompilerState):
                 except ValueError as error:
                     self.error(str(error))
 
+    def _library_alias_target(self, path: Path, name: str) -> Path | None:
+        """Return the library module behind ``library X as name`` if any."""
+        libs = set(self.library_targets.values())
+        matches = [
+            r for r in self.import_requests
+            if r.alias == name and r.target in libs
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: r.source != path)
+        return matches[0].target
+
     def _load_module_tree(self, path: Path):
         path = path.resolve()
         precompiled = self.precompiled_modules.get(path)
@@ -476,7 +488,10 @@ class Compiler(CompilerState):
                         f'{path}'
                     )
                     continue
-                imported_path = imports.resolve_module_path(self, name, path)
+                imported_path = self._library_alias_target(path, name)
+                is_library_alias = imported_path is not None
+                if imported_path is None:
+                    imported_path = imports.resolve_module_path(self, name, path)
                 if imported_path is not None:
                     request = imports.parse_request(
                         node,
@@ -485,7 +500,8 @@ class Compiler(CompilerState):
                     )
                     if request is not None:
                         self.import_requests.append(request)
-                    ordered.extend(self._load_module_tree(imported_path))
+                    if not is_library_alias:
+                        ordered.extend(self._load_module_tree(imported_path))
 
             own_nodes = [node for node in nodes if node.name != 'IMPORT']
             self.module_exports[path] = imports.public_definition_names(own_nodes)
@@ -523,7 +539,10 @@ class Compiler(CompilerState):
                         f'La declaracion import no contiene un modulo valido: {path}'
                     )
                     continue
-                imported_path = imports.resolve_module_path(self, name, path)
+                imported_path = self._library_alias_target(path, name)
+                is_library_alias = imported_path is not None
+                if imported_path is None:
+                    imported_path = imports.resolve_module_path(self, name, path)
                 if imported_path is not None:
                     request = imports.parse_request(
                         node,
@@ -532,7 +551,8 @@ class Compiler(CompilerState):
                     )
                     if request is not None:
                         self.import_requests.append(request)
-                    ordered.extend(self._load_module_tree(imported_path))
+                    if not is_library_alias:
+                        ordered.extend(self._load_module_tree(imported_path))
 
             own_nodes = [node for node in nodes if getattr(node, 'name', None) != 'IMPORT']
             self.module_exports[path] = imports.public_definition_names(own_nodes)

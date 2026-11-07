@@ -7,7 +7,7 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from core.compiler import Compiler
+from core.compiler import CompilationError, Compiler
 from core.frontend.aot import AotInMemoryParser
 from core.library import (
     HEADER,
@@ -533,6 +533,78 @@ class LibraryTests(unittest.TestCase):
             self.assertIn('signature = "sha256:', updated_meta)
             valid, _ = verify_library_signature(source)
             self.assertTrue(valid)
+
+
+    def test_import_from_library_alias_shadows_project_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bagron_root = root / 'bagron'
+            (bagron_root / 'libs').mkdir(parents=True)
+            lib_source = root / 'mylib_src'
+            lib_source.mkdir()
+            (lib_source / 'main.bg').write_text(
+                'clause Privacy "public"\n'
+                'public struct Item:\n'
+                '    code: int32\n'
+                'public func make_item(c: int32) Item:\n'
+                '    item: Item\n'
+                '    item.code = c\n'
+                '    return item\n',
+                encoding='utf-8',
+            )
+            pack_library(lib_source, bagron_root / 'libs' / 'mylib.lib', name='mylib', version='1.0.0')
+
+            project = root / 'project'
+            project.mkdir()
+            (project / 'mylib').mkdir()
+            (project / 'mylib' / 'main.bg').write_text(
+                'clause System "windows"\nlibrary windows as Platform\n',
+                encoding='utf-8',
+            )
+
+            main = project / 'main.bg'
+            main.write_text(
+                'library mylib as MyLib\n'
+                'import { Item } from MyLib\n'
+                'func main() int32:\n'
+                '    it: Item = MyLib.make_item(42)\n'
+                '    if it.code != 42:\n'
+                '        return 1\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+            with patch('core.globvars.BAGRON_ROOT', bagron_root):
+                artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
+    def test_library_types_require_explicit_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bagron_root = root / 'bagron'
+            (bagron_root / 'libs').mkdir(parents=True)
+            lib_source = root / 'mylib_src'
+            lib_source.mkdir()
+            (lib_source / 'main.bg').write_text(
+                'clause Privacy "public"\n'
+                'public struct Item:\n'
+                '    code: int32\n',
+                encoding='utf-8',
+            )
+            pack_library(lib_source, bagron_root / 'libs' / 'mylib.lib', name='mylib', version='1.0.0')
+
+            project = root / 'project'
+            project.mkdir()
+            main = project / 'main.bg'
+            main.write_text(
+                'library mylib as MyLib\n'
+                'func main() int32:\n'
+                '    it: Item\n'
+                '    return 0\n',
+                encoding='utf-8',
+            )
+            with patch('core.globvars.BAGRON_ROOT', bagron_root):
+                with self.assertRaises(CompilationError):
+                    Compiler().compile(main, executable=False)
 
 
 if __name__ == '__main__':

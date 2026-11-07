@@ -257,12 +257,10 @@ def bind_type_aliases(compiler: Compiler) -> None:
                 )
                 existing = compiler.storage.type_aliases.get(local_name)
                 if existing is None or existing == source_name:
-                    compiler.storage.type_aliases[local_name] = registry_key
-                # NOTA: Los tipos en Bagron son identificadores simples en TYPE.
-                # Registrar el nombre base como alias permite usar el tipo nominal
-                # importado sin calificador si no existe ya en el modulo actual.
-                if source_name not in compiler.storage.type_aliases:
-                    compiler.storage.type_aliases[source_name] = registry_key
+                    compiler.storage.type_aliases[local_name] = (
+                        getattr(type_symbol, 'registry_key', None)
+                        or source_name
+                    )
 
 def bind_aliases(compiler: Compiler) -> None:
     """Bind qualified and selective imports after all module symbols collect."""
@@ -355,8 +353,6 @@ def bind_aliases(compiler: Compiler) -> None:
                     continue
                 if local_name != source_name or request.selected:
                     compiler.storage.type_aliases[local_name] = expected_target
-                if source_name not in compiler.storage.type_aliases:
-                    compiler.storage.type_aliases[source_name] = expected_target
                 continue
 
             compiler.error(
