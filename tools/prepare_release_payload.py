@@ -96,17 +96,16 @@ def prepare_payload(root: Path, destination: Path, *, platform_name: str) -> Pat
             shutil.copy2(source, destination / name)
 
     shutil.copytree(root / 'vendor', destination / 'vendor', ignore=_skip_generated)
+    libraries_destination = destination / 'libs'
+    libraries_destination.mkdir(parents=True, exist_ok=True)
     prebuilt_libraries = root / 'build' / 'prebuilt-libs'
     if prebuilt_libraries.is_dir():
         library_files = sorted(prebuilt_libraries.glob('*.lib'))
-        if library_files:
-            libraries_destination = destination / 'libs'
-            libraries_destination.mkdir(parents=True, exist_ok=True)
-            for prebuilt_library in library_files:
-                shutil.copy2(
-                    prebuilt_library,
-                    libraries_destination / prebuilt_library.name,
-                )
+        for prebuilt_library in library_files:
+            shutil.copy2(
+                prebuilt_library,
+                libraries_destination / prebuilt_library.name,
+            )
     aot_destination = destination / 'build' / 'aot'
     aot_destination.mkdir(parents=True)
     shutil.copy2(library, aot_destination / library.name)

@@ -105,9 +105,11 @@ jobs:
         run: python tools/deduplicate_portable_python.py --platform linux --runtime build/portable-python
       - name: Assemble prebuilt Linux compiler payload
         run: python tools/prepare_release_payload.py --platform linux --output-dir build/release-payload
-      - name: Verify release payload has no default Bagron packages
+      - name: Verify release payload has empty package directory
         shell: bash
-        run: test ! -e build/release-payload/libs
+        run: |
+          test -d build/release-payload/libs
+          test -z "$(find build/release-payload/libs -mindepth 1 -maxdepth 1 -print -quit)"
       - name: Build compiled Linux installer
         run: |
           python -m PyInstaller --clean --noconfirm --distpath dist --workpath build/pyinstaller bagron-installer.spec
@@ -178,11 +180,15 @@ jobs:
         run: python tools/deduplicate_portable_python.py --platform windows --runtime build/portable-python
       - name: Assemble prebuilt Windows compiler payload
         run: python tools/prepare_release_payload.py --platform windows --output-dir build/release-payload
-      - name: Verify release payload has no default Bagron packages
+      - name: Verify release payload has empty package directory
         shell: pwsh
         run: |
-          if (Test-Path -LiteralPath 'build/release-payload/libs') {
-            throw 'El payload de release no debe incluir librerías Bagron por defecto'
+          if (-not (Test-Path -LiteralPath 'build/release-payload/libs' -PathType Container)) {
+            throw 'El payload de release debe incluir el directorio libs'
+          }
+          $entries = @(Get-ChildItem -LiteralPath 'build/release-payload/libs' -Force)
+          if ($entries.Count -ne 0) {
+            throw 'El directorio libs del payload debe estar vacío'
           }
       - name: Build compiled Windows installer
         shell: pwsh

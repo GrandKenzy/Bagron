@@ -33,3 +33,4 @@
 ## Distribution
 
 - Compiled Bagron installers no longer bundle BagronLab `.lib` packages by default. Projects must install their required packages explicitly or provide project-local libraries.
+- The release payload still includes an empty `libs/` directory as the stable destination for explicitly installed packages.

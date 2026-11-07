@@ -17,7 +17,9 @@ from tools.deduplicate_portable_python import write_manifest
 
 
 class PrebuiltReleaseTests(unittest.TestCase):
-    def _fixture(self, root: Path) -> tuple[Path, Path]:
+    def _fixture(
+        self, root: Path, *, include_prebuilt_libraries: bool = True
+    ) -> tuple[Path, Path]:
         (root / 'core').mkdir(parents=True)
         (root / 'core' / 'version.py').write_text(
             f"BAGRON_VERSION = {BAGRON_VERSION!r}\n", encoding='utf-8'
@@ -49,9 +51,10 @@ class PrebuiltReleaseTests(unittest.TestCase):
         python_bin.parent.mkdir(parents=True)
         python_bin.write_bytes(b'fake-python')
         write_manifest(runtime, platform=platform_name)
-        prebuilt_libraries = root / 'build' / 'prebuilt-libs'
-        prebuilt_libraries.mkdir(parents=True)
-        (prebuilt_libraries / 'gnulibrary.lib').write_bytes(b'fake-lib')
+        if include_prebuilt_libraries:
+            prebuilt_libraries = root / 'build' / 'prebuilt-libs'
+            prebuilt_libraries.mkdir(parents=True)
+            (prebuilt_libraries / 'gnulibrary.lib').write_bytes(b'fake-lib')
         payload = prepare_payload(
             root, root / 'build' / 'release-payload', platform_name=platform_name
         )
@@ -80,6 +83,15 @@ class PrebuiltReleaseTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(aot.read_bytes()).hexdigest(),
                              info['aot_sha256'])
             self.assertTrue(runtime.exists())
+
+    def test_payload_creates_empty_libs_directory_without_prebuilt_libraries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            payload, _ = self._fixture(
+                Path(temporary), include_prebuilt_libraries=False
+            )
+            libraries = payload / 'libs'
+            self.assertTrue(libraries.is_dir())
+            self.assertEqual([], list(libraries.iterdir()))
 
     def test_installer_uses_embedded_payload_without_network(self):
         with tempfile.TemporaryDirectory() as temporary:
