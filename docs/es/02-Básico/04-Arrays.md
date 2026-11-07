@@ -213,16 +213,17 @@ Ambos pueden representar texto, pero no tienen la misma semántica.
 
 | Característica | `char[]` | `chain` |
 |:---|:---|:---|
-| Naturaleza | Array ordinario de `char`. | Cadena estática especial almacenada en rodata. |
+| Naturaleza | Array mutable de bytes de texto `char`. | Cadena estática de bytes UTF-8 almacenada en rodata. |
 | Mutabilidad | Mutable, salvo que use `const`. | Inmutable por definición. |
 | Tamaño | Puede declararse, inferirse o rellenarse. | Se calcula a partir del literal. |
 | Terminación | Solo se reserva `NUL` al inicializar desde un literal de cadena. | Siempre incluye `NUL`. |
 | Arrays o punteros | Puede combinarse con arrays y punteros según el tipo. | No puede combinarse con arrays ni punteros. |
 | Indexación | Segura con índice demostrable; dinámica en `@unsafe`. | Siempre requiere `@unsafe`; un índice literal se valida contra el texto y su `NUL`. |
 
-`char` representa un carácter ASCII. `chain` representa almacenamiento de
-caracteres ASCII terminado en `NUL`, donde `NUL` es el byte cero (`0`) que
-marca el final de la cadena.
+`char` representa un byte de texto, no un punto de código Unicode. `chain`
+representa almacenamiento constante de bytes UTF-8 terminado en `NUL`, donde
+`NUL` es el byte cero (`0`) que marca el final de la cadena. Por ejemplo, `á`
+ocupa más de un byte en UTF-8 y sus bytes se recorren individualmente.
 
 ### El `NUL` adicional
 
@@ -295,8 +296,9 @@ constancia otra vez es redundante e inválido.
 ### Conversión entre `chain` y `char[]`
 
 La conversión permitida es unidireccional. Un `chain` constante con longitud
-conocida puede inicializar explícitamente un `char[]`; el compilador reserva un
-array nuevo, copia sus caracteres y añade el `NUL` final:
+conocida puede inicializar explícitamente un `char[]` cuando el literal contiene
+solo bytes ASCII; el compilador reserva un array nuevo, copia sus caracteres y
+añade el `NUL` final:
 
 ```bg
 text: chain = "Hola"
@@ -313,6 +315,16 @@ func write(data: char[], length: Len_t, size: Size_t) void:
 
 write("Hola")               ; copia temporal, Len_t = 5, Size_t = 1
 ```
+
+Para conservar un literal UTF-8 no ASCII en almacenamiento mutable, `byte[]`
+acepta sus bytes sin añadir `NUL`:
+
+```bg
+utf8: byte[] = "á"
+```
+
+El array contiene los bytes UTF-8 del literal. `Len_t` cuenta bytes, no
+caracteres Unicode.
 
 La copia automática solo vive durante la llamada. No puede convertirse en un
 puntero que escape de ella. La conversión inversa está prohibida: un `char[]`,

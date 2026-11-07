@@ -24,6 +24,34 @@ El padding y la alineación siguen las reglas del backend salvo que se indique
 un decorador de layout. Un `struct` no es un `mold`: leer un campo no
 reinterpreta los bytes de otro campo.
 
+## Campos de texto
+
+Un campo `char` o `char[N]` se lee y se escribe igual que cualquier otro campo
+del `struct`. El tipo no impide el acceso por formar parte de un agregado:
+
+```bg
+struct Text:
+    first: char
+    bytes: char[8]
+
+func first_byte(value: Text) char:
+    return value.bytes[0]
+```
+
+`char` contiene un byte. Si `bytes` almacena UTF-8, un carácter Unicode puede
+ocupar varios elementos y debe procesarse como una secuencia de bytes. El acceso
+a un `struct` local es directo; si se recibe un puntero al `struct`, la función
+debe marcarse `@unsafe` porque el puntero no lleva límites:
+
+```bg
+@unsafe
+func byte_at(value *: Text, index: usize) char:
+    return (value).bytes[index]
+```
+
+`@unsafe` expresa la responsabilidad sobre la dirección y el índice; no bloquea
+la lectura de campos `char` ni de arrays de `char`.
+
 ## Literales designados
 
 Un `struct` puede construirse en una sola operación con los campos que se

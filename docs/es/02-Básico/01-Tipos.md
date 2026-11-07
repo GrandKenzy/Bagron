@@ -17,7 +17,7 @@ tipos cuyo ancho está fijado explícitamente.
 | Punto flotante | `middle` | 16 bits | `±65 504` finitos; flotante binario de precisión media. |
 | Punto flotante | `float` | 32 bits | `±3.402823466 × 10^38` finitos; flotante de precisión simple. |
 | Punto flotante | `double` | 64 bits | `±1.7976931348623157 × 10^308` finitos; flotante de precisión doble. |
-| Carácteres | `char` | 8 bits | `0` a `127` en ASCII; representa un carácter. |
+| Texto de un byte | `char` | 8 bits | Unidad de texto; no representa por sí sola un punto de código Unicode. |
 | Lógico | `bool` | 1 bit lógico | `false` o `true`; almacenamiento y alineación mínimos de 1 byte. |
 | Ausencia de valor | `void` | 0 bits | Sin rango; indica que no existe un valor. |
 | Terminación | `Never` | No almacenable | Tipo de retorno para funciones que no regresan; una llamada `Never` termina el flujo. |
@@ -49,7 +49,7 @@ tipo. No todas son valores escalares ni tienen almacenamiento independiente:
 | Array abierto de parámetro | `T[]` | Vista de un array estático recibida por una función; exige `Len_t` y `Size_t`. No declara memoria dinámica ni puede retornarse. |
 | Buffer administrado | `buffer[N]` o `buffer[]` | Descriptor de bytes dinámico; `buffer[]` solo puede usarse con capacidad inferible o como parámetro. Exige `Len_t` y no admite `Size_t`. |
 | Puntero | `T*`, `T**`, ... | Dirección tipada. Cada nivel se declara explícitamente y sus reglas de constancia son independientes. |
-| Cadena estática | `chain` | Referencia constante a bytes ASCII terminados en `NUL`; no se combina con arrays ni punteros. |
+| Cadena estática | `chain` | Referencia constante a bytes UTF-8 terminados en `NUL`; no se combina con arrays ni punteros. |
 | Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `flags Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. |
 | Descriptor opaco | `opaque Nombre: void*` o `opaque Nombre: entero` | Handle nominal con representación ABI conocida solo por el compilador; no es un puntero ni un entero intercambiable desde el código fuente. |
 
@@ -66,12 +66,18 @@ familias semánticas separadas:
 
 | Tipo | Rango | Uso principal |
 |:---|:---:|:---|
-| `char` | `0` a `127` | Un carácter ASCII o un buffer de texto. |
+| `char` | 8 bits | Un byte de texto; un carácter Unicode puede ocupar varios `char`. |
 | `byte` | `0` a `255` | Un octeto de datos binarios sin interpretación textual. |
 
-`char` se utiliza para texto. Sus arrays pueden inicializarse con literales de
-cadena ASCII y conservan la disciplina del terminador `NUL` cuando representan
-buffers de caracteres.
+`char` es una unidad de un byte. Sus arrays pueden contener los bytes de un
+texto UTF-8 y conservan la disciplina del terminador `NUL` cuando representan
+buffers de caracteres. Indexar un `char[]` devuelve un byte, no un carácter
+Unicode completo.
+
+`chain` conserva el literal como bytes UTF-8 constantes. La conversión implícita
+de un `chain` a `char[]` sigue restringida a literales ASCII; para conservar
+bytes no ASCII en un array inicializado desde un literal, usa `byte[]` o recibe
+el texto en un buffer de caracteres ya rellenado.
 
 `byte` se utiliza para datos crudos: archivos, buffers binarios, bytes de red o
 valores que no deben interpretarse como texto. Un array de `byte` puede contener
@@ -106,7 +112,8 @@ distintos: `byte` y `uint8` siguen siendo tipos distintos.
 
 `chain` y `char[]` son una excepción controlada a la regla de familias. Un
 `chain` constante con longitud conocida puede convertirse al inicializar un
-`char[]` o al adaptarse como argumento de una función que recibe `char[]`;
+`char[]` o al adaptarse como argumento de una función que recibe `char[]` cuando
+su contenido cumple la restricción ASCII;
 Bagron crea una copia mutable y conserva el terminador `NUL`. En una llamada,
 `Len_t` incluye ese terminador y `Size_t` vale `1`.
 

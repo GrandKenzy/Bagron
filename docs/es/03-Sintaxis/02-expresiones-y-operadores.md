@@ -58,9 +58,10 @@ usan `object.method()`; los métodos `@static`, `Type.method()`.
 
 ## Texto
 
-`char[]` es un array mutable de caracteres; `chain` es texto constante en
-rodata. Un `chain` con longitud conocida puede inicializar un `char[]`, pero la
-conversión inversa no existe:
+`char[]` es un array mutable de bytes de texto; `chain` es texto constante en
+rodata codificado como UTF-8. Un `chain` con longitud conocida puede inicializar
+un `char[]` solo cuando el literal contiene bytes ASCII; la conversión inversa
+no existe:
 
 ```bg
 text: chain = "Hola"

@@ -1,6 +1,7 @@
 # 03. `chain` y `buffer`
 
-`chain` representa texto constante y puede pedir solo `Len_t`:
+`chain` representa texto constante como bytes UTF-8 terminados en `NUL` y puede
+pedir solo `Len_t`:
 
 ```bg
 func print_text(text: chain, length: Len_t) void:
@@ -11,7 +12,9 @@ func main() int32:
     return 0
 ```
 
-La longitud incluye el byte `NUL`. Para el literal `"Hola"`, `Len_t` vale `5`.
+La longitud cuenta bytes e incluye el byte `NUL`; no cuenta caracteres Unicode.
+Para el literal `"Hola"`, `Len_t` vale `5`. Para un literal con caracteres
+acentuados, `Len_t` aumenta según su representación UTF-8.
 De forma similar, cuando un literal de texto se pasa como `char[]`, el valor
 `Len_t` sintetizado por el compilador representa la capacidad total del buffer
 incluyendo el terminador `NUL`. Las funciones de procesamiento de texto o de
