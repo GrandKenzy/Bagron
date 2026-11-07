@@ -10,6 +10,7 @@ import zipfile
 from unittest.mock import patch
 
 from core.compiler import CompilationError, Compiler
+from core.compiler.platforms import detect_host_system
 from core.frontend.aot import AotInMemoryParser
 from core.lockfile import update_lockfile
 from core.lockfile import LockfileError, validate_lock_graph
@@ -267,7 +268,7 @@ class LibraryTests(unittest.TestCase):
             pack_library(source, package_path, name='Conditional', version='1.0.0')
 
             self.assertEqual(
-                'windows',
+                detect_host_system(),
                 verify_library(package_path).manifest['targets']['System'],
             )
 
@@ -378,7 +379,9 @@ class LibraryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             package_path = root / 'My.lib'
-            pack_library(self._source(root), package_path)
+            source = self._source(root)
+            expected = (source / 'string.bg').read_bytes()
+            pack_library(source, package_path)
 
             def add_extra(entries):
                 entries['unexpected.bin'] = b'not declared'
@@ -458,14 +461,7 @@ class LibraryTests(unittest.TestCase):
 
             _, rebuilt = extract_library(package_path, root / 'cache')
             self.assertFalse((rebuilt / '.complete').is_symlink())
-            self.assertEqual(
-                b'public func convert() int32:\n'
-                b'    return 42\n'
-                b'public Answer: const int32 = 42\n'
-                b'private func hidden() int32:\n'
-                b'    return 7\n',
-                (rebuilt / 'source' / 'string.bg').read_bytes(),
-            )
+            self.assertEqual(expected, (rebuilt / 'source' / 'string.bg').read_bytes())
 
     def test_unpack_rejects_symlink_destination(self):
         with tempfile.TemporaryDirectory() as directory:
