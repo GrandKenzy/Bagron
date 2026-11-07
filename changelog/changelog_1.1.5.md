@@ -1,5 +1,9 @@
 # Changelog 1.1.5
 
+## Release
+
+- Released on 2026-11-07.
+
 ## Package Security
 
 - Package installation now rejects unsafe package names, non-HTTPS download URLs, missing or malformed SHA-256 checksums, and artifacts whose destination would escape the target `libs/` directory.

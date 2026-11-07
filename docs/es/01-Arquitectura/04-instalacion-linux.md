@@ -24,7 +24,7 @@ sudo apt install clang lld libcurl4
 ## Instalación desde Internet
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.5/install.sh | bash
 ```
 
 El comando descarga el instalador ELF, que instala Bagron en `~/Bagron` y
@@ -60,13 +60,17 @@ bagron --execute examples/01_basico.bg -o build/ejemplo
 
 ## Instalación desde el ejecutable compilado
 
-Descarga `Bagron-1.1.4-linux-x86_64` desde el release, hazlo ejecutable y
+Descarga `Bagron-1.1.5-linux-x86_64` desde el release, hazlo ejecutable y
 ejecútalo:
 
 ```bash
-chmod +x Bagron-1.1.4-linux-x86_64
-./Bagron-1.1.4-linux-x86_64
+chmod +x Bagron-1.1.5-linux-x86_64
+./Bagron-1.1.5-linux-x86_64
 ```
+
+La instalación crea `~/Bagron/libs/` vacía. Instala las dependencias del
+proyecto explícitamente con `bagron package install` o aporta archivos `.lib`
+locales.
 
 Para desinstalar usando el Python portable incluido:
 

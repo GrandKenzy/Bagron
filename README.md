@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.4-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-1.1.5-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -211,7 +211,7 @@ bagron --uninstall
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.4-Setup.exe` y ejecutarlo directamente. La release solo publica
+`Bagron-1.1.5-Setup.exe` y ejecutarlo directamente. La release solo publica
 este instalador ejecutable; las fuentes permanecen disponibles en GitHub.
 
 El instalador compilado incluye un runtime portable de Python 3.14 con
@@ -234,15 +234,15 @@ los proyectos que usen `net` con HTTPS necesitan `libcurl.so.4`. Puede ejecutars
 release publicado:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/GrandKenzy/Bagron/1.1.5/install.sh | bash
 ```
 
 Desde el release puedes descargar el instalador compilado
-`Bagron-1.1.4-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
+`Bagron-1.1.5-linux-x86_64`, hacerlo ejecutable y ejecutarlo:
 
 ```bash
-chmod +x Bagron-1.1.4-linux-x86_64
-./Bagron-1.1.4-linux-x86_64
+chmod +x Bagron-1.1.5-linux-x86_64
+./Bagron-1.1.5-linux-x86_64
 ```
 
 La release solo publica este ejecutable Linux. El instalador coloca los
@@ -267,13 +267,18 @@ bagron --update
 
 ## Instaladores preconstruidos
 
-Los instaladores de la release 1.1.4 incorporan los componentes preparados
+Los instaladores de la release 1.1.5 incorporan los componentes preparados
 por GitHub Actions para cada plataforma: fuentes del compilador, Python 3.14
 portable, `vnma`, dependencias locales (Gram y `llvmlite`) y la biblioteca
 Gram AOT junto con su manifiesto. Su instalación no necesitará descargar
 Gram ni ejecutar `vnma install` o reconstruir el parser; el instalador
 comprobará el bundle antes de crear los lanzadores. La ruta de instalación
 desde fuentes seguirá disponible para desarrolladores.
+
+La instalación crea `libs/` como directorio estable, pero lo deja vacío: los
+paquetes BagronLab ya no se distribuyen por defecto. Instala las dependencias
+del proyecto explícitamente con `bagron package install` o proporciona tus
+propios archivos `.lib` locales.
 
 El empaquetado omite alias duplicados del runtime: Linux reconstruye los
 enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
