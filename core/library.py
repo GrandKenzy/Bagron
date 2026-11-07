@@ -713,7 +713,12 @@ def _validate_source_tree(
         return compiler
 
 
-def _collect_compiler_symbols(compiler, source_root: Path, package_id: str):
+def _collect_compiler_symbols(
+    compiler,
+    source_root: Path,
+    package_id: str,
+    allowed_modules: set[str] | None = None,
+):
     """Serialize the exact symbols assigned by the validating compiler."""
     symbols: list[dict[str, object]] = []
     seen: set[int] = set()
@@ -735,6 +740,14 @@ def _collect_compiler_symbols(compiler, source_root: Path, package_id: str):
         try:
             module = Path(module_path).resolve().relative_to(source_root.resolve()).as_posix()
         except ValueError:
+            continue
+        if (
+            module.startswith(('build/', '.bagron/'))
+            or Path(module).parts[0] in {'build', '.bagron'}
+            or Path(module).name in {'__bagron_pack_main.bg', '__bagron_lib2_main.bg', 'main.bg', '_main.bg'}
+        ):
+            continue
+        if allowed_modules is not None and module not in allowed_modules:
             continue
         if isinstance(symbol, FunctionSymbol):
             kind = 'method' if symbol.is_method else 'function'
@@ -877,8 +890,17 @@ def pack_library(
         link_paths,
         package_id,
     )
+    allowed_modules = {
+        Path(relative).as_posix() for relative, _ in bg_files
+        if Path(relative).name not in {'main.bg', '_main.bg'}
+    }
     modules, _, targets = _collect_source_data(source_root, bg_files)
-    symbols = _collect_compiler_symbols(compiler, compiler.project_root, package_id)
+    symbols = _collect_compiler_symbols(
+        compiler,
+        compiler.project_root,
+        package_id,
+        allowed_modules=allowed_modules,
+    )
     symbol_payload = {
         'format': 1,
         'library_version': 1,
@@ -1065,7 +1087,18 @@ def pack_compiled_library(
         except (CompilationError, BackendError) as error:
             raise LibraryError(f'La compilacion de la lib2 fallo: {error}') from error
 
-        symbols = _collect_compiler_symbols(compiler, root, package_id)
+        allowed_modules = {
+            Path(relative).as_posix() for relative, _ in files
+            if relative.endswith('.bg')
+            and not _is_reserved_native_path(relative)
+            and Path(relative).name not in {'main.bg', '_main.bg', '__bagron_lib2_main.bg'}
+        }
+        symbols = _collect_compiler_symbols(
+            compiler,
+            root,
+            package_id,
+            allowed_modules=allowed_modules,
+        )
         object_relative = f'objects/{object_path.name}'
         artifact_files: list[tuple[str, bytes]] = [
             (object_relative, object_path.read_bytes())
@@ -1287,10 +1320,16 @@ def resolve_library_path(
         candidate = Path(name)
         if candidate.is_absolute():
             return None
-        # ``library`` has one deterministic project-local search root.  Keeping
-        # source modules, native libraries, and binaries on separate paths
-        # avoids accidentally resolving a stale .lib beside main.bg.
-        roots = [project_root.resolve() / 'libs']
+        from core.globvars import BAGRON_ROOT
+
+        # ``library`` checks project-local libs, package-local libs for extracted
+        # dependencies, and falls back to canonical Bagron libs.
+        roots = [
+            project_root.resolve() / 'libs',
+            source.parent.parent.resolve() / 'libs',
+            source.parent.resolve() / 'libs',
+            BAGRON_ROOT.resolve() / 'libs',
+        ]
 
     seen: set[Path] = set()
     for root in roots:

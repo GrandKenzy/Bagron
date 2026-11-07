@@ -23,6 +23,7 @@ from core.frontend import processor as bagron_processor
 from core.library import (
     LibraryError,
     extract_library,
+    extract_library_directives,
     _node_from_data,
     resolve_library_path,
 )
@@ -592,6 +593,8 @@ class Compiler(CompilerState):
                 module = str(item.get('module', ''))
                 kind = str(item.get('kind', ''))
                 llvm_name = item.get('llvm') or item.get('mangled')
+                if module.startswith(('build/', '.bagron/')):
+                    continue
                 if name and module and llvm_name:
                     self.library_symbol_names[
                         (package.package_id, module, kind, name)
@@ -654,6 +657,34 @@ class Compiler(CompilerState):
                         body=str(item.get('body', '')),
                         line=int(item.get('line', 1)),
                     ))
+            main_path = next(
+                (
+                    source_root / candidate
+                    for candidate in ('main.bg', '_main.bg')
+                    if (source_root / candidate).is_file()
+                ),
+                None,
+            )
+            if main_path is not None:
+                source_lines = main_path.read_text(encoding='utf-8').splitlines(keepends=True)
+                selected_lines, cond_errors = preprocess_conditionals(
+                    source_lines,
+                    main_path,
+                    system=self.preprocessor_system,
+                    architecture=self.preprocessor_architecture,
+                )
+                for err in cond_errors:
+                    self.error(err)
+                _, dep_requests, dep_errors = extract_library_directives(
+                    selected_lines,
+                    main_path,
+                    allow=True,
+                )
+                for err in dep_errors:
+                    self.error(err)
+                for dep_request in dep_requests:
+                    ordered.extend(self._load_library(dep_request))
+
             for relative in package.modules:
                 module_path = (extracted / relative).resolve()
                 try:
@@ -673,7 +704,9 @@ class Compiler(CompilerState):
             exports = {
                 str(item.get('name'))
                 for item in package.symbols.get('exports', ())
-                if isinstance(item, dict) and item.get('name')
+                if isinstance(item, dict)
+                and item.get('name')
+                and not str(item.get('module', '')).startswith(('build/', '.bagron/'))
             }
             self.module_exports[synthetic] = exports
             targets = package.targets

@@ -420,5 +420,53 @@ class LibraryTests(unittest.TestCase):
             _safe_member('/absolute/path')
 
 
+    def test_library_dependencies_in_main_loaded_and_not_polluting_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base_source = root / 'base'
+            (base_source / 'modules').mkdir(parents=True)
+            (base_source / 'modules' / 'util.bg').write_text(
+                'public func base_val() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            base_lib = root / 'Base.lib'
+            pack_library(base_source, base_lib, name='Base', version='1.0.0')
+
+            consumer_source = root / 'consumer'
+            (consumer_source / 'libs').mkdir(parents=True)
+            (consumer_source / 'libs' / 'Base.lib').write_bytes(base_lib.read_bytes())
+            (consumer_source / 'main.bg').write_text(
+                'library "Base.lib" as Base\n',
+                encoding='utf-8',
+            )
+            (consumer_source / 'modules').mkdir(parents=True)
+            (consumer_source / 'modules' / 'calc.bg').write_text(
+                'public func calc() int32:\n'
+                '    return Base.base_val() + 1\n',
+                encoding='utf-8',
+            )
+            consumer_lib = root / 'Consumer.lib'
+            pack_library(consumer_source, consumer_lib, name='Consumer', version='1.0.0')
+
+            info = inspect_library(consumer_lib)
+            export_names = {item['name'] for item in info.get('exports', ())}
+            self.assertIn('calc', export_names)
+            self.assertNotIn('base_val', export_names)
+
+            app = root / 'app'
+            (app / 'libs').mkdir(parents=True)
+            (app / 'libs' / 'Consumer.lib').write_bytes(consumer_lib.read_bytes())
+            app_main = app / 'main.bg'
+            app_main.write_text(
+                'library "Consumer.lib" as Consumer\n'
+                'func main() int32:\n'
+                '    return Consumer.calc()\n',
+                encoding='utf-8',
+            )
+            artifact = Compiler().compile(app_main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
+
 if __name__ == '__main__':
     unittest.main()
