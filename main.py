@@ -42,6 +42,15 @@ def _library_help() -> str:
     )
 
 
+def _install_help() -> str:
+    return (
+        'Uso:\n'
+        '  bagron install --library --v1 <source> [--name N] [--version V]\n'
+        '  bagron install --library --v2 <source> [--name N] [--version V]\n'
+        '  bagron install --module <archivo.bg|carpeta>'
+    )
+
+
 def _main_help() -> str:
     return (
         'Uso:\n'
@@ -49,6 +58,8 @@ def _main_help() -> str:
         '  bagron --version\n'
         '  bagron --update                       Actualiza a la última release estable de GitHub.\n'
         '  bagron --uninstall                    Elimina la instalación actual y sus lanzadores.\n\n'
+        'Instalación local (libs y modules):\n'
+        + _install_help() + '\n\n'
         'Soporte de editor (VS Code):\n'
         '  bagron --vscode install                 Instala o reinstala limpiamente la extensión oficial en VS Code.\n\n'
         'Comandos de librería:\n'
@@ -237,6 +248,13 @@ def _library_command(argv: list[str]) -> int:
                 return 2
             source = argv[source_index]
             output = argv[argv.index('-o') + 1]
+            caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+            source_path = Path(source)
+            if not source_path.is_absolute():
+                source_path = (caller_dir / source_path).resolve()
+            output_path = Path(output)
+            if not output_path.is_absolute():
+                output_path = (caller_dir / output_path).resolve()
             name = None
             version = '0.1.0'
             index = 2
@@ -251,7 +269,7 @@ def _library_command(argv: list[str]) -> int:
                     continue
                 index += 1
             packer = pack_compiled_library if version_flag == '--v2' else pack_library
-            result = packer(source, output, name=name, version=version)
+            result = packer(source_path, output_path, name=name, version=version)
             print(result)
             return 0
         if command == 'inspect' and len(argv) == 2:
@@ -275,6 +293,157 @@ def _library_command(argv: list[str]) -> int:
     return 2
 
 
+def _install_command(argv: list[str]) -> int:
+    """Instala una librería en libs/ o un módulo en modules/ reemplazando lo existente."""
+    if len(argv) < 2 or any(flag in argv for flag in ('-h', '--help')):
+        print(_install_help())
+        return 0
+
+    caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+    tokens = argv[1:]
+
+    is_module = (
+        '--module' in tokens
+        or '--modules' in tokens
+        or 'module' in tokens
+        or 'modules' in tokens
+    )
+    is_library = (
+        '--library' in tokens
+        or 'library' in tokens
+        or '--v1' in tokens
+        or '--v2' in tokens
+    )
+
+    if not is_module and not is_library:
+        if any(tok.endswith('.bg') for tok in tokens if not tok.startswith('-')):
+            is_module = True
+        else:
+            is_library = True
+
+    if is_module:
+        module_path_str = None
+        for flag in ('--module', '--modules'):
+            if flag in tokens:
+                idx = tokens.index(flag)
+                if idx + 1 < len(tokens):
+                    module_path_str = tokens[idx + 1]
+                break
+
+        if module_path_str is None:
+            for tok in tokens:
+                if tok not in {'module', 'modules', '--module', '--modules'} and not tok.startswith('-'):
+                    module_path_str = tok
+                    break
+
+        if module_path_str is None:
+            print('Error: Se requiere especificar la ruta del módulo.', file=sys.stderr)
+            print(_install_help(), file=sys.stderr)
+            return 2
+
+        source_path = Path(module_path_str)
+        if not source_path.is_absolute():
+            source_path = (caller_dir / source_path).resolve()
+
+        if not source_path.exists():
+            print(f'Error: No se encontró el módulo: {module_path_str}', file=sys.stderr)
+            return 1
+
+        dest_dir = caller_dir / 'modules'
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        if source_path.is_file():
+            dest_file = dest_dir / source_path.name
+            shutil.copy2(source_path, dest_file)
+            print(dest_file)
+            return 0
+        elif source_path.is_dir():
+            dest_target = dest_dir / source_path.name
+            if dest_target.exists():
+                if dest_target.is_dir():
+                    shutil.rmtree(dest_target)
+                else:
+                    dest_target.unlink()
+            shutil.copytree(source_path, dest_target)
+            print(dest_target)
+            return 0
+        else:
+            print(f'Error: Ruta no válida para módulo: {module_path_str}', file=sys.stderr)
+            return 1
+
+    # Modo librería
+    v1 = '--v1' in tokens
+    v2 = '--v2' in tokens
+    if v1 and v2:
+        print('Error: Solo se puede especificar una versión (--v1 o --v2).', file=sys.stderr)
+        return 2
+
+    name = None
+    version = '0.1.0'
+    library_path_str = None
+
+    idx = 0
+    while idx < len(tokens):
+        tok = tokens[idx]
+        if tok in {'--library', 'library', '--v1', '--v2'}:
+            idx += 1
+        elif tok == '--name' and idx + 1 < len(tokens):
+            name = tokens[idx + 1]
+            idx += 2
+        elif tok == '--version' and idx + 1 < len(tokens):
+            version = tokens[idx + 1]
+            idx += 2
+        elif tok.startswith('-'):
+            idx += 1
+        else:
+            if library_path_str is None:
+                library_path_str = tok
+            idx += 1
+
+    if library_path_str is None:
+        print('Error: Se requiere especificar la ruta de la librería.', file=sys.stderr)
+        print(_install_help(), file=sys.stderr)
+        return 2
+
+    source_path = Path(library_path_str)
+    if not source_path.is_absolute():
+        source_path = (caller_dir / source_path).resolve()
+
+    if not source_path.exists():
+        print(f'Error: No se encontró la librería: {library_path_str}', file=sys.stderr)
+        return 1
+
+    dest_dir = caller_dir / 'libs'
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    if name is None:
+        if source_path.is_file() and source_path.suffix.lower() == '.lib':
+            name = source_path.stem
+        else:
+            name = source_path.name
+
+    dest_file = dest_dir / f'{name}.lib'
+
+    if source_path.is_file() and source_path.suffix.lower() == '.lib':
+        shutil.copy2(source_path, dest_file)
+        print(dest_file)
+        return 0
+
+    if not v1 and not v2:
+        print('Error: Se requiere especificar --v1 o --v2 para empaquetar la librería.', file=sys.stderr)
+        print(_install_help(), file=sys.stderr)
+        return 2
+
+    packer = pack_compiled_library if v2 else pack_library
+    try:
+        result = packer(source_path, dest_file, name=name, version=version)
+        print(result)
+        return 0
+    except LibraryError as error:
+        print(f'Library failed: {error}', file=sys.stderr)
+        return 1
+
+
 def main(*args):
     argv = list(args[0])
     if not argv:
@@ -294,6 +463,9 @@ def main(*args):
 
     if argv[0] in {'library', 'inspect', 'verify', 'unpack'}:
         return _library_command(argv)
+
+    if argv[0] == 'install':
+        return _install_command(argv)
 
     strict_ownership = '--strict-ownership' in argv
     argv = [arg for arg in argv if arg != '--strict-ownership']
