@@ -287,7 +287,7 @@ class PackageCommandTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
-            bagron_root = project / 'Bagron'
+            bagron_root = (project / 'Bagron').resolve()
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
                  mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
                  mock.patch('core.registry.install_package') as install_package:
@@ -305,7 +305,7 @@ class PackageCommandTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
-            bagron_root = project / 'Bagron'
+            bagron_root = (project / 'Bagron').resolve()
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
                  mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
                  mock.patch('core.registry.list_installed_packages') as list_packages:
@@ -327,8 +327,8 @@ class PackageCommandTests(unittest.TestCase):
 
         self.assertEqual(0, result)
         self.assertEqual('network@2.0.0', update.call_args.args[0])
-        self.assertEqual(project / 'vendor', update.call_args.kwargs['target_dir'])
-        self.assertEqual(project / 'bagron.lock', update.call_args.kwargs['lockfile_path'])
+        self.assertEqual((project / 'vendor').resolve(), update.call_args.kwargs['target_dir'])
+        self.assertEqual((project / 'bagron.lock').resolve(), update.call_args.kwargs['lockfile_path'])
 
     def test_package_pull_resolves_a_relative_local_library(self):
         import os
@@ -337,7 +337,7 @@ class PackageCommandTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
-            bagron_root = project / 'Bagron'
+            bagron_root = (project / 'Bagron').resolve()
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
                  mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
                  mock.patch('core.registry.pull_local_packages') as pull:
