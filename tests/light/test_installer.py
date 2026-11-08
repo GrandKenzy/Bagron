@@ -316,7 +316,7 @@ class InstallerTests(unittest.TestCase):
 
             with mock.patch.object(
                 installer, '_latest_release',
-                return_value=('1.1.5', 'https://github.com/example/Bagron.exe'),
+                return_value=('1.1.6', 'https://github.com/example/Bagron.exe'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=fake_download,
             ), mock.patch.object(
@@ -338,10 +338,10 @@ class InstallerTests(unittest.TestCase):
             target = Path(directory) / 'Bagron'
             version_file = target / 'core' / 'version.py'
             version_file.parent.mkdir(parents=True)
-            version_file.write_text("BAGRON_VERSION = '1.1.5'\n", encoding='utf-8')
+            version_file.write_text("BAGRON_VERSION = '1.1.6'\n", encoding='utf-8')
 
             with mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.6', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=AssertionError('download'),
             ):
@@ -400,18 +400,18 @@ class InstallerTests(unittest.TestCase):
         with mock.patch.object(installer.os, 'name', 'nt'), \
              mock.patch.object(installer.platform, 'machine', return_value='ARM64'):
             with self.assertRaises(RuntimeError):
-                installer._release_asset_name('1.1.5')
+                installer._release_asset_name('1.1.6')
 
         with mock.patch.object(installer.os, 'name', 'posix'), \
              mock.patch.object(installer.sys, 'platform', 'linux'), \
              mock.patch.object(installer.platform, 'machine', return_value='aarch64'):
             with self.assertRaises(RuntimeError):
-                installer._release_asset_name('1.1.5')
+                installer._release_asset_name('1.1.6')
 
         with mock.patch.object(installer.os, 'name', 'posix'), \
              mock.patch.object(installer.sys, 'platform', 'darwin'):
             with self.assertRaises(RuntimeError):
-                installer._release_asset_name('1.1.5')
+                installer._release_asset_name('1.1.6')
 
     def test_update_reports_download_and_child_installer_failures(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -421,14 +421,14 @@ class InstallerTests(unittest.TestCase):
                 "BAGRON_VERSION = '1.1.2'\n", encoding='utf-8'
             )
             with mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.6', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset', side_effect=OSError('network down'),
             ):
                 self.assertEqual(1, installer.update(target))
 
             with mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.6', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset',
                 side_effect=lambda url, path: path.write_bytes(
@@ -449,7 +449,7 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(
                 installer.os, 'name', 'nt'
             ), mock.patch.object(
-                installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
+                installer, '_latest_release', return_value=('1.1.6', 'https://example.invalid/asset'),
             ), mock.patch.object(
                 installer, '_download_release_asset',
                 side_effect=lambda url, path: path.write_bytes(
@@ -467,7 +467,7 @@ class InstallerTests(unittest.TestCase):
     def test_windows_update_helper_has_no_visible_find_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            installer_path = root / 'Bagron-1.1.5-Setup.exe'
+            installer_path = root / 'Bagron-1.1.6-Setup.exe'
             installer_path.write_bytes(b'MZinstaller')
             target = root / 'Bagron'
             target.mkdir()
@@ -714,8 +714,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.1.3.md', names)
         self.assertIn('changelog_1.1.4.md', names)
         self.assertIn('changelog_1.1.5.md', names)
+        self.assertIn('changelog_1.1.6.md', names)
         self.assertEqual(
-            10,
+            11,
             sum(name.startswith('changelog_') for name in names),
         )
 
@@ -731,6 +732,8 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('extension/snippets/snippets.json', names)
         self.assertEqual('./extension.js', package['main'])
         self.assertEqual('bagron-language-support', package['name'])
+        self.assertEqual('1.1.5', package['version'])
+        self.assertEqual('assets/icon.png', package['icon'])
 
 
 if __name__ == '__main__':

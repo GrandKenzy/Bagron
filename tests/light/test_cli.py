@@ -23,6 +23,7 @@ class CliVersionTests(unittest.TestCase):
         self.assertIn('bagron package uninstall <nombre>', help_text)
         self.assertIn('bagron package pull <ruta>', help_text)
         self.assertIn('bagron package list', help_text)
+        self.assertIn('--select D', help_text)
         self.assertNotIn('vnma run main.py', help_text)
         self.assertNotIn('El frontend Gram FFI produce GIR', help_text)
         self.assertNotIn('Bagron <archivo.bg>', help_text)
@@ -279,19 +280,39 @@ class CliVersionTests(unittest.TestCase):
 
 
 class PackageCommandTests(unittest.TestCase):
-    def test_package_list_uses_project_local_libs_directory(self):
+    def test_package_install_defaults_to_bagron_root_and_lockfile(self):
         import os
         import tempfile
         from pathlib import Path
 
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
+            bagron_root = project / 'Bagron'
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
+                 mock.patch('core.registry.install_package') as install_package:
+                result = main.main(['package', 'install', 'network'])
+
+        self.assertEqual(0, result)
+        self.assertEqual('network', install_package.call_args.args[0])
+        self.assertEqual(bagron_root / 'libs', install_package.call_args.kwargs['target_dir'])
+        self.assertEqual(bagron_root / 'bagron.lock', install_package.call_args.kwargs['lockfile_path'])
+
+    def test_package_list_uses_bagron_installation_libs_directory_by_default(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            bagron_root = project / 'Bagron'
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
                  mock.patch('core.registry.list_installed_packages') as list_packages:
                 result = main.main(['package', 'list'])
 
         self.assertEqual(0, result)
-        list_packages.assert_called_once_with(target_dir=project / 'libs')
+        list_packages.assert_called_once_with(target_dir=bagron_root / 'libs')
 
     def test_package_update_dispatches_explicit_replacement(self):
         import os
@@ -302,7 +323,7 @@ class PackageCommandTests(unittest.TestCase):
             project = Path(temporary)
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
                  mock.patch('core.registry.update_package') as update:
-                result = main.main(['package', 'update', 'network@2.0.0', '--dir', 'vendor'])
+                result = main.main(['package', 'update', 'network@2.0.0', '--select', 'vendor'])
 
         self.assertEqual(0, result)
         self.assertEqual('network@2.0.0', update.call_args.args[0])
@@ -316,14 +337,16 @@ class PackageCommandTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
+            bagron_root = project / 'Bagron'
             with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.globvars.BAGRON_ROOT', bagron_root), \
                  mock.patch('core.registry.pull_local_packages') as pull:
                 result = main.main(['package', 'pull', 'artifacts/network.lib'])
 
         self.assertEqual(0, result)
         self.assertEqual((project / 'artifacts' / 'network.lib').resolve(), pull.call_args.args[0])
-        self.assertEqual(project / 'libs', pull.call_args.kwargs['target_dir'])
-        self.assertEqual(project / 'bagron.lock', pull.call_args.kwargs['lockfile_path'])
+        self.assertEqual(bagron_root / 'libs', pull.call_args.kwargs['target_dir'])
+        self.assertEqual(bagron_root / 'bagron.lock', pull.call_args.kwargs['lockfile_path'])
 
 
 if __name__ == '__main__':

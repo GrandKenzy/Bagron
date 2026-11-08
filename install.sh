@@ -27,7 +27,7 @@ if [[ "${BAGRON_LOCAL_INSTALL:-0}" == "1" \
     fi
 fi
 
-version="${BAGRON_VERSION:-1.1.5}"
+version="${BAGRON_VERSION:-1.1.6}"
 host_system="$(uname -s 2>/dev/null || true)"
 host_machine="$(uname -m 2>/dev/null || true)"
 if [[ "$host_system" != "Linux" || "$host_machine" != "x86_64" && "$host_machine" != "amd64" ]]; then

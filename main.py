@@ -69,11 +69,11 @@ def _main_help() -> str:
         'Repositorios de alojamiento:\n'
         '  bagron build --hostutils [ruta]          Sincroniza paquetes lib1 de build/*.lib en discentra_central/.\n\n'
         'Gestión de paquetes (Central):\n'
-        '  bagron package install <nombre>          Instala una librería de Central si aún no existe.\n'
-        '  bagron package update <nombre>           Actualiza una librería local desde Central.\n'
-        '  bagron package uninstall <nombre>        Elimina una librería local.\n'
-        '  bagron package pull <ruta>               Importa una librería .lib local.\n'
-        '  bagron package list                      Muestra las librerías locales.\n'
+        '  bagron package install <nombre> [--select D] Instala en BAGRON_ROOT/libs.\n'
+        '  bagron package update <nombre> [--select D]  Actualiza una librería.\n'
+        '  bagron package uninstall <nombre> [--select D] Elimina una librería.\n'
+        '  bagron package pull <ruta> [--select D]    Importa una librería .lib.\n'
+        '  bagron package list [--select D]           Muestra las librerías instaladas.\n'
         '  bagron package info <nombre>             Muestra información de un paquete en Central.\n'
         '  bagron package search <consulta>         Busca paquetes en el catálogo de Central.'
     )
@@ -649,13 +649,14 @@ def _build_command(argv: list[str]) -> int:
 def _package_help() -> str:
     return (
         'Uso:\n'
-        '  bagron package install <nombre>[@version] [--version V] [--dir D] [--registry URL] [--allow-unverified]\n'
-        '  bagron package update <nombre>[@version] [--version V] [--dir D] [--registry URL] [--allow-unverified]\n'
-        '  bagron package uninstall <nombre> [--dir D]\n'
-        '  bagron package pull <archivo.lib|carpeta> [--dir D]\n'
-        '  bagron package list [--dir D]\n'
+        '  bagron package install <nombre>[@version] [--version V] [--select D] [--registry URL] [--allow-unverified]\n'
+        '  bagron package update <nombre>[@version] [--version V] [--select D] [--registry URL] [--allow-unverified]\n'
+        '  bagron package uninstall <nombre> [--select D]\n'
+        '  bagron package pull <archivo.lib|carpeta> [--select D]\n'
+        '  bagron package list [--select D]\n'
         '  bagron package info <nombre>[@version] [--version V] [--registry URL]\n'
         '  bagron package search <consulta> [--registry URL]\n\n'
+        'Por defecto instala en BAGRON_ROOT/libs; --select elige otro directorio (--dir se conserva como alias).\n'
         'install conserva una librería local válida; update es el único comando que la reemplaza.\n'
         'pull importa archivos .lib locales y mantiene bagron.lock cuando corresponde.'
     )
@@ -684,10 +685,14 @@ def _package_command(argv: list[str]) -> int:
         update_package,
     )
 
+    from core.globvars import BAGRON_ROOT
+
     caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
+    bagron_root = Path(BAGRON_ROOT).resolve()
     registry_url = DEFAULT_REGISTRY_URL
     version = None
-    target_dir = caller_dir / 'libs'
+    target_dir = bagron_root / 'libs'
+    lockfile_path = bagron_root / 'bagron.lock'
     spec = None
     allow_unverified = False
 
@@ -706,12 +711,13 @@ def _package_command(argv: list[str]) -> int:
                 return 2
             version = subtokens[idx + 1]
             idx += 2
-        elif tok == '--dir':
+        elif tok in {'--select', '--dir'}:
             if idx + 1 >= len(subtokens):
-                print('Error: --dir requiere una ruta.', file=sys.stderr)
+                print(f'Error: {tok} requiere una ruta.', file=sys.stderr)
                 return 2
             d = Path(subtokens[idx + 1])
             target_dir = d if d.is_absolute() else (caller_dir / d).resolve()
+            lockfile_path = caller_dir / 'bagron.lock'
             idx += 2
         elif tok == '--allow-unverified':
             allow_unverified = True
@@ -741,7 +747,7 @@ def _package_command(argv: list[str]) -> int:
                 target_dir=target_dir,
                 registry_url=registry_url,
                 allow_unverified=allow_unverified,
-                lockfile_path=caller_dir / 'bagron.lock',
+                lockfile_path=lockfile_path,
             )
             return 0
         except RegistryError as error:
@@ -760,7 +766,7 @@ def _package_command(argv: list[str]) -> int:
                 target_dir=target_dir,
                 registry_url=registry_url,
                 allow_unverified=allow_unverified,
-                lockfile_path=caller_dir / 'bagron.lock',
+                lockfile_path=lockfile_path,
             )
             return 0
         except RegistryError as error:
@@ -779,7 +785,7 @@ def _package_command(argv: list[str]) -> int:
             uninstall_package(
                 spec,
                 target_dir=target_dir,
-                lockfile_path=caller_dir / 'bagron.lock',
+                lockfile_path=lockfile_path,
             )
             return 0
         except RegistryError as error:
@@ -801,7 +807,7 @@ def _package_command(argv: list[str]) -> int:
             pull_local_packages(
                 source_path,
                 target_dir=target_dir,
-                lockfile_path=caller_dir / 'bagron.lock',
+                lockfile_path=lockfile_path,
             )
             return 0
         except RegistryError as error:

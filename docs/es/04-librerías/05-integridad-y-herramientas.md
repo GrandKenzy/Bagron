@@ -89,10 +89,10 @@ privados o pruebas controladas.
 
 ## Paquetes locales y Central
 
-`package install` conserva una librería local válida con el mismo nombre; no
-consulta Central ni sustituye su archivo aunque se solicite otra versión. Usa
-`package update` cuando quieras reemplazarla explícitamente con la versión
-resuelta por Central:
+`package install` conserva una librería válida con el mismo nombre en
+`BAGRON_ROOT/libs`; no consulta Central ni sustituye su archivo aunque se
+solicite otra versión. Usa `package update` cuando quieras reemplazarla
+explícitamente con la versión resuelta por Central:
 
 ```powershell
 # Instala solo si string.lib todavía no existe en libs/
@@ -104,6 +104,16 @@ bagron package update string
 # Solicita una versión concreta para la actualización
 bagron package update string@1.1.9
 ```
+
+Todos los comandos `package` usan `BAGRON_ROOT/libs` por defecto. Para guardar
+un paquete en otra ubicación, indica `--select`:
+
+```powershell
+bagron package install string --select .\libs
+bagron package list --select .\libs
+```
+
+La opción histórica `--dir` sigue siendo aceptada como alias de `--select`.
 
 Puedes administrar las librerías ya presentes y traer artefactos que tengas en
 el equipo sin subirlos al registro:
@@ -121,15 +131,18 @@ bagron package uninstall string
 ```
 
 `pull` verifica el contenedor antes de publicarlo de forma atómica y, igual que
-la instalación desde Central, actualiza `bagron.lock`. `uninstall` elimina esa
-entrada solo si ninguna otra dependencia bloqueada requiere la librería.
+la instalación desde Central, actualiza el lockfile asociado al destino.
+`uninstall` elimina esa entrada solo si ninguna otra dependencia bloqueada
+requiere la librería.
 
 ## Lockfile
 
 Si el proyecto contiene `bagron.lock`, cada compilación exige que las
 librerías seleccionadas coincidan con su nombre, versión, formato y SHA-256.
 Una instalación nueva desde Central, `update` y `pull` actualizan ese archivo
-después de validar y publicar el paquete. `uninstall` elimina una entrada
+después de validar y publicar el paquete. Las operaciones globales usan
+`BAGRON_ROOT/bagron.lock`; cuando se indica `--select`, usan el
+`bagron.lock` del proyecto llamador. `uninstall` elimina una entrada
 únicamente cuando no deja dependencias bloqueadas incompletas.
 Los proyectos que administran sus archivos `.lib` directamente pueden continuar
 sin lockfile.

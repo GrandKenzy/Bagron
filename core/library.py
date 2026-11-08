@@ -1945,7 +1945,7 @@ def extract_library_directives(
             continue
         if match is None:
             errors.append(
-                f'{source}:{index + 1}: library requiere "ruta.lib" o '
+                f'{source}:{index + 1}: library requiere "ruta.lib" as Alias o '
                 'nombre_global as Alias'
             )
             transformed.append('\n' if line.endswith(('\n', '\r')) else '')
