@@ -732,7 +732,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('extension/snippets/snippets.json', names)
         self.assertEqual('./extension.js', package['main'])
         self.assertEqual('bagron-language-support', package['name'])
-        self.assertEqual('1.1.5', package['version'])
+        self.assertEqual('1.1.6', package['version'])
         self.assertEqual('assets/icon.png', package['icon'])
 
 

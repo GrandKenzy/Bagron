@@ -3,7 +3,9 @@
 ## Visual Studio Code support
 
 - The Bagron language extension now exposes a red B icon for .bg files and the extension itself.
-- The packaged extension version is 1.1.5 and replaces older copies cleanly during installation.
+- The packaged extension version is 1.1.6 and replaces older copies cleanly during installation.
+- Hover, completion, and definition lookup in modules now inherit the `library`
+  aliases declared by the owning `main.bg`, including active `#if OS` branches.
 
 ## Package management
 
