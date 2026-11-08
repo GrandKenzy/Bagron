@@ -19,6 +19,10 @@ class CliVersionTests(unittest.TestCase):
         self.assertIn('bagron verify <archivo.lib>', help_text)
         self.assertIn('bagron sign <directorio>', help_text)
         self.assertIn('bagron unpack <archivo.lib> <destino>', help_text)
+        self.assertIn('bagron package update <nombre>', help_text)
+        self.assertIn('bagron package uninstall <nombre>', help_text)
+        self.assertIn('bagron package pull <ruta>', help_text)
+        self.assertIn('bagron package list', help_text)
         self.assertNotIn('vnma run main.py', help_text)
         self.assertNotIn('El frontend Gram FFI produce GIR', help_text)
         self.assertNotIn('Bagron <archivo.bg>', help_text)
@@ -272,6 +276,54 @@ class CliVersionTests(unittest.TestCase):
 
                 ret_verify = main.main(['verify', 'mylib'])
                 self.assertEqual(0, ret_verify)
+
+
+class PackageCommandTests(unittest.TestCase):
+    def test_package_list_uses_project_local_libs_directory(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.registry.list_installed_packages') as list_packages:
+                result = main.main(['package', 'list'])
+
+        self.assertEqual(0, result)
+        list_packages.assert_called_once_with(target_dir=project / 'libs')
+
+    def test_package_update_dispatches_explicit_replacement(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.registry.update_package') as update:
+                result = main.main(['package', 'update', 'network@2.0.0', '--dir', 'vendor'])
+
+        self.assertEqual(0, result)
+        self.assertEqual('network@2.0.0', update.call_args.args[0])
+        self.assertEqual(project / 'vendor', update.call_args.kwargs['target_dir'])
+        self.assertEqual(project / 'bagron.lock', update.call_args.kwargs['lockfile_path'])
+
+    def test_package_pull_resolves_a_relative_local_library(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            with mock.patch.dict(os.environ, {'BAGRON_CALLER_DIR': str(project)}), \
+                 mock.patch('core.registry.pull_local_packages') as pull:
+                result = main.main(['package', 'pull', 'artifacts/network.lib'])
+
+        self.assertEqual(0, result)
+        self.assertEqual((project / 'artifacts' / 'network.lib').resolve(), pull.call_args.args[0])
+        self.assertEqual(project / 'libs', pull.call_args.kwargs['target_dir'])
+        self.assertEqual(project / 'bagron.lock', pull.call_args.kwargs['lockfile_path'])
 
 
 if __name__ == '__main__':

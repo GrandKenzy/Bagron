@@ -252,6 +252,28 @@ def validate_lock_graph(
                 )
 
 
+def _write_lockfile_payload(lock_path: Path, payload: dict[str, object]) -> None:
+    """Validate and atomically persist a complete lockfile payload."""
+    validated = _validate(payload)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f'.{lock_path.name}.', suffix='.tmp', dir=lock_path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as handle:
+            json.dump(validated, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write('\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+        if lock_path.is_symlink():
+            raise LockfileError(f'El lockfile de destino es un enlace simbolico: {lock_path}')
+        os.replace(temporary, lock_path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def update_lockfile(
     path: str | Path,
     *,
@@ -307,31 +329,55 @@ def update_lockfile(
             'package_format': package_format,
             'dependencies': dependency_names,
         }
-        validated = _validate(payload)
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=f'.{lock_path.name}.', suffix='.tmp', dir=lock_path.parent
-        )
-        temporary = Path(temporary_name)
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as handle:
-                json.dump(validated, handle, ensure_ascii=False, indent=2, sort_keys=True)
-                handle.write('\n')
-                handle.flush()
-                os.fsync(handle.fileno())
-            if lock_path.is_symlink():
-                raise LockfileError(f'El lockfile de destino es un enlace simbolico: {lock_path}')
-            os.replace(temporary, lock_path)
-        except Exception:
-            temporary.unlink(missing_ok=True)
-            raise
+        _write_lockfile_payload(lock_path, payload)
     return lock_path
+
+
+def remove_lockfile_package(path: str | Path, *, name: str) -> bool:
+    """Remove an unlocked package entry and preserve dependency graph integrity."""
+    raw_lock_path = Path(path)
+    _reject_symlink_ancestors(raw_lock_path)
+    lock_path = raw_lock_path.resolve()
+    package_name = _package_name(name)
+    if not lock_path.exists():
+        return False
+    if lock_path.is_symlink() or not lock_path.is_file():
+        raise LockfileError(f'El lockfile no es un archivo regular: {lock_path}')
+
+    lock_marker = lock_path.with_name(f'.{lock_path.name}.lock')
+    with _lockfile_lock(lock_marker):
+        payload = load_lockfile(lock_path)
+        if payload is None:
+            return False
+        packages = payload.get('packages', {})
+        if not isinstance(packages, dict):
+            raise LockfileError('El lockfile no contiene una tabla packages valida')
+        if package_name not in packages:
+            return False
+
+        dependents: list[str] = []
+        for other_name, other_entry in packages.items():
+            if other_name == package_name or not isinstance(other_entry, dict):
+                continue
+            dependencies = other_entry.get('dependencies', [])
+            if isinstance(dependencies, list) and package_name in dependencies:
+                dependents.append(other_name)
+        if dependents:
+            joined = ', '.join(sorted(dependents))
+            raise LockfileError(
+                f'No se puede eliminar {package_name!r}; lo requieren: {joined}'
+            )
+
+        del packages[package_name]
+        _write_lockfile_payload(lock_path, payload)
+    return True
 
 
 __all__ = [
     'LOCK_FORMAT',
     'LockfileError',
     'load_lockfile',
+    'remove_lockfile_package',
     'update_lockfile',
     'validate_lock_target',
     'validate_locked_package',

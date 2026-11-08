@@ -87,11 +87,50 @@ El contenedor `.lib` también se verifica antes de reemplazar una copia existent
 `bagron package install ... --allow-unverified` queda reservado para registros
 privados o pruebas controladas.
 
+## Paquetes locales y Central
+
+`package install` conserva una librería local válida con el mismo nombre; no
+consulta Central ni sustituye su archivo aunque se solicite otra versión. Usa
+`package update` cuando quieras reemplazarla explícitamente con la versión
+resuelta por Central:
+
+```powershell
+# Instala solo si string.lib todavía no existe en libs/
+bagron package install string
+
+# Descarga y reemplaza string.lib de forma atómica
+bagron package update string
+
+# Solicita una versión concreta para la actualización
+bagron package update string@1.1.9
+```
+
+Puedes administrar las librerías ya presentes y traer artefactos que tengas en
+el equipo sin subirlos al registro:
+
+```powershell
+# Muestra nombre, versión, formato y archivo de las librerías verificadas
+bagron package list
+
+# Importa un archivo .lib o todos los .lib directos de una carpeta
+bagron package pull ruta/a/string.lib
+bagron package pull ruta/a/mis-libs
+
+# Elimina una librería local
+bagron package uninstall string
+```
+
+`pull` verifica el contenedor antes de publicarlo de forma atómica y, igual que
+la instalación desde Central, actualiza `bagron.lock`. `uninstall` elimina esa
+entrada solo si ninguna otra dependencia bloqueada requiere la librería.
+
 ## Lockfile
 
 Si el proyecto contiene `bagron.lock`, cada compilación exige que las
 librerías seleccionadas coincidan con su nombre, versión, formato y SHA-256.
-`bagron package install` actualiza ese archivo después de validar el paquete.
+Una instalación nueva desde Central, `update` y `pull` actualizan ese archivo
+después de validar y publicar el paquete. `uninstall` elimina una entrada
+únicamente cuando no deja dependencias bloqueadas incompletas.
 Los proyectos que administran sus archivos `.lib` directamente pueden continuar
 sin lockfile.
 

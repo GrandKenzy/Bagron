@@ -275,6 +275,12 @@ paquetes BagronLab ya no se distribuyen por defecto. Instala las dependencias
 del proyecto explícitamente con `bagron package install` o proporciona tus
 propios archivos `.lib` locales.
 
+`bagron package install` conserva una librería ya instalada. Usa
+`bagron package update Nombre` para reemplazarla desde Central,
+`bagron package pull ruta/a/lib.lib` para importar un artefacto local,
+`bagron package list` para consultar las librerías del proyecto y
+`bagron package uninstall Nombre` para retirarlas.
+
 El empaquetado omite alias duplicados del entorno de ejecución: Linux reconstruye
 los enlaces simbólicos relativos de Python y sus bibliotecas, mientras que Windows
 crea enlaces físicos cuando el sistema de archivos lo admite (o conserva

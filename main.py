@@ -69,7 +69,11 @@ def _main_help() -> str:
         'Repositorios de alojamiento:\n'
         '  bagron build --hostutils [ruta]          Sincroniza paquetes lib1 de build/*.lib en discentra_central/.\n\n'
         'Gestión de paquetes (Central):\n'
-        '  bagron package install <nombre>          Descarga e instala una librería desde Central.\n'
+        '  bagron package install <nombre>          Instala una librería de Central si aún no existe.\n'
+        '  bagron package update <nombre>           Actualiza una librería local desde Central.\n'
+        '  bagron package uninstall <nombre>        Elimina una librería local.\n'
+        '  bagron package pull <ruta>               Importa una librería .lib local.\n'
+        '  bagron package list                      Muestra las librerías locales.\n'
         '  bagron package info <nombre>             Muestra información de un paquete en Central.\n'
         '  bagron package search <consulta>         Busca paquetes en el catálogo de Central.'
     )
@@ -646,9 +650,14 @@ def _package_help() -> str:
     return (
         'Uso:\n'
         '  bagron package install <nombre>[@version] [--version V] [--dir D] [--registry URL] [--allow-unverified]\n'
+        '  bagron package update <nombre>[@version] [--version V] [--dir D] [--registry URL] [--allow-unverified]\n'
+        '  bagron package uninstall <nombre> [--dir D]\n'
+        '  bagron package pull <archivo.lib|carpeta> [--dir D]\n'
+        '  bagron package list [--dir D]\n'
         '  bagron package info <nombre>[@version] [--version V] [--registry URL]\n'
         '  bagron package search <consulta> [--registry URL]\n\n'
-        'Gestión e instalación de paquetes desde el registro oficial Central.'
+        'install conserva una librería local válida; update es el único comando que la reemplaza.\n'
+        'pull importa archivos .lib locales y mantiene bagron.lock cuando corresponde.'
     )
 
 
@@ -668,7 +677,11 @@ def _package_command(argv: list[str]) -> int:
         RegistryError,
         info_package,
         install_package,
+        list_installed_packages,
+        pull_local_packages,
         search_packages,
+        uninstall_package,
+        update_package,
     )
 
     caller_dir = Path(os.environ.get('BAGRON_CALLER_DIR', os.getcwd())).resolve()
@@ -681,13 +694,22 @@ def _package_command(argv: list[str]) -> int:
     idx = 0
     while idx < len(subtokens):
         tok = subtokens[idx]
-        if tok == '--registry' and idx + 1 < len(subtokens):
+        if tok == '--registry':
+            if idx + 1 >= len(subtokens):
+                print('Error: --registry requiere una URL.', file=sys.stderr)
+                return 2
             registry_url = subtokens[idx + 1]
             idx += 2
-        elif tok == '--version' and idx + 1 < len(subtokens):
+        elif tok == '--version':
+            if idx + 1 >= len(subtokens):
+                print('Error: --version requiere un valor.', file=sys.stderr)
+                return 2
             version = subtokens[idx + 1]
             idx += 2
-        elif tok == '--dir' and idx + 1 < len(subtokens):
+        elif tok == '--dir':
+            if idx + 1 >= len(subtokens):
+                print('Error: --dir requiere una ruta.', file=sys.stderr)
+                return 2
             d = Path(subtokens[idx + 1])
             target_dir = d if d.is_absolute() else (caller_dir / d).resolve()
             idx += 2
@@ -699,9 +721,13 @@ def _package_command(argv: list[str]) -> int:
                 spec = tok
             elif version is None:
                 version = tok
+            else:
+                print(f'Error: argumento inesperado para package: {tok}', file=sys.stderr)
+                return 2
             idx += 1
         else:
-            idx += 1
+            print(f'Error: opción desconocida para package: {tok}', file=sys.stderr)
+            return 2
 
     if subcommand == 'install':
         if not spec:
@@ -720,6 +746,77 @@ def _package_command(argv: list[str]) -> int:
             return 0
         except RegistryError as error:
             print(f'Error al instalar paquete: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand == 'update':
+        if not spec:
+            print('Error: Se requiere especificar el nombre del paquete a actualizar.', file=sys.stderr)
+            print(_package_help(), file=sys.stderr)
+            return 2
+        try:
+            update_package(
+                spec,
+                version,
+                target_dir=target_dir,
+                registry_url=registry_url,
+                allow_unverified=allow_unverified,
+                lockfile_path=caller_dir / 'bagron.lock',
+            )
+            return 0
+        except RegistryError as error:
+            print(f'Error al actualizar paquete: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand == 'uninstall':
+        if not spec:
+            print('Error: Se requiere especificar el nombre del paquete a desinstalar.', file=sys.stderr)
+            print(_package_help(), file=sys.stderr)
+            return 2
+        if version is not None:
+            print('Error: package uninstall no acepta una versión.', file=sys.stderr)
+            return 2
+        try:
+            uninstall_package(
+                spec,
+                target_dir=target_dir,
+                lockfile_path=caller_dir / 'bagron.lock',
+            )
+            return 0
+        except RegistryError as error:
+            print(f'Error al desinstalar paquete: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand == 'pull':
+        if not spec:
+            print('Error: Se requiere especificar un archivo .lib o una carpeta local.', file=sys.stderr)
+            print(_package_help(), file=sys.stderr)
+            return 2
+        if version is not None:
+            print('Error: package pull no acepta una versión.', file=sys.stderr)
+            return 2
+        source_path = Path(spec)
+        if not source_path.is_absolute():
+            source_path = (caller_dir / source_path).resolve()
+        try:
+            pull_local_packages(
+                source_path,
+                target_dir=target_dir,
+                lockfile_path=caller_dir / 'bagron.lock',
+            )
+            return 0
+        except RegistryError as error:
+            print(f'Error al importar paquete local: {error}', file=sys.stderr)
+            return 1
+
+    if subcommand == 'list':
+        if spec is not None or version is not None:
+            print('Error: package list no acepta argumentos posicionales.', file=sys.stderr)
+            return 2
+        try:
+            list_installed_packages(target_dir=target_dir)
+            return 0
+        except RegistryError as error:
+            print(f'Error al listar paquetes: {error}', file=sys.stderr)
             return 1
 
     if subcommand == 'info':

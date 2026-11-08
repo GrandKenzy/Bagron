@@ -13,6 +13,12 @@
 - Central search uses the same bounded HTTPS and redirect policy as package downloads, and malformed catalog responses are rejected.
 - Package manifests and lockfiles validate dependency names and edges strictly; concurrent lockfile updates are serialized.
 
+## Package Workflows
+
+- `bagron package install` now keeps an already verified local library instead of downloading or replacing it. `bagron package update <name>` performs the explicit atomic replacement from Central.
+- `bagron package list` reports verified local libraries, while `bagron package pull <file-or-directory>` imports local `.lib` artifacts without publishing them to Central.
+- `bagron package uninstall <name>` removes a local artifact and its lock entry, but refuses to leave another locked package without a declared dependency.
+
 ## Hosting Tools
 
 - `bagron build --hostutils --dry-run` no longer creates build artifacts, hosting directories, or package metadata while previewing a synchronization.

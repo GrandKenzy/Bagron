@@ -141,6 +141,78 @@ def _validate_package_name(value: str, *, field: str = 'nombre de paquete') -> s
     return name
 
 
+def _split_package_spec(package_spec: str, version_arg: str | None = None) -> tuple[str, str | None]:
+    """Parse a package name with an optional ``@version`` or ``==version`` suffix."""
+    if not isinstance(package_spec, str):
+        raise RegistryError('El nombre de paquete debe ser textual.')
+    name = package_spec.strip()
+    explicit_version = version_arg.strip() if isinstance(version_arg, str) else None
+    if explicit_version == '':
+        raise RegistryError('La versión solicitada no puede estar vacía.')
+
+    separator = '==' if '==' in name else '@' if '@' in name else None
+    if separator is not None:
+        raw_name, inline_version = name.split(separator, 1)
+        name = raw_name.strip()
+        inline_version = inline_version.strip()
+        if not inline_version:
+            raise RegistryError('La versión solicitada no puede estar vacía.')
+        if explicit_version is not None and explicit_version != inline_version:
+            raise RegistryError('La versión indicada en el nombre no coincide con --version.')
+        explicit_version = inline_version
+
+    return _validate_package_name(name, field='Nombre solicitado'), explicit_version
+
+
+def _resolve_target_directory(target_dir: str | Path, *, create: bool) -> Path | None:
+    """Return a real package directory without permitting symbolic-link escapes."""
+    raw_target = Path(target_dir)
+    _reject_symlink_ancestors(raw_target)
+    if create:
+        try:
+            raw_target.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise RegistryError(
+                f'No se pudo crear el directorio de instalación de paquetes: {raw_target}'
+            ) from error
+    elif not raw_target.exists():
+        return None
+
+    if raw_target.is_symlink() or not raw_target.is_dir():
+        raise RegistryError(f'El directorio de instalación de paquetes no es seguro: {raw_target}')
+    target = raw_target.resolve()
+    _reject_symlink_ancestors(target)
+    return target
+
+
+def _destination_file(target_dir: Path, package_name: str) -> Path:
+    """Build a checked destination path for a package archive."""
+    destination = target_dir / f'{package_name}.lib'
+    if destination.is_symlink() or destination.resolve().parent != target_dir:
+        raise RegistryError('La ruta de instalación escapa del directorio destino.')
+    if destination.exists() and not destination.is_file():
+        raise RegistryError(f'El destino del paquete no es un archivo regular: {destination}')
+    return destination
+
+
+def _verify_local_library(path: Path, *, expected_name: str | None = None):
+    """Load a local artifact and require the identity expected by the caller."""
+    if path.is_symlink() or not path.is_file():
+        raise RegistryError(f'La librería local no es un archivo regular: {path}')
+    import core.compiler  # noqa: F401
+    from core.library import LibraryError, verify_library
+
+    try:
+        package = verify_library(path)
+    except LibraryError as error:
+        raise RegistryError(f'La librería local no es válida: {error}') from error
+    if expected_name is not None and package.name != expected_name:
+        raise RegistryError(
+            f'La librería local contiene {package.name!r}; se esperaba {expected_name!r}.'
+        )
+    return package
+
+
 def _validate_https_url(value: str, *, field: str) -> str:
     """Rechaza destinos HTTPS ambiguos o que puedan filtrar credenciales."""
     url = value.strip()
@@ -346,39 +418,27 @@ def install_package(
     public_id: str = DEFAULT_PUBLIC_ID,
     allow_unverified: bool = False,
     lockfile_path: str | Path | None = None,
+    replace_existing: bool = False,
     print_fn: Callable[[str], None] = print,
 ) -> Path:
-    """Resuelve, descarga e instala una librería en el directorio local libs/."""
-    # Soporta sintaxis nombre@version, nombre==version o argumentos separados
-    name = package_spec.strip()
-    version = version_arg.strip() if version_arg else None
-
-    if '==' in name and version is None:
-        parts = name.split('==', 1)
-        name = parts[0].strip()
-        version = parts[1].strip()
-    elif '@' in name and version is None:
-        parts = name.split('@', 1)
-        name = parts[0].strip()
-        version = parts[1].strip()
-
-    _validate_package_name(name, field='Nombre solicitado')
-
-    raw_dest_folder = Path(target_dir)
-    _reject_symlink_ancestors(raw_dest_folder)
-    try:
-        raw_dest_folder.mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        raise RegistryError(
-            f'No se pudo crear el directorio de instalación de paquetes: {raw_dest_folder}'
-        ) from error
-    if raw_dest_folder.is_symlink() or not raw_dest_folder.is_dir():
-        raise RegistryError(
-            f'El directorio de instalación de paquetes no es seguro: {raw_dest_folder}'
-        )
-    dest_folder = raw_dest_folder.resolve()
-    _reject_symlink_ancestors(dest_folder)
+    """Resolve and install a package, preserving a verified local copy by default."""
+    name, version = _split_package_spec(package_spec, version_arg)
+    dest_folder = _resolve_target_directory(target_dir, create=True)
+    assert dest_folder is not None
     lock_path = Path(lockfile_path) if lockfile_path is not None else None
+    dest_file = _destination_file(dest_folder, name)
+
+    if dest_file.exists() and not replace_existing:
+        installed = _verify_local_library(dest_file, expected_name=name)
+        installed_version = installed.manifest.get('version')
+        if not isinstance(installed_version, str) or not installed_version:
+            raise RegistryError(f'La librería local {name!r} no declara una versión válida.')
+        requested = f'; se solicitó v{version}' if version and version.lower() != 'latest' and version != installed_version else ''
+        print_fn(
+            f"[ok] Paquete '{name}' v{installed_version} ya está instalado{requested}. "
+            f'No se descargó; usa `bagron package update {name}` para reemplazarlo.'
+        )
+        return dest_file
 
     print_fn(f"Buscando '{name}'{' v' + version if version else ''} en Central ({registry_url})...")
     package_info = resolve_package(
@@ -478,9 +538,7 @@ def install_package(
 
     if not dest_folder.is_dir() or dest_folder.is_symlink():
         raise RegistryError('El directorio de instalación no es seguro.')
-    dest_file = dest_folder / f'{resolved_name}.lib'
-    if dest_file.is_symlink() or dest_file.resolve().parent != dest_folder:
-        raise RegistryError('La ruta de instalación escapa del directorio destino.')
+    dest_file = _destination_file(dest_folder, resolved_name)
 
     def publish_verified(data_to_publish: bytes) -> Path:
         """Validate the complete lib before atomically replacing the destination."""
@@ -639,6 +697,204 @@ def install_package(
     )
 
 
+def update_package(
+    package_spec: str,
+    version_arg: str | None = None,
+    *,
+    target_dir: str | Path = 'libs',
+    registry_url: str = DEFAULT_REGISTRY_URL,
+    client_id: str = DEFAULT_CLIENT_ID,
+    public_id: str = DEFAULT_PUBLIC_ID,
+    allow_unverified: bool = False,
+    lockfile_path: str | Path | None = None,
+    print_fn: Callable[[str], None] = print,
+) -> Path:
+    """Explicitly resolve and replace a locally installed package from Central."""
+    return install_package(
+        package_spec,
+        version_arg,
+        target_dir=target_dir,
+        registry_url=registry_url,
+        client_id=client_id,
+        public_id=public_id,
+        allow_unverified=allow_unverified,
+        lockfile_path=lockfile_path,
+        replace_existing=True,
+        print_fn=print_fn,
+    )
+
+
+def uninstall_package(
+    package_name: str,
+    *,
+    target_dir: str | Path = 'libs',
+    lockfile_path: str | Path | None = None,
+    print_fn: Callable[[str], None] = print,
+) -> Path:
+    """Remove a local package and its lock entry without breaking locked dependents."""
+    name = _validate_package_name(package_name, field='Nombre solicitado')
+    dest_folder = _resolve_target_directory(target_dir, create=False)
+    if dest_folder is None:
+        raise PackageNotFoundError(f"El paquete local '{name}' no está instalado.")
+    dest_file = _destination_file(dest_folder, name)
+    if not dest_file.exists():
+        raise PackageNotFoundError(f"El paquete local '{name}' no está instalado.")
+
+    fd, previous_name = tempfile.mkstemp(
+        prefix=f'.{dest_file.stem}.removing.', suffix='.lib.tmp', dir=dest_folder
+    )
+    os.close(fd)
+    previous_file = Path(previous_name)
+    previous_file.unlink(missing_ok=True)
+    try:
+        os.replace(dest_file, previous_file)
+        if lockfile_path is not None:
+            from core.lockfile import LockfileError, remove_lockfile_package
+            try:
+                remove_lockfile_package(lockfile_path, name=name)
+            except LockfileError as error:
+                raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
+    except Exception:
+        if previous_file.exists() and not dest_file.exists():
+            os.replace(previous_file, dest_file)
+        raise
+    else:
+        previous_file.unlink(missing_ok=True)
+
+    print_fn(f"[ok] Paquete local '{name}' desinstalado de:")
+    print_fn(f'  {dest_file}')
+    return dest_file
+
+
+def list_installed_packages(
+    *,
+    target_dir: str | Path = 'libs',
+    print_fn: Callable[[str], None] = print,
+) -> list[tuple[str, str, str, Path]]:
+    """List verified local package archives without following unsafe entries."""
+    dest_folder = _resolve_target_directory(target_dir, create=False)
+    if dest_folder is None:
+        print_fn('No hay librerías locales instaladas.')
+        return []
+
+    packages: list[tuple[str, str, str, Path]] = []
+    invalid: list[tuple[Path, str]] = []
+    for candidate in sorted(dest_folder.glob('*.lib'), key=lambda item: item.name.casefold()):
+        if candidate.is_symlink():
+            invalid.append((candidate, 'enlace simbólico'))
+            continue
+        try:
+            package = _verify_local_library(candidate)
+            version = package.manifest.get('version')
+            if not isinstance(version, str) or not version:
+                raise RegistryError('el manifiesto no declara una versión válida')
+            package_format = 'lib2' if package.library_version == 2 else 'lib1'
+            packages.append((package.name, version, package_format, candidate))
+        except RegistryError as error:
+            invalid.append((candidate, str(error)))
+
+    if not packages:
+        print_fn('No hay librerías locales instaladas.')
+    else:
+        print_fn(f'\nLibrerías locales ({len(packages)}):')
+        for name, version, package_format, path in packages:
+            print_fn(f'  • {name} (v{version}, {package_format}) - {path.name}')
+    for path, reason in invalid:
+        print_fn(f'  ! {path.name} se omitió: {reason}')
+    return packages
+
+
+def pull_local_packages(
+    source: str | Path,
+    *,
+    target_dir: str | Path = 'libs',
+    lockfile_path: str | Path | None = None,
+    print_fn: Callable[[str], None] = print,
+) -> list[Path]:
+    """Import one local ``.lib`` or every direct archive from a local directory."""
+    raw_source = Path(source)
+    if not raw_source.exists():
+        raise RegistryError(f'La ruta local no existe: {raw_source}')
+    if raw_source.is_symlink():
+        raise RegistryError(f'La ruta local no puede ser un enlace simbólico: {raw_source}')
+    source_path = raw_source.resolve()
+    if source_path.is_file():
+        if source_path.suffix.lower() != '.lib':
+            raise RegistryError('package pull requiere un archivo .lib o una carpeta que los contenga.')
+        sources = [source_path]
+    elif source_path.is_dir():
+        sources = sorted(
+            (item for item in source_path.iterdir() if item.suffix.lower() == '.lib'),
+            key=lambda item: item.name.casefold(),
+        )
+        if not sources:
+            raise RegistryError(f'No se encontraron archivos .lib en: {source_path}')
+    else:
+        raise RegistryError(f'La ruta local no es un archivo o directorio válido: {source_path}')
+
+    dest_folder = _resolve_target_directory(target_dir, create=True)
+    assert dest_folder is not None
+    lock_path = Path(lockfile_path) if lockfile_path is not None else None
+    from core.lockfile import LockfileError, update_lockfile
+    imported: list[Path] = []
+
+    for source_file in sources:
+        package = _verify_local_library(source_file)
+        name = _validate_package_name(package.name, field='Nombre de librería local')
+        version = package.manifest.get('version')
+        if not isinstance(version, str) or not version:
+            raise RegistryError(f'La librería local {name!r} no declara una versión válida.')
+        package_format = 'lib2' if package.library_version == 2 else 'lib1'
+        dest_file = _destination_file(dest_folder, name)
+        if dest_file.exists():
+            installed = _verify_local_library(dest_file, expected_name=name)
+            installed_version = installed.manifest.get('version', 'desconocida')
+            print_fn(
+                f"[ok] Paquete '{name}' v{installed_version} ya está instalado; "
+                'no se reemplazó con la copia local.'
+            )
+            continue
+
+        data = source_file.read_bytes()
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f'.{dest_file.stem}.', suffix='.lib.tmp', dir=dest_folder
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            _verify_local_library(temporary, expected_name=name)
+            os.replace(temporary, dest_file)
+            try:
+                if lock_path is not None:
+                    dependencies = package.manifest.get('dependencies', [])
+                    if not isinstance(dependencies, list):
+                        raise RegistryError(f'Las dependencias de {name!r} no son válidas.')
+                    update_lockfile(
+                        lock_path,
+                        name=name,
+                        version=version,
+                        source=f'local:{source_file.name}',
+                        package_format=package_format,
+                        data=data,
+                        dependencies=[str(item) for item in dependencies],
+                    )
+            except LockfileError as error:
+                dest_file.unlink(missing_ok=True)
+                raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
+            imported.append(dest_file)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
+        print_fn(f"[ok] Paquete local '{name}' v{version} importado en:")
+        print_fn(f'  {dest_file}')
+
+    return imported
+
+
 def info_package(
     package_spec: str,
     version_arg: str | None = None,
@@ -649,12 +905,7 @@ def info_package(
     print_fn: Callable[[str], None] = print,
 ) -> int:
     """Muestra la ficha técnica de un paquete publicado en Central."""
-    name = package_spec.strip()
-    version = version_arg.strip() if version_arg else None
-    if '@' in name and version is None:
-        parts = name.split('@', 1)
-        name = parts[0].strip()
-        version = parts[1].strip()
+    name, version = _split_package_spec(package_spec, version_arg)
 
     package_info = resolve_package(
         name,

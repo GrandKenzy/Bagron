@@ -15,11 +15,15 @@ from core.registry import (
     RegistryError,
     download_package_artifact,
     install_package,
+    list_installed_packages,
+    pull_local_packages,
     resolve_package,
     search_packages,
+    uninstall_package,
+    update_package,
 )
-from core.library import pack_library
-from core.lockfile import LockfileError
+from core.library import pack_library, verify_library
+from core.lockfile import LockfileError, update_lockfile
 from core.signing import CentralSignatureError, verify_central_artifact
 
 
@@ -256,6 +260,155 @@ class TestRegistryClient(unittest.TestCase):
                 )
                 self.assertTrue(installed_file_eq.is_file())
 
+    def test_install_keeps_verified_existing_package_without_network(self):
+        existing = self._library_bytes('network', '1.0.0')
+        output: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            dest.mkdir()
+            installed = dest / 'network.lib'
+            installed.write_bytes(existing)
+
+            with patch(
+                'core.registry.resolve_package',
+                side_effect=AssertionError('install attempted a network request'),
+            ):
+                result = install_package('network@2.0.0', target_dir=dest, print_fn=output.append)
+
+            self.assertEqual(installed, result)
+            self.assertEqual(existing, installed.read_bytes())
+            self.assertTrue(any('ya está instalado' in line for line in output))
+
+    def test_update_explicitly_replaces_existing_package(self):
+        old_content = self._library_bytes('network', '1.0.0')
+        new_content = self._library_bytes('network', '2.0.0')
+        payload = {
+            'name': 'network',
+            'version': '2.0.0',
+            'package_format': 'lib1',
+            'artifact_checksum': hashlib.sha256(new_content).hexdigest(),
+            'download_url': 'https://central.example.com/pkg/download',
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            dest.mkdir()
+            installed = dest / 'network.lib'
+            installed.write_bytes(old_content)
+
+            with patch('core.registry.resolve_package', return_value=payload), \
+                 patch('core.registry.download_package_artifact', return_value=new_content):
+                result = update_package('network', target_dir=dest)
+
+            self.assertEqual(installed, result)
+            self.assertEqual('2.0.0', verify_library(installed).manifest['version'])
+
+    def test_pull_imports_verified_local_library_and_updates_lockfile(self):
+        content = self._library_bytes('network', '1.0.0')
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / 'network.lib'
+            source.write_bytes(content)
+            target = root / 'project' / 'libs'
+            lock_path = root / 'project' / 'bagron.lock'
+
+            imported = pull_local_packages(source, target_dir=target, lockfile_path=lock_path)
+
+            self.assertEqual([target / 'network.lib'], imported)
+            self.assertEqual(content, (target / 'network.lib').read_bytes())
+            lock = json.loads(lock_path.read_text(encoding='utf-8'))
+            self.assertEqual('1.0.0', lock['packages']['network']['version'])
+            self.assertEqual('local:network.lib', lock['packages']['network']['source'])
+
+    def test_pull_preserves_an_existing_verified_library(self):
+        old_content = self._library_bytes('network', '1.0.0')
+        new_content = self._library_bytes('network', '2.0.0')
+        output: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            source = root / 'network.lib'
+            source.write_bytes(new_content)
+            target = root / 'libs'
+            target.mkdir()
+            (target / 'network.lib').write_bytes(old_content)
+
+            imported = pull_local_packages(source, target_dir=target, print_fn=output.append)
+
+            self.assertEqual([], imported)
+            self.assertEqual(old_content, (target / 'network.lib').read_bytes())
+            self.assertTrue(any('no se reemplazó' in line for line in output))
+
+    def test_list_reports_verified_local_packages(self):
+        content = self._library_bytes('network', '1.0.0')
+        output: list[str] = []
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target = Path(tmp_dir) / 'libs'
+            target.mkdir()
+            (target / 'network.lib').write_bytes(content)
+
+            packages = list_installed_packages(target_dir=target, print_fn=output.append)
+
+            self.assertEqual(1, len(packages))
+            self.assertEqual(('network', '1.0.0', 'lib1'), packages[0][:3])
+            self.assertTrue(any('network (v1.0.0, lib1)' in line for line in output))
+
+    def test_uninstall_removes_package_and_lockfile_entry(self):
+        content = self._library_bytes('network', '1.0.0')
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / 'libs'
+            target.mkdir()
+            installed = target / 'network.lib'
+            installed.write_bytes(content)
+            lock_path = root / 'bagron.lock'
+            update_lockfile(
+                lock_path,
+                name='network',
+                version='1.0.0',
+                source='local:network.lib',
+                package_format='lib1',
+                data=content,
+            )
+
+            uninstall_package('network', target_dir=target, lockfile_path=lock_path)
+
+            self.assertFalse(installed.exists())
+            lock = json.loads(lock_path.read_text(encoding='utf-8'))
+            self.assertNotIn('network', lock['packages'])
+
+    def test_uninstall_preserves_package_required_by_a_locked_dependent(self):
+        dependency = self._library_bytes('network', '1.0.0')
+        application = self._library_bytes('application', '1.0.0')
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            target = root / 'libs'
+            target.mkdir()
+            installed = target / 'network.lib'
+            installed.write_bytes(dependency)
+            (target / 'application.lib').write_bytes(application)
+            lock_path = root / 'bagron.lock'
+            update_lockfile(
+                lock_path,
+                name='network',
+                version='1.0.0',
+                source='local:network.lib',
+                package_format='lib1',
+                data=dependency,
+            )
+            update_lockfile(
+                lock_path,
+                name='application',
+                version='1.0.0',
+                source='local:application.lib',
+                package_format='lib1',
+                data=application,
+                dependencies=['network'],
+            )
+
+            with self.assertRaisesRegex(RegistryError, 'lo requieren'):
+                uninstall_package('network', target_dir=target, lockfile_path=lock_path)
+
+            self.assertEqual(dependency, installed.read_bytes())
+
     def test_invalid_artifact_does_not_replace_existing_package(self):
         valid = self._library_bytes('network', '1.0.0')
         invalid = b'BGLIB1\0\0not-a-package'
@@ -274,7 +427,7 @@ class TestRegistryClient(unittest.TestCase):
             with patch('core.registry.resolve_package', return_value=payload), \
                  patch('core.registry.download_package_artifact', return_value=invalid):
                 with self.assertRaises(RegistryError):
-                    install_package('network', target_dir=dest)
+                    update_package('network', target_dir=dest)
             self.assertEqual(valid, existing.read_bytes())
 
     def test_lockfile_failure_rolls_back_package_replacement(self):
@@ -299,7 +452,7 @@ class TestRegistryClient(unittest.TestCase):
                      side_effect=LockfileError('locked'),
                  ):
                 with self.assertRaises(RegistryError):
-                    install_package(
+                    update_package(
                         'network',
                         target_dir=dest,
                         lockfile_path=Path(tmp_dir) / 'bagron.lock',
