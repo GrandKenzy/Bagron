@@ -18,7 +18,7 @@
 - `bagron build --hostutils --dry-run` no longer creates build artifacts, hosting directories, or package metadata while previewing a synchronization.
 - Hosting metadata files are written through temporary files and atomic replacement.
 - Generated library artifacts are verified in a temporary location before they replace an existing build artifact.
-- Hostutils now prompts only for packages whose artifact changed, accepts a custom `MAJOR.MINOR.PATCH` version, and uses the next patch when the prompt is left empty. Central metadata stays aligned with the internal version of lib1 packages; lib2 packages must be rebuilt when their version changes.
+- Hostutils now prompts only for packages whose artifact changed, accepts a custom `MAJOR.MINOR.PATCH` version, and uses the next patch when the prompt is left empty. Central publishing is restricted to lib1 packages, and its metadata stays aligned with each package's internal version.
 
 ## Libraries and Imports
 

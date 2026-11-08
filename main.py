@@ -67,7 +67,7 @@ def _main_help() -> str:
         'Comandos de librería:\n'
         + _library_help() + '\n\n'
         'Repositorios de alojamiento:\n'
-        '  bagron build --hostutils [ruta]          Sincroniza versiones y hashes de build/ en discentra_central/.\n\n'
+        '  bagron build --hostutils [ruta]          Sincroniza paquetes lib1 de build/*.lib en discentra_central/.\n\n'
         'Gestión de paquetes (Central):\n'
         '  bagron package install <nombre>          Descarga e instala una librería desde Central.\n'
         '  bagron package info <nombre>             Muestra información de un paquete en Central.\n'
@@ -590,7 +590,7 @@ def _build_help() -> str:
     return (
         'Uso:\n'
         '  bagron build --hostutils [directorio] [--auto-patch] [--dry-run] [--set-version PKG=VER]\n\n'
-        '  Sincroniza los artefactos de build/ con discentra_central/ (packages.toml y manifest.toml).'
+        '  Sincroniza paquetes lib1 de build/*.lib con discentra_central/ (packages.toml y manifest.toml).'
     )
 
 

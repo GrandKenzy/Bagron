@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from core.hosting import (
+    HostingError,
     _atomic_write_texts,
     _pack_library_atomically,
     bump_semver_patch,
@@ -12,14 +13,35 @@ from core.hosting import (
     inspect_build_artifact,
     run_hostutils,
 )
+from core.library import pack_library
 
 
 class TestHostUtils(unittest.TestCase):
+    def _write_lib1(
+        self,
+        source_root: Path,
+        artifact: Path,
+        *,
+        name: str,
+        body: str,
+        version: str = '1.0.0',
+    ) -> None:
+        source_root.mkdir(parents=True, exist_ok=True)
+        (source_root / 'main.bg').write_text(
+            f'func answer() int32:\n    return {body}\n',
+            encoding='utf-8',
+        )
+        pack_library(source_root, artifact, name=name, version=version)
+
     def test_bump_semver_patch(self):
         self.assertEqual(bump_semver_patch('1.1.4'), '1.1.5')
         self.assertEqual(bump_semver_patch('2.0.0'), '2.0.1')
-        self.assertEqual(bump_semver_patch('0.1'), '0.1.1')
-        self.assertEqual(bump_semver_patch('1'), '1.0.1')
+        with self.assertRaises(HostingError):
+            bump_semver_patch('0.1')
+        with self.assertRaises(HostingError):
+            bump_semver_patch('1')
+        with self.assertRaises(HostingError):
+            bump_semver_patch('1.2.x')
 
     def test_compute_author_signature(self):
         sig = compute_author_signature('Author', 'mypkg', '1.0.0', 'abc123sha')
@@ -34,9 +56,10 @@ class TestHostUtils(unittest.TestCase):
             build_dir.mkdir()
             central_dir.mkdir()
 
-            # Create dummy build artifact
-            art_file = build_dir / 'sample'
-            art_file.write_bytes(b'dummy content 1')
+            # Create a valid lib1 build artifact.
+            art_file = build_dir / 'sample.lib'
+            source_dir = base / 'sample-source'
+            self._write_lib1(source_dir, art_file, name='sample', body='1')
 
             # Create manifest.json
             manifest_json = central_dir / 'manifest.json'
@@ -76,20 +99,97 @@ class TestHostUtils(unittest.TestCase):
             self.assertEqual(packages_toml, packages_toml_2)
 
             # Modify artifact
-            art_file.write_bytes(b'dummy content 2 (modified)')
+            self._write_lib1(source_dir, art_file, name='sample', body='2')
 
-            # Third run: modified artifact with interactive mock input
+            # Third run: modified artifact with the short interactive prompt.
+            prompts = []
+
             def mock_input(prompt: str) -> str:
-                return '1.2.0'
+                prompts.append(prompt)
+                return ''
 
             ret3 = run_hostutils(base, input_fn=mock_input)
             self.assertEqual(ret3, 0)
+            self.assertEqual(['set version from sample 1.0.0: '], prompts)
 
             packages_toml_3 = (central_dir / 'packages.toml').read_text(encoding='utf-8')
             manifest_toml_3 = (central_dir / 'manifest.toml').read_text(encoding='utf-8')
 
-            self.assertIn('version = "1.2.0"', packages_toml_3)
+            self.assertIn('version = "1.0.1"', packages_toml_3)
             self.assertNotEqual(manifest_toml, manifest_toml_3)
+
+            # Fourth run: invalid versions are rejected and requested again.
+            self._write_lib1(source_dir, art_file, name='sample', body='3', version='1.0.1')
+            values = iter(['1.2', '1.2.2'])
+
+            def invalid_then_valid(prompt: str) -> str:
+                prompts.append(prompt)
+                return next(values)
+
+            ret4 = run_hostutils(base, input_fn=invalid_then_valid)
+            self.assertEqual(ret4, 0)
+
+            packages_toml_4 = (central_dir / 'packages.toml').read_text(encoding='utf-8')
+            self.assertIn('version = "1.2.2"', packages_toml_4)
+            self.assertEqual(
+                ['set version from sample 1.0.0: ', 'set version from sample 1.0.1: ',
+                 'set version from sample 1.0.1: '],
+                prompts,
+            )
+
+    def test_new_package_does_not_prompt_for_a_version(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / 'build').mkdir()
+            (base / 'discentra_central').mkdir()
+            self._write_lib1(
+                base / 'sample-source',
+                base / 'build' / 'sample.lib',
+                name='sample',
+                body='1',
+            )
+
+            prompts = []
+
+            def unexpected_prompt(prompt: str) -> str:
+                prompts.append(prompt)
+                raise AssertionError('un paquete nuevo no debe solicitar versión')
+
+            self.assertEqual(run_hostutils(base, input_fn=unexpected_prompt), 0)
+            self.assertEqual([], prompts)
+
+    def test_set_version_requires_a_valid_semver(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / 'build').mkdir()
+            (base / 'discentra_central').mkdir()
+            artifact = base / 'build' / 'sample.lib'
+            source_dir = base / 'sample-source'
+            self._write_lib1(source_dir, artifact, name='sample', body='1')
+            self.assertEqual(run_hostutils(base, auto_patch=True), 0)
+            self._write_lib1(source_dir, artifact, name='sample', body='2')
+
+            with self.assertRaises(HostingError):
+                run_hostutils(base, set_versions={'sample': '1.2'})
+
+    def test_interactive_prompt_uses_explicit_version(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            (base / 'build').mkdir()
+            (base / 'discentra_central').mkdir()
+            artifact = base / 'build' / 'sample.lib'
+            source_dir = base / 'sample-source'
+            self._write_lib1(source_dir, artifact, name='sample', body='1')
+            self.assertEqual(run_hostutils(base, auto_patch=True), 0)
+            self._write_lib1(source_dir, artifact, name='sample', body='2')
+
+            self.assertEqual(
+                run_hostutils(base, input_fn=lambda prompt: '1.2.2'),
+                0,
+            )
+            packages = (base / 'discentra_central' / 'packages.toml').read_text(encoding='utf-8')
+            self.assertIn('version = "1.2.2"', packages)
+
 
     def test_atomic_library_packaging_preserves_existing_artifact_on_failure(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
