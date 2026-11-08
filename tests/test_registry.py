@@ -266,7 +266,7 @@ class TestRegistryClient(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             dest = Path(tmp_dir) / 'libs'
             dest.mkdir()
-            installed = dest / 'network.lib'
+            installed = (dest / 'network.lib').resolve()
             installed.write_bytes(existing)
 
             with patch(
@@ -292,7 +292,7 @@ class TestRegistryClient(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             dest = Path(tmp_dir) / 'libs'
             dest.mkdir()
-            installed = dest / 'network.lib'
+            installed = (dest / 'network.lib').resolve()
             installed.write_bytes(old_content)
 
             with patch('core.registry.resolve_package', return_value=payload), \
@@ -308,7 +308,7 @@ class TestRegistryClient(unittest.TestCase):
             root = Path(tmp_dir)
             source = root / 'network.lib'
             source.write_bytes(content)
-            target = root / 'project' / 'libs'
+            target = (root / 'project' / 'libs').resolve()
             lock_path = root / 'project' / 'bagron.lock'
 
             imported = pull_local_packages(source, target_dir=target, lockfile_path=lock_path)
