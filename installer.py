@@ -14,7 +14,7 @@ import io
 import json
 import os
 import platform
-from pathlib import Path
+from pathlib import Path, PurePath
 from pathlib import PurePosixPath
 import re
 import shutil
@@ -992,7 +992,14 @@ def _running_from_installation(target_dir: Path) -> bool:
 
 def _resolve_local_target(target_dir: Path) -> Path:
     """Resolve an installation path without following a user-controlled link."""
-    raw_target = Path(target_dir).expanduser()
+    # Preserve an already materialized path class. Tests and callers may
+    # simulate another host through ``os.name`` without changing the actual
+    # filesystem, and rebuilding a POSIX path as WindowsPath would fail there.
+    raw_target = (
+        target_dir.expanduser()
+        if isinstance(target_dir, PurePath)
+        else Path(target_dir).expanduser()
+    )
     for candidate in (raw_target, *raw_target.parents):
         if candidate.is_symlink():
             raise OSError(f'La ruta de instalación contiene un enlace simbólico: {candidate}')
