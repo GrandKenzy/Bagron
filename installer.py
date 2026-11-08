@@ -13,13 +13,17 @@ import hashlib
 import io
 import json
 import os
+import platform
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -51,6 +55,171 @@ FILES_TO_COPY = (
     'install.sh',
 )
 EMPTY_DIRS = ('libs',)
+_PREBUILT_MANAGED_PATHS = (
+    'core',
+    'tools',
+    'vendor',
+    '.runtime',
+    'build/aot',
+    'examples',
+    'docs',
+    'badge',
+    'changelog',
+    'bin',
+    'main.py',
+    'installer.py',
+    'README.md',
+    'LICENSE',
+    'install.sh',
+    'vnma.toml',
+    'bagron-prebuilt.json',
+)
+_LEGACY_INSTALL_PATHS = ('modules', 'vnma.lock')
+_MAX_RELEASE_METADATA_BYTES = 4 * 1024 * 1024
+_MAX_RELEASE_ASSET_BYTES = 512 * 1024 * 1024
+_MAX_SOURCE_ARCHIVE_BYTES = 256 * 1024 * 1024
+_MAX_SOURCE_ARCHIVE_ENTRIES = 20_000
+_MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+_WINDOWS_RESERVED_NAMES = {
+    'CON', 'PRN', 'AUX', 'NUL',
+    *(f'COM{index}' for index in range(1, 10)),
+    *(f'LPT{index}' for index in range(1, 10)),
+}
+
+
+def _validate_release_https_url(value: str, *, field: str) -> str:
+    """Validate a release URL before allowing the installer to follow it."""
+    if not isinstance(value, str) or not value or any(character.isspace() for character in value):
+        raise ValueError(f'{field} debe ser una URL HTTPS absoluta.')
+    parsed = urllib.parse.urlparse(value)
+    try:
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as error:
+        raise ValueError(f'{field} contiene un puerto invalido.') from error
+    if (
+        parsed.scheme.lower() != 'https'
+        or not parsed.netloc
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError(f'{field} debe ser una URL HTTPS absoluta.')
+    return value
+
+
+class _ReleaseRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep update downloads on HTTPS and do not leak request credentials."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_release_https_url(newurl, field='La redirección de GitHub')
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is None:
+            return None
+        old_host = urllib.parse.urlparse(req.full_url).netloc.lower()
+        new_host = urllib.parse.urlparse(newurl).netloc.lower()
+        if old_host != new_host:
+            for header in ('Authorization', 'Cookie', 'Accept'):
+                redirected.remove_header(header)
+        return redirected
+
+
+_RELEASE_OPENER = urllib.request.build_opener(_ReleaseRedirectHandler())
+
+
+def _open_release_url(request: urllib.request.Request, *, timeout: int):
+    """Open a release request through the HTTPS-only redirect policy."""
+    return _RELEASE_OPENER.open(request, timeout=timeout)
+
+
+def _read_release_limited(response, *, limit: int, context: str) -> bytes:
+    """Read release metadata or an asset without unbounded memory growth."""
+    headers = getattr(response, 'headers', None)
+    content_length = headers.get('Content-Length') if hasattr(headers, 'get') else None
+    if isinstance(content_length, (str, int)) and content_length:
+        try:
+            if int(content_length) > limit:
+                raise OSError(f'{context} supera el límite de tamaño permitido.')
+        except ValueError as error:
+            raise OSError(f'{context} tiene un Content-Length inválido.') from error
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = response.read(min(1024 * 1024, limit - total + 1))
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise OSError(f'{context} supera el límite de tamaño permitido.')
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
+def _stream_release_limited(response, output, *, limit: int, context: str) -> int:
+    """Stream a release asset to disk while enforcing its size limit."""
+    headers = getattr(response, 'headers', None)
+    content_length = headers.get('Content-Length') if hasattr(headers, 'get') else None
+    if isinstance(content_length, (str, int)) and content_length:
+        try:
+            if int(content_length) > limit:
+                raise OSError(f'{context} supera el límite de tamaño permitido.')
+        except ValueError as error:
+            raise OSError(f'{context} tiene un Content-Length inválido.') from error
+
+    total = 0
+    while True:
+        chunk = response.read(min(1024 * 1024, limit - total + 1))
+        if not chunk:
+            return total
+        total += len(chunk)
+        if total > limit:
+            raise OSError(f'{context} supera el límite de tamaño permitido.')
+        output.write(chunk)
+
+
+def _safe_release_member(name: str) -> PurePosixPath:
+    """Validate a GitHub source-archive member for all supported filesystems."""
+    if not isinstance(name, str) or not name or '\x00' in name:
+        raise OSError(f'La ruta del ZIP de fuentes no es válida: {name!r}')
+    if '\\' in name or ':' in name or name.startswith('/'):
+        raise OSError(f'La ruta del ZIP de fuentes escapa de su raíz: {name!r}')
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in {'.', '..'} for part in path.parts):
+        raise OSError(f'La ruta del ZIP de fuentes escapa de su raíz: {name!r}')
+    canonical = path.as_posix()
+    if name.endswith('/'):
+        canonical += '/'
+    if canonical != name:
+        raise OSError(f'La ruta del ZIP de fuentes no es canónica: {name!r}')
+    for part in path.parts:
+        if part.rstrip(' .') != part:
+            raise OSError(f'La ruta del ZIP contiene un nombre Windows inválido: {name!r}')
+        if part.split('.', 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+            raise OSError(f'La ruta del ZIP contiene un nombre reservado: {name!r}')
+    return path
+
+
+def _release_asset_magic() -> bytes:
+    """Return the executable signature expected for the current release target."""
+    if os.name == 'nt':
+        return b'MZ'
+    if sys.platform == 'linux':
+        return b'\x7fELF'
+    return b''
+
+
+def _host_release_platform() -> str:
+    """Return the platform for which this repository publishes a frozen installer."""
+    if os.name == 'nt':
+        return 'windows'
+    if sys.platform == 'linux':
+        return 'linux'
+    raise RuntimeError(
+        f'Bagron no publica todavía un instalador preconstruido para {sys.platform}; '
+        'usa la instalación desde fuentes en este host.'
+    )
 
 
 def _runtime_python_path(runtime_dir: Path) -> Path:
@@ -542,6 +711,113 @@ exec "$python_bin" -m vnma run main.py "$@"
     (bin_dir / 'bagron.ps1').write_text(ps1_content, encoding='utf-8')
 
 
+def _extract_github_source_zip(data: bytes, target_dir: Path) -> None:
+    """Validate and safely extract the tagged source archive into the target."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(data), 'r')
+    except (OSError, zipfile.BadZipFile) as error:
+        raise OSError(f'El ZIP de fuentes no es válido: {error}') from error
+
+    try:
+        infos = archive.infolist()
+        if not infos:
+            raise OSError('El ZIP de fuentes está vacío.')
+        if len(infos) > _MAX_SOURCE_ARCHIVE_ENTRIES:
+            raise OSError('El ZIP de fuentes contiene demasiadas entradas.')
+
+        root_names: set[str] = set()
+        entries: list[tuple[zipfile.ZipInfo, PurePosixPath, bool]] = []
+        seen: set[str] = set()
+        file_entries: set[str] = set()
+        directory_entries: set[str] = set()
+        total_size = 0
+
+        for info in infos:
+            safe = _safe_release_member(info.filename)
+            if not safe.parts:
+                raise OSError('El ZIP de fuentes contiene una ruta vacía.')
+            root_names.add(safe.parts[0].casefold())
+            if stat.S_ISLNK((info.external_attr >> 16) & 0xFFFF):
+                raise OSError(f'El ZIP de fuentes contiene un enlace simbólico: {info.filename!r}')
+            is_directory = info.is_dir() or info.filename.endswith('/')
+            if len(safe.parts) == 1:
+                if not is_directory:
+                    raise OSError('La raíz del ZIP de fuentes debe ser un directorio.')
+                continue
+
+            relative = PurePosixPath(*safe.parts[1:])
+            key = relative.as_posix().casefold()
+            if key in seen:
+                raise OSError(f'El ZIP de fuentes contiene entradas duplicadas: {info.filename!r}')
+            for parent in relative.parents:
+                parent_key = parent.as_posix().casefold()
+                if parent_key != '.' and parent_key in file_entries:
+                    raise OSError(
+                        f'El ZIP de fuentes mezcla un archivo y una carpeta: {info.filename!r}'
+                    )
+            if is_directory:
+                if key in file_entries:
+                    raise OSError(
+                        f'El ZIP de fuentes mezcla un archivo y una carpeta: {info.filename!r}'
+                    )
+                directory_entries.add(key)
+            else:
+                if info.flag_bits & 0x1:
+                    raise OSError(f'El ZIP de fuentes contiene una entrada cifrada: {info.filename!r}')
+                if info.file_size < 0 or info.compress_size < 0:
+                    raise OSError(f'El ZIP de fuentes tiene un tamaño inválido: {info.filename!r}')
+                total_size += info.file_size
+                if total_size > _MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES:
+                    raise OSError('El ZIP de fuentes supera el límite descomprimido permitido.')
+                file_entries.add(key)
+            seen.add(key)
+            entries.append((info, relative, is_directory))
+
+        if len(root_names) != 1:
+            raise OSError('El ZIP de fuentes debe contener una única carpeta raíz.')
+        expected_root = f'bagron-{BAGRON_VERSION}'.casefold()
+        if root_names != {expected_root}:
+            raise OSError('El ZIP de fuentes no corresponde a la versión solicitada.')
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for info, relative, is_directory in entries:
+            output = target_dir.joinpath(*relative.parts)
+            _assert_managed_path_is_local(target_dir, output)
+            if is_directory:
+                if output.is_symlink() or (output.exists() and not output.is_dir()):
+                    raise OSError(f'La ruta de extracción no es un directorio seguro: {output}')
+                output.mkdir(parents=True, exist_ok=True)
+                continue
+            if output.is_symlink() or output.is_dir():
+                raise OSError(f'La ruta de extracción no es un archivo seguro: {output}')
+            output.parent.mkdir(parents=True, exist_ok=True)
+            _assert_managed_path_is_local(target_dir, output)
+            fd, temporary_name = tempfile.mkstemp(
+                prefix=f'.{output.name}.', suffix='.download', dir=output.parent
+            )
+            temporary = Path(temporary_name)
+            try:
+                copied = 0
+                with os.fdopen(fd, 'wb') as destination, archive.open(info, 'r') as source:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        copied += len(chunk)
+                        if copied > info.file_size:
+                            raise OSError(f'El ZIP de fuentes excede el tamaño declarado: {info.filename!r}')
+                        destination.write(chunk)
+                    if copied != info.file_size:
+                        raise OSError(f'El ZIP de fuentes está truncado: {info.filename!r}')
+                    destination.flush()
+                    os.fsync(destination.fileno())
+                os.replace(temporary, output)
+            finally:
+                temporary.unlink(missing_ok=True)
+    finally:
+        archive.close()
+
+
 def _fetch_from_github(target_dir: Path) -> None:
     """Descarga o clona Bagron desde GitHub en target_dir."""
     git_bin = shutil.which('git')
@@ -591,25 +867,18 @@ def _fetch_from_github(target_dir: Path) -> None:
     # Descarga directa mediante ZIP (cuando git no está disponible o la carpeta no está vacía)
     print(f'  [HTTP] Descargando archivo ZIP desde {BAGRON_ZIP_URL}...')
     try:
-        with urllib.request.urlopen(BAGRON_ZIP_URL) as response:
-            zip_bytes = response.read()
-
+        request = urllib.request.Request(
+            _validate_release_https_url(BAGRON_ZIP_URL, field='La URL de fuentes de GitHub'),
+            headers={'Accept': 'application/zip', 'User-Agent': 'Bagron-installer'},
+        )
+        with _open_release_url(request, timeout=120) as response:
+            zip_bytes = _read_release_limited(
+                response,
+                limit=_MAX_SOURCE_ARCHIVE_BYTES,
+                context='El ZIP de fuentes descargado',
+            )
         print('  [HTTP] Extrayendo archivos del release...')
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
-            prefix = zf.namelist()[0].split('/')[0] + '/'
-            for member in zf.infolist():
-                if member.filename == prefix:
-                    continue
-                relative_path = member.filename[len(prefix):]
-                if not relative_path:
-                    continue
-                out_path = target_dir / relative_path
-                if member.is_dir():
-                    out_path.mkdir(parents=True, exist_ok=True)
-                else:
-                    out_path.parent.mkdir(parents=True, exist_ok=True)
-                    with zf.open(member) as src, open(out_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
+        _extract_github_source_zip(zip_bytes, target_dir)
     except Exception as error:
         print(f'Error al descargar desde GitHub: {error}', file=sys.stderr)
         raise
@@ -628,24 +897,47 @@ def _release_version_tuple(version: str) -> tuple[int, ...]:
 
 def _release_asset_name(version: str) -> str:
     """Devuelve el nombre del instalador publicado para el sistema actual."""
-    if os.name == 'nt':
+    release_platform = _host_release_platform()
+    if release_platform == 'windows':
+        machine = platform.machine().lower()
+        if machine not in {'amd64', 'x86_64'}:
+            raise RuntimeError(
+                f'No hay un instalador Windows publicado para la arquitectura {machine or "desconocida"}. '
+                'Instala Bagron desde fuentes o publica un artefacto para ese target.'
+            )
         return f'Bagron-{version}-Setup.exe'
-    if sys.platform == 'linux':
+    if release_platform == 'linux':
+        machine = platform.machine().lower()
+        if machine not in {'x86_64', 'amd64'}:
+            raise RuntimeError(
+                f'No hay un instalador Linux publicado para la arquitectura {machine or "desconocida"}. '
+                'Instala Bagron desde fuentes o publica un artefacto para ese target.'
+            )
         return f'Bagron-{version}-linux-x86_64'
-    raise RuntimeError(f'No hay un instalador publicado para {sys.platform}.')
+    raise AssertionError(f'Unsupported Bagron release platform: {release_platform}')
 
 
 def _latest_release() -> tuple[str, str]:
     """Consulta la release estable más reciente y devuelve tag y asset HTTPS."""
-    request = urllib.request.Request(
+    api_url = _validate_release_https_url(
         GITHUB_LATEST_RELEASE_URL,
+        field='La API de releases de GitHub',
+    )
+    request = urllib.request.Request(
+        api_url,
         headers={
             'Accept': 'application/vnd.github+json',
             'User-Agent': 'Bagron-installer',
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        metadata = json.loads(response.read().decode('utf-8'))
+    with _open_release_url(request, timeout=30) as response:
+        metadata = json.loads(
+            _read_release_limited(
+                response,
+                limit=_MAX_RELEASE_METADATA_BYTES,
+                context='La metadata de releases de GitHub',
+            ).decode('utf-8')
+        )
 
     tag = metadata.get('tag_name')
     if not isinstance(tag, str):
@@ -665,14 +957,28 @@ def _latest_release() -> tuple[str, str]:
 
 def _download_release_asset(url: str, destination: Path) -> None:
     """Descarga un instalador a un archivo temporal sin mantenerlo en memoria."""
+    url = _validate_release_https_url(url, field='La URL del instalador')
     request = urllib.request.Request(
         url,
         headers={'Accept': 'application/octet-stream', 'User-Agent': 'Bagron-installer'},
     )
-    with urllib.request.urlopen(request, timeout=120) as response, destination.open('wb') as output:
-        shutil.copyfileobj(response, output, length=1024 * 1024)
+    with _open_release_url(request, timeout=120) as response, destination.open('wb') as output:
+        _stream_release_limited(
+            response,
+            output,
+            limit=_MAX_RELEASE_ASSET_BYTES,
+            context='El instalador descargado',
+        )
+        output.flush()
+        os.fsync(output.fileno())
     if not destination.is_file() or destination.stat().st_size == 0:
         raise OSError('GitHub devolvió un instalador vacío.')
+    expected_magic = _release_asset_magic()
+    if expected_magic:
+        with destination.open('rb') as input_file:
+            actual_magic = input_file.read(len(expected_magic))
+        if actual_magic != expected_magic:
+            raise OSError('GitHub devolvió un archivo que no es un instalador ejecutable válido.')
 
 
 def _running_from_installation(target_dir: Path) -> bool:
@@ -682,6 +988,27 @@ def _running_from_installation(target_dir: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _resolve_local_target(target_dir: Path) -> Path:
+    """Resolve an installation path without following a user-controlled link."""
+    raw_target = Path(target_dir).expanduser()
+    for candidate in (raw_target, *raw_target.parents):
+        if candidate.is_symlink():
+            raise OSError(f'La ruta de instalación contiene un enlace simbólico: {candidate}')
+    return raw_target.resolve()
+
+
+def _windows_no_window_flags() -> int:
+    """Return the Windows flag that suppresses helper consoles.
+
+    ``CREATE_NO_WINDOW`` and ``DETACHED_PROCESS`` are mutually exclusive for
+    console children.  Combining them was the reason the polling ``find.exe``
+    process opened a visible console during the 1.1.5 update.
+    """
+    if os.name != 'nt':
+        return 0
+    return getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 def _schedule_windows_update(installer_path: Path, target_dir: Path) -> bool:
@@ -698,11 +1025,13 @@ def _schedule_windows_update(installer_path: Path, target_dir: Path) -> bool:
             'set "TARGET=%~2"\r\n'
             'set "PARENT_PID=%~3"\r\n'
             ':wait_parent\r\n'
-            'tasklist /FI "PID eq %PARENT_PID%" /NH | find "%PARENT_PID%" >nul\r\n'
-            'if not errorlevel 1 (\r\n'
-            '  ping 127.0.0.1 -n 2 >nul\r\n'
-            '  goto wait_parent\r\n'
+            'for /f "tokens=2 delims=," %%P in (\'\"%SystemRoot%\\System32\\tasklist.exe\" /FI "PID eq %PARENT_PID%" /FO CSV /NH 2^>nul\') do (\r\n'
+            '  if "%%~P"=="%PARENT_PID%" (\r\n'
+            '    "%SystemRoot%\\System32\\ping.exe" 127.0.0.1 -n 2 >nul\r\n'
+            '    goto wait_parent\r\n'
+            '  )\r\n'
             ')\r\n'
+            'if not exist "%INSTALLER%" exit /b 2\r\n'
             '"%INSTALLER%" --target "%TARGET%"\r\n'
             'set "EXIT_CODE=%ERRORLEVEL%"\r\n'
             'del /F /Q "%INSTALLER%" >nul 2>&1\r\n'
@@ -712,21 +1041,72 @@ def _schedule_windows_update(installer_path: Path, target_dir: Path) -> bool:
             encoding='utf-8',
         )
         comspec = os.environ.get('ComSpec', 'cmd.exe')
-        flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(
-            subprocess, 'CREATE_NO_WINDOW', 0
-        )
+        flags = _windows_no_window_flags()
         subprocess.Popen(
             [comspec, '/D', '/C', str(script_path), str(installer_path), str(target_dir), str(os.getpid())],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
+            cwd=str(script_path.parent),
             creationflags=flags,
         )
         return True
     except OSError:
         script_path.unlink(missing_ok=True)
         return False
+
+
+def _schedule_posix_update(installer_path: Path, target_dir: Path) -> bool:
+    """Schedule a self-update without keeping the installed runtime open."""
+    if os.name != 'posix':
+        return False
+
+    shell = shutil.which('sh')
+    if not shell:
+        return False
+
+    script_path = installer_path.with_suffix('.sh')
+    try:
+        script_path.write_text(
+            '#!/bin/sh\n'
+            'set -u\n'
+            'installer=$1\n'
+            'target=$2\n'
+            'parent_pid=$3\n'
+            'while kill -0 "$parent_pid" 2>/dev/null; do\n'
+            '    sleep 1\n'
+            'done\n'
+            '"$installer" --target "$target"\n'
+            'exit_code=$?\n'
+            'rm -f "$installer" "$0"\n'
+            'rmdir "$(dirname "$0")" 2>/dev/null || true\n'
+            'exit "$exit_code"\n',
+            encoding='utf-8',
+        )
+        script_path.chmod(0o700)
+        subprocess.Popen(
+            [shell, str(script_path), str(installer_path), str(target_dir), str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+            cwd=str(script_path.parent),
+        )
+        return True
+    except OSError:
+        script_path.unlink(missing_ok=True)
+        return False
+
+
+def _schedule_self_update(installer_path: Path, target_dir: Path) -> bool:
+    """Select the native deferred-update helper for the current host."""
+    if os.name == 'nt':
+        return _schedule_windows_update(installer_path, target_dir)
+    if os.name == 'posix':
+        return _schedule_posix_update(installer_path, target_dir)
+    return False
 
 
 _INSTALLED_VERSION_RE = re.compile(r"^BAGRON_VERSION\s*=\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
@@ -746,7 +1126,11 @@ def update(target_dir: Path | None = None) -> int:
     """Actualiza la instalación al último asset estable publicado en GitHub."""
     if target_dir is None:
         target_dir = Path.home() / DEFAULT_INSTALL_NAME
-    target_dir = target_dir.resolve()
+    try:
+        target_dir = _resolve_local_target(target_dir)
+    except OSError as error:
+        print(f'Error: la ruta de instalación no es segura: {error}', file=sys.stderr)
+        return 1
     if not target_dir.is_dir():
         print(f'Error: no existe una instalación de Bagron en {target_dir}.', file=sys.stderr)
         return 1
@@ -778,12 +1162,15 @@ def update(target_dir: Path | None = None) -> int:
         _download_release_asset(asset_url, installer_path)
         if os.name != 'nt':
             installer_path.chmod(installer_path.stat().st_mode | 0o111)
-        if os.name == 'nt' and _running_from_installation(target_dir):
-            deferred = _schedule_windows_update(installer_path, target_dir)
+        if _running_from_installation(target_dir):
+            deferred = _schedule_self_update(installer_path, target_dir)
             if not deferred:
-                print('Error: no se pudo programar la actualización de Windows.', file=sys.stderr)
+                print(
+                    'Error: este sistema no pudo programar la actualización después de cerrar Bagron.',
+                    file=sys.stderr,
+                )
                 return 1
-            print('La actualización continuará al cerrar la terminal actual.')
+            print('La actualización continuará al cerrar el proceso actual de Bagron.')
             return 0
 
         result = subprocess.run(
@@ -918,7 +1305,7 @@ def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
         raise ValueError('Formato de bundle Bagron no compatible.')
     if metadata.get('bagron_version') != BAGRON_VERSION:
         raise ValueError('El bundle no corresponde a esta versión de Bagron.')
-    expected_platform = 'windows' if os.name == 'nt' else 'linux'
+    expected_platform = _host_release_platform()
     if metadata.get('platform') != expected_platform:
         raise ValueError('El bundle corresponde a otra plataforma.')
     library_name = metadata.get('aot_library')
@@ -965,6 +1352,164 @@ def _prebuilt_layout(payload: Path, runtime: Path) -> tuple[str, Path]:
     return library_name, _runtime_python_path(runtime)
 
 
+def _remove_install_path(path: Path) -> None:
+    """Remove one managed path without following symbolic links."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _remove_legacy_install_paths(target_dir: Path) -> None:
+    """Remove global module state that is no longer part of an installation."""
+    legacy_modules = target_dir / 'modules'
+    _assert_managed_path_is_local(target_dir, legacy_modules)
+    if legacy_modules.exists() or legacy_modules.is_symlink():
+        _remove_install_path(legacy_modules)
+
+
+def _assert_managed_path_is_local(target_dir: Path, path: Path) -> None:
+    """Reject managed destinations whose parent tree redirects outside install."""
+    try:
+        path.relative_to(target_dir)
+    except ValueError as error:
+        raise OSError(f'La ruta administrada escapa de la instalación: {path}') from error
+    current = path.parent
+    while True:
+        if current.is_symlink():
+            raise OSError(f'La ruta administrada contiene un enlace simbólico: {current}')
+        if current == target_dir:
+            break
+        if current.parent == current:
+            raise OSError(f'La ruta administrada no pertenece a la instalación: {path}')
+        current = current.parent
+
+
+def _stage_prebuilt_installation(
+    payload: Path,
+    runtime: Path,
+    target_dir: Path,
+) -> Path:
+    """Prepare and validate a complete prebuilt installation in a sibling temp tree."""
+    staging = Path(tempfile.mkdtemp(prefix=f'.{target_dir.name}-stage-', dir=target_dir.parent))
+    try:
+        for entry in payload.iterdir():
+            destination = staging / entry.name
+            if entry.is_dir():
+                shutil.copytree(entry, destination, symlinks=True)
+            else:
+                shutil.copy2(entry, destination)
+        staged_libraries = staging / 'libs'
+        if staged_libraries.exists():
+            from core.library import LibraryError, verify_library
+
+            if staged_libraries.is_symlink() or not staged_libraries.is_dir():
+                raise OSError('La carpeta libs del bundle no es un directorio seguro.')
+            for library in staged_libraries.iterdir():
+                if library.is_symlink() or not library.is_file() or library.suffix.lower() != '.lib':
+                    raise OSError(f'El bundle contiene una entrada inválida en libs: {library.name!r}')
+                try:
+                    verify_library(library)
+                except LibraryError as error:
+                    raise OSError(f'La librería incluida {library.name!r} no es válida: {error}') from error
+        shutil.copytree(runtime, staging / LOCAL_RUNTIME_NAME, symlinks=True)
+        restore_aliases(
+            staging / LOCAL_RUNTIME_NAME,
+            platform=_host_release_platform(),
+        )
+        _create_launchers(staging / 'bin')
+
+        python_bin = _runtime_python_path(staging / LOCAL_RUNTIME_NAME)
+        probe = subprocess.run(
+            [str(python_bin), '-m', 'vnma', 'run', 'main.py', '--version'],
+            cwd=str(staging),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if probe.returncode != 0 or f'Bagron {BAGRON_VERSION}' not in probe.stdout:
+            detail = (probe.stderr or probe.stdout).strip()
+            raise OSError(
+                'El compilador preparado no superó la verificación'
+                + (f': {detail}' if detail else '.')
+            )
+        return staging
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def _commit_prebuilt_installation(staging: Path, target_dir: Path) -> None:
+    """Replace managed paths atomically enough to restore the old install on error."""
+    backup = Path(tempfile.mkdtemp(prefix=f'.{target_dir.name}-backup-', dir=target_dir.parent))
+    moved_old: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
+    relative_paths = (*_PREBUILT_MANAGED_PATHS, *_LEGACY_INSTALL_PATHS)
+    try:
+        for relative in relative_paths:
+            destination = target_dir / relative
+            _assert_managed_path_is_local(target_dir, destination)
+            staged = staging / relative
+            backup_path = backup / relative
+            if staged.exists() or staged.is_symlink():
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists() or destination.is_symlink():
+                    os.replace(destination, backup_path)
+                    moved_old.append((destination, backup_path))
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staged, destination)
+                installed.append(destination)
+            elif destination.exists() or destination.is_symlink():
+                # Managed paths absent from the new payload are stale compiler
+                # state and must not survive an upgrade.  ``libs/`` is kept
+                # outside this list so explicitly installed project packages
+                # remain untouched.
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(destination, backup_path)
+                moved_old.append((destination, backup_path))
+
+        libraries = target_dir / 'libs'
+        _assert_managed_path_is_local(target_dir, libraries)
+        if libraries.is_symlink() or (libraries.exists() and not libraries.is_dir()):
+            raise OSError(f'La carpeta de librerías no es un directorio seguro: {libraries}')
+        libraries.mkdir(parents=True, exist_ok=True)
+        staged_libraries = staging / 'libs'
+        if staged_libraries.is_dir():
+            for staged_library in sorted(staged_libraries.glob('*.lib')):
+                destination = libraries / staged_library.name
+                _assert_managed_path_is_local(target_dir, destination)
+                backup_path = backup / 'libs' / staged_library.name
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists() or destination.is_symlink():
+                    os.replace(destination, backup_path)
+                    moved_old.append((destination, backup_path))
+                temporary_library = libraries / f'.{staged_library.stem}.stage.tmp'
+                try:
+                    shutil.copy2(staged_library, temporary_library)
+                    os.replace(temporary_library, destination)
+                finally:
+                    temporary_library.unlink(missing_ok=True)
+                installed.append(destination)
+    except Exception:
+        for destination in reversed(installed):
+            try:
+                _remove_install_path(destination)
+            except OSError:
+                pass
+        for destination, backup_path in reversed(moved_old):
+            if not backup_path.exists() and not backup_path.is_symlink():
+                continue
+            try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(backup_path, destination)
+            except OSError:
+                pass
+        raise
+    finally:
+        shutil.rmtree(backup, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
+
+
 def _install_prebuilt(target_dir: Path) -> int:
     """Instala archivos precompilados sin red, pip ni reconstrucción de Gram."""
     payload = _bundled_compiler_dir()
@@ -974,67 +1519,25 @@ def _install_prebuilt(target_dir: Path) -> int:
         return 1
     try:
         _prebuilt_layout(payload, runtime)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         print(f'Error: el bundle preconstruido es inválido: {error}', file=sys.stderr)
         return 1
 
-    print('\n[1/3] Instalando compilador, vendor y Gram AOT preparados...')
+    print('\n[1/3] Preparando compilador, vendor y Gram AOT preparados...')
     try:
-        # Solo se regeneran directorios administrados por Bagron. Los módulos
-        # locales del usuario quedan fuera del runtime global y no se tocan.
-        for relative in ('core', 'tools', 'vendor', '.runtime', 'build/aot'):
-            existing = target_dir / relative
-            if existing.is_symlink():
-                existing.unlink()
-            elif existing.is_dir():
-                shutil.rmtree(existing)
-            elif existing.exists():
-                existing.unlink()
-
-        for entry in payload.iterdir():
-            destination = target_dir / entry.name
-            if entry.is_dir():
-                shutil.copytree(entry, destination, dirs_exist_ok=True, symlinks=True)
-            else:
-                shutil.copy2(entry, destination)
-        shutil.copytree(runtime, target_dir / LOCAL_RUNTIME_NAME, symlinks=True)
-        count = restore_aliases(
-            target_dir / LOCAL_RUNTIME_NAME,
-            platform='windows' if os.name == 'nt' else 'linux',
-        )
-        print(f'  [OK] Restaurados {count} alias del runtime Python.')
-
-        for name in EMPTY_DIRS:
-            (target_dir / name).mkdir(parents=True, exist_ok=True)
-    except OSError as error:
-        print(f'Error: no se pudo instalar el bundle: {error}', file=sys.stderr)
+        staging = _stage_prebuilt_installation(payload, runtime, target_dir)
+        _commit_prebuilt_installation(staging, target_dir)
+        print('  [OK] Bundle validado y reemplazado de forma transaccional.')
+    except (OSError, ValueError) as error:
+        print(f'Error: no se pudo instalar el bundle sin dejar cambios parciales: {error}', file=sys.stderr)
         return 1
 
     print('[2/3] Verificando la CLI preparada sin conexión...')
-    python_bin = _runtime_python_path(target_dir / LOCAL_RUNTIME_NAME)
-    try:
-        probe = subprocess.run(
-            [str(python_bin), '-m', 'vnma', 'run', 'main.py', '--version'],
-            cwd=str(target_dir),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError as error:
-        print(f'Error: no se pudo iniciar Bagron: {error}', file=sys.stderr)
-        return 1
-    if probe.returncode != 0 or f'Bagron {BAGRON_VERSION}' not in probe.stdout:
-        print(
-            'Error: el compilador instalado no superó la verificación: '
-            + (probe.stderr or probe.stdout).strip(),
-            file=sys.stderr,
-        )
-        return 1
+    print('  [OK] Bagron y el runtime portable superaron la verificación en staging.')
 
-    print('[3/3] Creando lanzadores de Bagron...')
-    bin_dir = target_dir / 'bin'
+    print('[3/3] Configurando el PATH de usuario...')
     try:
-        _create_launchers(bin_dir)
+        bin_dir = target_dir / 'bin'
         if os.name == 'posix':
             _add_to_posix_user_path(bin_dir)
         else:
@@ -1058,7 +1561,11 @@ def install(
     if target_dir is None:
         target_dir = Path.home() / DEFAULT_INSTALL_NAME
 
-    target_dir = target_dir.resolve()
+    try:
+        target_dir = _resolve_local_target(target_dir)
+    except OSError as error:
+        print(f'Error: la ruta de instalación no es segura: {error}', file=sys.stderr)
+        return 1
     print(f'=== Instalador de Bagron {BAGRON_VERSION} ===')
     frozen = bool(getattr(sys, 'frozen', False))
     mode = ('Preconstruido (sin red)' if frozen and not from_local
@@ -1106,9 +1613,12 @@ def install(
                 src_file = source_root / filename
                 if src_file.is_file():
                     shutil.copy2(src_file, target_dir / filename)
+
+            _remove_legacy_install_paths(target_dir)
         else:
             print('\n[1/7] Obteniendo Bagron desde GitHub...')
             _fetch_from_github(target_dir)
+            _remove_legacy_install_paths(target_dir)
     except (OSError, subprocess.CalledProcessError, urllib.error.URLError, zipfile.BadZipFile) as error:
         print(f'\nError: no se pudieron obtener las fuentes de Bagron: {error}', file=sys.stderr)
         return 1
@@ -1217,15 +1727,14 @@ def _schedule_windows_cleanup(target_dir: Path) -> bool:
             )
 
         comspec = os.environ.get('ComSpec', 'cmd.exe')
-        flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(
-            subprocess, 'CREATE_NO_WINDOW', 0
-        )
+        flags = _windows_no_window_flags()
         subprocess.Popen(
             [comspec, '/D', '/C', str(cleanup_script), str(target_dir)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             close_fds=True,
+            cwd=str(cleanup_script.parent),
             creationflags=flags,
         )
         return True
@@ -1237,7 +1746,10 @@ def _schedule_windows_cleanup(target_dir: Path) -> bool:
 
 def _safe_uninstall_target(target_dir: Path) -> bool:
     """Evita que una ruta raíz o el perfil completo sean objetivos de borrado."""
-    resolved = target_dir.resolve()
+    try:
+        resolved = _resolve_local_target(target_dir)
+    except OSError:
+        return False
     return resolved != Path(resolved.anchor) and resolved != Path.home().resolve()
 
 
@@ -1246,10 +1758,10 @@ def uninstall(target_dir: Path | None = None) -> int:
     if target_dir is None:
         target_dir = Path.home() / DEFAULT_INSTALL_NAME
 
-    target_dir = target_dir.resolve()
     if not _safe_uninstall_target(target_dir):
         print(f'Error: la ruta de desinstalación no es segura: {target_dir}', file=sys.stderr)
         return 1
+    target_dir = _resolve_local_target(target_dir)
     bin_dir = target_dir / 'bin'
 
     print(f'=== Desinstalador de Bagron ===')

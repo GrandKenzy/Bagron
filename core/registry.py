@@ -366,7 +366,18 @@ def install_package(
 
     raw_dest_folder = Path(target_dir)
     _reject_symlink_ancestors(raw_dest_folder)
+    try:
+        raw_dest_folder.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise RegistryError(
+            f'No se pudo crear el directorio de instalación de paquetes: {raw_dest_folder}'
+        ) from error
+    if raw_dest_folder.is_symlink() or not raw_dest_folder.is_dir():
+        raise RegistryError(
+            f'El directorio de instalación de paquetes no es seguro: {raw_dest_folder}'
+        )
     dest_folder = raw_dest_folder.resolve()
+    _reject_symlink_ancestors(dest_folder)
     lock_path = Path(lockfile_path) if lockfile_path is not None else None
 
     print_fn(f"Buscando '{name}'{' v' + version if version else ''} en Central ({registry_url})...")
@@ -465,7 +476,6 @@ def install_package(
     except CentralSignatureError as error:
         raise RegistryError(f'La firma de Central no es valida: {error}') from error
 
-    dest_folder.mkdir(parents=True, exist_ok=True)
     if not dest_folder.is_dir() or dest_folder.is_symlink():
         raise RegistryError('El directorio de instalación no es seguro.')
     dest_file = dest_folder / f'{resolved_name}.lib'
@@ -534,22 +544,48 @@ def install_package(
                             'Las dependencias de Central no coinciden con el manifiesto del paquete.'
                         )
                 dependencies = manifest_dependencies
-                try:
-                    update_lockfile(
-                        lock_path,
-                        name=resolved_name,
-                        version=resolved_version,
-                        source=download_target,
-                        package_format=package_format,
-                        data=data_to_publish,
-                        dependencies=[str(item) for item in dependencies],
-                        tuf_version=tuf_version,
-                    )
-                except LockfileError as error:
-                    raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
             if dest_file.is_symlink():
                 raise RegistryError('El destino de instalación es un enlace simbólico.')
-            os.replace(temp_path, dest_file)
+            previous_file: Path | None = None
+            destination_replaced = False
+            try:
+                if dest_file.exists() or dest_file.is_symlink():
+                    fd, previous_name = tempfile.mkstemp(
+                        prefix=f'.{dest_file.stem}.previous.',
+                        suffix='.lib.tmp',
+                        dir=dest_folder,
+                    )
+                    os.close(fd)
+                    previous_file = Path(previous_name)
+                    previous_file.unlink(missing_ok=True)
+                    os.replace(dest_file, previous_file)
+                os.replace(temp_path, dest_file)
+                destination_replaced = True
+                if lock_path is not None:
+                    try:
+                        update_lockfile(
+                            lock_path,
+                            name=resolved_name,
+                            version=resolved_version,
+                            source=download_target,
+                            package_format=package_format,
+                            data=data_to_publish,
+                            dependencies=[str(item) for item in dependencies],
+                            tuf_version=tuf_version,
+                        )
+                    except LockfileError as error:
+                        raise RegistryError(f'No se pudo actualizar bagron.lock: {error}') from error
+            except Exception:
+                if destination_replaced:
+                    Path(dest_file).unlink(missing_ok=True)
+                if previous_file is not None and (
+                    previous_file.exists() or previous_file.is_symlink()
+                ):
+                    os.replace(previous_file, dest_file)
+                raise
+            finally:
+                if previous_file is not None:
+                    previous_file.unlink(missing_ok=True)
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise

@@ -19,6 +19,7 @@ from core.registry import (
     search_packages,
 )
 from core.library import pack_library
+from core.lockfile import LockfileError
 from core.signing import CentralSignatureError, verify_central_artifact
 
 
@@ -203,6 +204,18 @@ class TestRegistryClient(unittest.TestCase):
             self.assertTrue(installed_file.is_file())
             self.assertEqual(installed_file.read_bytes(), content)
 
+    def test_package_install_creates_empty_target_directory_before_network(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target = Path(tmp_dir) / 'libs'
+            with patch(
+                'core.registry.resolve_package',
+                side_effect=RegistryError('offline'),
+            ):
+                with self.assertRaises(RegistryError):
+                    install_package('network', target_dir=target)
+            self.assertTrue(target.is_dir())
+            self.assertEqual([], list(target.iterdir()))
+
     def test_install_package_to_directory(self):
         content = self._library_bytes('network', '2.0.0')
         content_sha = hashlib.sha256(content).hexdigest()
@@ -263,6 +276,35 @@ class TestRegistryClient(unittest.TestCase):
                 with self.assertRaises(RegistryError):
                     install_package('network', target_dir=dest)
             self.assertEqual(valid, existing.read_bytes())
+
+    def test_lockfile_failure_rolls_back_package_replacement(self):
+        old_content = self._library_bytes('network', '1.0.0')
+        new_content = self._library_bytes('network', '2.0.0')
+        payload = {
+            'name': 'network',
+            'version': '2.0.0',
+            'package_format': 'lib1',
+            'artifact_checksum': hashlib.sha256(new_content).hexdigest(),
+            'download_url': 'https://central.example.com/pkg/download',
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dest = Path(tmp_dir) / 'libs'
+            dest.mkdir()
+            existing = dest / 'network.lib'
+            existing.write_bytes(old_content)
+            with patch('core.registry.resolve_package', return_value=payload), \
+                 patch('core.registry.download_package_artifact', return_value=new_content), \
+                 patch(
+                     'core.lockfile.update_lockfile',
+                     side_effect=LockfileError('locked'),
+                 ):
+                with self.assertRaises(RegistryError):
+                    install_package(
+                        'network',
+                        target_dir=dest,
+                        lockfile_path=Path(tmp_dir) / 'bagron.lock',
+                    )
+            self.assertEqual(old_content, existing.read_bytes())
 
     def test_central_tuf_metadata_verifies_ed25519_statement(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey

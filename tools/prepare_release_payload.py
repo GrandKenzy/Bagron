@@ -22,7 +22,7 @@ from core.version import BAGRON_VERSION
 
 
 COMPILER_DIRECTORIES = (
-    'core', 'tools', 'modules', 'examples', 'docs', 'badge', 'changelog',
+    'core', 'tools', 'examples', 'docs', 'badge', 'changelog',
 )
 COMPILER_FILES = (
     'main.py', 'installer.py', 'README.md', 'LICENSE', 'install.sh',

@@ -96,7 +96,7 @@ class PrebuiltReleaseTests(unittest.TestCase):
     def test_installer_uses_embedded_payload_without_network(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            payload, runtime = self._fixture(root)
+            payload, runtime = self._fixture(root, include_prebuilt_libraries=False)
             target = root / 'installed'
             command_result = mock.Mock(
                 returncode=0,
@@ -116,10 +116,7 @@ class PrebuiltReleaseTests(unittest.TestCase):
             self.assertEqual(0, code)
             self.assertTrue((target / 'main.py').is_file())
             self.assertTrue((target / 'vendor' / 'gram').is_dir())
-            self.assertEqual(
-                b'fake-lib',
-                (target / 'libs' / 'gnulibrary.lib').read_bytes(),
-            )
+            self.assertEqual([], list((target / 'libs').iterdir()))
             self.assertTrue((target / 'build' / 'aot' /
                              ('bagron_aot.dll' if os.name == 'nt'
                               else 'libbagron_aot.so')).is_file())

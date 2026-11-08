@@ -425,6 +425,7 @@ def _install_command(argv: list[str]) -> int:
 
     name = None
     version = '0.1.0'
+    version_explicit = False
     library_path_str = None
     allow_unverified = '--allow-unverified' in tokens
 
@@ -438,6 +439,7 @@ def _install_command(argv: list[str]) -> int:
             idx += 2
         elif tok == '--version' and idx + 1 < len(tokens):
             version = tokens[idx + 1]
+            version_explicit = True
             idx += 2
         elif tok == '--allow-unverified':
             idx += 1
@@ -470,11 +472,31 @@ def _install_command(argv: list[str]) -> int:
         return 1
     dest_dir = raw_dest_dir.resolve()
 
-    if name is None:
-        if source_path.is_file() and source_path.suffix.lower() == '.lib':
-            name = source_path.stem
-        else:
-            name = source_path.name
+    local_package = None
+    if source_path.is_file() and source_path.suffix.lower() == '.lib':
+        try:
+            local_package = verify_library(source_path)
+        except LibraryError as error:
+            print(f'Error al verificar la librería local: {error}', file=sys.stderr)
+            return 1
+        if name is None:
+            name = local_package.name
+        elif name != local_package.name:
+            print(
+                'Error de seguridad: el nombre solicitado no coincide con el nombre interno '
+                f'del paquete ({name!r} != {local_package.name!r}).',
+                file=sys.stderr,
+            )
+            return 2
+        if version_explicit and str(local_package.manifest.get('version', '')) != version:
+            print(
+                'Error: la versión solicitada no coincide con la versión interna '
+                f'del paquete ({version!r} != {local_package.manifest.get("version")!r}).',
+                file=sys.stderr,
+            )
+            return 2
+    elif name is None:
+        name = source_path.name
 
     from core.registry import RegistryError, _validate_package_name
     try:

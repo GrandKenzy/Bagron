@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import shutil
 import subprocess
@@ -87,6 +88,46 @@ class InstallerTests(unittest.TestCase):
                 log_path.read_text(encoding='utf-8').splitlines(),
             )
 
+    @unittest.skipUnless(os.name == 'nt', 'requiere Windows para ejecutar el helper .cmd')
+    def test_windows_update_helper_runs_after_parent_is_absent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installer_path = root / 'downloaded.exe'
+            installer_path.write_bytes(b'MZplaceholder')
+            target = root / 'Bagron'
+            target.mkdir()
+            marker = root / 'marker.txt'
+            fake_installer = root / 'fake-installer.cmd'
+            fake_installer.write_text(
+                '@echo off\r\n'
+                f'echo installed>{marker}\r\n'
+                'exit /b 0\r\n',
+                encoding='utf-8',
+            )
+            with mock.patch.object(installer.subprocess, 'Popen'):
+                self.assertTrue(installer._schedule_windows_update(installer_path, target))
+
+            script = installer_path.with_suffix('.cmd')
+            completed = subprocess.run(
+                [
+                    os.environ.get('ComSpec', 'cmd.exe'),
+                    '/D',
+                    '/C',
+                    str(script),
+                    str(fake_installer),
+                    str(target),
+                    '99999999',
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertTrue(marker.is_file())
+
     def test_bootstrap_script_does_not_use_stdin_as_a_local_checkout(self):
         install_script = (
             Path(__file__).resolve().parents[2] / 'install.sh'
@@ -97,6 +138,54 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('&& -f "$script_dir/main.py"', install_script)
         self.assertIn('&& -d "$script_dir/core"', install_script)
         self.assertIn('&& -d "$script_dir/tools"', install_script)
+
+    def test_github_source_zip_rejects_traversal_before_extracting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'Bagron'
+            archive_bytes = io.BytesIO()
+            with zipfile.ZipFile(archive_bytes, 'w') as archive:
+                archive.writestr(
+                    f'Bagron-{installer.BAGRON_VERSION}/../../outside.txt',
+                    b'unsafe',
+                )
+
+            response = mock.Mock()
+            response.__enter__ = mock.Mock(return_value=response)
+            response.__exit__ = mock.Mock(return_value=None)
+            response.headers = {}
+            response.read.side_effect = [archive_bytes.getvalue(), b'']
+            with mock.patch.object(installer.shutil, 'which', return_value=None), \
+                 mock.patch.object(installer, '_open_release_url', return_value=response):
+                with self.assertRaises(OSError):
+                    installer._fetch_from_github(target)
+
+            self.assertFalse((root / 'outside.txt').exists())
+
+    def test_github_source_zip_extracts_only_the_tagged_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'Bagron'
+            archive_bytes = io.BytesIO()
+            with zipfile.ZipFile(archive_bytes, 'w') as archive:
+                archive.writestr(
+                    f'Bagron-{installer.BAGRON_VERSION}/core/version.py',
+                    'version = 1\n',
+                )
+
+            response = mock.Mock()
+            response.__enter__ = mock.Mock(return_value=response)
+            response.__exit__ = mock.Mock(return_value=None)
+            response.headers = {}
+            response.read.side_effect = [archive_bytes.getvalue(), b'']
+            with mock.patch.object(installer.shutil, 'which', return_value=None), \
+                 mock.patch.object(installer, '_open_release_url', return_value=response):
+                installer._fetch_from_github(target)
+
+            self.assertEqual(
+                'version = 1\n',
+                (target / 'core' / 'version.py').read_text(encoding='utf-8'),
+            )
 
     def test_bootstrap_vnma_uses_a_private_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -223,7 +312,7 @@ class InstallerTests(unittest.TestCase):
 
             def fake_download(url, destination):
                 self.assertEqual('https://github.com/example/Bagron.exe', url)
-                destination.write_bytes(b'installer')
+                destination.write_bytes(installer._release_asset_magic() + b'installer')
 
             with mock.patch.object(
                 installer, '_latest_release',
@@ -262,7 +351,7 @@ class InstallerTests(unittest.TestCase):
         response = mock.Mock()
         response.__enter__ = mock.Mock(return_value=response)
         response.__exit__ = mock.Mock(return_value=None)
-        response.read.return_value = json.dumps({
+        release_payload = json.dumps({
             'tag_name': 'v1.2.0',
             'assets': [
                 {
@@ -275,17 +364,20 @@ class InstallerTests(unittest.TestCase):
                 },
             ],
         }).encode('utf-8')
+        response.read.side_effect = [release_payload, b'']
 
-        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+        with mock.patch.object(installer, '_open_release_url', return_value=response), \
              mock.patch.object(installer.os, 'name', 'nt'):
             self.assertEqual(
                 ('1.2.0', 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-Setup.exe'),
                 installer._latest_release(),
             )
 
-        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+        response.read.side_effect = [release_payload, b'']
+        with mock.patch.object(installer, '_open_release_url', return_value=response), \
              mock.patch.object(installer.os, 'name', 'posix'), \
-             mock.patch.object(installer.sys, 'platform', 'linux'):
+             mock.patch.object(installer.sys, 'platform', 'linux'), \
+             mock.patch.object(installer.platform, 'machine', return_value='x86_64'):
             self.assertEqual(
                 ('1.2.0', 'https://github.com/GrandKenzy/Bagron/releases/download/v1.2.0/Bagron-1.2.0-linux-x86_64'),
                 installer._latest_release(),
@@ -295,11 +387,31 @@ class InstallerTests(unittest.TestCase):
         response = mock.Mock()
         response.__enter__ = mock.Mock(return_value=response)
         response.__exit__ = mock.Mock(return_value=None)
-        response.read.return_value = json.dumps({'tag_name': '1.2.0', 'assets': []}).encode('utf-8')
-        with mock.patch.object(installer.urllib.request, 'urlopen', return_value=response), \
+        response.read.side_effect = [
+            json.dumps({'tag_name': '1.2.0', 'assets': []}).encode('utf-8'),
+            b'',
+        ]
+        with mock.patch.object(installer, '_open_release_url', return_value=response), \
              mock.patch.object(installer.os, 'name', 'nt'):
             with self.assertRaises(FileNotFoundError):
                 installer._latest_release()
+
+    def test_release_asset_rejects_unpublished_platforms(self):
+        with mock.patch.object(installer.os, 'name', 'nt'), \
+             mock.patch.object(installer.platform, 'machine', return_value='ARM64'):
+            with self.assertRaises(RuntimeError):
+                installer._release_asset_name('1.1.5')
+
+        with mock.patch.object(installer.os, 'name', 'posix'), \
+             mock.patch.object(installer.sys, 'platform', 'linux'), \
+             mock.patch.object(installer.platform, 'machine', return_value='aarch64'):
+            with self.assertRaises(RuntimeError):
+                installer._release_asset_name('1.1.5')
+
+        with mock.patch.object(installer.os, 'name', 'posix'), \
+             mock.patch.object(installer.sys, 'platform', 'darwin'):
+            with self.assertRaises(RuntimeError):
+                installer._release_asset_name('1.1.5')
 
     def test_update_reports_download_and_child_installer_failures(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -318,7 +430,10 @@ class InstallerTests(unittest.TestCase):
             with mock.patch.object(
                 installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
             ), mock.patch.object(
-                installer, '_download_release_asset', side_effect=lambda url, path: path.write_bytes(b'installer'),
+                installer, '_download_release_asset',
+                side_effect=lambda url, path: path.write_bytes(
+                    installer._release_asset_magic() + b'installer'
+                ),
             ), mock.patch.object(
                 installer.subprocess, 'run', return_value=mock.Mock(returncode=23),
             ):
@@ -336,7 +451,10 @@ class InstallerTests(unittest.TestCase):
             ), mock.patch.object(
                 installer, '_latest_release', return_value=('1.1.5', 'https://example.invalid/asset'),
             ), mock.patch.object(
-                installer, '_download_release_asset', side_effect=lambda url, path: path.write_bytes(b'installer'),
+                installer, '_download_release_asset',
+                side_effect=lambda url, path: path.write_bytes(
+                    installer._release_asset_magic() + b'installer'
+                ),
             ), mock.patch.object(
                 installer, '_running_from_installation', return_value=True,
             ), mock.patch.object(
@@ -345,6 +463,48 @@ class InstallerTests(unittest.TestCase):
                 installer.subprocess, 'run', side_effect=AssertionError('must defer'),
             ):
                 self.assertEqual(0, installer.update(target))
+
+    def test_windows_update_helper_has_no_visible_find_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installer_path = root / 'Bagron-1.1.5-Setup.exe'
+            installer_path.write_bytes(b'MZinstaller')
+            target = root / 'Bagron'
+            target.mkdir()
+            with mock.patch.object(installer.os, 'name', 'nt'), \
+                 mock.patch.object(installer.os, 'getpid', return_value=8512), \
+                 mock.patch.object(installer.subprocess, 'Popen') as popen, \
+                 mock.patch.object(installer.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True), \
+                 mock.patch.object(installer.subprocess, 'DETACHED_PROCESS', 0x00000008, create=True):
+                self.assertTrue(installer._schedule_windows_update(installer_path, target))
+
+            script = installer_path.with_suffix('.cmd')
+            content = script.read_text(encoding='utf-8')
+            self.assertIn('tasklist.exe', content)
+            self.assertIn('/FO CSV /NH', content)
+            self.assertNotIn('find ', content.lower())
+            flags = popen.call_args.kwargs['creationflags']
+            self.assertEqual(0x08000000, flags)
+            self.assertFalse(flags & 0x00000008)
+
+    def test_posix_update_helper_waits_without_console_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installer_path = root / 'bagron-installer'
+            installer_path.write_bytes(b'\x7fELFinstaller')
+            target = root / 'Bagron'
+            target.mkdir()
+            with mock.patch.object(installer.os, 'name', 'posix'), \
+                 mock.patch.object(installer.shutil, 'which', return_value='/bin/sh'), \
+                 mock.patch.object(installer.subprocess, 'Popen') as popen, \
+                 mock.patch.object(installer.os, 'getpid', return_value=8512):
+                self.assertTrue(installer._schedule_posix_update(installer_path, target))
+
+            script = installer_path.with_suffix('.sh')
+            content = script.read_text(encoding='utf-8')
+            self.assertIn('kill -0', content)
+            self.assertNotIn('tasklist', content)
+            self.assertEqual('/bin/sh', popen.call_args.args[0][0])
 
     def test_uninstall_removes_target_and_rejects_profile_root(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -406,11 +566,14 @@ class InstallerTests(unittest.TestCase):
             return_value=None,
         ):
             target = Path(directory) / 'Bagron'
+            (target / 'modules').mkdir(parents=True)
+            (target / 'modules' / 'legacy.bg').write_text('legacy', encoding='utf-8')
             result = installer.install(target, from_local=True)
 
             self.assertEqual(1, result)
             self.assertFalse((target / 'vendor').exists())
             self.assertFalse((target / 'bin').exists())
+            self.assertFalse((target / 'modules').exists())
             config = (target / 'vnma.toml').read_text(encoding='utf-8')
             self.assertIn('https://github.com/GrandKenzy/Gram.git', config)
 
