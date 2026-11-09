@@ -15,3 +15,12 @@
 
 - Typed fields may omit their initializer inside `__init__` or `__frontend__`;
   their storage is initialized to zero, including every byte of fixed arrays.
+
+## Installer
+
+- Fixed the Windows and POSIX launchers so they invoke the installed compiler
+  directly instead of recursively starting `vnma run main.py`.
+
+## Release
+
+Released on 2026-11-08.

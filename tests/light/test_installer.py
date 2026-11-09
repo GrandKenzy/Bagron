@@ -37,7 +37,7 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
             self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
             self.assertIn('installer.py" "$maintenance_command" --target', content)
-            self.assertIn('exec "$python_bin" -m vnma run main.py "$@"', content)
+            self.assertIn('exec "$python_bin" "$bagron_home/main.py" "$@"', content)
 
     @unittest.skipUnless(os.name == 'posix', 'requiere un entorno POSIX')
     def test_posix_launcher_resolves_installation_symlink(self):
@@ -83,7 +83,8 @@ class InstallerTests(unittest.TestCase):
                 [
                     str(target.resolve()),
                     str(caller_dir.resolve()),
-                    '-m vnma run main.py --probe',
+                    str(target.resolve() / 'main.py'),
+                    '--probe',
                 ],
                 log_path.read_text(encoding='utf-8').splitlines(),
             )
@@ -284,10 +285,10 @@ class InstallerTests(unittest.TestCase):
             )
             self.assertIn(r'.runtime\python.exe', cmd_content)
             self.assertIn(r'.runtime\Scripts\python.exe', cmd_content)
-            self.assertIn('"%PYTHON%" -m vnma run main.py %*', cmd_content)
+            self.assertIn('"%PYTHON%" "%BAGRON_HOME%\\main.py" %*', cmd_content)
             self.assertIn(r'.runtime\python.exe', ps1_content)
             self.assertIn(r'.runtime\Scripts\python.exe', ps1_content)
-            self.assertIn('& $python -m vnma run main.py @args', ps1_content)
+            self.assertIn('& $python (Join-Path $bagronHome "main.py") @args', ps1_content)
 
     def test_maintenance_commands_use_the_embedded_installer(self):
         with tempfile.TemporaryDirectory() as directory:

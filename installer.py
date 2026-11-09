@@ -658,7 +658,7 @@ if [[ "${1:-}" == "--update" || "${1:-}" == "--uninstall" ]]; then
 fi
 export BAGRON_CALLER_DIR="$PWD"
 cd "$bagron_home"
-exec "$python_bin" -m vnma run main.py "$@"
+exec "$python_bin" "$bagron_home/main.py" "$@"
 '''
         for name in ('bagron',):
             launcher = bin_dir / name
@@ -679,7 +679,7 @@ exec "$python_bin" -m vnma run main.py "$@"
         'if /I "%~1"=="--uninstall" "%PYTHON%" "%BAGRON_HOME%\\installer.py" --uninstall --target "%BAGRON_HOME%"\r\n'
         'if /I "%~1"=="--uninstall" exit /b %ERRORLEVEL%\r\n'
         'pushd "%BAGRON_HOME%"\r\n'
-        '"%PYTHON%" -m vnma run main.py %*\r\n'
+        '"%PYTHON%" "%BAGRON_HOME%\\main.py" %*\r\n'
         'set "EXIT_CODE=%ERRORLEVEL%"\r\n'
         'popd\r\n'
         'exit /b %EXIT_CODE%\r\n'
@@ -698,7 +698,7 @@ exec "$python_bin" -m vnma run main.py "$@"
         '$env:BAGRON_CALLER_DIR = $callerDir\r\n'
         'Push-Location $bagronHome\r\n'
         'try {\r\n'
-        '    & $python -m vnma run main.py @args\r\n'
+        '    & $python (Join-Path $bagronHome "main.py") @args\r\n'
         '    $code = $LASTEXITCODE\r\n'
         '} finally {\r\n'
         '    Pop-Location\r\n'
@@ -1428,7 +1428,7 @@ def _stage_prebuilt_installation(
 
         python_bin = _runtime_python_path(staging / LOCAL_RUNTIME_NAME)
         probe = subprocess.run(
-            [str(python_bin), '-m', 'vnma', 'run', 'main.py', '--version'],
+            [str(python_bin), str(staging / 'main.py'), '--version'],
             cwd=str(staging),
             capture_output=True,
             text=True,
