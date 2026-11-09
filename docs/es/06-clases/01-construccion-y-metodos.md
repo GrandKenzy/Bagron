@@ -18,8 +18,17 @@ func main() int32:
 ```
 
 `self` es implícito en la firma de los métodos de instancia. Los campos se
-crean al asignarlos desde el iniciador y se acceden con `self.campo`. Una clase
-sin `__init__` no se puede construir con `Clase(...)`.
+crean al asignarlos desde el iniciador y se acceden con `self.campo`. Para
+declarar un campo con tipo explícito puedes omitir el inicializador; en ese
+caso todos sus bytes comienzan en cero:
+
+```bg
+class Buffer:
+    func __init__() void:
+        self.data: char[4096]
+```
+
+Una clase sin `__init__` no se puede construir con `Clase(...)`.
 
 `__frontend__` es la alternativa para clases que deben aceptar una conversión
 producida por el frontend:

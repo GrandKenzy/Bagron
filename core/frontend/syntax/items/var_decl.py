@@ -88,7 +88,7 @@ class MEMBER_ACCESS_TARGET(cmb.RuleItem):
 
 
 class FIELD_DECLARATION(cmb.RuleItem):
-    """Explicitly-typed instance attribute declaration, e.g. ``self.state: uint32 = 0xFFFFFFFF``."""
+    """Explicitly-typed instance attribute declaration with an initializer."""
 
     entrypoint = cmb.Seq(
         cmb.Ref(MEMBER_ACCESS_TARGET),
@@ -100,8 +100,20 @@ class FIELD_DECLARATION(cmb.RuleItem):
     nodeable = True
 
 
+class FIELD_ZERO_DECLARATION(cmb.RuleItem):
+    """Typed instance attribute declaration with implicit zero storage."""
+
+    entrypoint = cmb.Seq(
+        cmb.Ref(MEMBER_ACCESS_TARGET),
+        cmb.MatchToken('COLON'),
+        cmb.Ref(TYPE),
+    )
+    nodeable = True
+
+
 __all__ = [
     'FIELD_DECLARATION',
+    'FIELD_ZERO_DECLARATION',
     'MEMBER_ACCESS_TARGET',
     'VAR',
     'VAR_ASSIGNATION',

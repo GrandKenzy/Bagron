@@ -10,3 +10,8 @@
   their qualified declaration.
 - The AOT frontend now reports syntax errors only after consuming the complete
   qualified type spelling.
+
+## Classes
+
+- Typed fields may omit their initializer inside `__init__` or `__frontend__`;
+  their storage is initialized to zero, including every byte of fixed arrays.

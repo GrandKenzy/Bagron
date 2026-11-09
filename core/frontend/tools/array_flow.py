@@ -241,6 +241,8 @@ class _FixedArrayWriteAnalysis:
             return self._variable(node, flow, loop_domains)
         if node.name == 'VAR_ASSIGNATION':
             return self._assignment(node, flow, loop_domains)
+        if node.name == 'FIELD_ZERO_DECLARATION':
+            return flow
         if node.name == 'IF':
             return self._if(node, flow, loop_domains)
         if node.name == 'FOR':

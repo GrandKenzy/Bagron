@@ -2447,8 +2447,12 @@ def _process_body_node(
         if variable is not None:
             symbol.local_variables[handle.name] = variable
         return
-    if node.name in ('VAR_ASSIGNATION', 'FIELD_DECLARATION'):
-        if node.name == 'FIELD_DECLARATION' and (
+    if node.name in (
+        'VAR_ASSIGNATION',
+        'FIELD_DECLARATION',
+        'FIELD_ZERO_DECLARATION',
+    ):
+        if node.name in {'FIELD_DECLARATION', 'FIELD_ZERO_DECLARATION'} and (
             getattr(symbol, 'owner_type', None) is None
             or getattr(symbol, 'source_name', None) not in ('__init__', '__frontend__')
         ):
@@ -2456,6 +2460,8 @@ def _process_body_node(
                 'Las declaraciones tipadas de atributos solo se permiten en el '
                 'iniciador de una clase'
             )
+            return
+        if node.name == 'FIELD_ZERO_DECLARATION':
             return
         _validate_assignment(compiler, symbol, node, scope)
         return

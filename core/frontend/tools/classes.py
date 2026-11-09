@@ -10,6 +10,7 @@ from core.frontend.objects import (
     FunctionSymbol,
     ParameterSpec,
     TypeSpec,
+    ValueInfo,
 )
 from core.frontend.tools.types import (
     TypeResolutionError,
@@ -264,6 +265,9 @@ def _type_from_declaration(statement: gast.ASTRef) -> object | None:
         (i for i, child in enumerate(children) if _token_kind(child) == 'ASSIGN'),
         None,
     )
+    if colon_index is not None and assign_index is None:
+        if colon_index + 1 < len(children):
+            return children[colon_index + 1]
     if (
         colon_index is not None
         and assign_index is not None
@@ -374,6 +378,7 @@ def _initializer_fields(
         if not isinstance(statement, gast.ASTRef) or statement.name not in (
             'VAR_ASSIGNATION',
             'FIELD_DECLARATION',
+            'FIELD_ZERO_DECLARATION',
         ):
             compiler.error(
                 f'El {initializer_name} de {class_name} solo admite '
@@ -389,7 +394,7 @@ def _initializer_fields(
                 'self.<campo>'
             )
             continue
-        if operator != '=':
+        if operator not in ('=', None):
             compiler.error(
                 f'La inicializacion de {class_name}.{field_name} en '
                 f'{initializer_name} debe usar ='
@@ -400,24 +405,26 @@ def _initializer_fields(
                 f'El atributo {class_name}.{field_name} ya fue inicializado'
             )
             continue
-        if value_node is None:
+        if operator == '=' and value_node is None:
             compiler.error(
                 f'El atributo {class_name}.{field_name} no tiene valor inicial'
             )
             continue
 
-        try:
-            value_info = infer_value(
-                value_node,
-                parameter_scope.resolve,
-                compiler.function_lookup,
-                current_function=initializer_context,
-            )
-        except (UnsupportedExpressionError, ValueResolutionError) as error:
-            compiler.error(f'{class_name}.{field_name}: {error}')
-            continue
+        value_info = None
+        if value_node is not None:
+            try:
+                value_info = infer_value(
+                    value_node,
+                    parameter_scope.resolve,
+                    compiler.function_lookup,
+                    current_function=initializer_context,
+                )
+            except (UnsupportedExpressionError, ValueResolutionError) as error:
+                compiler.error(f'{class_name}.{field_name}: {error}')
+                continue
 
-        if statement.name == 'FIELD_DECLARATION':
+        if statement.name in {'FIELD_DECLARATION', 'FIELD_ZERO_DECLARATION'}:
             type_node = _type_from_declaration(statement)
             if type_node is None:
                 compiler.error(
@@ -437,14 +444,24 @@ def _initializer_fields(
                 compiler.error(f'{class_name}.{field_name}: {error}')
                 continue
 
-            if not is_compatible(declared_type, value_info):
+            if value_info is not None and not is_compatible(declared_type, value_info):
                 compiler.error(
                     f'El valor inicial de {class_name}.{field_name} no coincide con '
                     f'{declared_type.canonical_name}'
                 )
                 continue
             field_type = declared_type
+            if value_info is None:
+                # The constructor result starts as an LLVM zero aggregate, so
+                # an omitted field initializer stays null-filled for scalars,
+                # arrays, pointers, and nested nominal values alike.
+                value_info = ValueInfo(field_type)
         else:
+            if value_info is None:
+                compiler.error(
+                    f'El atributo {class_name}.{field_name} no tiene valor inicial'
+                )
+                continue
             field_type = value_info.type_spec
 
         if field_type.name in {'void', 'Never'} and not field_type.pointer_level:

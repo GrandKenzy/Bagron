@@ -1502,6 +1502,10 @@ class StatementEmitterMixin:
             name = getattr(child, 'name', None)
             if name == 'VAR':
                 self._emit_local_declaration(child, builder, values)
+            elif name == 'FIELD_ZERO_DECLARATION':
+                # The aggregate constructor starts as a zero constant; an
+                # omitted field initializer therefore needs no runtime store.
+                continue
             elif name in {'VAR_ASSIGNATION', 'FIELD_DECLARATION'}:
                 self._emit_assignment(child, builder, values, symbol)
             elif name == 'DEL':

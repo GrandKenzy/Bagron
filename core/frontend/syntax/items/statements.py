@@ -4,7 +4,12 @@ from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
 from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
 from core.frontend.syntax.items.value import RETURN, TYPE, VALUE
-from core.frontend.syntax.items.var_decl import FIELD_DECLARATION, VAR, VAR_ASSIGNATION
+from core.frontend.syntax.items.var_decl import (
+    FIELD_DECLARATION,
+    FIELD_ZERO_DECLARATION,
+    VAR,
+    VAR_ASSIGNATION,
+)
 
 class WHILE(cmb.RuleItem):
     nodeable = True
@@ -87,6 +92,7 @@ class SIMPLE_STATEMENT(cmb.RuleItem):
         cmb.Ref(FOR),
         cmb.Ref(IF),
         cmb.Ref(FIELD_DECLARATION),
+        cmb.Ref(FIELD_ZERO_DECLARATION),
         cmb.Ref(VAR_ASSIGNATION),
         cmb.Ref(CALL),
         cmb.Ref(DEL),

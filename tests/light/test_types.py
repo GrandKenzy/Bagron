@@ -748,6 +748,21 @@ class TypeSemanticTests(unittest.TestCase):
         self.assertIsNotNone(field)
         self.assertEqual('uint32', field.type_spec.name)
 
+    def test_class_field_without_initializer_is_zero_filled(self):
+        self.compile_source(
+            'class Zeroed:\n'
+            '    func __init__() void:\n'
+            '        self.bytes: uint8[4]\n'
+            '    func first() uint8:\n'
+            '        return self.bytes[0]\n'
+            'func main() int32:\n'
+            '    value: Zeroed = Zeroed()\n'
+            '    if value.first() == 0:\n'
+            '        return 0\n'
+            '    return 1\n',
+            executable=True,
+        )
+
     def test_rejects_incompatible_class_field_type_declaration(self):
         with self.assertRaisesRegex(CompilationError, 'no coincide con'):
             self.compile_source(
