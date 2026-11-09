@@ -19,6 +19,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    bind_nominal_type,
     infer_call,
     infer_lvalue,
     infer_value,
@@ -572,6 +573,7 @@ def _parameter_spec(
     *,
     pointer_size: int = 8,
     allow_unique: bool = False,
+    type_resolver=None,
 ) -> ParameterSpec:
     declarator = pair.nodes[0]
     type_node = pair.nodes[2]
@@ -614,6 +616,8 @@ def _parameter_spec(
         pointer_size=pointer_size,
         allow_unique=allow_unique,
     )
+    if type_resolver is not None:
+        type_spec = bind_nominal_type(type_resolver, type_spec)
     is_unique = type_spec.is_unique
     if is_unique:
         if not (type_spec.array_depth or type_spec.name == 'buffer'):
@@ -641,6 +645,7 @@ def _signature_parameters(
     parameters_node: gast.ASTRef,
     *,
     pointer_size: int = 8,
+    type_resolver=None,
 ) -> tuple[ParameterSpec, ...]:
     """Resolve visible parameters and named argument-expansion parameters."""
     parameters: list[ParameterSpec] = []
@@ -652,6 +657,7 @@ def _signature_parameters(
             item,
             pointer_size=pointer_size,
             allow_unique=True,
+            type_resolver=type_resolver,
         )
         if parameter.is_region:
             if last_data_parameter is None:
@@ -878,6 +884,7 @@ def signature_from_node(
     node: gast.ASTRef,
     *,
     pointer_size: int = 8,
+    type_resolver=None,
 ) -> tuple[str, FunctionSignature]:
     signature = _signature_node(node)
     if signature is None:
@@ -897,7 +904,11 @@ def signature_from_node(
         raise TypeResolutionError(f'La firma de {name or "<anonima>"} es invalida')
 
     parameters_node = children[parameter_index]
-    parameters = _signature_parameters(parameters_node, pointer_size=pointer_size)
+    parameters = _signature_parameters(
+        parameters_node,
+        pointer_size=pointer_size,
+        type_resolver=type_resolver,
+    )
 
     return_node = children[parameter_index + 1]
     return_pointer = 0
@@ -911,6 +922,8 @@ def signature_from_node(
         pointer_level=return_pointer,
         pointer_size=pointer_size,
     )
+    if type_resolver is not None:
+        return_type = bind_nominal_type(type_resolver, return_type)
     if return_type.name == 'Never' and (
         return_type.pointer_level or return_type.array_depth
     ):
@@ -1059,6 +1072,7 @@ def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
             name, signature = signature_from_node(
                 node,
                 pointer_size=compiler.storage.pointer_size,
+                type_resolver=compiler.storage,
             )
             _validate_return_type(compiler, name, signature.return_type)
             for parameter in signature.parameters:
@@ -1294,6 +1308,7 @@ def _for_binding(
             type_node,
             pointer_size=compiler.storage.pointer_size,
         )
+        type_spec = bind_nominal_type(compiler.storage, type_spec)
     except TypeResolutionError as error:
         compiler.error(f'{name}: {error}')
         return None

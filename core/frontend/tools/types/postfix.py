@@ -14,7 +14,7 @@ from .common import (
 )
 from .resolution import (
     _buffer_index_value, _identifier_from_node, _namespace_owner,
-    _resolve_aggregate,
+    _resolve_aggregate, bind_nominal_type,
     _resolve_function, _resolve_symbol, _unsafe_context, _validate_array_index,
     _validate_chain_index, is_buffer_type, resolve_type,
 )
@@ -154,6 +154,7 @@ def _apply_scalar_cast(
         target_node,
         pointer_size=getattr(owner, 'pointer_size', 8),
     )
+    target = bind_nominal_type(owner, target)
     source = value.type_spec
     allowed = {'byte', 'uint8'}
     if (

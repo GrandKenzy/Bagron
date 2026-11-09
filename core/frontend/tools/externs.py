@@ -10,6 +10,7 @@ from core.frontend.tools.function import _parameter_items, _parameter_spec
 from core.frontend.tools.types import (
     INTEGER_TYPES,
     TypeResolutionError,
+    bind_nominal_type,
     resolve_type,
 )
 
@@ -113,7 +114,12 @@ def _extern_functions(body: gast.ASTRef) -> list[gast.ASTRef]:
     return result
 
 
-def _return_spec(node: gast.ASTRef, *, pointer_size: int = 8) -> TypeSpec:
+def _return_spec(
+    node: gast.ASTRef,
+    *,
+    pointer_size: int = 8,
+    type_resolver=None,
+) -> TypeSpec:
     return_node = next(
         (
             child for child in _children(node)
@@ -141,11 +147,14 @@ def _return_spec(node: gast.ASTRef, *, pointer_size: int = 8) -> TypeSpec:
 
     if type_node is None:
         raise TypeResolutionError('La declaracion extern no tiene un tipo de retorno')
-    return resolve_type(
+    type_spec = resolve_type(
         type_node,
         pointer_level=pointer_level,
         pointer_size=pointer_size,
     )
+    if type_resolver is not None:
+        type_spec = bind_nominal_type(type_resolver, type_spec)
+    return type_spec
 
 
 def _validate_abi_type(
@@ -256,6 +265,7 @@ def _collect_function(
             _parameter_spec(
                 pair,
                 pointer_size=compiler.storage.pointer_size,
+                type_resolver=compiler.storage,
             )
             for pair in _parameter_items(parameters_node)
             if isinstance(pair, gast.ASTRef) and pair.name == 'PAIR_PARAM'
@@ -274,6 +284,7 @@ def _collect_function(
         return_type = _return_spec(
             node,
             pointer_size=compiler.storage.pointer_size,
+            type_resolver=compiler.storage,
         )
         _validate_abi_type(
             compiler,

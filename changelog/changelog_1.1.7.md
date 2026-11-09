@@ -1,0 +1,12 @@
+# Changelog 1.1.7
+
+## Type resolution
+
+- Qualified nominal types such as `Library.Type` are now accepted in variable
+  declarations, function signatures, fields, externs, casts, and other type
+  positions.
+- Qualified types retain the imported library's nominal identity, so values
+  returned by functions such as `Library.make_value()` remain compatible with
+  their qualified declaration.
+- The AOT frontend now reports syntax errors only after consuming the complete
+  qualified type spelling.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -536,3 +537,18 @@ def _resolve_aggregate(
     resolver = getattr(owner, 'resolve_type', None)
     aggregate = resolver(name) if callable(resolver) else None
     return aggregate if isinstance(aggregate, AggregateSymbol) else None
+
+
+def bind_nominal_type(
+    namespace: object,
+    type_spec: TypeSpec,
+) -> TypeSpec:
+    """Attach the registry identity of an imported or local nominal type."""
+    resolver = getattr(namespace, 'resolve_type', None)
+    if not callable(resolver):
+        return type_spec
+    target = resolver(type_spec.name)
+    key = getattr(target, 'registry_key', None) if target is not None else None
+    if key is None or type_spec.nominal_key == key:
+        return type_spec
+    return replace(type_spec, nominal_key=key)

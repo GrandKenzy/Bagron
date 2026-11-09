@@ -7,6 +7,7 @@ from core.frontend.tools.types import (
     INTEGER_TYPES,
     TypeResolutionError,
     _integer_bounds,
+    bind_nominal_type,
     resolve_type,
 )
 from gram import ast as gast
@@ -109,6 +110,7 @@ def _resolve_base_type(compiler: Compiler, node: gast.ASTRef) -> TypeSpec:
             type_node,
             pointer_size=compiler.storage.pointer_size,
         )
+        type_spec = bind_nominal_type(compiler.storage, type_spec)
     except TypeResolutionError as error:
         compiler.error(f'El tipo base del enum es invalido: {error}')
         return TypeSpec('int32')

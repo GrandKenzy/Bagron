@@ -109,6 +109,35 @@ class LibraryTests(unittest.TestCase):
             artifact = compiler.compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
+    def test_library_namespace_can_qualify_nominal_types(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            source.mkdir()
+            (source / 'main.bg').write_text(
+                'public struct FileInfo:\n'
+                '    code: int32\n'
+                'public func make_info(value: int32) FileInfo:\n'
+                '    info: FileInfo\n'
+                '    info.code = value\n'
+                '    return info\n',
+                encoding='utf-8',
+            )
+            package_path = root / 'libs' / 'Metadata.lib'
+            package_path.parent.mkdir()
+            pack_library(source, package_path, name='Metadata', version='1.0.0')
+            main = root / 'main.bg'
+            main.write_text(
+                'library "Metadata.lib" as Meta\n'
+                'func main() int32:\n'
+                '    info: Meta.FileInfo = Meta.make_info(42)\n'
+                '    return info.code\n',
+                encoding='utf-8',
+            )
+
+            artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
     def test_libs_directory_is_the_canonical_library_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -9,6 +9,7 @@ from core.frontend.tools.types import (
     _children,
     _token_kind,
     _token_value,
+    bind_nominal_type,
     resolve_type,
 )
 
@@ -118,6 +119,7 @@ def _validate_representation(
         pointer_level=pointer_level,
         pointer_size=compiler.storage.pointer_size,
     )
+    representation = bind_nominal_type(compiler.storage, representation)
     if representation.value_is_const or representation.is_unique:
         raise TypeResolutionError(
             f'La representacion de opaque {name} no puede ser const ni unique'

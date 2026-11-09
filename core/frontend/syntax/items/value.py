@@ -39,6 +39,21 @@ class BITINT_TYPE(cmb.RuleItem):
     nodeable = True
 
 
+class QUALIFIED_TYPE(cmb.RuleItem):
+    """A type exported through a module or library namespace."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('IDENT'),
+        cmb.Some(
+            cmb.Seq(
+                cmb.MatchToken('DOT'),
+                cmb.MatchToken('IDENT'),
+            )
+        ),
+    )
+    nodeable = False
+
+
 class TYPE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchKeyword('const')),
@@ -46,6 +61,7 @@ class TYPE(cmb.RuleItem):
         cmb.Alt(
             cmb.Ref(BITINT_TYPE),
             cmb.MatchGroup('types'),
+            cmb.Ref(QUALIFIED_TYPE),
             cmb.MatchToken('IDENT'),
         ),
         cmb.Many(cmb.Ref(ARRAY_SUFFIX)),
@@ -326,6 +342,7 @@ __all__ = [
     'POINTER',
     'POSTFIX_EXPR',
     'PRIMARY',
+    'QUALIFIED_TYPE',
     'RETURN',
     'RETURN_ASM',
     'TYPE',

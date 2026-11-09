@@ -10,6 +10,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    bind_nominal_type,
     buffer_capacity,
     infer_value,
     is_buffer_type,
@@ -409,6 +410,7 @@ def collect_in_scope(
             pointer_is_const=handle.pointer_is_const,
             pointer_size=compiler.storage.pointer_size,
         )
+        type_spec = bind_nominal_type(compiler.storage, type_spec)
     except TypeResolutionError as error:
         compiler.error(f'{handle.name}: {error}')
         return None

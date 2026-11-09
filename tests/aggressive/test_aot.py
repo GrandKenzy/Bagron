@@ -41,6 +41,16 @@ class AotFrontendTests(unittest.TestCase):
         self.assertEqual('FUNCTION', nodes[0].name)
         self.assertEqual('FUNCTION_BODY', nodes[0].nodes[-1].name)
 
+    def test_accepts_qualified_type_names(self):
+        nodes = self.parser.parse(
+            'func main() int32:\n'
+            '    info: OS.FileInfo\n'
+            '    return 0\n',
+            session=BAGRON_SESSION,
+            name='qualified_type_aot.bg',
+        )
+        self.assertEqual('FUNCTION', nodes[0].name)
+
     def test_preserves_designated_aggregate_literal_nodes(self):
         nodes = self.parser.parse(
             'struct Point:\n'

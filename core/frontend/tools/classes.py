@@ -15,6 +15,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    bind_nominal_type,
     infer_value,
     is_compatible,
     resolve_type,
@@ -428,6 +429,10 @@ def _initializer_fields(
                     type_node,
                     pointer_size=getattr(compiler, 'pointer_size', 8),
                 )
+                declared_type = bind_nominal_type(
+                    compiler.storage,
+                    declared_type,
+                )
             except TypeResolutionError as error:
                 compiler.error(f'{class_name}.{field_name}: {error}')
                 continue
@@ -563,6 +568,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
         function_name, signature = function_tools.signature_from_node(
             initializer_node,
             pointer_size=compiler.storage.pointer_size,
+            type_resolver=compiler.storage,
         )
     except TypeResolutionError as error:
         compiler.error(f'{symbol.name}.{initializer_name}: {error}')
@@ -922,6 +928,7 @@ def collect_methods(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
                 parsed_name, source_signature = function_tools.signature_from_node(
                     item,
                     pointer_size=compiler.storage.pointer_size,
+                    type_resolver=compiler.storage,
                 )
             except TypeResolutionError as error:
                 compiler.error(f'{class_symbol.name}: {error}')

@@ -55,6 +55,7 @@ from .resolution import (
     resolve_type,
     _namespace_owner,
     _resolve_aggregate,
+    bind_nominal_type,
 )
 
 from .postfix import (
@@ -152,6 +153,7 @@ __all__ = [
     'resolve_type',
     '_namespace_owner',
     '_resolve_aggregate',
+    'bind_nominal_type',
     '_unwrap_value',
     '_deref_type',
     '_address_type',

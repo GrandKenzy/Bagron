@@ -10,6 +10,7 @@ from core.frontend.tools.types import (
     TypeResolutionError,
     UnsupportedExpressionError,
     ValueResolutionError,
+    bind_nominal_type,
     infer_value,
     is_compatible,
     resolve_type,
@@ -180,6 +181,7 @@ def _flags_base_type(
             node,
             pointer_size=compiler.storage.pointer_size,
         )
+        type_spec = bind_nominal_type(compiler.storage, type_spec)
     except TypeResolutionError as error:
         compiler.error(f'El tipo base de flags {name} es invalido: {error}')
         return None
@@ -339,6 +341,7 @@ def _resolve_field_type(
             pointer_size=compiler.storage.pointer_size,
             allow_bit_types=allow_bit_types,
         )
+        type_spec = bind_nominal_type(compiler.storage, type_spec)
     except TypeResolutionError as error:
         compiler.error(f'{owner}.{handle.name}: {error}')
         return None
