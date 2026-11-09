@@ -83,8 +83,7 @@ class InstallerTests(unittest.TestCase):
                 [
                     str(target.resolve()),
                     str(caller_dir.resolve()),
-                    str(target.resolve() / 'main.py'),
-                    '--probe',
+                    f'{target.resolve() / "main.py"} --probe',
                 ],
                 log_path.read_text(encoding='utf-8').splitlines(),
             )
