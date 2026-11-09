@@ -652,6 +652,7 @@ if [[ ! -x "$python_bin" ]]; then
     printf '%s\n' 'Error: falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo.' >&2
     exit 1
 fi
+export PYTHONPATH="$bagron_home/vendor${PYTHONPATH:+:$PYTHONPATH}"
 if [[ "${1:-}" == "--update" || "${1:-}" == "--uninstall" ]]; then
     maintenance_command="$1"
     exec "$python_bin" "$bagron_home/installer.py" "$maintenance_command" --target "$bagron_home"
@@ -674,6 +675,7 @@ exec "$python_bin" "$bagron_home/main.py" "$@"
         'set "PYTHON=%BAGRON_HOME%\\.runtime\\python.exe"\r\n'
         'if not exist "%PYTHON%" set "PYTHON=%BAGRON_HOME%\\.runtime\\Scripts\\python.exe"\r\n'
         'if not exist "%PYTHON%" (echo Error: falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo. 1>&2 & exit /b 1)\r\n'
+        'set "PYTHONPATH=%BAGRON_HOME%\\vendor;%PYTHONPATH%"\r\n'
         'if /I "%~1"=="--update" "%PYTHON%" "%BAGRON_HOME%\\installer.py" --update --target "%BAGRON_HOME%"\r\n'
         'if /I "%~1"=="--update" exit /b %ERRORLEVEL%\r\n'
         'if /I "%~1"=="--uninstall" "%PYTHON%" "%BAGRON_HOME%\\installer.py" --uninstall --target "%BAGRON_HOME%"\r\n'
@@ -691,6 +693,7 @@ exec "$python_bin" "$bagron_home/main.py" "$@"
         '$python = Join-Path $bagronHome ".runtime\\python.exe"\r\n'
         'if (-not (Test-Path -LiteralPath $python)) { $python = Join-Path $bagronHome ".runtime\\Scripts\\python.exe" }\r\n'
         'if (-not (Test-Path -LiteralPath $python)) { Write-Error "Falta el Python portable de Bagron; ejecuta el instalador de Bagron de nuevo."; exit 1 }\r\n'
+        '$env:PYTHONPATH = "$(Join-Path $bagronHome \'vendor\');$env:PYTHONPATH"\r\n'
         'if ($args.Count -gt 0 -and ($args[0] -eq "--update" -or $args[0] -eq "--uninstall")) {\r\n'
         '    & $python (Join-Path $bagronHome "installer.py") $args[0] --target $bagronHome\r\n'
         '    exit $LASTEXITCODE\r\n'
@@ -1427,11 +1430,16 @@ def _stage_prebuilt_installation(
         _create_launchers(staging / 'bin')
 
         python_bin = _runtime_python_path(staging / LOCAL_RUNTIME_NAME)
+        probe_environment = os.environ.copy()
+        probe_environment['PYTHONPATH'] = os.pathsep.join(
+            [str(staging / 'vendor'), probe_environment.get('PYTHONPATH', '')]
+        )
         probe = subprocess.run(
             [str(python_bin), str(staging / 'main.py'), '--version'],
             cwd=str(staging),
             capture_output=True,
             text=True,
+            env=probe_environment,
             check=False,
         )
         if probe.returncode != 0 or f'Bagron {BAGRON_VERSION}' not in probe.stdout:

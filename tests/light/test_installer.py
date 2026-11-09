@@ -36,6 +36,7 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('while [[ -L "$launcher_path" ]]', content)
             self.assertIn('launcher_path="$(readlink "$launcher_path")"', content)
             self.assertIn('python_bin="$bagron_home/.runtime/bin/python"', content)
+            self.assertIn('export PYTHONPATH="$bagron_home/vendor${PYTHONPATH:+:$PYTHONPATH}"', content)
             self.assertIn('installer.py" "$maintenance_command" --target', content)
             self.assertIn('exec "$python_bin" "$bagron_home/main.py" "$@"', content)
 
@@ -284,9 +285,11 @@ class InstallerTests(unittest.TestCase):
             )
             self.assertIn(r'.runtime\python.exe', cmd_content)
             self.assertIn(r'.runtime\Scripts\python.exe', cmd_content)
+            self.assertIn('set "PYTHONPATH=%BAGRON_HOME%\\vendor;%PYTHONPATH%"', cmd_content)
             self.assertIn('"%PYTHON%" "%BAGRON_HOME%\\main.py" %*', cmd_content)
             self.assertIn(r'.runtime\python.exe', ps1_content)
             self.assertIn(r'.runtime\Scripts\python.exe', ps1_content)
+            self.assertIn('$env:PYTHONPATH = "$(Join-Path $bagronHome \'vendor\');$env:PYTHONPATH"', ps1_content)
             self.assertIn('& $python (Join-Path $bagronHome "main.py") @args', ps1_content)
 
     def test_maintenance_commands_use_the_embedded_installer(self):
