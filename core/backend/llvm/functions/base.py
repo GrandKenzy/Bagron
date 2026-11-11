@@ -532,7 +532,12 @@ class FunctionEmitterBase:
         if name is None:
             return False
         spec = self._active_type_spec(name)
-        return spec is not None and spec.name in UNSIGNED_INTEGER_TYPES
+        if spec is None:
+            return False
+        if spec.name in UNSIGNED_INTEGER_TYPES:
+            return True
+        enum = self.type_registry.enum(spec.name) if self.type_registry else None
+        return enum is not None and enum.base_type.name in UNSIGNED_INTEGER_TYPES
 
     @staticmethod
     def _condition_value(node: object) -> object | None:

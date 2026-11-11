@@ -14,6 +14,10 @@ Los campos se declaran con la forma `nombre: Tipo`.
 
 Un `struct` agrupa varios campos bajo un nombre único. Cada campo conserva su
 propio tipo y almacenamiento, y el conjunto se trata como un solo valor.
+Los nombres de campo deben ser únicos. Un `struct` vacío se rechaza, los arrays
+de campo deben tener dimensiones estáticas y no se permiten ciclos por valor;
+la recursión mediante un puntero sí es posible. `chain` no puede declararse
+como campo de un agregado.
 
 ### Firma
 
@@ -57,7 +61,9 @@ mold Nombre:
 
 `mold` es apropiado cuando varias representaciones deben ocupar exactamente
 la misma región de memoria; no crea almacenamiento independiente para cada
-campo.
+campo. El backend reserva una región del tamaño de la vista más grande y cada
+campo se interpreta desde el inicio de esa región; no existe un tag que indique
+qué vista se escribió. Los `mold` tampoco pueden estar vacíos.
 
 ## `flags`
 
@@ -97,28 +103,81 @@ explícita, por ejemplo con un campo `uBint<N>` inicializado en cero.
 Los campos sin decorador se asignan desde los bits menos significativos.
 `@order_msb` selecciona el orden contrario.
 
+Los valores escritos en la declaración son los valores iniciales de los
+campos. Un literal designado de `flags` comienza con todos los bits en cero y
+solo escribe los campos designados; no reutiliza automáticamente esos valores
+declarativos. Un bitfield no tiene dirección propia y no puede usarse con `$`.
+
 ## `enum`
 
-Un `enum` es un tipo nominal cuyos miembros tienen valores enteros constantes.
-Si no se indica un tipo base, se usa `int32`; también puede declararse
-cualquier tipo entero escalar (`int8`/`int16`/`int32`/`int64`, `uint8`/`uint16`/
-`uint32`/`uint64`, `byte`, `isize` o `usize`). El tipo base no puede ser
-`const`, puntero ni array.
+Un `enum` es un tipo nominal que asocia nombres con valores enteros validados
+durante la compilación. Su declaración completa es:
+
+```bg
+[public|private] enum Nombre [TipoBase]:
+    MIEMBRO [= literal_entero],
+    OTRO_MIEMBRO
+```
+
+Si se omite `TipoBase`, Bagron usa `int32`. También admite `int8`, `int16`,
+`int32`, `int64`, `uint8`, `uint16`, `uint32`, `uint64`, `byte`, `isize` o
+`usize`. No se permiten `bool`, `const`, punteros, arrays ni tipos expansivos.
+
+### Valores y sintaxis
+
+El primer miembro implícito vale `0`. Un valor explícito fija ese miembro y el
+siguiente automático continúa desde ese valor más uno:
+
+```bg
+enum Estado uint8:
+    INACTIVO,       ; 0
+    ACTIVO = 4,     ; 4
+    PAUSADO,        ; 5
+    CANCELADO = 10, ; 10
+    ARCHIVADO       ; 11
+```
+
+El valor explícito debe ser un literal entero, no una expresión, variable u
+otro miembro. La coma final es opcional. Los nombres repetidos se rechazan,
+pero los valores pueden repetirse; el compilador solo exige que cada valor
+quepa en el rango de la base, incluidos los incrementos implícitos.
+
+### Uso como tipo y límites actuales
+
+El nombre se usa en variables, parámetros, retornos y campos:
 
 ```bg
 enum Estado uint8:
     INACTIVO,
-    ACTIVO = 4,
-    PAUSADO
-    ; valores: 0, 4 y 5
+    ACTIVO = 4
+
+struct Registro:
+    estado: Estado
 ```
 
-Los miembros automáticos comienzan en `0`; un valor explícito fija el miembro y
-el siguiente automático continúa desde ese valor más uno. La coma final en el
-último miembro es opcional. Los miembros
-duplicados y los valores fuera del rango del tipo base se rechazan. En el
-backend, el `enum` conserva su nombre nominal, pero usa la representación y el
-ancho del tipo base.
+`Estado` es nominal: no se intercambia automáticamente con `uint8`, aunque
+usen el mismo ancho, y `as` no ofrece una conversión general entre un enum y su
+base. Sus miembros sí son valores constantes tipados, por lo que pueden usarse
+en asignaciones, condiciones, argumentos, retornos y comparaciones:
+
+```bg
+estado: Estado = Estado.ACTIVO
+es_activo: bool = estado == Estado.ACTIVO
+```
+
+El miembro conserva el tipo `Estado`, no el tipo entero de la base. Los enums
+distintos tampoco se mezclan automáticamente, aunque compartan representación.
+
+Un `enum` no es un agregado: no tiene campos, métodos ni literal `{ ... }`. En
+el backend usa directamente el ancho y la ABI de su base, sin tag runtime ni
+tabla de miembros. Un `struct` o `mold` puede contener un campo enum, pero la
+reinterpretación de un `mold` sigue siendo responsabilidad de `mold`.
+
+`enum` describe valores enteros nombrados; `flags` describe bits combinables.
+Usa `flags` para permisos que puedan activarse simultáneamente y `enum` para
+estados o códigos individuales. Consulta la [referencia dedicada de
+`enum`](../07-estructuras%20struct,%20mold%20y%20flags/05-enum.md) para rangos,
+visibilidad, ABI y diagnósticos.
 
 ## `class`
 

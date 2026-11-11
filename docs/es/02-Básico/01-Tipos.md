@@ -50,7 +50,7 @@ tipo. No todas son valores escalares ni tienen almacenamiento independiente:
 | Buffer administrado | `buffer[N]` o `buffer[]` | Descriptor de bytes dinámico; `buffer[]` solo puede usarse con capacidad inferible o como parámetro. Exige `Len_t` y no admite `Size_t`. |
 | Puntero | `T*`, `T**`, ... | Dirección tipada. Cada nivel se declara explícitamente y sus reglas de constancia son independientes. |
 | Cadena estática | `chain` | Referencia constante a bytes UTF-8 terminados en `NUL`; no se combina con arrays ni punteros. |
-| Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `flags Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. |
+| Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `flags Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. `enum` usa la representación de su base y no expone automáticamente sus miembros como constantes de expresión. |
 | Descriptor opaco | `opaque Nombre: void*` o `opaque Nombre: entero` | Handle nominal con representación ABI conocida solo por el compilador; no es un puntero ni un entero intercambiable desde el código fuente. |
 
 `Null` es un literal de puntero nulo, no un tipo almacenable. Solo es compatible

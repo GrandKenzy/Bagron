@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-BAGRON_VERSION = '1.1.7'
+BAGRON_VERSION = '1.1.8'
 
 __all__ = ['BAGRON_VERSION']

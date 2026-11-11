@@ -1,7 +1,7 @@
 # 01. Estados de `buffer`
 
-Un `buffer` local empieza como `owned`. `Del` libera su almacenamiento y lo
-lleva a `dead`:
+Un `buffer` local empieza como `owned`. `Del` libera su almacenamiento, pone a
+cero su descriptor y lo lleva a `dead`:
 
 ```bg
 func main() int32:
@@ -23,7 +23,9 @@ func fill(data: buffer[], length: Len_t) void:
 ```
 
 El ownership permanece en el llamador. `buffer` administra almacenamiento
-dinámico; `byte[N]` es un array estático y sigue reglas distintas.
+dinámico; `byte[N]` es un array estático y sigue reglas distintas. Un parámetro
+`buffer[N]` debe recibir una capacidad exactamente igual a `N`; `buffer[]`
+acepta cualquier capacidad conocida.
 
 ### Ramas condicionales y reconstrucción
 

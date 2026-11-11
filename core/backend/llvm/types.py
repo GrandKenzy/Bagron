@@ -99,6 +99,7 @@ class LLVMTypeRegistry:
         self._pointer_size = pointer_size
         self._types: dict[str, ir.Type] = {}
         self._symbols: dict[str, AggregateSymbol] = {}
+        self._enum_symbols: dict[str, EnumSymbol] = {}
         self._opaque_symbols: dict[str, OpaqueSymbol] = {}
         self._layouts: dict[str, AggregateLayout] = {}
         self._llvm_name_to_key: dict[str, str] = {}
@@ -108,6 +109,7 @@ class LLVMTypeRegistry:
         for name, symbol in symbols.items():
             if isinstance(symbol, EnumSymbol):
                 self._types[name] = scalar_type(symbol.base_type)
+                self._enum_symbols[name] = symbol
             elif isinstance(symbol, OpaqueSymbol):
                 # Opaque values are lowered directly to their declared ABI
                 # shape; no identified LLVM type or runtime tag is created.
@@ -361,6 +363,17 @@ class LLVMTypeRegistry:
 
     def aggregate(self, type_name: object) -> AggregateSymbol | None:
         return self._symbols.get(self._key(type_name))
+
+    def enum(self, type_name: object) -> EnumSymbol | None:
+        """Return the enum symbol for a nominal type name, if registered."""
+        key = self._key(type_name)
+        return next(
+            (
+                symbol for symbol in self._enum_symbols.values()
+                if symbol.registry_key == key or symbol.name == key
+            ),
+            None,
+        )
 
     def field_spec(self, type_name: object, field_name: str):
         symbol = self._symbols.get(self._key(type_name))
@@ -810,6 +823,10 @@ def constant_value(
 
     if spec.name == 'bool':
         return ir.Constant(target_type, bool(value.value))
+    if type_registry is not None and type_registry.enum(spec) is not None:
+        # Enum constants use the nominal frontend type but the scalar ABI of
+        # their declared integer base.
+        return ir.Constant(target_type, int(value.value))
     if spec.name in {'char', 'byte'} and value.type_spec.name == 'chain':
         data = _string_bytes(value.value, ascii_only=spec.name == 'char')
         if len(data) != 1:

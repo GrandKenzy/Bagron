@@ -8,8 +8,34 @@
 - [04. `@unsafe` y la frontera de punteros](04-unsafe-y-punteros.md)
 - [05. Alcance real del borrow checker](05-alcance-del-borrow-checker.md)
 
-Bagron no tiene un recolector de basura. La validación conserva estados
-estáticos para `buffer` y descriptores `opaque`.
+Bagron no tiene un recolector de basura ni un runtime que rastree ownership.
+El compilador mantiene estados estáticos para `buffer` y descriptores `opaque`.
+Estos estados no se almacenan en el ejecutable: sirven para diagnosticar
+movimientos, préstamos, cierres y fugas durante la compilación.
+
+## Qué es un handler en Bagron
+
+En código de sistema, un *handler* es un valor que identifica un recurso
+externo —por ejemplo un archivo, socket, evento o mapeo— y que debe cerrarse
+exactamente una vez. En Bagron, el tipo apropiado suele ser un descriptor
+`opaque`, no un entero ni un puntero público:
+
+```bg
+opaque HANDLE: void*
+```
+
+`opaque` solo define el nombre nominal y su representación ABI para la
+biblioteca que lo declara. El usuario puede recibirlo, devolverlo, pasarlo y
+compararlo según las reglas del tipo, pero no puede desreferenciarlo,
+indexarlo, convertirlo a entero o mezclarlo con otro `opaque` incompatible.
+Bagron tampoco sabe si el valor sigue siendo válido en el sistema operativo;
+esa responsabilidad pertenece a la biblioteca que adquiere y libera el
+recurso.
+
+No todo `opaque` es necesariamente un handle de Windows ni todo handle nativo
+debe exponerse como `opaque`: el contrato depende de la API. Lo importante es
+que el recurso tenga una operación de cierre y que esa operación se declare
+como consumidora.
 
 ## Estados de `buffer`
 

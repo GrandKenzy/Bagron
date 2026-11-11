@@ -13,6 +13,10 @@ func first_byte(value: WordView) byte:
 
 Los campos comparten almacenamiento. Escribir `whole` y leer después `bytes`
 reinterpreta los mismos bits; no es una conversión de tipos ni una copia.
+La región tiene el tamaño ABI de la vista más grande y todos los campos parten
+de su inicio. Por eso el tamaño o la alineación de una vista puede determinar
+el layout completo; `@packed` solo elimina el padding del contenedor LLVM y
+`@align(N)` solicita una alineación del agregado.
 
 Si un campo contiene una dirección, la procedencia obtenida al leerla no queda
 demostrada por el compilador. Desreferenciar ese puntero requiere una función
@@ -39,6 +43,7 @@ view: WordView = WordView{ .whole = 270544960 }
 No se permiten varios campos ni un literal vacío, porque los miembros se
 superponen en la misma región de almacenamiento.
 
-Los bytes no ocupados por la vista activa se inicializan en cero. Esto evita
-filtrar contenido previo de pila al leer otra vista o pasar el valor a una ABI
-externa.
+En un literal de `mold`, Bagron pone primero a cero toda la región temporal y
+después escribe la vista activa. Por tanto, los bytes que la vista no cubre
+quedan en cero en ese literal; esto no convierte la reinterpretación en una
+garantía general sobre memoria externa o sobre un puntero que apunte al mold.

@@ -1,4 +1,11 @@
-# 03. Descriptores `opaque`
+# 03. Handlers y descriptores `opaque`
+
+Un handler de sistema es un identificador de un recurso que tiene una vida
+externa al lenguaje. En Bagron se representa como `opaque` cuando la biblioteca
+debe ocultar su layout y controlar cómo se adquiere y se libera. El descriptor
+no es el recurso en sí ni una garantía de que el sistema operativo lo acepte:
+es el valor ABI que permite transportar esa identidad bajo un contrato de
+ownership estático.
 
 Los descriptores `opaque` también tienen estado estático:
 
@@ -22,11 +29,13 @@ func release_one() void:
 ```
 
 Los retornos y las variables locales empiezan como `owned`; los parámetros
-ordinarios son `borrowed`. Las llamadas normales prestan el descriptor durante
-la llamada. Una función marcada con `@consume` consume un descriptor `owned` y
-lo marca como `closed`; un segundo cierre se diagnostica estáticamente. En este
-ejemplo, `GetStdHandle` representa la adquisición y `CloseHandle` la operación
-nativa real:
+ordinarios son `borrowed`. Una llamada ordinaria presta el descriptor durante
+la llamada y no transfiere su ownership. Una función marcada con `@consume`
+recibe la propiedad de sus parámetros `opaque`: el argumento del llamador pasa
+a `moved` y el parámetro consumidor debe cerrarlo o transferirlo antes de salir.
+Al cerrar un descriptor consumido, su estado queda `closed`; usarlo o cerrarlo
+otra vez se diagnostica estáticamente. En este ejemplo, `GetStdHandle`
+representa la adquisición y `CloseHandle` la operación nativa real:
 
 ```bg
 @consume
@@ -37,11 +46,17 @@ func close_handle(handle: HANDLE) void:
 
 Dentro de una función `@consume`, sus parámetros `opaque` son `owned` y pueden
 cerrarse o reenviarse a otra función `@consume`. `@consume` exige al menos un
-parámetro `opaque`.
+parámetro `opaque` y solo se admite en funciones, no en métodos.
 
-> La convención por prefijo `close_*` sigue funcionando por compatibilidad (y es
-> la única disponible para `extern`, que no admite decoradores), pero una
-> función Bagron que la usa sin `@consume` emite una advertencia.
+`@consume` no cierra el recurso por sí solo, no llama automáticamente a una
+función nativa y no convierte un `opaque` en un puntero seguro. Solo declara
+quién recibe la obligación de cerrar o transferirlo. La implementación debe
+realizar explícitamente la operación nativa correspondiente.
+
+> La convención por prefijo `close_*` se conserva para código legacy y para
+> funciones `extern`, que no admiten decoradores. En una función Bagron nueva,
+> declara `@consume`: si solo se usa el prefijo, el compilador emite una
+> advertencia para pedir un contrato explícito.
 
 ### Copia y asignación
 
@@ -58,4 +73,5 @@ declarado dentro del cuerpo del bucle sí puede consumirse en esa iteración.
 
 Estos estados no se almacenan en el valor LLVM. El descriptor conserva solo su
 representación ABI (`void*` o escalar) y el ownership se comprueba durante el
-análisis semántico.
+análisis semántico. Por eso el comprobador no puede cerrar un recurso por ti ni
+reparar una API nativa que haya usado el handler después de moverlo.

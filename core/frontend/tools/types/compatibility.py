@@ -180,7 +180,11 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             and source_type.array_depth == 1
             and source.items
         ):
-            if target_capacity is not None and len(source.items) > target_capacity:
+            # A fixed buffer literal describes every byte of the allocation.
+            # Accepting a shorter literal would silently turn a byte-count
+            # mismatch into implicit zero-filling, while accepting a longer
+            # one would leave the backend with an out-of-bounds store plan.
+            if target_capacity is not None and len(source.items) != target_capacity:
                 return False
             return all(
                 is_compatible(TypeSpec('byte'), item)

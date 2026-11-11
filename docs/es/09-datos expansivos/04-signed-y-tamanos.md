@@ -28,3 +28,8 @@ func bytes_of(value: int32, size: Size_t) usize:
 
 En ese caso el tamaño es el de `int32`. No declares `Len_t` para un escalar:
 la longitud solo pertenece a `array`, `buffer[]` o `chain`.
+
+En una llamada, `Len_t` se completa automáticamente cuando el compilador
+conoce la longitud del array, del buffer o del `chain`. Si la longitud llega
+desde otro parámetro, la función intermediaria debe conservar y reenviar ese
+`Len_t`; no se calcula leyendo memoria ni se acepta una longitud inventada.

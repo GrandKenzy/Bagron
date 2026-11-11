@@ -12,6 +12,7 @@ class ENUM_ITEM(cmb.RuleItem):
         cmb.Opt(
             cmb.Seq(
                 cmb.MatchToken('ASSIGN'),
+                cmb.Opt(cmb.MatchToken('MINUS')),
                 cmb.MatchToken('NUMBER'),
             )
         ),

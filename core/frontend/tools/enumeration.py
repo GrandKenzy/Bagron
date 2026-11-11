@@ -60,12 +60,17 @@ def _find_all(node: object, name: str) -> Iterable[gast.ASTRef]:
             yield from _find_all(child, name)
 
 
-def _find_number(node: object) -> int | None:
+def _find_number(node: object, negative: bool = False) -> int | None:
+    if _token_kind(node) == 'MINUS':
+        negative = True
     if type(node).__name__ == 'LiteralNumber':
         value = _token_value(node)
-        return int(value) if value is not None else None
+        if value is None:
+            return None
+        number = int(value)
+        return -number if negative else number
     for child in _children(node):
-        found = _find_number(child)
+        found = _find_number(child, negative)
         if found is not None:
             return found
     return None

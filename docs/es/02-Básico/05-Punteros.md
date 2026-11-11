@@ -441,9 +441,12 @@ otra plataforma. El backend conserva únicamente la representación declarada.
 
 Los retornos y las variables locales de descriptor comienzan en estado
 `owned`; los parámetros son `borrowed`. Las llamadas ordinarias solo prestan el
-valor durante la llamada. Las funciones `close_*` consumen un descriptor
-`owned` y lo marcan `closed`, por lo que un segundo cierre se rechaza
-estáticamente. Estos estados no se almacenan en runtime.
+valor durante la llamada. Una función `@consume` recibe un descriptor `owned`,
+lo marca `moved` en el llamador y debe cerrarlo o transferirlo; al cerrarlo,
+queda `closed` y un segundo cierre se rechaza estáticamente. El prefijo
+`close_*` conserva esta inferencia para código legacy, pero `@consume` es la
+forma explícita para funciones Bagron nuevas. Estos estados no se almacenan en
+runtime.
 
 Los punteros a arrays no reciben la conversión especial de los parámetros de
 array. Un `buffer` es distinto: su almacenamiento lo administra Bagron y nunca

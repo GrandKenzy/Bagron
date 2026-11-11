@@ -5,7 +5,13 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
+from core.frontend.objects import (
+    AggregateSymbol,
+    EnumSymbol,
+    TypeSpec,
+    ValueInfo,
+    Variable,
+)
 from gram import ast as gast
 
 from .common import (
@@ -537,6 +543,18 @@ def _resolve_aggregate(
     resolver = getattr(owner, 'resolve_type', None)
     aggregate = resolver(name) if callable(resolver) else None
     return aggregate if isinstance(aggregate, AggregateSymbol) else None
+
+
+def _resolve_enum(
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    name: str,
+) -> EnumSymbol | None:
+    """Resolve a visible enum type for a qualified member expression."""
+    owner = _namespace_owner(namespace)
+    owner = getattr(owner, 'storage', owner)
+    resolver = getattr(owner, 'resolve_type', None)
+    enum = resolver(name) if callable(resolver) else None
+    return enum if isinstance(enum, EnumSymbol) else None
 
 
 def bind_nominal_type(

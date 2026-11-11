@@ -1,4 +1,4 @@
-# `struct`, `mold` y `flags`
+# `struct`, `mold`, `flags` y `enum`
 
 ## Índice
 
@@ -6,8 +6,11 @@
 - [02. `mold` y reinterpretación](02-mold-y-reinterpretacion.md)
 - [03. `flags` y bitfields](03-flags-y-bitfields.md)
 - [04. Atributos de layout y `volatile`](04-layout-y-volatile.md)
+- [05. `enum`](05-enum.md)
 
-Los tres son agregados nominales, pero tienen layouts distintos.
+`struct`, `mold` y `flags` son agregados nominales con layouts distintos.
+`enum` también es nominal, pero se baja directamente a un entero escalar y no
+es un agregado.
 
 ## `struct`
 
@@ -59,3 +62,24 @@ decoradores no cambian el orden de bytes de un entero.
 
 `volatile` conserva lecturas y escrituras del agregado, útil para registros de
 hardware, pero no vuelve atómicas las operaciones.
+
+## `enum`
+
+Un `enum` asocia nombres con valores enteros comprobados en compilación. Usa
+`int32` por defecto o una base entera escalar explícita, y puede aparecer como
+campo de un `struct` o `mold`:
+
+```bg
+enum Kind uint8:
+    empty,
+    data = 4
+
+struct Header:
+    kind: Kind
+```
+
+Los valores automáticos comienzan en `0` y continúan desde el último valor
+explícito. Sus miembros se pueden usar como constantes tipadas (`Kind.data`),
+pero el enum no se convierte automáticamente a su entero base. Consulta la
+[referencia completa de `enum`](05-enum.md) para sintaxis, rangos, visibilidad,
+ABI y límites.

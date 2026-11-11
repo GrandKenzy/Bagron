@@ -559,6 +559,31 @@ class ValueExpressionMixin:
             if primary is not None and not suffixes:
                 return self._compile_expression(primary, builder, values)
             if primary is not None:
+                if (
+                    len(suffixes) == 1
+                    and getattr(suffixes[0], 'name', None) == 'MEMBER_ACCESS'
+                    and self.type_registry is not None
+                ):
+                    enum_name = self._identifier(primary)
+                    enum = self.type_registry.enum(enum_name or '')
+                    if enum is not None:
+                        member_name = self._identifier(suffixes[0])
+                        member = next(
+                            (
+                                item for item in enum.members
+                                if item.name == member_name
+                            ),
+                            None,
+                        )
+                        if member is None:
+                            raise FunctionEmissionError(
+                                f'El miembro {enum.name}.{member_name or "<anonimo>"} '
+                                'no existe'
+                            )
+                        return ir.Constant(
+                            self.type_registry.resolve(TypeSpec(enum.name)),
+                            member.value,
+                        )
                 if getattr(self._unwrap(primary), 'name', None) == 'AGGREGATE_VALUE':
                     if len(suffixes) != 1 or getattr(suffixes[0], 'name', None) != 'MEMBER_ACCESS':
                         raise FunctionEmissionError(

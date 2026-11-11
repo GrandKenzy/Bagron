@@ -14,7 +14,7 @@ from .common import (
 )
 from .resolution import (
     _buffer_index_value, _identifier_from_node, _namespace_owner,
-    _resolve_aggregate, bind_nominal_type,
+    _resolve_aggregate, _resolve_enum, bind_nominal_type,
     _resolve_function, _resolve_symbol, _unsafe_context, _validate_array_index,
     _validate_chain_index, is_buffer_type, resolve_type,
 )
@@ -441,6 +441,37 @@ def _infer_postfix(
         imported = _resolve_symbol(namespace, qualified_name)
         if isinstance(imported, Variable):
             return _imported_global_value(imported, qualified_name)
+
+    # Enum members are compile-time values, not storage members. Resolve the
+    # type/member pair before the normal identifier path, which only accepts
+    # variables as bare values.
+    if primary is not None and suffixes:
+        enum_name = _identifier_from_node(primary)
+        first_suffix = suffixes[0]
+        if (
+            enum_name is not None
+            and getattr(first_suffix, 'name', None) == 'MEMBER_ACCESS'
+        ):
+            member_name = _identifier_from_node(first_suffix)
+            enum = _resolve_enum(namespace, enum_name)
+            if enum is not None:
+                if len(suffixes) != 1 or member_name is None:
+                    raise ValueResolutionError(
+                        'un miembro de enum solo puede usarse como valor escalar'
+                    )
+                member = next(
+                    (item for item in enum.members if item.name == member_name),
+                    None,
+                )
+                if member is None:
+                    raise ValueResolutionError(
+                        f'El miembro {enum.name}.{member_name} no existe'
+                    )
+                return ValueInfo(
+                    TypeSpec(enum.name, nominal_key=enum.registry_key),
+                    is_literal=True,
+                    value=member.value,
+                )
 
     result = infer_value(
         primary,

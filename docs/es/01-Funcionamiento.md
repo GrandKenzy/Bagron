@@ -122,7 +122,8 @@ son metadatos semánticos y no se emiten como campos ocultos en el ABI.
 - Un `buffer` derivado no puede cruzar un `extern` como si fuera un puntero
   ABI ordinario.
 - Los handles `opaque` también tienen estados de propietario, prestado y
-  cerrado; las operaciones `close_*` consumen el handle propietario.
+  cerrado. Una función `@consume` recibe el handle propietario y debe cerrarlo
+  o transferirlo; `close_*` solo conserva esa semántica por compatibilidad.
 
 Estas reglas no introducen un recolector de basura. La liberación del
 almacenamiento se realiza mediante las operaciones y hooks definidos por el

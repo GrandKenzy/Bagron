@@ -26,7 +26,7 @@ from .common import (
 )
 from .resolution import (
     _float_rank, _identifier_from_node, _namespace_owner,
-    _require_known_pointer, _resolve_aggregate, _resolve_symbol,
+    _require_known_pointer, _resolve_aggregate, _resolve_enum, _resolve_symbol,
     buffer_capacity, is_buffer_type, is_condition_type, _is_float_scalar,
 )
 from .compatibility import (
@@ -385,10 +385,20 @@ def infer_value(
                 left.type_spec.name == 'bool'
                 and right.type_spec.name == 'bool'
             )
+            same_enum = (
+                left.type_spec.pointer_level == 0
+                and left.type_spec.array_depth == 0
+                and right.type_spec.pointer_level == 0
+                and right.type_spec.array_depth == 0
+                and _resolve_enum(namespace, left.type_spec.name) is not None
+                and left.type_spec.name == right.type_spec.name
+                and left.type_spec.nominal_key == right.type_spec.nominal_key
+            )
             if not (
                 (left_is_integer and right_is_integer)
                 or float_comparison
                 or both_bool
+                or same_enum
             ):
                 raise ValueResolutionError(
                     'los operandos de una comparacion deben ser enteros, '

@@ -1,8 +1,9 @@
 # `buffer`
 
-`buffer` representa un bloque de memoria dinámica cruda compuesto por bytes.
-Su tamaño es exacto y forma parte de la declaración. Un `buffer` no crece ni
-cambia de capacidad después de ser creado.
+`buffer` representa un descriptor de un bloque de memoria dinámica compuesto
+por bytes (`uint8`). El descriptor contiene un puntero a los datos y una
+capacidad en bytes. Cada reserva tiene una capacidad fija: no crece ni cambia
+de capacidad durante su vida.
 
 `buffer` no es un alias de `byte[N]`:
 
@@ -24,6 +25,17 @@ datos: buffer[8 * 100] = 0
 
 La reserva contiene exactamente `800` bytes. El inicializador escalar `0`
 rellena toda la reserva con cero; no crea un solo elemento de tamaño `800`.
+
+También puede usarse un literal de elementos. En ese caso el literal debe
+contener exactamente la capacidad declarada:
+
+```bg
+datos: buffer[4] = {10, 20, 30, 40}
+```
+
+`buffer[4] = {10, 20}` y `buffer[4] = {10, 20, 30, 40, 50}` son errores de
+compilación. El compilador no rellena ni trunca silenciosamente un literal de
+capacidad fija.
 
 El tamaño no puede ser cero ni negativo:
 
@@ -74,7 +86,8 @@ inferir la capacidad a partir del valor inicial.
 
 ## Concatenación
 
-La suma de dos buffers crea una nueva reserva y copia sus contenidos en orden:
+La suma de dos buffers crea una nueva reserva y copia sus contenidos en orden.
+Los operandos deben estar vivos y la operación no transfiere su ownership:
 
 ```bg
 left: buffer[2] = {10, 20}
@@ -88,8 +101,9 @@ La capacidad resultante es la suma de las capacidades de los operandos:
 buffer[N1] + buffer[N2] = buffer[N1 + N2]
 ```
 
-Los operandos originales no se modifican. La operación no amplía ninguno de
-ellos y puede fallar si no es posible obtener la nueva reserva.
+Los operandos originales no se modifican ni se liberan. La nueva reserva tiene
+la suma de ambas capacidades; si la reserva dinámica falla, el programa entra
+en la ruta de fallo del runtime.
 
 ## Liberación
 
@@ -101,8 +115,11 @@ datos: buffer[8 * 100] = 0
 Del datos
 ```
 
-Después de liberar, el descriptor de `datos` queda en cero. `Del` no es un
-método y no añade atributos implícitos al tipo.
+Después de liberar, el descriptor de `datos` queda en cero. Eso no convierte
+el binding en reutilizable automáticamente: el análisis estático lo marca
+como `dead`. Para reservar de nuevo hay que reconstruir el valor mediante una
+asignación válida, y el uso que ocurra antes de esa reconstrucción se rechaza.
+`Del` no es un método y no añade atributos implícitos al tipo.
 
 El compilador mantiene un estado estático para cada buffer durante el análisis:
 
@@ -137,8 +154,10 @@ func consume(data: buffer[], length: Len_t) usize:
     return length
 ```
 
-`Len_t` contiene la longitud actual en bytes del descriptor. `Size_t` no se
-admite para `buffer`, porque todos sus elementos tienen tamaño `1`.
+`Len_t` contiene la capacidad del descriptor en bytes. No existe una longitud
+lógica separada dentro de `buffer`: todos sus bytes forman parte del bloque.
+`Size_t` no se admite para `buffer`, porque sus elementos son bytes de tamaño
+`1`.
 
 `buffer[N]` exige un buffer con esa capacidad exacta; `buffer[]` acepta
 cualquier capacidad conocida en tiempo de ejecución. El parámetro conserva el
@@ -156,7 +175,8 @@ func consume(data: unique buffer[], length: Len_t, region: Region_t) usize:
 compilador demuestra una procedencia de almacenamiento concreta. La función
 no puede recibir dos argumentos que representen la misma región `unique`.
 Los buffers mantienen su descriptor por valor; por eso esta comprobación no
-cambia todavía la ABI ni añade `noalias` al descriptor.
+añade `noalias` al descriptor ni convierte el préstamo en una transferencia de
+ownership.
 
 El análisis de control de flujo toma el estado más restrictivo entre las rutas.
 Por ejemplo, este uso posterior se rechaza porque una de las rutas ya liberó
@@ -172,14 +192,15 @@ No se permite copiar ni retornar buffers. Una función puede recibir un buffer
 como préstamo, modificarlo y devolver únicamente datos intrínsecos u objetos
 por valor; el buffer siempre permanece bajo responsabilidad del llamador.
 
-## Alcance actual
+## Límites actuales
 
-Este documento fija la representación, creación, indexación, inicialización,
-concatenación, liberación y expansión `Len_t` de `buffer`. La transferencia de
-propiedad y el retorno de buffers desde funciones quedan fuera del modelo del lenguaje.
+Este modelo no serializa valores automáticamente, no convierte `buffer` en
+`byte[]`, `char[]`, `chain` ni puntero crudo, y no permite copiarlo o
+retornarlo desde funciones. La transferencia de ownership explícita y el
+retorno de buffers quedan fuera del lenguaje actual.
+
 La liberación es explícita mediante `Del`. Al salir de un ámbito o en retornos
-tempranos, el compilador emite una advertencia si un buffer `owned` no fue liberado
-(o un error de compilación al activar `--strict-ownership`). Si una rama condicional
-deja un buffer en `dead` y la rama no termina ni lo reconstruye, no se permite usarlo
-después de ese punto. `Del` sobre un buffer declarado fuera de un bucle se rechaza:
-una segunda iteración no podría volver a liberar el mismo binding.
+tempranos, el compilador emite una advertencia si un buffer `owned` no fue
+liberado; con `--strict-ownership` esa fuga es un error. Si una rama deja el
+buffer en `dead`, el uso posterior se rechaza. `Del` dentro de un bucle se
+rechaza porque una segunda iteración podría intentar liberar el mismo binding.

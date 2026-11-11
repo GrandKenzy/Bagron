@@ -16,7 +16,7 @@ sintaxis](03-Sintaxis/index.md).
 - [Librerías](04-librerías/index.md)
 - [Externos](05-externos/index.md)
 - [Clases](06-clases/index.md)
-- [Agregados](07-estructuras%20struct%2C%20mold%20y%20flags/index.md)
+- [Agregados y `enum`](07-estructuras%20struct%2C%20mold%20y%20flags/index.md)
 - [Propiedad y borrow checker](08-ownership%20y%20borrow%20checker/index.md)
 - [Datos expansivos](09-datos%20expansivos/index.md)
 - [Decoradores](10-decoradores/index.md)

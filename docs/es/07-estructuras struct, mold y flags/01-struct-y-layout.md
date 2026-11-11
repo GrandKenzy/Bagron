@@ -24,6 +24,22 @@ El padding y la alineación siguen las reglas del backend salvo que se indique
 un decorador de layout. Un `struct` no es un `mold`: leer un campo no
 reinterpreta los bytes de otro campo.
 
+Los nombres de campo no pueden repetirse. El cuerpo no puede quedar vacío y
+los campos no pueden usar `chain` ni arrays abiertos; las dimensiones de un
+array de campo deben ser estáticas. Un agregado no puede contenerse a sí mismo
+por valor, directa o indirectamente, porque eso produciría un tamaño infinito.
+La recursión mediante un puntero sí es válida:
+
+```bg
+struct Node:
+    value: int32
+    next *: Node
+```
+
+El layout conserva el orden declarativo de los campos. El backend puede añadir
+padding para satisfacer la alineación natural; `@packed` y `@align(N)` cambian
+ese layout y deben formar parte del contrato ABI si se usan.
+
 ## Campos de texto
 
 Un campo `char` o `char[N]` se lee y se escribe igual que cualquier otro campo

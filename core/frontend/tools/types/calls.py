@@ -456,14 +456,16 @@ def _validate_unique_arguments(
             raise ValueResolutionError(
                 f'La llamada a {function_name} no puede demostrar la Region_t '
                 f'de {parameter.name}; el origen debe ser almacenamiento local '
-                'o un parametro unique'
+                'o un parametro unique. Contrato: pasa una region cuya '
+                'procedencia pueda demostrar el compilador'
             )
         if parameter.is_unique:
             previous = unique_origins.get(origin)
             if previous is not None:
                 raise ValueResolutionError(
                     f'La llamada a {function_name} solapa las regiones unique '
-                    f'{previous} y {parameter.name}'
+                    f'{previous} y {parameter.name}. Contrato: cada Region_t '
+                    'unique debe representar almacenamiento distinto'
                 )
             unique_origins[origin] = parameter.name
 
@@ -474,7 +476,9 @@ def _validate_unique_arguments(
         if origin in unique_origins:
             raise ValueResolutionError(
                 f'La llamada a {function_name} pasa {parameter.name} dentro de '
-                f'la Region_t unique de {unique_origins[origin]}'
+                f'la Region_t unique de {unique_origins[origin]}. Contrato: '
+                'ningun argumento que comparta esa region puede coexistir con '
+                'el prestamo exclusivo'
             )
 
 
@@ -540,7 +544,9 @@ def _validate_expansion_parameters(
             ):
                 raise ValueResolutionError(
                     f'Len_t de {function_name} requiere que {source_name} '
-                    'sea un chain constante o un chain con Len_t propagado'
+                    'sea un chain constante o un chain con Len_t propagado. '
+                    'Contrato: declara Len_t junto al chain o reenvia el Len_t '
+                    'recibido por tu funcion'
                 )
             continue
         buffer_length = (
@@ -557,7 +563,8 @@ def _validate_expansion_parameters(
             ):
                 raise ValueResolutionError(
                     f'Len_t de {function_name} requiere que {source_name} '
-                    'sea un buffer con longitud conocida o un Len_t propagado'
+                    'sea un buffer con longitud conocida o un Len_t propagado. '
+                    'Contrato: usa buffer[N] o reenvia el Len_t del parametro'
                 )
             continue
         array_length = (
@@ -575,7 +582,8 @@ def _validate_expansion_parameters(
         ):
             raise ValueResolutionError(
                 f'Len_t de {function_name} requiere que {source_name} '
-                'sea un array con longitud conocida en compilacion'
+                'sea un array con longitud conocida en compilacion. '
+                'Contrato: usa un array de tamano fijo o reenvia su Len_t'
             )
         if is_size and source_type is None:
             raise ValueResolutionError(
@@ -591,7 +599,9 @@ def _validate_expansion_parameters(
             ):
                 raise ValueResolutionError(
                     f'Size_t de {function_name} requiere que {source_name} '
-                    'sea un array con longitud conocida en compilacion'
+                    'sea un array con longitud conocida en compilacion. '
+                    'Contrato: declara el array con dimensiones fijas o reenvia '
+                    'su Size_t'
                 )
 
 

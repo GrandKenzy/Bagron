@@ -284,6 +284,29 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
+    def test_enum_members_are_typed_compile_time_values(self):
+        self.compile_source(
+            'enum Estado uint8:\n'
+            '    INACTIVO,\n'
+            '    ACTIVO = 4,\n'
+            'func es_activo(estado: Estado) bool:\n'
+            '    return estado == Estado.ACTIVO\n'
+            'func main() int32:\n'
+            '    estado: Estado = Estado.ACTIVO\n'
+            '    if es_activo(estado):\n'
+            '        return 0\n'
+            '    return 1\n'
+        )
+
+        with self.assertRaisesRegex(CompilationError, 'miembro.*no existe'):
+            self.compile_source(
+                'enum Estado:\n'
+                '    ACTIVO\n'
+                'func main() int32:\n'
+                '    estado: Estado = Estado.INEXISTENTE\n'
+                '    return 0\n'
+            )
+
     def test_rejects_duplicate_members_and_fields(self):
         with self.assertRaisesRegex(CompilationError, 'miembro Estado.ACTIVO'):
             self.compile_source(
