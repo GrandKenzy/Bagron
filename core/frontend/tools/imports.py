@@ -367,12 +367,16 @@ def _candidate_paths(
     project_root: Path,
     library_roots: tuple[Path, ...] = (),
 ) -> list[Path]:
-    # Cada módulo solo puede buscar dentro del árbol de su propietario.
+    """Return module candidates while keeping ``modules/`` flat logically.
+
+    A directory below ``modules/`` is an organizational boundary, not part of
+    the import name.  The legacy ``modules/name/main.bg`` shape remains in the
+    candidate list so existing projects keep compiling.
+    """
     if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name) is None:
         return []
 
-    relative = Path(name)
-    filename = relative.with_suffix('.bg')
+    filename = f'{name}.bg'
     owner_root = None
     for candidate_root in sorted(
         (Path(root).resolve() for root in library_roots),
@@ -386,19 +390,50 @@ def _candidate_paths(
         owner_root = candidate_root
         break
 
-    if owner_root is None:
-        roots = [project_root.resolve() / 'modules', project_root.resolve()]
-    else:
-        roots = [current_file.resolve().parent, owner_root / 'modules', owner_root]
-
     candidates: list[Path] = []
     seen: set[Path] = set()
-    for root in roots:
-        for candidate in (root / filename, root / relative / 'main.bg'):
-            resolved = candidate.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                candidates.append(resolved)
+
+    def add(candidate: Path) -> None:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            candidates.append(resolved)
+
+    if owner_root is None:
+        module_root = project_root.resolve() / 'modules'
+        fallback_root = project_root.resolve()
+    else:
+        module_root = owner_root / 'modules'
+        fallback_root = owner_root
+
+    # ``rglob`` deliberately flattens the logical namespace: the basename is
+    # the import name, regardless of how many visual folders contain it.
+    if module_root.is_dir():
+        for candidate in sorted(
+            module_root.rglob(filename),
+            key=lambda item: item.as_posix().casefold(),
+        ):
+            if candidate.is_file():
+                add(candidate)
+
+        # Keep the pre-existing package-directory convention as a fallback
+        # within the same search root.  It is not used to name new modules.
+        for entry_name in ('main.bg', '_main.bg'):
+            legacy = module_root / name / entry_name
+            if legacy.is_file():
+                add(legacy)
+
+    # A source file outside ``modules/`` historically searched its own
+    # directory in a library, and projects may still have root-level modules.
+    # These fallbacks retain that behavior after the recursive search.
+    if owner_root is not None:
+        add(current_file.parent / filename)
+    for candidate in (
+        fallback_root / filename,
+        fallback_root / name / 'main.bg',
+        fallback_root / name / '_main.bg',
+    ):
+        add(candidate)
     return candidates
 
 
@@ -446,17 +481,46 @@ def resolve_module_path(
         )
         return None
 
-    for candidate in _candidate_paths(
+    candidates = _candidate_paths(
         name,
         current_file,
         project_root,
         library_roots,
-    ):
-        candidate = candidate.resolve()
-        if candidate.suffix == '.bg' and any(_is_within(candidate, root) for root in allowed_roots) and candidate.is_file():
+    )
+    existing = [
+        candidate for candidate in candidates
+        if (
+            candidate.suffix == '.bg'
+            and any(_is_within(candidate, root) for root in allowed_roots)
+            and candidate.is_file()
+        )
+    ]
+    if existing:
+        # The first section of candidates is the recursive ``modules/`` tree.
+        # Any second match there would make the flattened namespace ambiguous;
+        # do not silently choose a file based on filesystem ordering.
+        module_root = (
+            (max(owner_roots, key=lambda item: len(item.parts)) / 'modules')
+            if owner_roots
+            else project_root / 'modules'
+        ).resolve()
+        module_matches = [
+            candidate for candidate in existing
+            if _is_within(candidate, module_root)
+        ]
+        if len(module_matches) > 1:
+            rendered = '\n'.join(f'  - {path}' for path in module_matches)
+            compiler.error(
+                f'El modulo {name!r} es ambiguo dentro de modules/; '
+                f'se encontraron varias rutas:\n{rendered}'
+            )
             if isinstance(path_cache, dict):
-                path_cache[cache_key] = candidate
-            return candidate
+                path_cache[cache_key] = None
+            return None
+        selected = module_matches[0] if module_matches else existing[0]
+        if isinstance(path_cache, dict):
+            path_cache[cache_key] = selected
+        return selected
 
     if isinstance(path_cache, dict):
         path_cache[cache_key] = None

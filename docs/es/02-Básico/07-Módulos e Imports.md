@@ -83,13 +83,20 @@ elemento `4`, sin que el código fuente tenga que escribirlos.
 
 ## Resolución de archivos
 
-Para `import nombre`, el compilador busca `nombre.bg` o `nombre/main.bg` en
-este orden:
+Para `import nombre`, el compilador busca los módulos en este orden:
 
-1. el directorio hermano del módulo importador cuando este vive bajo
-   `modules/`;
-2. `modules/` en la raíz del proyecto;
-3. la raíz del proyecto como fallback para proyectos antiguos.
+1. cualquier `modules/**/nombre.bg` dentro de la raíz del propietario;
+2. `modules/nombre/main.bg` o `modules/nombre/_main.bg` como convención
+   anterior;
+3. `nombre.bg` o `nombre/main.bg` en la raíz del propietario como fallback
+   histórico.
+
+Las carpetas dentro de `modules/` solo sirven para separar visualmente los
+fuentes. No crean namespaces: `modules/ui/widgets.bg` y
+`modules/ui/rendering/draw.bg` se importan como `widgets` y `draw`.
+Dos archivos con el mismo nombre lógico dentro de `modules/` producen un
+error de ambigüedad, en lugar de seleccionarse según el orden del disco. La
+forma `modules/nombre/main.bg` se conserva por compatibilidad.
 
 `libs/` no es una raíz implícita de módulos `.bg`: se reserva para archivos
 `.lib` declarados mediante `library "archivo.lib" as Alias`.

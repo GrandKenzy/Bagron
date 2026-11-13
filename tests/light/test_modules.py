@@ -34,6 +34,63 @@ class ModuleTests(unittest.TestCase):
 
         self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_doble_[^"\s]*"?\(i32 3\)')
 
+    def test_nested_module_folders_are_visual_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            modules = root / 'modules'
+            (modules / 'ui' / 'rendering').mkdir(parents=True)
+            (modules / 'ui' / 'widgets.bg').write_text(
+                'public func value() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            (modules / 'ui' / 'rendering' / 'draw.bg').write_text(
+                'import widgets\n'
+                'public func draw() int32:\n'
+                '    return widgets.value()\n',
+                encoding='utf-8',
+            )
+            main = root / 'main.bg'
+            main.write_text(
+                'import draw\n'
+                'func main() int32:\n'
+                '    return draw.draw()\n',
+                encoding='utf-8',
+            )
+
+            compiler = Compiler()
+            output = compiler.compile(main, executable=False)
+            loaded = {Path(path).resolve() for path in compiler.storage.loaded_modules}
+            module_text = Path(output).read_text(encoding='utf-8')
+
+        self.assertIn((modules / 'ui' / 'widgets.bg').resolve(), loaded)
+        self.assertIn((modules / 'ui' / 'rendering' / 'draw.bg').resolve(), loaded)
+        self.assertRegex(
+            module_text,
+            r'call i32 @"?__bg_[^"\s]*_draw_[^"\s]*"?\(\)',
+        )
+
+    def test_nested_module_name_collision_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'modules' / 'left').mkdir(parents=True)
+            (root / 'modules' / 'right').mkdir(parents=True)
+            for folder, value in (('left', 1), ('right', 2)):
+                (root / 'modules' / folder / 'shared.bg').write_text(
+                    f'public func value() int32:\n    return {value}\n',
+                    encoding='utf-8',
+                )
+            main = root / 'main.bg'
+            main.write_text(
+                'import shared\n'
+                'func main() int32:\n'
+                '    return shared.value()\n',
+                encoding='utf-8',
+            )
+
+            with self.assertRaisesRegex(CompilationError, 'modulo .*ambiguo'):
+                Compiler().compile(main, executable=False)
+
     def test_libs_directory_is_not_a_bg_module_search_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -906,6 +906,24 @@ def _read_build_config(source_root: Path) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _logical_source_module_name(relative: str | Path) -> str | None:
+    """Return the flat import name represented by a packaged source path."""
+    module_path = Path(relative)
+    if module_path.suffix != '.bg':
+        return None
+    if module_path.parent == Path('.'):
+        return module_path.stem
+    if not module_path.parts or module_path.parts[0] != 'modules':
+        return None
+    if module_path.name in {'main.bg', '_main.bg'}:
+        # Preserve the old ``modules/name/main.bg`` package convention.  Any
+        # deeper folder remains visual and does not become a namespace.
+        if len(module_path.parts) == 3:
+            return module_path.parts[1]
+        return None
+    return module_path.stem
+
+
 def _collect_files(source_root: Path) -> list[tuple[str, bytes]]:
     result: list[tuple[str, bytes]] = []
     build_entry, build_modules = _read_build_config(source_root)
@@ -1008,19 +1026,11 @@ def _validate_source_tree(
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
-        module_names: set[str] = set()
-        for relative in bg_files:
-            module_path = Path(relative)
-            if module_path.parent == Path('.'):
-                module_names.add(module_path.stem)
-            elif module_path.parts[0] == 'modules' and len(module_path.parts) == 2:
-                module_names.add(module_path.stem)
-            elif (
-                module_path.parts[0] == 'modules'
-                and len(module_path.parts) == 3
-                and module_path.name in {'main.bg', '_main.bg'}
-            ):
-                module_names.add(module_path.parts[1])
+        module_names: set[str] = {
+            module_name
+            for relative in bg_files
+            if (module_name := _logical_source_module_name(relative)) is not None
+        }
         main_relative = next(
             (
                 candidate
@@ -1077,13 +1087,16 @@ def _validate_source_tree(
             else None
         )
         filtered_module_names: set[str] = set()
+        module_files: dict[str, list[Path]] = {}
+        for relative in bg_files:
+            module_name = _logical_source_module_name(relative)
+            if module_name is not None:
+                module_files.setdefault(module_name, []).append(root / relative)
         for mod_name in sorted(module_names):
             mod_file = None
-            for rel, _ in files:
-                p = Path(rel)
-                if p.stem == mod_name and p.suffix == '.bg':
-                    mod_file = root / rel
-                    break
+            candidates = module_files.get(mod_name, ())
+            if candidates:
+                mod_file = candidates[0]
             if mod_file is not None and mod_file.is_file():
                 try:
                     mod_clauses = Compiler._read_source_target_clauses(mod_file)
@@ -1630,22 +1643,16 @@ def pack_compiled_library(
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
 
-        module_names: set[str] = set()
-        for relative in bg_files:
-            module_path = Path(relative)
-            if module_path.parent == Path('.'):
-                module_names.add(module_path.stem)
-            elif module_path.parts[0] == 'modules' and len(module_path.parts) == 2:
-                module_names.add(module_path.stem)
-            elif (
-                module_path.parts[0] == 'modules'
-                and len(module_path.parts) == 3
-                and module_path.name in {'main.bg', '_main.bg'}
-            ):
-                module_names.add(module_path.parts[1])
+        module_names = {
+            module_name
+            for relative in bg_files
+            if (module_name := _logical_source_module_name(relative)) is not None
+        }
         if len(module_names) != len(bg_files):
             raise LibraryError(
-                'La lib2 solo admite modulos .bg directos en la raiz o modules/'
+                'La lib2 solo admite modulos .bg directos en la raiz o en '
+                'cualquier subcarpeta de modules/; no puede haber nombres '
+                'logicos duplicados'
             )
 
         clauses = ''.join(

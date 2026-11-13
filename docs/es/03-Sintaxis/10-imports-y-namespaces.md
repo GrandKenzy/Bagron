@@ -35,11 +35,24 @@ Funciones, variables globales y tipos públicos pueden seleccionarse.
 
 Para `import nombre`, el compilador busca módulos fuente locales:
 
-1. `nombre.bg` o `nombre/main.bg` junto al módulo importador cuando este vive
-   bajo `modules/`;
-2. `modules/nombre.bg` o `modules/nombre/main.bg` en la raíz del proyecto;
-3. el mismo patrón en la raíz del proyecto como fallback para proyectos
-   antiguos.
+1. cualquier `modules/**/nombre.bg` dentro de la raíz del propietario;
+2. `modules/nombre/main.bg` o `modules/nombre/_main.bg` como convención
+   anterior;
+3. `nombre.bg` o `nombre/main.bg` en la raíz del propietario como fallback
+   histórico.
+
+Las carpetas dentro de `modules/` son organizativas: no forman namespaces ni
+se escriben en el `import`. Por ejemplo, estas rutas se importan como
+`widgets` y `draw`, respectivamente:
+
+```text
+modules/ui/widgets.bg
+modules/ui/rendering/draw.bg
+```
+
+Si existen dos archivos con el mismo nombre lógico dentro de `modules/`, el
+compilador informa una ambigüedad en lugar de elegir uno por el orden del
+disco. La forma `modules/nombre/main.bg` se mantiene por compatibilidad.
 
 La ruta final debe permanecer dentro de la raíz del proyecto. `libs/` no es una
 raíz implícita para módulos `.bg`; se reserva para archivos `.lib` declarados

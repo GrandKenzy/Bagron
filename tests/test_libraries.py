@@ -109,6 +109,36 @@ class LibraryTests(unittest.TestCase):
             artifact = compiler.compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
+    def test_library_modules_can_be_nested_without_namespace_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            (source / 'modules' / 'ui' / 'rendering').mkdir(parents=True)
+            (source / 'modules' / 'ui' / 'widgets.bg').write_text(
+                'public func value() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            (source / 'modules' / 'ui' / 'rendering' / 'draw.bg').write_text(
+                'import widgets\n'
+                'public func draw() int32:\n'
+                '    return widgets.value()\n',
+                encoding='utf-8',
+            )
+            package_path = root / 'libs' / 'Nested.lib'
+            package_path.parent.mkdir()
+            pack_library(source, package_path, name='Nested', version='1.0.0')
+            main = root / 'main.bg'
+            main.write_text(
+                'library "Nested.lib" as Lib\n'
+                'func main() int32:\n'
+                '    return Lib.draw()\n',
+                encoding='utf-8',
+            )
+
+            artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
     def test_library_namespace_can_qualify_nominal_types(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -371,6 +401,39 @@ class LibraryTests(unittest.TestCase):
                 '    return Lib.convert()\n',
                 encoding='utf-8',
             )
+            artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
+    def test_package2_accepts_nested_modules_with_flat_import_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            (source / 'modules' / 'ui' / 'rendering').mkdir(parents=True)
+            (source / 'modules' / 'ui' / 'widgets.bg').write_text(
+                'public func value() int32:\n'
+                '    return 7\n',
+                encoding='utf-8',
+            )
+            (source / 'modules' / 'ui' / 'rendering' / 'draw.bg').write_text(
+                'import widgets\n'
+                'public func draw() int32:\n'
+                '    return widgets.value()\n',
+                encoding='utf-8',
+            )
+            package_path = root / 'libs' / 'Nested.lib'
+            package_path.parent.mkdir()
+
+            from core.library import pack_compiled_library
+
+            pack_compiled_library(source, package_path, name='Nested', version='1.0.0')
+            main = root / 'main.bg'
+            main.write_text(
+                'library "Nested.lib" as Lib\n'
+                'func main() int32:\n'
+                '    return Lib.draw()\n',
+                encoding='utf-8',
+            )
+
             artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
