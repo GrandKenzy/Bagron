@@ -28,7 +28,7 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             '    return 1\n'
             '#else\n'
             'this is not Bagron\n'
-            '#end\n'
+            '#endif\n'
         )
 
         self.assertEqual([], errors)
@@ -52,7 +52,7 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             'selected_arch\n'
             '#else\n'
             'wrong_fallback\n'
-            '#end\n',
+            '#endif\n',
             system='windows',
             architecture='x86_64',
         )
@@ -71,7 +71,7 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             'narrow\n'
             '#else\n'
             'unknown\n'
-            '#end\n'
+            '#endif\n'
         )
 
         for architecture, selected in (
@@ -93,7 +93,7 @@ class ConditionalPreprocessorTests(unittest.TestCase):
                 )
 
     def test_archb_rejects_noncanonical_condition_syntax(self):
-        _, errors = self._process('#if ARCHB "64"\nselected\n#end\n')
+        _, errors = self._process('#if ARCHB "64"\nselected\n#endif\n')
 
         self.assertTrue(errors)
         self.assertIn('ARCHB', errors[0])
@@ -103,8 +103,8 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             '#if OS, "windows"\n'
             '#if ARCH, "amd"\n'
             'nested\n'
-            '#end\n'
-            '#end\n'
+            '#endif\n'
+            '#endif\n'
             '#assembler "intel"\n'
             '    nop\n'
             '#end\n'
@@ -113,6 +113,32 @@ class ConditionalPreprocessorTests(unittest.TestCase):
         self.assertIn('no se pueden anidar', '\n'.join(errors))
         self.assertEqual('#assembler "intel"\n', transformed[5])
         self.assertEqual('#end\n', transformed[7])
+
+    def test_assembler_end_does_not_close_conditional(self):
+        transformed, errors = self._process(
+            '#if OS, "windows"\n'
+            '@assembler\n'
+            'func selected() int32:\n'
+            '    #assembler "intel"\n'
+            '        nop\n'
+            '    #end\n'
+            '    return asm\n'
+            '#endif\n'
+        )
+
+        self.assertEqual([], errors)
+        self.assertEqual('    #assembler "intel"\n', transformed[3])
+        self.assertEqual('    #end\n', transformed[5])
+        self.assertEqual('\n', transformed[7])
+
+    def test_rejects_legacy_conditional_end(self):
+        _, errors = self._process(
+            '#if OS, "windows"\n'
+            'selected\n'
+            '#end\n'
+        )
+
+        self.assertIn('usa #endif para cerrar #if', '\n'.join(errors))
 
     def test_accepts_only_canonical_assembler_dialects(self):
         self.assertEqual('intel', _normalize_dialect('intel'))

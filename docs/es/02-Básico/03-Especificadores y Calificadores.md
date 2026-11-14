@@ -245,12 +245,12 @@ func plataforma() int32:
 #else
 func plataforma() int32:
     return 0
-#end
+#endif
 ```
 
 `OS` compara el sistema del target y `ARCH` su arquitectura normalizada;
 `"amd"` es equivalente a `x86_64`. Las directivas soportadas son `#if`,
-`#elif`, `#else` y `#end`. Un bloque mal formado o anidado produce un error,
+`#elif`, `#else` y `#endif`. Un bloque mal formado o anidado produce un error,
 pero el contenido de las ramas no seleccionadas no se analiza como Bagron.
 
 ## Decoradores de agregados

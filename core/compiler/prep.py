@@ -71,7 +71,7 @@ _LABEL_DEFINITION_RE = re.compile(
     r'^\s*(?P<label>[A-Za-z_.$][A-Za-z0-9_.$]*):(?:\s*.*)?$'
 )
 _CONDITIONAL_DIRECTIVE_RE = re.compile(
-    r'^(?P<indent>[ \t]*)#(?P<directive>if|elif|else|end)\b(?P<rest>.*)$',
+    r'^(?P<indent>[ \t]*)#(?P<directive>if|elif|else|endif|end)\b(?P<rest>.*)$',
     re.IGNORECASE,
 )
 _CONDITION_RE = re.compile(
@@ -154,18 +154,37 @@ def preprocess_conditionals(
 
     The supported forms are ``#if OS, "windows"``, ``#if ARCH, "amd"`` and
     ``#if ARCHB, "64"``;
-    ``#elif``, ``#else`` and ``#end`` use the same block.  Inactive lines are
-    replaced with blank lines so parser diagnostics retain source locations.
+    ``#elif``, ``#else`` and ``#endif`` use the same block.  ``#end`` is kept
+    for the assembler extractor and never closes a conditional.  Inactive
+    lines are replaced with blank lines so parser diagnostics retain source
+    locations.
     """
     transformed: list[str] = []
     errors: list[str] = []
     stack: list[_ConditionalBlock] = []
+    prep_open = False
 
     def is_active() -> bool:
         return all(block.active for block in stack)
 
     for index, line in enumerate(lines):
         raw_line = line.rstrip('\r\n')
+        stripped = raw_line.strip()
+
+        # Keep assembler directives opaque until extract_prep_blocks runs.
+        # This lets an assembler #end live inside an active #if without being
+        # mistaken for the conditional terminator.
+        if prep_open:
+            if stripped == '#end':
+                prep_open = False
+            transformed.append(line if is_active() else _blank_line(line))
+            continue
+
+        if stripped.startswith('#assembler') or stripped.startswith('#prep'):
+            prep_open = True
+            transformed.append(line if is_active() else _blank_line(line))
+            continue
+
         match = _CONDITIONAL_DIRECTIVE_RE.match(raw_line)
         if match is None:
             transformed.append(line if is_active() else _blank_line(line))
@@ -291,18 +310,38 @@ def preprocess_conditionals(
             transformed.append(_blank_line(line))
             continue
 
+        if directive == 'end':
+            if stack:
+                errors.append(
+                    _conditional_error(
+                        source,
+                        source_line,
+                        '#end solo cierra bloques #assembler; usa #endif para cerrar #if',
+                    )
+                )
+                stack.pop()
+                transformed.append(_blank_line(line))
+            else:
+                transformed.append(line)
+            continue
+
         if rest:
             errors.append(
                 _conditional_error(
                     source,
                     source_line,
-                    '#end no recibe argumentos',
+                    '#endif no recibe argumentos',
                 )
             )
         if not stack:
-            # Existing conditional ``#end`` directives are handled here; an
-            # assembler block terminator is consumed by ``extract_prep_blocks``.
-            transformed.append(line)
+            errors.append(
+                _conditional_error(
+                    source,
+                    source_line,
+                    '#endif no tiene un #if abierto',
+                )
+            )
+            transformed.append(_blank_line(line))
             continue
         stack.pop()
         transformed.append(_blank_line(line))
@@ -312,7 +351,7 @@ def preprocess_conditionals(
             _conditional_error(
                 source,
                 block.line,
-                '#if no tiene un #end de cierre',
+                '#if no tiene un #endif de cierre',
             )
         )
 

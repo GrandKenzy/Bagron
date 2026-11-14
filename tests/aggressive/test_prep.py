@@ -37,13 +37,41 @@ class PrepTests(unittest.TestCase):
             '    return 0\n'
             '#else\n'
             'this is not Bagron and must never reach Gram\n'
-            '#end\n',
+            '#endif\n',
             encoding='utf-8',
         )
 
         ir_path = Compiler().compile(path, executable=False)
 
         self.assertTrue(ir_path.exists())
+
+    def test_assembler_end_remains_distinct_inside_conditional(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / '_main.bg'
+        path.write_text(
+            'clause System "windows"\n'
+            'clause Arch "amd"\n'
+            '#if OS, "windows"\n'
+            '@assembler\n'
+            'func main() int32:\n'
+            '    #assembler "intel"\n'
+            '        mov eax, 7\n'
+            '    #end\n'
+            '    return asm\n'
+            '#else\n'
+            'this is not Bagron and must never reach Gram\n'
+            '#endif\n',
+            encoding='utf-8',
+        )
+
+        compiler = Compiler()
+        ir_path = compiler.compile(path, executable=False)
+
+        self.assertTrue(ir_path.exists())
+        self.assertEqual(1, len(compiler.storage.prep_sources))
+        asm_text = compiler.storage.prep_sources[0].read_text(encoding='utf-8')
+        self.assertIn('mov eax, 7', asm_text)
 
     def test_extracts_raw_assembler_to_source_file(self):
         ir_path = self._compile(

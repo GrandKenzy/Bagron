@@ -9,7 +9,7 @@ func platform_value() int32:
 #else
 func platform_value() int32:
     return 0
-#end
+#endif
 
 func main() int32:
     return platform_value()

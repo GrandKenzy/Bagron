@@ -290,7 +290,7 @@ class LibraryTests(unittest.TestCase):
                 'library "My.lib" as Lib\n'
                 '#elif OS, "linux"\n'
                 'library "missing.lib" as Missing\n'
-                '#end\n'
+                '#endif\n'
                 'func main() int32:\n'
                 '    return Lib.convert()\n',
                 encoding='utf-8',
@@ -314,7 +314,7 @@ class LibraryTests(unittest.TestCase):
                 '#else\n'
                 'clause System "auto"\n'
                 'clause Arch "auto"\n'
-                '#end\n',
+                '#endif\n',
                 encoding='utf-8',
             )
             (source / 'value.bg').write_text(

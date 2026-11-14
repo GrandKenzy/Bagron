@@ -56,9 +56,9 @@ func platform() int32:
 #else
 func platform() int32:
     return 0
-#end
+#endif
 ```
 
 Se admiten `OS`, `ARCH` y `ARCHB`, con las directivas `#if`, `#elif`, `#else`
-y `#end`. `ARCHB` compara el ancho del target como `"32"` o `"64"`. Una rama
+y `#endif`. `ARCHB` compara el ancho del target como `"32"` o `"64"`. Una rama
 no seleccionada no se analiza como código Bagron.
