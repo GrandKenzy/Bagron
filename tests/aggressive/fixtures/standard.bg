@@ -18,7 +18,6 @@ func _win32_count(value: usize) uint32:
     #assembler "intel"
         mov rax, rcx
     #end
-    return asm
 
 @unsafe
 func _serialize_int_at_raw(

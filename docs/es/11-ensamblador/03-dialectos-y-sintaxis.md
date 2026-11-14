@@ -8,7 +8,6 @@ func zero_att() int32:
     #assembler "att"
         xorl %eax, %eax
     #end
-    return asm
 ```
 
 `intel` usa sintaxis Intel de GAS/LLVM, no sintaxis NASM. `att` usa
@@ -32,7 +31,6 @@ func add_one(value: int32) int32:
     #assembler "intel"
         lea eax, [ecx + 1]
     #end
-    return asm
 ```
 
 Este ejemplo usa el primer registro entero de Windows x64 (`ecx`). En System V

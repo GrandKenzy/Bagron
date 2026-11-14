@@ -1978,7 +1978,6 @@ def _validate_assembler_body(
         )
 
     return_count = 0
-    return_asm_count = 0
     pass_count = 0
     for statement in _body_statements(body):
         if isinstance(statement, gast.ASTKeyword):
@@ -1989,10 +1988,6 @@ def _validate_assembler_body(
                 f'La funcion @assembler {symbol.name} solo puede contener '
                 'ensamblador y return'
             )
-            continue
-
-        if isinstance(statement, gast.ASTRef) and statement.name == 'RETURN_ASM':
-            return_asm_count += 1
             continue
 
         if isinstance(statement, gast.ASTRef) and statement.name == 'RETURN':
@@ -2007,7 +2002,7 @@ def _validate_assembler_body(
     if pass_count != prep_count:
         compiler.error(
             f'La funcion @assembler {symbol.name} solo puede contener '
-            'un bloque de ensamblador opcional y return'
+            'un bloque de ensamblador opcional, sin return'
         )
 
     is_void = (
@@ -2022,6 +2017,16 @@ def _validate_assembler_body(
     )
 
     if prep_count:
+        return_type = symbol.signature.return_type
+        if not is_void and not is_never and (
+            return_type.name not in INTEGER_TYPES
+            or return_type.pointer_level
+            or return_type.array_depth
+        ):
+            compiler.error(
+                f'La funcion @assembler {symbol.name} debe retornar un entero '
+                'escalar, void o Never'
+            )
         if return_count:
             if is_never:
                 compiler.error(
@@ -2029,28 +2034,11 @@ def _validate_assembler_body(
                 )
             else:
                 compiler.error(
-                    f'La funcion @assembler {symbol.name} debe usar return asm '
-                    'cuando contiene ensamblador'
+                    f'La funcion @assembler {symbol.name} no puede usar return '
+                    'cuando contiene ensamblador; el retorno es implicito'
                 )
-        if not is_void and not is_never and return_asm_count != 1:
-            compiler.error(
-                f'La funcion @assembler {symbol.name} requiere un unico return asm'
-            )
-        if is_void and return_asm_count:
-            compiler.error(
-                f'La funcion void @assembler {symbol.name} no puede usar return asm'
-            )
-        if is_never and return_asm_count:
-            compiler.error(
-                f'La funcion Never @assembler {symbol.name} no puede usar return asm'
-            )
-    elif return_asm_count:
-        compiler.error(
-            f'La funcion @assembler {symbol.name} no puede usar return asm '
-            'sin un bloque de ensamblador'
-        )
 
-    if not prep_count and not is_never and return_count != 1:
+    if not prep_count and not is_never and not is_void and return_count != 1:
         compiler.error(
             f'La funcion @assembler {symbol.name} requiere un unico return'
         )
@@ -2059,45 +2047,11 @@ def _validate_assembler_body(
             f'La funcion Never @assembler {symbol.name} no puede usar return'
         )
 
-def _validate_return_asm(
-    compiler: Compiler,
-    symbol: FunctionSymbol,
-    node: gast.ASTRef,
-) -> None:
-    if not symbol.is_assembler:
-        compiler.error(
-            f'La funcion {symbol.name} requiere el decorador @assembler para usar '
-            'return asm'
-        )
-        return
-
-    if symbol.signature.return_type.name not in INTEGER_TYPES or (
-        symbol.signature.return_type.pointer_level
-        or symbol.signature.return_type.array_depth
-    ):
-        compiler.error(
-            f'La funcion @assembler {symbol.name} debe retornar un entero '
-            'escalar'
-        )
-        return
-
-    symbol.return_asm_node = node
-
-
 def _statement_body_guarantees_return(
     body: object,
     symbol: FunctionSymbol | None = None,
 ) -> bool:
     return _statement_sequence_guarantees_return(_children(body), symbol)
-
-
-def _inline_void_call_terminates(body: object) -> bool:
-    """Recognize the single-call inline form permitted for ``void`` functions."""
-    statements = _body_statements(body)
-    return len(statements) == 1 and (
-        isinstance(statements[0], gast.ASTRef)
-        and statements[0].name == 'CALL'
-    )
 
 
 def _statement_sequence_guarantees_return(
@@ -2168,7 +2122,7 @@ def _statement_guarantees_return(
 ) -> bool:
     if not isinstance(node, gast.ASTRef):
         return False
-    if node.name in {'RETURN', 'RETURN_ASM'}:
+    if node.name == 'RETURN':
         return True
     if (
         node.name == 'CALL'
@@ -2196,7 +2150,7 @@ def _terminates(node: object, symbol: FunctionSymbol | None = None) -> bool:
         return _token_value(node) in {'break', 'continue'}
     if not isinstance(node, gast.ASTRef):
         return False
-    if node.name in {'RETURN', 'RETURN_ASM'}:
+    if node.name == 'RETURN':
         return True
     if (
         node.name == 'CALL'
@@ -2484,11 +2438,6 @@ def _process_body_node(
         _report_leaks(compiler, symbol, _visible_bindings(symbol, scope))
         returns[0] += 1
         return
-    if node.name == 'RETURN_ASM':
-        _validate_return_asm(compiler, symbol, node)
-        _report_leaks(compiler, symbol, _visible_bindings(symbol, scope))
-        returns[0] += 1
-        return
     if node.name == 'CALL':
         try:
             call_info = infer_call(
@@ -2563,36 +2512,22 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
             )
 
     return_type = symbol.signature.return_type
-    body_terminates = _statement_body_guarantees_return(body, symbol)
-    if (
-        symbol.has_asm_body
-        and return_type.name == 'void'
-        and return_type.pointer_level == 0
-        and return_type.array_depth == 0
-    ):
-        body_terminates = True
-    if (
+    is_void = (
         return_type.name == 'void'
         and return_type.pointer_level == 0
         and return_type.array_depth == 0
-        and _inline_void_call_terminates(body)
-    ):
-        body_terminates = True
-    symbol.body_terminates = body_terminates or (
+    )
+    is_never = (
         return_type.name == 'Never'
         and return_type.pointer_level == 0
         and return_type.array_depth == 0
     )
-    if not body_terminates and not symbol.body_terminates:
-        if return_type.name == 'void' and return_type.pointer_level == 0:
-            compiler.error(
-                f'La funcion void {symbol.name} debe terminar con return'
-            )
-        elif not (
-            return_type.name == 'void'
-            and return_type.pointer_level == 0
-        ):
-            compiler.error(f'La funcion {symbol.name} no tiene return')
+    body_terminates = _statement_body_guarantees_return(body, symbol)
+    if symbol.has_asm_body or is_void:
+        body_terminates = True
+    symbol.body_terminates = body_terminates or is_never
+    if not symbol.body_terminates and not is_void:
+        compiler.error(f'La funcion {symbol.name} no tiene return')
 
 
 __all__ = [

@@ -67,11 +67,8 @@ class FunctionSymbol:
     tail_recursive: bool = False
     decorators: tuple[str, ...] = ()
     is_inline: bool = False
-    return_asm_node: object | None = None
     # A raw ``#assembler`` body is emitted as a native function and must not also
-    # receive an LLVM function body.  This is separate from
-    # ``return_asm_node`` because void assembler functions do not need
-    # ``return asm``.
+    # receive an LLVM function body.
     has_asm_body: bool = False
     external_library: str | None = None
     external_domain: str | None = None

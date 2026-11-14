@@ -1740,7 +1740,7 @@ class StatementEmitterMixin:
                 'El entrypoint main debe retornar int32'
             )
         if (
-            symbol.return_asm_node is None
+            not symbol.has_asm_body
             and len(symbol.return_values) != 1
             and not symbol.body_terminates
         ):
@@ -1766,7 +1766,7 @@ class StatementEmitterMixin:
             self._optimization_profile,
             self.type_registry,
         )
-        if symbol.return_asm_node is not None:
+        if symbol.has_asm_body:
             byte_ptr = ir.IntType(8).as_pointer()
             native_type = ir.FunctionType(int_type, [int_type, byte_ptr.as_pointer()])
             native_function = ir.Function(self.module, native_type, name='main')

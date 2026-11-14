@@ -122,14 +122,13 @@ class ConditionalPreprocessorTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        nop\n'
             '    #end\n'
-            '    return asm\n'
             '#endif\n'
         )
 
         self.assertEqual([], errors)
         self.assertEqual('    #assembler "intel"\n', transformed[3])
         self.assertEqual('    #end\n', transformed[5])
-        self.assertEqual('\n', transformed[7])
+        self.assertEqual('\n', transformed[6])
 
     def test_rejects_legacy_conditional_end(self):
         _, errors = self._process(

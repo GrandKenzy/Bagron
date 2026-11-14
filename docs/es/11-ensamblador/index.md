@@ -19,7 +19,6 @@ func zero() int32:
     #assembler "intel"
         xor eax, eax
     #end
-    return asm
 ```
 
 Los únicos dialectos aceptados son `intel` y `att`:
@@ -30,7 +29,6 @@ func zero_att() int32:
     #assembler "att"
         xorl %eax, %eax
     #end
-    return asm
 ```
 
 `intel` usa sintaxis Intel de GAS/LLVM, no NASM. `att` conserva la sintaxis
@@ -60,7 +58,6 @@ func equal(left: int32, right: int32) int32:
         xor eax, eax
         done:
     #end
-    return asm
 ```
 
 El ejemplo declara Windows x64 porque usa `ecx` y `edx`. En un target System V

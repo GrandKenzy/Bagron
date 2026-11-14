@@ -309,14 +309,6 @@ class RETURN(cmb.RuleItem):
     nodeable = True
 
 
-class RETURN_ASM(cmb.RuleItem):
-    entrypoint = cmb.Seq(
-        cmb.MatchKeyword('return'),
-        cmb.MatchKeyword('asm'),
-    )
-    nodeable = True
-
-
 __all__ = [
     'ALIAS',
     'AGGREGATE_VALUE',
@@ -341,7 +333,6 @@ __all__ = [
     'PRIMARY',
     'QUALIFIED_TYPE',
     'RETURN',
-    'RETURN_ASM',
     'TYPE',
     'VALUE',
 ]

@@ -13,7 +13,7 @@ errores habituales son:
 | uso de `gas-intel` | el dialecto fue retirado; usa `intel` |
 | ABI Baremetal ausente | Baremetal AMD64 requiere `clause ABI "sysv_amd64"` explícita |
 | `ABI` fuera de Baremetal | la cláusula solo se permite con `System "baremetal"` |
-| `ret` dentro del cuerpo | `return asm` agrega el retorno ABI |
+| `ret` dentro del cuerpo | El compilador agrega el retorno ABI al terminar el bloque |
 | función ASM en arquitectura no soportada | esta fase requiere arquitectura x86_64 (Windows x64 o System V AMD64) |
 | etiquetas no locales repetidas | cada etiqueta `nombre:` debe ser única dentro del archivo `.bg`; usa `.L...` o nombres distintos |
 

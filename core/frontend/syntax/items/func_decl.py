@@ -16,7 +16,6 @@ from core.frontend.syntax.items.value import (
     PARAMETERS,
     POINTER,
     RETURN,
-    RETURN_ASM,
     TYPE,
 )
 from core.frontend.syntax.items.var_decl import FIELD_DECLARATION, VAR, VAR_ASSIGNATION
@@ -59,7 +58,6 @@ class FUNCTION_STATEMENT(cmb.RuleItem):
 
     nodeable = False
     entrypoint = cmb.Alt(
-        cmb.Ref(RETURN_ASM),
         cmb.Ref(SIMPLE_STATEMENT),
     )
 

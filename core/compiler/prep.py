@@ -645,7 +645,7 @@ def _render_assembly_lines(
     if any(re.match(r'^\s*ret(?:q)?(?:\s|$)', line, re.IGNORECASE)
            for line in body.splitlines()):
         raise PrepError(
-            'El bloque ASM no debe contener ret; return asm agrega el retorno ABI'
+            'El bloque ASM no debe contener ret; el compilador agrega el retorno ABI'
         )
 
     symbol_name = _assembly_symbol_name(block, function)

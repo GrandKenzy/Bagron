@@ -189,9 +189,9 @@ Una función segura no puede llamar a una función `@unsafe` o `@assembler`.
 `@unsafe` debe reservarse para la pequeña frontera que realmente necesita
 operaciones sin garantía automática; el resto del programa puede permanecer
 en contexto seguro. Una función `@assembler` puede tener un único bloque
-`#assembler`; las funciones con retorno distinto de `void` deben terminarlo con
-`return asm`, mientras que una función `void` puede terminar directamente al
-final del bloque ASM. También puede existir sin bloque `#assembler`, en cuyo caso
+`#assembler`; el retorno ABI es implícito al final del bloque. Una función
+`void` también puede terminar directamente al final del bloque ASM. También
+puede existir sin bloque `#assembler`, en cuyo caso
 solo admite un `return` normal.
 
 El dialecto `intel` usa la sintaxis Intel del ensamblador integrado de

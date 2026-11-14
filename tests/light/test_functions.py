@@ -304,9 +304,9 @@ class FunctionSemanticTests(unittest.TestCase):
         )
         self.assertIn('identity', compiler.storage.functions)
 
-    def test_function_body_parses_one_line_pass_without_implicit_return(self):
-        with self.assertRaisesRegex(CompilationError, 'void noop.*return'):
-            self.compile_source('func noop() void: pass\n')
+    def test_function_body_allows_one_line_void_pass_without_return(self):
+        compiler = self.compile_source('func noop() void: pass\n')
+        self.assertIn('noop', compiler.storage.functions)
 
     def test_function_body_rejects_one_line_control_flow(self):
         with self.assertRaises(CompilationError):
@@ -743,12 +743,19 @@ class FunctionSemanticTests(unittest.TestCase):
             '    return\n'
         )
 
-    def test_void_function_requires_an_empty_return(self):
-        with self.assertRaisesRegex(CompilationError, 'void.*return'):
-            self.compile_source(
-                'func done() void:\n'
-                '    pass\n'
-            )
+    def test_void_function_can_fall_through_without_return(self):
+        compiler = self.compile_source(
+            'func done() void:\n'
+            '    pass\n'
+        )
+        self.assertIn('done', compiler.storage.functions)
+
+    def test_never_function_can_omit_return(self):
+        compiler = self.compile_source(
+            'func stop() Never:\n'
+            '    pass\n'
+        )
+        self.assertIn('stop', compiler.storage.functions)
 
     def test_void_call_cannot_be_used_as_a_value(self):
         with self.assertRaisesRegex(CompilationError, 'solo puede llamarse'):
@@ -1021,7 +1028,7 @@ class FunctionSemanticTests(unittest.TestCase):
         func = compiler.storage.functions['exit_proc']
         self.assertEqual('Never', func.signature.return_type.name)
 
-    def test_assembler_never_rejects_return_and_return_asm(self):
+    def test_assembler_never_rejects_return(self):
         with self.assertRaisesRegex(CompilationError, 'Never.*no puede usar return'):
             self.compile_source(
                 '@assembler\n'
@@ -1031,17 +1038,6 @@ class FunctionSemanticTests(unittest.TestCase):
                 '        syscall\n'
                 '    #end\n'
                 '    return\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'Never.*no puede usar return asm'):
-            self.compile_source(
-                '@assembler\n'
-                'public func exit_proc(code: int32) Never:\n'
-                '    #assembler "att"\n'
-                '        movq $60, %rax\n'
-                '        syscall\n'
-                '    #end\n'
-                '    return asm\n'
             )
 
     def test_assembler_never_omits_status_setup(self):

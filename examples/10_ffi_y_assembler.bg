@@ -13,7 +13,6 @@ func constant() int32:
     #assembler "intel"
         xor eax, eax
     #end
-    return asm
 
 @unsafe
 func main() int32:

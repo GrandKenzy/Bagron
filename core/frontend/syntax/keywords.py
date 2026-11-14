@@ -154,7 +154,6 @@ KEYWORDS_BY_GROUP = {
         'Null',
         'true',
         'false',
-        'asm',
     ],
     'preprocessors': []
 }

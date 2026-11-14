@@ -213,7 +213,7 @@ class FunctionEmitterBase:
                 and not symbol.is_external
                 and not getattr(symbol, 'is_compiled', False)
             ):
-                if symbol.return_asm_node is None and not symbol.has_asm_body:
+                if not symbol.has_asm_body:
                     self._emit_function(symbol, self._functions_by_symbol[id(symbol)])
                 emitted.add(id(symbol))
 
@@ -398,7 +398,6 @@ class FunctionEmitterBase:
     ) -> None:
         is_llvm_body = not (
             getattr(symbol, 'is_external', False)
-            or getattr(symbol, 'return_asm_node', None) is not None
             or getattr(symbol, 'has_asm_body', False)
         )
         if symbol.is_inline and is_llvm_body:

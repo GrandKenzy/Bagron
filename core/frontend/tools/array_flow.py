@@ -249,7 +249,7 @@ class _FixedArrayWriteAnalysis:
             return self._for(node, flow, loop_domains)
         if node.name == 'WHILE':
             return self._while(node, flow, loop_domains)
-        if node.name in {'RETURN', 'RETURN_ASM'}:
+        if node.name == 'RETURN':
             for child in _children(node):
                 if getattr(child, 'name', None) == 'VALUE':
                     self._expression(child, flow, loop_domains)

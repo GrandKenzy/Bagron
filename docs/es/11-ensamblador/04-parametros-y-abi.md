@@ -124,8 +124,8 @@ directamente.
 
 La instrucción `syscall` destruye `%rcx` y `%r11`. Linux devuelve el resultado
 en `%rax`; un valor negativo representa `-errno`. Por tanto, un wrapper que
-devuelve `int64` debe usar `return asm`, mientras que una función `Never`, como
-`exit`, no debe usar ningún `return`.
+devuelve `int64` deja el resultado en `%rax` y termina implícitamente, mientras
+que una función `Never`, como `exit`, no debe usar ningún `return`.
 
 ### Registros preservados y temporales
 
@@ -162,7 +162,6 @@ public func write(fd: int32, buf *: byte, size: uint64) int64:
         movq $1, %rax
         syscall
     #end
-    return asm
 ```
 
 El cuarto argumento de una syscall no se coloca directamente en `%rcx`:

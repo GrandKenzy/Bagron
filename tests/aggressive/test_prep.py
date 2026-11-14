@@ -58,7 +58,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, 7\n'
             '    #end\n'
-            '    return asm\n'
             '#else\n'
             'this is not Bagron and must never reach Gram\n'
             '#endif\n',
@@ -81,7 +80,6 @@ class PrepTests(unittest.TestCase):
             '        mov eax, ebx\n'
             '        nop\n'
             '    #end\n'
-            '    return asm\n'
         )
 
         asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
@@ -108,13 +106,11 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, 11\n'
             '    #end\n'
-            '    return asm\n'
             '@assembler\n'
             'func second() int32:\n'
             '    #assembler "att"\n'
             '        movl $22, %eax\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n',
             encoding='utf-8',
@@ -169,7 +165,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, 1\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n',
             encoding='utf-8',
@@ -202,14 +197,12 @@ class PrepTests(unittest.TestCase):
                 '        shared:\n'
                 '        mov eax, 1\n'
                 '    #end\n'
-                '    return asm\n'
                 '@assembler\n'
                 'func second() int32:\n'
                 '    #assembler "intel"\n'
                 '        shared:\n'
                 '        mov eax, 2\n'
                 '    #end\n'
-                '    return asm\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
@@ -226,14 +219,12 @@ class PrepTests(unittest.TestCase):
             '        .Ldone:\n'
             '        mov eax, 1\n'
             '    #end\n'
-            '    return asm\n'
             '@assembler\n'
             'func second() int32:\n'
             '    #assembler "intel"\n'
             '        .Ldone:\n'
             '        mov eax, 2\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n',
             encoding='utf-8',
@@ -252,8 +243,7 @@ class PrepTests(unittest.TestCase):
             'public func helper() int32:\n'
             '    #assembler "intel"\n'
             '        mov eax, 7\n'
-            '    #end\n'
-            '    return asm\n',
+            '    #end\n',
             encoding='utf-8',
         )
         main = root / '_main.bg'
@@ -263,8 +253,7 @@ class PrepTests(unittest.TestCase):
             'func main() int32:\n'
             '    #assembler "att"\n'
             '        xorl %eax, %eax\n'
-            '    #end\n'
-            '    return asm\n',
+            '    #end\n',
             encoding='utf-8',
         )
 
@@ -324,7 +313,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "att"\n'
             '        ret\n'
             '    #end\n'
-            '    return asm\n'
             )
 
     def test_rejects_assembler_without_assembler_decorator(self):
@@ -337,18 +325,21 @@ class PrepTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_rejects_return_asm_without_assembler_block(self):
-        with self.assertRaisesRegex(CompilationError, 'no puede usar return asm'):
+    def test_rejects_explicit_return_inside_assembler_block(self):
+        with self.assertRaisesRegex(CompilationError, 'retorno es implicito'):
             self._compile(
                 '@assembler\n'
                 'func bad() int32:\n'
-                '    return asm\n'
+                '    #assembler "intel"\n'
+                '        nop\n'
+                '    #end\n'
+                '    return 0\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-    def test_rejects_return_asm_without_assembler_decorator(self):
-        with self.assertRaisesRegex(CompilationError, 'requiere el decorador @assembler'):
+    def test_rejects_removed_return_asm_form(self):
+        with self.assertRaises(CompilationError):
             self._compile(
                 'func bad() int32:\n'
                 '    return asm\n'
@@ -364,7 +355,7 @@ class PrepTests(unittest.TestCase):
         )
         self.assertTrue(ir_path.exists())
 
-    def test_void_assembler_function_does_not_require_return_asm(self):
+    def test_void_assembler_function_uses_implicit_return(self):
         ir_path = self._compile(
             '@assembler\n'
             'func helper() void:\n'
@@ -427,7 +418,7 @@ class PrepTests(unittest.TestCase):
 
         self.assertRegex(ir_text, r'call void .*stop.*\n\s*unreachable')
 
-    def test_runs_void_assembler_function_without_return_asm(self):
+    def test_runs_void_assembler_function_with_implicit_return(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / '_main.bg'
@@ -469,7 +460,6 @@ class PrepTests(unittest.TestCase):
             '        xor eax, eax\n'
             '        fallo:\n'
             '    #end\n'
-            '    return asm\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    return validar(2, 2)\n',
@@ -496,7 +486,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "att"\n'
             '        xorl %eax, %eax\n'
             '    #end\n'
-            '    return asm\n'
         )
 
         asm_path = ir_path.parent / 'prep' / '_main' / '_main__prep.asm'
@@ -513,7 +502,6 @@ class PrepTests(unittest.TestCase):
                 '    #assembler "gas-intel"\n'
                 '        xor eax, eax\n'
                 '    #end\n'
-                '    return asm\n'
             )
 
     def test_rejects_legacy_prep_directive(self):
@@ -524,7 +512,7 @@ class PrepTests(unittest.TestCase):
                 '    #prep assembler "intel"\n'
                 '        xor eax, eax\n'
                 '    #end\n'
-                '    return asm\n'
+                '    return 0\n'
             )
 
     @WINDOWS_ONLY
@@ -538,7 +526,6 @@ class PrepTests(unittest.TestCase):
             '        mov r8d, r8d\n'
             '        mov r9, r9\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n'
         )
@@ -558,7 +545,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, [rcx]\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n'
         )
@@ -576,7 +562,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        nop\n'
             '    #end\n'
-            '    return asm\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    return fallo()\n',
@@ -610,7 +595,6 @@ class PrepTests(unittest.TestCase):
             '        # {missing}\n'
             '        xor eax, eax\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n'
         )
@@ -625,7 +609,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "nasm"\n'
                 '        xor eax, eax\n'
                 '    #end\n'
-                '    return asm\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
@@ -638,7 +621,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, [rsp + 0x28]\n'
             '    #end\n'
-            '    return asm\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    return stack(1, 2, 3, 4, 5)\n'
@@ -665,7 +647,6 @@ class PrepTests(unittest.TestCase):
             '        movl $1, %eax\n'
             '        fin:\n'
             '    #end\n'
-            '    return asm\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    return estado(0)\n',
@@ -693,7 +674,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "intel"\n'
             '        mov eax, [rsp + 0x28]\n'
             '    #end\n'
-            '    return asm\n'
             '@unsafe\n'
             'func main() int32:\n'
             '    return quinto(1, 2, 3, 4, 5)\n',
@@ -721,7 +701,6 @@ class PrepTests(unittest.TestCase):
             '    #assembler "att"\n'
             '        movl %edi, %eax\n'
             '    #end\n'
-            '    return asm\n'
             'func main() int32:\n'
             '    return 0\n'
         )
@@ -741,8 +720,7 @@ class PrepTests(unittest.TestCase):
             'public func identity(value: int32) int32:\n'
             '    #assembler "att"\n'
             '        movl %edi, %eax\n'
-            '    #end\n'
-            '    return asm\n',
+            '    #end\n',
             encoding='utf-8',
         )
         main = root / '_main.bg'

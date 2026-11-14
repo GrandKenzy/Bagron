@@ -692,7 +692,6 @@ class LibraryTests(unittest.TestCase):
                 '    #assembler "intel"\n'
                 '        mov eax, 2\n'
                 '    #end\n'
-                '    return asm\n'
                 '@unsafe\n'
                 'public func total() int32:\n'
                 '    return base.base_value() + answer()\n',

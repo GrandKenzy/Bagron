@@ -22,3 +22,8 @@
 - Added `#endif` as the dedicated terminator for conditional `#if` blocks.
   The `#end` directive remains reserved for `#assembler` blocks, removing the
   ambiguity between conditional and assembler terminators.
+
+## Functions and assembler
+
+- Removed `return asm`; `#assembler` blocks now use an implicit ABI return.
+- `void` and `Never` functions may omit an explicit `return`.
