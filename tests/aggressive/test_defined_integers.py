@@ -71,6 +71,33 @@ class DefinedIntegerBoundaryTests(unittest.TestCase):
         self.assertIn('sdiv i4', module)
         self.assertIn('udiv i4', module)
 
+    def test_unsigned_defined_integer_return_is_zero_extended_before_comparison(self):
+        _, artifacts = self._compile(
+            "clause Optimizations 'dev'\n"
+            '#defuint 4, U4\n'
+            'func identity(value: U4) U4:\n'
+            '    return value\n'
+            'func main() int32:\n'
+            '    value: U4 = 14\n'
+            '    expected: uint32 = 14\n'
+            '    if identity(value) != expected:\n'
+            '        return 2\n'
+            '    return 0\n',
+            executable=True,
+        )
+
+        result = subprocess.run(
+            [str(artifacts.executable)],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr.decode())
+        module = Path(artifacts.ir).read_text(encoding='utf-8')
+        self.assertIn('zext i4', module)
+        self.assertIn('icmp ne i32', module)
+        self.assertNotIn('sext i4', module)
+
     def test_integer_literals_cannot_exceed_defined_width_ranges(self):
         invalid_sources = (
             '#defint 4, I4\n'

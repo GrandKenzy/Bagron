@@ -505,8 +505,28 @@ class FunctionEmitterBase:
             current = cls._children(current)[0]
         return current
 
+    def _type_spec_is_unsigned(self, spec: TypeSpec | None) -> bool:
+        """Return the source signedness represented by a semantic type."""
+        if spec is None:
+            return False
+        if spec.name in UNSIGNED_INTEGER_TYPES or spec.signed is False:
+            return True
+        enum = self.type_registry.enum(spec.name) if self.type_registry else None
+        return enum is not None and enum.base_type.name in UNSIGNED_INTEGER_TYPES
+
     def _expression_is_unsigned(self, node: object) -> bool:
         current = self._unwrap(node)
+        active_symbol = self._active_function_symbol
+        call_targets = getattr(active_symbol, 'call_targets', None)
+        target = call_targets.get(id(current)) if call_targets is not None else None
+        if target is None and current is not node and call_targets is not None:
+            target = call_targets.get(id(node))
+        if target is not None:
+            signature = getattr(target, 'signature', None)
+            return self._type_spec_is_unsigned(
+                getattr(signature, 'return_type', None),
+            )
+
         if getattr(current, 'name', None) == 'POSTFIX_EXPR':
             children = self._children(current)
             primary = children[0] if children else None
@@ -527,17 +547,12 @@ class FunctionEmitterBase:
                     )
                     field_spec = getattr(field, 'type_spec', None)
                     if field_spec is not None:
-                        return field_spec.name in UNSIGNED_INTEGER_TYPES or field_spec.signed is False
+                        return self._type_spec_is_unsigned(field_spec)
         name = self._identifier(node)
         if name is None:
             return False
         spec = self._active_type_spec(name)
-        if spec is None:
-            return False
-        if spec.name in UNSIGNED_INTEGER_TYPES or spec.signed is False:
-            return True
-        enum = self.type_registry.enum(spec.name) if self.type_registry else None
-        return enum is not None and enum.base_type.name in UNSIGNED_INTEGER_TYPES
+        return self._type_spec_is_unsigned(spec)
 
     @staticmethod
     def _condition_value(node: object) -> object | None:

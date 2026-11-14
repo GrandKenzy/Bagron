@@ -14,6 +14,8 @@
   optional `@signed` metadata.
 - Added public module directives `#defint` and `#defuint` for LLVM-supported
   scalar integer widths.
+- Fixed signedness preservation when a `#defuint` value is returned from a
+  function and then compared or coerced.
 
 ## Preprocessor
 
