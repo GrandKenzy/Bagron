@@ -63,7 +63,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
         compiler.activate_module(compiler.module_for_node(node))
         if node.name == 'CLASS':
             tools.classes.validate(compiler, node)
-        elif node.name in ('STRUCT', 'MOLD', 'FLAGS'):
+        elif node.name in ('STRUCT', 'MOLD', 'FIELDS'):
             tools.structure.validate(compiler, node)
         elif node.name == 'OPAQUE':
             continue
@@ -113,7 +113,7 @@ def process(compiler: Compiler, nodes: list[gast.ASTRef]):
             # global initializers are checked.  Methods remain deferred.
             continue
 
-        elif name in ('STRUCT', 'MOLD', 'FLAGS', 'ENUM'):
+        elif name in ('STRUCT', 'MOLD', 'FIELDS', 'ENUM'):
             # Definitions were validated before globals so postfix/member
             # initializers can resolve their fields.
             continue

@@ -20,6 +20,8 @@ from .common import (
     BITWISE_OPERATORS,
     MAGIC_BINARY_OPERATORS,
     MAGIC_UNARY_OPERATORS,
+    register_defined_integer_name,
+    clear_defined_integer_names,
     TypeResolutionError,
     ValueResolutionError,
     UnsupportedExpressionError,
@@ -100,6 +102,7 @@ from .compatibility import (
     is_compatible,
     _integer_common_type,
 )
+from .value_inference import infer_fields_literal
 
 __all__ = [
     'Any',
@@ -121,6 +124,8 @@ __all__ = [
     'BITWISE_OPERATORS',
     'MAGIC_BINARY_OPERATORS',
     'MAGIC_UNARY_OPERATORS',
+    'register_defined_integer_name',
+    'clear_defined_integer_names',
     'TypeResolutionError',
     'ValueResolutionError',
     'UnsupportedExpressionError',
@@ -185,4 +190,5 @@ __all__ = [
     'target_iteration_limit',
     'is_compatible',
     '_integer_common_type',
+    'infer_fields_literal',
 ]

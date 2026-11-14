@@ -3,16 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable
 
 from core.frontend.handles import handle_declaration
-from core.frontend.objects import AggregateSymbol, FieldSpec, TypeSpec
+from core.frontend.objects import AggregateSymbol, DefinedIntegerSymbol, FieldSpec, TypeSpec
 from core.frontend.syntax.keywords import INTRINSIC_TYPES
 from core.frontend.tools.types import (
-    INTEGER_TYPES,
     TypeResolutionError,
-    UnsupportedExpressionError,
-    ValueResolutionError,
     bind_nominal_type,
-    infer_value,
-    is_compatible,
     resolve_type,
 )
 from core.frontend.tools.opaque import validate_opaque_use
@@ -22,21 +17,7 @@ if TYPE_CHECKING:
     from core.compiler import Compiler
 
 
-_FLAGS_BASE_TYPES = {
-    'uint8', 'uint16', 'uint32', 'uint64',
-}
-_INTEGER_WIDTHS = {
-    'int8': 8,
-    'int16': 16,
-    'int32': 32,
-    'int64': 64,
-    'uint8': 8,
-    'uint16': 16,
-    'uint32': 32,
-    'uint64': 64,
-    'byte': 8,
-}
-_AGGREGATE_DECORATORS = {'packed', 'align', 'order_msb'}
+_AGGREGATE_DECORATORS = {'packed', 'align'}
 
 
 def _children(node: object) -> list[object]:
@@ -150,55 +131,6 @@ def _decorator_names(node: gast.ASTRef) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _flags_base_node(signature: gast.ASTRef) -> object | None:
-    """Return the TYPE node/list positioned after a flags declaration name."""
-    found_name = False
-    for child in _children(signature):
-        if not found_name:
-            if _token_kind(child) == 'IDENT':
-                found_name = True
-            continue
-        if _token_value(child) == ':':
-            break
-        if isinstance(child, gast.ASTRef) and child.name == 'TYPE':
-            return child
-        if isinstance(child, list) and child:
-            return child
-    return None
-
-
-def _flags_base_type(
-    compiler: Compiler,
-    signature: gast.ASTRef,
-    name: str,
-) -> TypeSpec | None:
-    node = _flags_base_node(signature)
-    if node is None:
-        compiler.error(f'El flags {name} requiere un tipo base explicito')
-        return None
-    try:
-        type_spec = resolve_type(
-            node,
-            pointer_size=compiler.storage.pointer_size,
-        )
-        type_spec = bind_nominal_type(compiler.storage, type_spec)
-    except TypeResolutionError as error:
-        compiler.error(f'El tipo base de flags {name} es invalido: {error}')
-        return None
-    if (
-        type_spec.name not in _FLAGS_BASE_TYPES
-        or type_spec.pointer_level
-        or type_spec.array_depth
-        or type_spec.value_is_const
-    ):
-        compiler.error(
-            f'El tipo base de flags {name} debe ser uint8/16/32/64 '
-            'sin punteros ni constancia'
-        )
-        return None
-    return type_spec
-
-
 def _alignment_payload(node: gast.ASTRef) -> object | None:
     if _token_kind(node) == 'NUMBER':
         return node
@@ -242,26 +174,23 @@ def _declaration_metadata(
     node: gast.ASTRef,
     signature: gast.ASTRef,
     name: str,
-) -> tuple[bool, bool, int | None, TypeSpec | None, str]:
+) -> tuple[bool, bool, int | None, bool]:
     decorators = _decorator_names(node)
     seen: set[str] = set()
     for decorator in decorators:
-        if decorator not in _AGGREGATE_DECORATORS:
+        allowed = {'signed'} if node.name == 'FIELDS' else _AGGREGATE_DECORATORS
+        if decorator not in allowed:
             compiler.error(f'El decorador @{decorator} no existe para {name}')
         elif decorator in seen:
             compiler.error(f'El decorador @{decorator} esta repetido en {name}')
         seen.add(decorator)
-
-    kind = node.name.lower()
-    if 'order_msb' in decorators and kind != 'flags':
-        compiler.error(f'@order_msb solo puede usarse con flags ({name})')
 
     alignment = _alignment_metadata(compiler, node, name)
     return (
         'packed' in decorators,
         _contains_token(signature, 'volatile'),
         alignment,
-        'msb' if 'order_msb' in decorators else 'lsb',
+        'signed' in decorators,
     )
 
 
@@ -272,17 +201,13 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         compiler.error(f'La declaracion {node.name.lower()} no tiene nombre')
         return
 
-    packed, volatile, alignment, bit_order = _declaration_metadata(
+    packed, volatile, alignment, signed_fields = _declaration_metadata(
         compiler,
         node,
         signature,
         name,
     )
-    base_type = (
-        _flags_base_type(compiler, signature, name)
-        if node.name == 'FLAGS'
-        else None
-    )
+    base_type = None
     # A class starts as a struct-backed type.  Keeping the nominal kind as
     # ``struct`` lets the existing field validation and LLVM layout code serve
     # classes without introducing object/lifetime semantics yet.
@@ -296,9 +221,17 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
         is_packed=packed,
         is_volatile=volatile,
         alignment=alignment,
-        bit_order=bit_order,
+        signed_fields=signed_fields,
         module_path=compiler.module_for_node(node),
     )
+    if kind == 'fields' and any(
+        isinstance(existing, DefinedIntegerSymbol)
+        for existing in compiler.storage.type_candidates.get(name, ())
+    ):
+        compiler.error(
+            f'El tipo fields {name} colisiona con un entero definido del mismo nombre'
+        )
+        return
     if not compiler.storage.define_type(symbol):
         compiler.error(f'El tipo ya fue declarado: {name}')
         return
@@ -308,7 +241,7 @@ def _register_node(compiler: Compiler, node: gast.ASTRef) -> None:
 def collect(compiler: Compiler, nodes: list[gast.ASTRef]) -> None:
     """Register aggregate names before any field is validated."""
     for node in nodes:
-        if node.name in ('CLASS', 'STRUCT', 'MOLD', 'FLAGS'):
+        if node.name in ('CLASS', 'STRUCT', 'MOLD', 'FIELDS'):
             _register_node(compiler, node)
 
 
@@ -365,53 +298,6 @@ def _resolve_field_type(
     return type_spec
 
 
-def _field_width(type_spec: TypeSpec) -> int | None:
-    if type_spec.name == 'bool':
-        return 1
-    if type_spec.name in {'Bint', 'uBint'}:
-        return type_spec.bit_width
-    return _INTEGER_WIDTHS.get(type_spec.name)
-
-
-def _validate_flags_value(
-    compiler: Compiler,
-    owner: str,
-    handle,
-    type_spec: TypeSpec,
-):
-    if (
-        type_spec.pointer_level
-        or type_spec.array_depth
-        or type_spec.name not in {'Bint', 'uBint', 'bool'}
-    ):
-        compiler.error(
-            f'El campo {owner}.{handle.name} debe usar Bint, uBint o bool'
-        )
-        return None
-
-    try:
-        value_info = infer_value(handle.value_node, compiler.storage.resolve)
-    except (UnsupportedExpressionError, ValueResolutionError) as error:
-        compiler.error(f'{owner}.{handle.name}: {error}')
-        return None
-
-    expected_literal = 'bool' if type_spec.name == 'bool' else 'int32'
-    if not value_info.is_literal or value_info.type_spec.name != expected_literal:
-        compiler.error(
-            f'El valor de {owner}.{handle.name} debe ser un literal '
-            f'{"booleano" if expected_literal == "bool" else "entero"}'
-        )
-        return None
-
-    if not is_compatible(type_spec, value_info):
-        compiler.error(
-            f'El valor de {owner}.{handle.name} no coincide con '
-            f'{type_spec.canonical_name}'
-        )
-        return None
-    return value_info
-
-
 def validate(compiler: Compiler, node: gast.ASTRef):
     """Validate fields and make aggregate layout fully semantic."""
     symbol = compiler.type_bindings.get(id(node))
@@ -425,7 +311,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
 
     fields: list[FieldSpec] = []
     seen: set[str] = set()
-    expected = 'VAR_DECLARATION' if symbol.kind == 'flags' else 'VAR_INITIALIZATION'
+    expected = 'VAR_INITIALIZATION'
 
     for declaration in _field_nodes(body):
         handle = handle_declaration(declaration)
@@ -448,7 +334,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             compiler,
             handle,
             symbol.name,
-            allow_bit_types=symbol.kind == 'flags',
+            allow_bit_types=symbol.kind == 'fields',
         )
         if type_spec is None:
             continue
@@ -466,63 +352,29 @@ def validate(compiler: Compiler, node: gast.ASTRef):
             )
             continue
 
-        value_info = None
-        if symbol.kind == 'flags':
-            value_info = _validate_flags_value(
-                compiler, symbol.name, handle, type_spec
-            )
-            if value_info is None:
-                continue
-            if _field_width(type_spec) is None:
+        if symbol.kind == 'fields':
+            if (
+                type_spec.name != 'Bint'
+                or type_spec.bit_width is None
+                or type_spec.pointer_level
+                or type_spec.array_depth
+            ):
                 compiler.error(
-                    f'El campo {symbol.name}.{handle.name} no tiene ancho de bits'
+                    f'El campo {symbol.name}.{handle.name} debe usar Bint(n) '
+                    'sin punteros ni arrays'
                 )
                 continue
-        fields.append(FieldSpec(handle.name, type_spec, value_info))
+        fields.append(FieldSpec(handle.name, type_spec))
 
     if not fields:
         compiler.error(f'El tipo {symbol.name} no puede estar vacio')
         symbol.fields = ()
         return node
 
-    if symbol.kind == 'flags':
-        if symbol.base_type is None:
-            compiler.error(f'El flags {symbol.name} no tiene tipo base valido')
-            symbol.fields = tuple(fields)
-            return node
-        base_width = _INTEGER_WIDTHS[symbol.base_type.name]
-        total_width = sum(_field_width(field.type_spec) or 0 for field in fields)
-        if total_width != base_width:
-            compiler.error(
-                f'Los campos de flags {symbol.name} ocupan {total_width} bits, '
-                f'pero {symbol.base_type.name} requiere exactamente {base_width}'
-            )
-        if symbol.bit_order == 'msb':
-            offset = base_width
-            laid_out: list[FieldSpec] = []
-            for field in fields:
-                width = _field_width(field.type_spec) or 0
-                offset -= width
-                laid_out.append(FieldSpec(
-                    field.name,
-                    field.type_spec,
-                    field.value_info,
-                    bit_offset=offset,
-                ))
-            fields = laid_out
-        else:
-            offset = 0
-            laid_out = []
-            for field in fields:
-                width = _field_width(field.type_spec) or 0
-                laid_out.append(FieldSpec(
-                    field.name,
-                    field.type_spec,
-                    field.value_info,
-                    bit_offset=offset,
-                ))
-                offset += width
-            fields = laid_out
+    if symbol.kind == 'fields' and symbol.signed_fields:
+        # The hidden sign bit is represented by the backend only.  Keeping it
+        # out of ``fields`` preserves the source-level limb list and its arity.
+        symbol.bit_order = 'signed'
 
     symbol.fields = tuple(fields)
     return node

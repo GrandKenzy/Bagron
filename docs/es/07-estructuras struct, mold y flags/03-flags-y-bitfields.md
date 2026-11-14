@@ -1,47 +1,25 @@
-# 03. `flags` y bitfields
+# 03. `fields` y limbs
 
-`flags` empaqueta campos booleanos o bitfields dentro de un entero base:
+`fields` agrupa limbs manuales dentro de un agregado nominal:
 
 ```bg
-flags Permissions uint8:
-    read: uBint<1> = 0
-    write: uBint<1> = 0
-    reserved: uBint<6> = 0
+@signed
+fields Permissions:
+    read: Bint(1)
+    write: Bint(1)
+    reserved: Bint(6)
 
 func can_write(value: Permissions) bool:
     return value.write == 1
 ```
 
-La base solo puede ser `uint8`, `uint16`, `uint32` o `uint64`; `byte` y los
-enteros con signo no son bases válidas. La suma de anchos debe coincidir
-exactamente con la base. Los campos pueden ser `uBint<N>`, `Bint<N>` o `bool`.
-`uBint<N>` requiere `N >= 1`, `Bint<N>` requiere `N >= 2` y `bool` ocupa un
-bit. Un bitfield no tiene dirección independiente, por lo que `$value.write`
-es inválido.
+Cada campo debe ser `Bint(N)` con `N >= 1`. El almacenamiento conserva los
+limbs como miembros independientes y no existe un contenedor entero implícito.
 
-El orden predeterminado es LSB. Para protocolos que numeran desde el extremo
-más significativo se usa `@order_msb`:
+`@signed` añade un bit oculto para el signo del agregado completo. Los valores
+se construyen posicionalmente y no se permite la inicialización dentro de la
+declaración:
 
 ```bg
-@order_msb
-flags NetworkBits uint8:
-    version: uBint<3> = 0
-    kind: uBint<5> = 0
-```
-
-`@order_lsb` no existe: era un alias redundante del valor predeterminado.
-
-Los valores iniciales de los campos forman el estado predeterminado del
-agregado. Un literal designado empieza con todos los bits en cero y solo aplica
-los campos escritos en el literal; los valores declarativos no se vuelven
-defaults adicionales de ese literal. Los valores de `Bint<N>` se almacenan en
-su ancho de bits y se leen con extensión de signo; los valores de `uBint<N>` se
-leen sin signo.
-
-También puedes crear un valor de flags sin depender de los valores declarativos
-del tipo. El literal designado empieza con todos los bits en cero y solo coloca
-los campos escritos:
-
-```bg
-active: Permissions = Permissions{ .write = 1 }
+active: Permissions = {1, 1, 0}
 ```

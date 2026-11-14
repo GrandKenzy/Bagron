@@ -51,7 +51,7 @@ KEYWORDS = {
     'struct': '#17A2B8',
     'enum': '#17A2B8',
     'mold': '#17A2B8',
-    'flags': '#17A2B8',
+    'fields': '#17A2B8',
     'opaque': '#17A2B8',
 
     # Modificadores de bajo nivel
@@ -100,7 +100,6 @@ INTRINSIC_TYPES = {
     'Size_t': '#3B82F6',
     'Region_t': '#3B82F6',
     'Bint': '#3B82F6',
-    'uBint': '#3B82F6',
 
 }
 
@@ -148,7 +147,7 @@ KEYWORDS_BY_GROUP = {
         'struct',
         'enum',
         'mold',
-        'flags',
+        'fields',
         'opaque',
         'class',
         'const',

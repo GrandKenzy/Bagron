@@ -6,6 +6,7 @@ from tools import diagnostic
 
 from core.frontend.objects import (
     AggregateSymbol,
+    DefinedIntegerSymbol,
     EnumSymbol,
     FunctionSymbol,
     OpaqueSymbol,
@@ -137,7 +138,7 @@ class Storage(diagnostic.Diagnostics):
         self.methods: dict[tuple[str, str], FunctionSymbol] = {}
         self.method_candidates: dict[tuple[str, str], list[FunctionSymbol]] = {}
         self.function_scopes: dict[str, Storage] = {}
-        self.types: dict[str, EnumSymbol | AggregateSymbol | OpaqueSymbol] = {}
+        self.types: dict[str, EnumSymbol | AggregateSymbol | OpaqueSymbol | DefinedIntegerSymbol] = {}
         self.native_links: list[str] = []
         self.native_objects: list[Path] = []
         # Search paths declared explicitly by #link in the entry module.
@@ -434,7 +435,7 @@ class Storage(diagnostic.Diagnostics):
 
     def define_type(
         self,
-        symbol: EnumSymbol | AggregateSymbol | OpaqueSymbol,
+        symbol: EnumSymbol | AggregateSymbol | OpaqueSymbol | DefinedIntegerSymbol,
     ) -> bool:
         """Register a type in the current type namespace."""
         candidates = self.type_candidates.setdefault(symbol.name, [])
@@ -460,7 +461,7 @@ class Storage(diagnostic.Diagnostics):
     def resolve_type(
         self,
         name: str,
-    ) -> EnumSymbol | AggregateSymbol | OpaqueSymbol | None:
+    ) -> EnumSymbol | AggregateSymbol | OpaqueSymbol | DefinedIntegerSymbol | None:
         candidates = self.type_candidates.get(name, ())
         symbol = None
         if candidates:

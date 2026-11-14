@@ -208,7 +208,7 @@ public func answer() int32:
 
 Otro módulo puede importar `answer`, pero no puede llamar `secret` ni construir
 un tipo `private` del módulo. La misma regla se
-aplica a funciones, variables, `struct`, `mold`, `flags`, `enum`, `class` y
+aplica a funciones, variables, `struct`, `mold`, `fields`, `enum`, `class` y
 métodos.
 
 Una declaración `private` no desaparece del archivo compilado: sigue siendo

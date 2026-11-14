@@ -47,13 +47,12 @@ class STRUCT_SIGNATURE(cmb.RuleItem):
     )
     nodeable = True
     
-class FLAGS_SIGNATURE(cmb.RuleItem):
+class FIELDS_SIGNATURE(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.MatchGroup('privacy')),
         cmb.Opt(cmb.MatchKeyword('volatile')),
-        cmb.MatchKeyword('flags'),
+        cmb.MatchKeyword('fields'),
         cmb.MatchToken('IDENT'),
-        cmb.Ref(TYPE),
         cmb.MatchToken('COLON')
     )
     nodeable = True
@@ -83,12 +82,12 @@ class STRUCT_BODY(cmb.RuleItem):
     nodeable = True
     
 
-class FLAGS_BODY(cmb.RuleItem):
+class FIELDS_BODY(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.MatchToken('INDENT'),
         cmb.Some(
             cmb.Alt(
-                cmb.Ref(VAR_DECLARATION),
+                cmb.Ref(VAR_INITIALIZATION),
                 cmb.MatchKeyword('pass')
             )
         ),
@@ -118,11 +117,11 @@ class STRUCT(cmb.RuleItem):
         cmb.Ref(STRUCT_BODY),
     )
     nodeable = True
-class FLAGS(cmb.RuleItem):
+class FIELDS(cmb.RuleItem):
     entrypoint = cmb.Seq(
         cmb.Opt(cmb.Ref(AGGREGATE_DECORATORS)),
-        cmb.Ref(FLAGS_SIGNATURE),
-        cmb.Ref(FLAGS_BODY),
+        cmb.Ref(FIELDS_SIGNATURE),
+        cmb.Ref(FIELDS_BODY),
     )
     nodeable = True
 class MOLD(cmb.RuleItem):
@@ -134,7 +133,7 @@ class MOLD(cmb.RuleItem):
     nodeable = True
 
 __all__ = [
-    'FLAGS',
+    'FIELDS',
     'MOLD',
     'STRUCT'
 ]

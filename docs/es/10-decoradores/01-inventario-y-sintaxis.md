@@ -21,17 +21,17 @@ El inventario válido es:
 | `@after` | `__ongetter__` y `__onsetter__` |
 | `@before` | `__deletion__` (ejecuta el hook antes de la limpieza automática de memoria) |
 | `@frozen` | clase |
-| `@packed` | `class`, `struct`, `mold` y `flags` |
-| `@align(N)` | `class`, `struct`, `mold` y `flags` |
-| `@order_msb` | `flags` |
+| `@packed` | `class`, `struct` y `mold` |
+| `@align(N)` | `class`, `struct` y `mold` |
+| `@signed` | `fields` |
 
-Un decorador repetido o desconocido produce un diagnóstico. `@order_lsb` no
-existe: LSB ya es el orden predeterminado.
+Un decorador repetido o desconocido produce un diagnóstico. `fields` solo
+acepta `@signed`.
 
 No confundas estos elementos relacionados:
 
 - `inline` es un especificador antes de `func`, no `@inline`;
-- `volatile` es un calificador antes de `struct`, `mold` o `flags`, no
+- `volatile` es un calificador antes de `struct`, `mold` o `fields`, no
   `@volatile`;
 - `unique` es un calificador de tipo y `public`/`private` son modificadores de
   declaración, no decoradores.

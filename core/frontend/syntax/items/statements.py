@@ -2,7 +2,7 @@ from gram import combinators as cmb
 
 from core.frontend.syntax.items.call import CALL
 from core.frontend.syntax.items.enum_decl import ENUM
-from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
+from core.frontend.syntax.items.struct_decl import FIELDS, MOLD, STRUCT
 from core.frontend.syntax.items.value import RETURN, TYPE, VALUE
 from core.frontend.syntax.items.var_decl import (
     FIELD_DECLARATION,
@@ -85,7 +85,7 @@ class SIMPLE_STATEMENT(cmb.RuleItem):
     nodeable = False
     entrypoint = cmb.Alt(
         cmb.Ref(ENUM),
-        cmb.Ref(FLAGS),
+        cmb.Ref(FIELDS),
         cmb.Ref(STRUCT),
         cmb.Ref(MOLD),
         cmb.Ref(WHILE),

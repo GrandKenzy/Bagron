@@ -12,7 +12,7 @@ from core.frontend.syntax.items.func_decl import FUNCTION
 from core.frontend.syntax.items.imports import IMPORT
 from core.frontend.syntax.items.opaque_decl import OPAQUE
 from core.frontend.syntax.items.statements import FOR, IF, WHILE
-from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
+from core.frontend.syntax.items.struct_decl import FIELDS, MOLD, STRUCT
 from core.frontend.syntax.items.value import LOGICAL_NOT, POSTFIX_EXPR, VALUE
 from core.frontend.syntax.items.var_decl import VAR, VAR_ASSIGNATION
 
@@ -54,7 +54,7 @@ class ENTRYPOINT(cmb.RuleItem):
         cmb.Ref(CLASS),
         cmb.Ref(STRUCT),
         cmb.Ref(MOLD),
-        cmb.Ref(FLAGS),
+        cmb.Ref(FIELDS),
         cmb.Ref(ENUM),
         cmb.Ref(OPAQUE),
         cmb.Ref(WHILE),

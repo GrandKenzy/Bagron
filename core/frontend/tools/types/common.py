@@ -23,9 +23,10 @@ SIGNED_INTEGER_TYPES = {
     'int8', 'int16', 'int32', 'int64', 'isize', 'Bint',
 }
 UNSIGNED_INTEGER_TYPES = {
-    'uint8', 'uint16', 'uint32', 'uint64', 'usize', 'byte', 'uBint',
+    'uint8', 'uint16', 'uint32', 'uint64', 'usize', 'byte',
 }
 INTEGER_TYPES = SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES
+_DEFINED_INTEGER_NAMES: set[str] = set()
 FOR_ITERATOR_TYPES = {'uint8', 'uint16', 'uint32', 'uint64'}
 FLOAT_TYPES = {'middle', 'float', 'double'}
 COMPARISON_OPERATORS = {
@@ -73,6 +74,29 @@ class ValueResolutionError(ValueError):
 class UnsupportedExpressionError(ValueResolutionError):
     """Raised for expressions deferred to the expression-checking phase."""
     pass
+
+
+def register_defined_integer_name(name: str, width: int, signed: bool) -> None:
+    """Register a source-defined integer in the shared type predicates."""
+    INTEGER_WIDTHS[name] = width
+    INTEGER_TYPES.add(name)
+    if signed:
+        SIGNED_INTEGER_TYPES.add(name)
+        UNSIGNED_INTEGER_TYPES.discard(name)
+    else:
+        UNSIGNED_INTEGER_TYPES.add(name)
+        SIGNED_INTEGER_TYPES.discard(name)
+    _DEFINED_INTEGER_NAMES.add(name)
+
+
+def clear_defined_integer_names() -> None:
+    """Remove directive-defined integer names between compiler sessions."""
+    for name in tuple(_DEFINED_INTEGER_NAMES):
+        INTEGER_WIDTHS.pop(name, None)
+        INTEGER_TYPES.discard(name)
+        SIGNED_INTEGER_TYPES.discard(name)
+        UNSIGNED_INTEGER_TYPES.discard(name)
+    _DEFINED_INTEGER_NAMES.clear()
 
 
 

@@ -24,7 +24,7 @@ Errores frecuentes:
 - `static` en una función global o en un método mágico;
 - `public`/`private` usados como si fueran decoradores `@public`/`@private`.
 
-`@unsafe`, `@frozen`, `@packed`, `@align(N)` y `@order_msb` pertenecen al
+`@unsafe`, `@frozen`, `@packed`, `@align(N)` y `@signed` pertenecen al
 sistema de decoradores y tienen sus propias posiciones. Consulta
 [Decoradores](../10-decoradores/index.md) para sus contratos y combinaciones.
 

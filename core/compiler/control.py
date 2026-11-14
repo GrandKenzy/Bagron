@@ -3,8 +3,13 @@ from pathlib import Path
 
 from core import frontend
 from core.compiler.links import extract_link_directives
+from core.compiler.integers import (
+    extract_integer_directives,
+    register_integer_directives,
+)
 from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
 from core.frontend.aot import AotParser, AotParserError
+from core.frontend.tools.types import clear_defined_integer_names
 from tools.diagnostic import Diagnostics
 
 
@@ -14,6 +19,7 @@ class CompilationError(RuntimeError):
 
 class CompilerState(Diagnostics):
     def __init__(self):
+        clear_defined_integer_names()
         self.semantic_errors: list[str] = []
         self.warnings: list[str] = []
         # Con --strict-ownership las fugas de buffers y descriptores son error.
@@ -70,6 +76,15 @@ class CompilerState(Diagnostics):
         )
         for error in conditional_errors:
             self.error(error)
+
+        content, integer_directives, integer_errors = extract_integer_directives(
+            content,
+            Path(path),
+        )
+        for error in integer_errors:
+            self.error(error)
+        if hasattr(self, 'storage'):
+            register_integer_directives(self, Path(path), integer_directives)
 
         from core.library import extract_library_directives
         content, library_requests, library_errors = extract_library_directives(

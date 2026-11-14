@@ -37,6 +37,7 @@ from core.lockfile import (
 from core.compiler.mangling import MANGLE_VERSION, symbol_llvm_name
 from core.frontend.objects import (
     AggregateSymbol,
+    DefinedIntegerSymbol,
     EnumSymbol,
     FunctionSignature,
     FunctionSymbol,
@@ -86,6 +87,7 @@ class Compiler(CompilerState):
         self.package_identity_override: str | None = None
         self.precompiled_modules: dict[Path, list[object]] = {}
         self.module_exports: dict[Path, set[str]] = {}
+        self.integer_directives_by_module: dict[Path, set[str]] = {}
         self.module_targets: dict[Path, ModuleTarget] = {}
         self.node_modules: dict[int, Path] = {}
         self.active_module_path: Path | None = None
@@ -548,7 +550,10 @@ class Compiler(CompilerState):
                         ordered.extend(self._load_module_tree(imported_path))
 
             own_nodes = [node for node in nodes if node.name != 'IMPORT']
-            self.module_exports[path] = imports.public_definition_names(own_nodes)
+            self.module_exports[path] = (
+                imports.public_definition_names(own_nodes)
+                | self.integer_directives_by_module.get(path, set())
+            )
             self._loaded_module_paths.add(path)
             self.storage.loaded_modules.append(str(path))
             return ordered + own_nodes
@@ -700,6 +705,25 @@ class Compiler(CompilerState):
                     self.library_symbol_names[
                         (package.package_id, module, kind, name)
                     ] = str(llvm_name)
+                if kind == 'type' and name:
+                    type_spec = self._library_type_spec(item.get('type', {}))
+                    if type_spec.bit_width is None or type_spec.signed is None:
+                        continue
+                    module_path = (extracted / 'source' / module).resolve()
+                    symbol = DefinedIntegerSymbol(
+                        name=name,
+                        bit_width=int(type_spec.bit_width),
+                        signed=bool(type_spec.signed),
+                        module_path=module_path,
+                        llvm_name=str(llvm_name or name),
+                    )
+                    self.storage.define_type(symbol)
+                    from core.frontend.tools.types import register_defined_integer_name
+                    register_defined_integer_name(
+                        name,
+                        symbol.bit_width,
+                        symbol.signed,
+                    )
             for relative in package.manifest.get('links', ()):
                 link_dir = (extracted / str(relative)).resolve()
                 try:
@@ -976,6 +1000,29 @@ class Compiler(CompilerState):
                     )
                     if not self.storage.define_type(symbol):
                         self.error(f'El tipo lib2 ya existe: {name}')
+                elif kind == 'type':
+                    type_spec = self._library_type_spec(item.get('type', {}))
+                    if type_spec.bit_width is None or type_spec.signed is None:
+                        self.error(
+                            f'El tipo escalar lib2 {name} no tiene ancho o signo'
+                        )
+                        continue
+                    symbol = DefinedIntegerSymbol(
+                        name=name,
+                        bit_width=int(type_spec.bit_width),
+                        signed=bool(type_spec.signed),
+                        module_path=module_path,
+                        llvm_name=str(item.get('llvm') or name),
+                    )
+                    if not self.storage.define_type(symbol):
+                        self.error(f'El tipo lib2 ya existe: {name}')
+                    else:
+                        from core.frontend.tools.types import register_defined_integer_name
+                        register_defined_integer_name(
+                            name,
+                            symbol.bit_width,
+                            symbol.signed,
+                        )
                 elif kind == 'variable':
                     type_spec = self._library_type_spec(item.get('type', {}))
                     value = item.get('value')
@@ -1225,6 +1272,8 @@ class Compiler(CompilerState):
         if isinstance(symbol, EnumSymbol):
             symbol.base_type = resolve(symbol.base_type)
             return
+        if isinstance(symbol, DefinedIntegerSymbol):
+            return
         if isinstance(symbol, AggregateSymbol):
             symbol.fields = tuple(
                 replace(field, type_spec=resolve(field.type_spec))
@@ -1268,6 +1317,8 @@ class Compiler(CompilerState):
                 kind = 'enum'
             elif isinstance(symbol, OpaqueSymbol):
                 kind = 'opaque'
+            elif isinstance(symbol, DefinedIntegerSymbol):
+                kind = 'type'
             else:
                 kind = 'type'
             stored = self._stored_llvm_name(symbol, kind)

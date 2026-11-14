@@ -77,7 +77,7 @@ iterador:
 - `usize` o `isize`;
 - `byte` o `char`;
 - `bool`;
-- `Bint<n>` o `uBint<n>`;
+- `Bint(n)`, únicamente como tipo de limb dentro de `fields`;
 - punteros, arrays, matrices, `chain`, `Len_t` o `Size_t`.
 
 Estos errores son independientes de `@unsafe`: una función insegura tampoco

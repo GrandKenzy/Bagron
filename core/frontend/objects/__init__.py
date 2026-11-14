@@ -5,6 +5,7 @@ from core.frontend.objects.function import (
 )
 from core.frontend.objects.type import (
     AggregateSymbol,
+    DefinedIntegerSymbol,
     EnumMember,
     EnumSymbol,
     FieldSpec,
@@ -22,6 +23,7 @@ __all__ = [
     'ValueInfo',
     'FieldSpec',
     'AggregateSymbol',
+    'DefinedIntegerSymbol',
     'EnumMember',
     'EnumSymbol',
     'OpaqueSymbol',

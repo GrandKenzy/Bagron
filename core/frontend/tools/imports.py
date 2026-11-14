@@ -161,7 +161,7 @@ def _definition_name(node: gast.ASTRef) -> str | None:
             None,
         )
         return _first_identifier(signature) if signature is not None else None
-    if node.name in {'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'OPAQUE'}:
+    if node.name in {'CLASS', 'STRUCT', 'MOLD', 'FIELDS', 'ENUM', 'OPAQUE'}:
         signature = next(
             (
                 child for child in _children(node)
@@ -187,7 +187,7 @@ def _definition_name(node: gast.ASTRef) -> str | None:
 
 def _is_public(node: object) -> bool:
     body_names = {
-        'FUNCTION_BODY', 'STRUCT_BODY', 'FLAGS_BODY', 'MOLD_BODY',
+        'FUNCTION_BODY', 'STRUCT_BODY', 'FIELDS_BODY', 'MOLD_BODY',
         'ENUM_BODY', 'CLASS_BODY', 'EXTERN_BODY',
     }
 
@@ -206,7 +206,7 @@ def _is_public(node: object) -> bool:
 
 def public_definition_names(nodes: list[gast.ASTRef]) -> set[str]:
     definitions = {
-        'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'OPAQUE',
+        'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FIELDS', 'ENUM', 'OPAQUE',
     }
     names = {
         name

@@ -527,14 +527,14 @@ class FunctionEmitterBase:
                     )
                     field_spec = getattr(field, 'type_spec', None)
                     if field_spec is not None:
-                        return field_spec.name in UNSIGNED_INTEGER_TYPES
+                        return field_spec.name in UNSIGNED_INTEGER_TYPES or field_spec.signed is False
         name = self._identifier(node)
         if name is None:
             return False
         spec = self._active_type_spec(name)
         if spec is None:
             return False
-        if spec.name in UNSIGNED_INTEGER_TYPES:
+        if spec.name in UNSIGNED_INTEGER_TYPES or spec.signed is False:
             return True
         enum = self.type_registry.enum(spec.name) if self.type_registry else None
         return enum is not None and enum.base_type.name in UNSIGNED_INTEGER_TYPES

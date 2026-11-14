@@ -337,7 +337,7 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertEqual(7, result.returncode)
 
-    def test_emits_struct_mold_enum_and_flags_types(self):
+    def test_emits_struct_mold_enum_and_fields_types(self):
         module = self.compile_source(
             'enum Estado:\n'
             '    LISTO,\n'
@@ -346,11 +346,10 @@ class GlobalBackendTests(unittest.TestCase):
             '    estado: Estado\n'
             'mold Base:\n'
             '    punto: Punto\n'
-            'flags Permisos uint8:\n'
-            '    leer: uBint<1> = 1\n'
-            '    escribir: uBint<1> = 0\n'
-            '    activo: bool = true\n'
-            '    reservado: uBint<5> = 0\n'
+            'fields Permisos:\n'
+            '    leer: Bint(1)\n'
+            '    escribir: Bint(1)\n'
+            '    reservado: Bint(5)\n'
             'punto: Punto\n'
             'base: Base\n'
             'permisos: Permisos\n'
@@ -358,12 +357,12 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Punto_[^"\s]*"? = type \{\{i32, i32\}\}')
         self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Base_[^"\s]*"? = type \{\[0 x <4 x i8>\], \{\[8 x i8\]\}\}')
-        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Permisos_[^"\s]*"? = type \{\{i8\}\}')
+        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Permisos_[^"\s]*"? = type \{\{i1, i1, i5\}\}')
         self.assertRegex(module, r'@"?__bg_[^"\s]*_global_punto_[^"\s]*"? = global')
         self.assertRegex(module, r'@"?__bg_[^"\s]*_global_base_[^"\s]*"? = global')
         self.assertRegex(module, r'@"?__bg_[^"\s]*_global_permisos_[^"\s]*"? = global')
 
-    def test_builds_and_runs_struct_mold_and_flags_member_access(self):
+    def test_builds_and_runs_struct_mold_and_fields_member_access(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '_main.bg'
             path.write_text(
@@ -373,10 +372,10 @@ class GlobalBackendTests(unittest.TestCase):
                 'mold Vista:\n'
                 '    entero: int32\n'
                 '    crudo: uint32\n'
-                'flags Estado uint8:\n'
-                '    listo: uBint<1> = 1\n'
-                '    modo: uBint<2> = 2\n'
-                '    reservado: uBint<5> = 0\n'
+                'fields Estado:\n'
+                '    listo: Bint(1)\n'
+                '    modo: Bint(2)\n'
+                '    reservado: Bint(5)\n'
                 'func calcular() int32:\n'
                 '    punto: Punto\n'
                 '    punto.x = 4\n'
@@ -387,7 +386,7 @@ class GlobalBackendTests(unittest.TestCase):
                 '    estado.listo = 0\n'
                 '    estado.modo += 1\n'
                 '    if estado.listo == 0:\n'
-                '        if estado.modo == 3:\n'
+                '        if estado.modo == 1:\n'
                 '            if vista.crudo == 7:\n'
                 '                return punto.x + punto.y\n'
                 '    return 0\n'
@@ -405,18 +404,18 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertEqual(7, result.returncode)
 
-    def test_emits_packed_aligned_volatile_and_msb_flags(self):
+    def test_emits_packed_aligned_volatile_and_signed_fields(self):
         module = self.compile_source(
             '@packed\n'
             '@align(8)\n'
             'struct Paquete:\n'
             '    etiqueta: byte\n'
             '    valor: int32\n'
-            '@order_msb\n'
-            'volatile flags Estado uint8:\n'
-            '    activo: uBint<1> = 1\n'
-            '    modo: uBint<2> = 2\n'
-            '    reservado: uBint<5> = 0\n'
+            '@signed\n'
+            'volatile fields Estado:\n'
+            '    activo: Bint(1)\n'
+            '    modo: Bint(2)\n'
+            '    reservado: Bint(5)\n'
             'func inspeccionar() int32:\n'
             '    paquete: Paquete\n'
             '    paquete.etiqueta = 1\n'
@@ -438,9 +437,9 @@ class GlobalBackendTests(unittest.TestCase):
         self.assertRegex(module, r'alloca %"?__bg_[^"\s]*_type_Paquete_[^"\s]*"?, align 8')
         self.assertIn('store i32 7, i32*', module)
         self.assertIn('align 1', module)
-        self.assertIn('load volatile i8', module)
-        self.assertIn('store volatile i8', module)
-        self.assertIn('lshr i8', module)
+        self.assertIn('load volatile i1', module)
+        self.assertIn('store volatile i1', module)
+        self.assertRegex(module, r'%"?__bg_[^"\s]*_type_Estado_[^"\s]*"? = type \{\{i1, i2, i5, i1\}\}')
 
     def test_emits_volatile_accesses_for_mmio_aggregates_and_pointers(self):
         module = self.compile_source(
@@ -450,9 +449,9 @@ class GlobalBackendTests(unittest.TestCase):
             '    value: uint32\n'
             'volatile mold VistaMMIO:\n'
             '    value: uint32\n'
-            'volatile flags EstadoMMIO uint8:\n'
-            '    listo: bool = false\n'
-            '    reservado: uBint<7> = 0\n'
+            'volatile fields EstadoMMIO:\n'
+            '    listo: Bint(1)\n'
+            '    reservado: Bint(7)\n'
             '@unsafe\n'
             'func leer_mmio(registros *: MMIO) uint32:\n'
             '    return (registros).value\n'
@@ -469,7 +468,9 @@ class GlobalBackendTests(unittest.TestCase):
             '    normal.value = 1\n'
             '    mmio.value = 2\n'
             '    vista.value = 3\n'
-            '    estado.listo = true\n'
+            '    estado.listo = 1\n'
+            '    if estado.listo != 1:\n'
+            '        return 1\n'
             '    escribir_mmio($mmio)\n'
             '    observado: uint32 = normal.value\n'
             '    lectura: uint32 = leer_mmio($mmio)\n'
@@ -479,8 +480,8 @@ class GlobalBackendTests(unittest.TestCase):
 
         self.assertIn('load volatile i32', module)
         self.assertIn('store volatile i32', module)
-        self.assertIn('load volatile i8', module)
-        self.assertIn('store volatile i8', module)
+        self.assertIn('load volatile i1', module)
+        self.assertIn('store volatile i1', module)
         self.assertIn('load i32', module)
         self.assertIn('store i32', module)
 

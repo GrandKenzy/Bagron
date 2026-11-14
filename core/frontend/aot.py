@@ -325,7 +325,7 @@ def _group_transparent_type(rule_name: str, children: list[Any]) -> list[Any]:
         'VAR_INITIALIZATION',
         'FUNCTION_SIGNATURE',
         'PAIR_PARAM',
-        'FLAGS_SIGNATURE',
+        'FIELDS_SIGNATURE',
         'EXTERN_RETURN',
         'ENUM',
         'FOR_SIGNATURE',
@@ -359,7 +359,7 @@ def _group_transparent_type(rule_name: str, children: list[Any]) -> list[Any]:
             return children
         return _replace_range(children, start, end, wrap_type_suffixes=True)
 
-    if rule_name == 'FLAGS_SIGNATURE':
+    if rule_name == 'FIELDS_SIGNATURE':
         start = _after_token(children, 'IDENT')
         end = _first_index(children, {'COLON'}, start or 0)
         if start is None or end is None:

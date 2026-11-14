@@ -79,7 +79,6 @@ class AggregateLayout:
     payload_index: int
     field_paths: dict[str, tuple[int, ...]]
     storage_path: tuple[int, ...] | None
-    backing_type: ir.Type | None
     alignment: int
     size: int
 
@@ -238,8 +237,7 @@ class LLVMTypeRegistry:
 
         field_paths: dict[str, tuple[int, ...]] = {}
         storage_path: tuple[int, ...] | None = None
-        backing_type: ir.Type | None = None
-        if symbol.kind == 'struct':
+        if symbol.kind in {'struct', 'fields'}:
             layout_fields = symbol.all_fields
             parent_layout = self._layouts.get(
                 self._key_for_source(symbol.parent_type or '', symbol)
@@ -252,6 +250,8 @@ class LLVMTypeRegistry:
                 )
             )
             fields = [self.resolve(field.type_spec) for field in layout_fields]
+            if symbol.kind == 'fields' and symbol.signed_fields:
+                fields.append(ir.IntType(1))
             payload = ir.LiteralStructType(fields, packed=packed)
             payload_alignment = self._abi_alignment(payload)
             parent_alignment = parent_layout.alignment if parent_layout else 1
@@ -301,14 +301,6 @@ class LLVMTypeRegistry:
             )
             payload_index = self._set_outer_body(llvm_type, payload, alignment)
             storage_path = (payload_index, 0)
-        elif symbol.kind == 'flags':
-            if symbol.base_type is None:
-                raise LLVMTypeError(f'El flags {symbol.name} no tiene tipo base')
-            backing_type = scalar_type(symbol.base_type)
-            payload = ir.LiteralStructType([backing_type], packed=symbol.is_packed)
-            alignment = self._effective_alignment(symbol, payload)
-            payload_index = self._set_outer_body(llvm_type, payload, alignment)
-            storage_path = (payload_index, 0)
         else:
             raise LLVMTypeError(f'Clase de agregado desconocida: {symbol.kind}')
 
@@ -319,7 +311,6 @@ class LLVMTypeRegistry:
             payload_index=payload_index,
             field_paths=field_paths,
             storage_path=storage_path,
-            backing_type=backing_type,
             alignment=self._abi_alignment(llvm_type),
             size=self._abi_size(llvm_type),
         )
@@ -327,6 +318,8 @@ class LLVMTypeRegistry:
     def _key(self, type_name: object) -> str:
         if isinstance(type_name, TypeSpec):
             return type_name.nominal_key or type_name.name
+        if isinstance(type_name, ir.IdentifiedStructType):
+            return self._llvm_name_to_key.get(type_name.name, type_name.name)
         value = str(type_name)
         return self._llvm_name_to_key.get(value, value)
 
@@ -403,10 +396,6 @@ class LLVMTypeRegistry:
         layout = self._layouts.get(self._key(type_name))
         return layout.storage_path if layout is not None else None
 
-    def flags_backing_type(self, type_name: object) -> ir.Type | None:
-        layout = self._layouts.get(self._key(type_name))
-        return layout.backing_type if layout is not None else None
-
     def is_volatile(self, type_name: object) -> bool:
         layout = self._layouts.get(self._key(type_name))
         if layout is None:
@@ -454,30 +443,13 @@ class LLVMTypeRegistry:
             return ir.Constant(target_type, None)
         if layout.symbol.kind == 'mold':
             return ir.Constant(target_type, None)
-        if layout.symbol.kind == 'flags':
-            if not isinstance(layout.backing_type, ir.IntType):
-                raise LLVMTypeError(f'El flags {spec.name} no tiene entero base')
-            value = 0
-            for field in layout.symbol.fields:
-                width = self._integer_width(field.type_spec)
-                if width is None or field.bit_offset is None or field.value_info is None:
-                    raise LLVMTypeError(
-                        f'El campo {spec.name}.{field.name} no tiene layout de bits'
-                    )
-                mask = (1 << width) - 1
-                value |= (int(field.value_info.value) & mask) << field.bit_offset
-            payload = ir.Constant(
-                layout.payload_type,
-                [ir.Constant(layout.backing_type, value)],
-            )
-        else:
-            payload = ir.Constant(
-                layout.payload_type,
-                [
-                    self.default_constant(field.type_spec)
-                    for field in layout.symbol.all_fields
-                ],
-            )
+        values = [
+            self.default_constant(field.type_spec)
+            for field in layout.symbol.all_fields
+        ]
+        if layout.symbol.kind == 'fields' and layout.symbol.signed_fields:
+            values.append(ir.Constant(ir.IntType(1), 0))
+        payload = ir.Constant(layout.payload_type, values)
         outer_values: list[ir.Constant] = []
         if layout.payload_index:
             outer_values.append(ir.Constant(target_type.elements[0], None))
@@ -488,7 +460,7 @@ class LLVMTypeRegistry:
     def _integer_width(spec: TypeSpec) -> int | None:
         if spec.name == 'bool':
             return 1
-        if spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
+        if spec.name in {'Bint', 'usize', 'isize'} or spec.bit_width is not None:
             return spec.bit_width
         return _INTEGER_TYPES.get(spec.name)
 
@@ -559,7 +531,7 @@ _INTEGER_TYPES = {
 
 
 def scalar_type(spec: TypeSpec) -> ir.Type:
-    if spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
+    if spec.name in {'Bint', 'usize', 'isize'} or spec.bit_width is not None:
         if spec.bit_width is None or spec.bit_width < 1:
             raise LLVMTypeError(f'Ancho invalido para {spec.canonical_name}')
         return ir.IntType(spec.bit_width)
@@ -721,7 +693,7 @@ def default_value(
     value: ValueInfo | None = None,
     type_registry: LLVMTypeRegistry | None = None,
 ) -> ir.Constant:
-    """Return storage defaults, including declarative ``flags`` bits."""
+    """Return deterministic storage defaults for Bagron values."""
     if type_registry is not None and not _is_unsized_array(spec) and (
         spec.array_depth or type_registry.layout(spec) is not None
     ):
@@ -750,7 +722,7 @@ def constant_value(
         and type_registry.layout(spec) is not None
     ):
         layout = type_registry.layout(spec)
-        if layout is None or layout.symbol.kind != 'struct':
+        if layout is None or layout.symbol.kind not in {'struct', 'fields'}:
             raise LLVMTypeError(
                 f'El agregado {spec.canonical_name} no admite este inicializador'
             )
@@ -764,6 +736,8 @@ def constant_value(
             constant_value(field.type_spec, field_value, type_registry)
             for field, field_value in zip(layout.symbol.all_fields, value.items)
         ]
+        if layout.symbol.kind == 'fields' and layout.symbol.signed_fields:
+            fields.append(ir.Constant(ir.IntType(1), 0))
         payload = ir.Constant(layout.payload_type, fields)
         outer_values: list[ir.Constant] = []
         target_elements = getattr(target_type, 'elements', ())
@@ -834,9 +808,8 @@ def constant_value(
                 f'El literal para {spec.name} debe contener exactamente un byte'
             )
         return ir.Constant(target_type, data[0])
-    if spec.name in _INTEGER_TYPES or spec.name in {
-        'Bint', 'uBint', 'usize', 'isize'
-    }:
+    if spec.name in _INTEGER_TYPES or spec.name in {'Bint', 'usize', 'isize'} \
+            or spec.bit_width is not None:
         return ir.Constant(target_type, int(value.value))
     if spec.name in {'middle', 'float', 'double'}:
         return ir.Constant(target_type, float(value.value))

@@ -13,7 +13,7 @@ public func read_answer() int32:
 ```
 
 Si no se escribe ninguno, la declaración es pública por defecto. Se admiten
-en variables, funciones, `struct`, `mold`, `flags`, `enum`, `class` y
+en variables, funciones, `struct`, `mold`, `fields`, `enum`, `class` y
 `opaque`. Un miembro privado de una clase solo es accesible desde la clase que
 lo declara; una subclase no hereda ese acceso.
 
@@ -44,7 +44,7 @@ volatile struct UART:
     control: uint32
 ```
 
-También puede usarse con `mold` y `flags`. Conserva las lecturas y escrituras
+También puede usarse con `mold` y `fields`. Conserva las lecturas y escrituras
 como accesos volátiles, útil para MMIO o registros externos. No hace las
 operaciones atómicas, no añade sincronización y no reemplaza `@unsafe` cuando
 la dirección procede de un puntero no demostrable.

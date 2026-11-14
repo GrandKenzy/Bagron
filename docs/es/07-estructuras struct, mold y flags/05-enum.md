@@ -17,7 +17,7 @@ Puede llevar `public` o `private`; si se omite, es pública. La base es
 `uint8`, `uint16`, `uint32`, `uint64`, `byte`, `isize` y `usize`.
 
 La base debe ser un entero escalar sin `const`. `byte` sí es válido como entero
-sin signo de 8 bits. No puede ser `bool`, `Bint<n>`, `uBint<n>`, un puntero, un
+sin signo de 8 bits. No puede ser `bool`, `Bint(n)`, un puntero, un
 array, `buffer` ni un metatipo
 (`Len_t`, `Size_t`, `Signed_t` o `Region_t`).
 
@@ -90,27 +90,27 @@ No hay tag runtime, tabla de miembros ni padding adicional. Dentro de un
 `struct` o `mold`, el campo ocupa la representación ABI de la base, mientras
 el frontend conserva la identidad nominal para comprobar tipos y asignaciones.
 
-## Relación con `struct`, `mold` y `flags`
+## Relación con `struct`, `mold` y `fields`
 
 | Tipo | Representa | Campos | Almacenamiento |
 |:---|:---|:---:|:---:|
 | `enum` | Nombres asociados a enteros | Miembros declarativos | Su base escalar |
 | `struct` | Campos independientes | Sí | Separado por campo |
 | `mold` | Vistas de una región | Sí | Superpuesto |
-| `flags` | Bits combinables | Bitfields | Dentro de su base |
+| `fields` | Limbs estructurales | Campos `Bint(n)` | Layout estructural propio |
 
-Usa `enum` para estados o códigos individuales. Usa `flags` cuando varios bits
+Usa `enum` para estados o códigos individuales. Usa `fields` cuando varios limbs
 puedan estar activos simultáneamente:
 
 ```bg
-flags Permisos uint8:
-    leer: uBint<1> = 0
-    escribir: uBint<1> = 0
-    reservado: uBint<6> = 0
+fields Permisos:
+    leer: Bint(1)
+    escribir: Bint(1)
+    reservado: Bint(6)
 ```
 
-`enum` no admite campos de bits, `@order_msb`, `@packed` ni `@align`; esos
-conceptos pertenecen a `flags` o a los agregados con layout. `volatile` tampoco
+`enum` no admite `Bint(n)` ni `@signed`; esos conceptos pertenecen a `fields`.
+`@packed` y `@align` siguen reservados a los agregados con layout. `volatile` tampoco
 convierte un enum en agregado: si hace falta volatilidad, califica el agregado
 que lo contiene.
 

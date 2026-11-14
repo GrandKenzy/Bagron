@@ -992,7 +992,7 @@ def _validate_return_type(
         return
     raise TypeResolutionError(
         f'El retorno de {name or "<anonima>"} debe ser un intrinseco puro '
-        'o un objeto agregado (struct, mold, flags o class)'
+        'o un objeto agregado (struct, mold, fields o class)'
     )
 
 
@@ -1648,7 +1648,7 @@ def _validate_condition(
         )
 
 
-_DEFINITION_NODES = {'CLASS', 'ENUM', 'FLAGS', 'MOLD', 'STRUCT', 'FUNCTION'}
+_DEFINITION_NODES = {'CLASS', 'ENUM', 'FIELDS', 'MOLD', 'STRUCT', 'FUNCTION'}
 
 _ASSIGNMENT_OPERATORS = {
     'ASSIGN': '=',

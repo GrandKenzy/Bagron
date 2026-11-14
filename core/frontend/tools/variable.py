@@ -13,6 +13,7 @@ from core.frontend.tools.types import (
     bind_nominal_type,
     buffer_capacity,
     infer_value,
+    infer_fields_literal,
     is_buffer_type,
     is_compatible,
     resolve_type,
@@ -41,6 +42,7 @@ def _is_buffer_concat(node: object) -> bool:
             )
             if inner is None:
                 return False
+
             current = inner
             continue
         break
@@ -48,6 +50,15 @@ def _is_buffer_concat(node: object) -> bool:
         return False
     operator = getattr(getattr(current.operator, 'token', None), 'name', None)
     return operator == 'PLUS'
+
+
+def _array_literal_node(node: object) -> gast.ASTRef | None:
+    current = node
+    while isinstance(current, gast.ASTRef) and current.name in {
+        'VALUE', 'PRIMARY', 'POSTFIX_EXPR'
+    } and len(current.nodes) == 1:
+        current = current.nodes[0]
+    return current if isinstance(current, gast.ASTRef) and current.name == 'ARRAY_VALUE' else None
 
 
 def build_symbol(
@@ -264,12 +275,22 @@ def _validate_initializer(
                 symbol.uses_frontend_initializer = True
                 return
 
-        value_info = infer_value(
-            handle.value_node,
-            storage.resolve,
-            compiler.function_lookup,
-            current_function=current_function,
-        )
+        array_literal = _array_literal_node(handle.value_node)
+        if getattr(aggregate, 'kind', None) == 'fields' and array_literal is not None:
+            value_info = infer_fields_literal(
+                array_literal,
+                aggregate,
+                storage.resolve,
+                compiler.function_lookup,
+                current_function=current_function,
+            )
+        else:
+            value_info = infer_value(
+                handle.value_node,
+                storage.resolve,
+                compiler.function_lookup,
+                current_function=current_function,
+            )
     except UnsupportedExpressionError as error:
         if symbol.scope_kind == 'global':
             compiler.error(f'{handle.name}: {error}')

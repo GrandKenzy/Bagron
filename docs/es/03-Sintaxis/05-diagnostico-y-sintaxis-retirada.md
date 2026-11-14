@@ -12,7 +12,7 @@ detectar firmas incompatibles, privacidad y ciclos de imports.
 - Un `while` necesita una condición `bool`.
 - Un puntero recibido con procedencia desconocida solo se puede desreferenciar
   dentro de `@unsafe`.
-- `@order_msb` solo se aplica a `flags`.
+- `@signed` solo se aplica a `fields`.
 
 ## Formas que ya no son alternativas
 

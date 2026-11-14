@@ -16,6 +16,50 @@ from .memory import _MemoryPlace
 
 
 class ValueExpressionMixin:
+    def _compile_fields_literal(
+        self,
+        node: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+        expected_type: ir.Type | None,
+    ) -> ir.Value:
+        """Materialize a positional ``fields`` literal as a normal struct."""
+        if self.type_registry is None or expected_type is None:
+            raise FunctionEmissionError('El literal fields requiere un tipo esperado')
+        layout = self.type_registry.layout(expected_type)
+        if layout is None or layout.symbol.kind != 'fields':
+            raise FunctionEmissionError('El literal posicional solo puede construir fields')
+        array_node = next(iter(self._children(node)), None)
+        items = self._children(array_node)
+        fields = layout.symbol.all_fields
+        if len(items) != len(fields):
+            raise FunctionEmissionError(
+                f'El fields {layout.symbol.name} requiere exactamente {len(fields)} limbs'
+            )
+        result: ir.Value = ir.Constant(layout.llvm_type, None)
+        for field, value_node in zip(fields, items):
+            field_type = self.type_registry.resolve(field.type_spec)
+            value = self._compile_expression(
+                value_node,
+                builder,
+                values,
+                expected_type=field_type,
+            )
+            path = self.type_registry.field_path(
+                layout.symbol.registry_key or layout.symbol.name,
+                field.name,
+            )
+            if path is None:
+                raise FunctionEmissionError(
+                    f'El campo {layout.symbol.name}.{field.name} no tiene ruta LLVM'
+                )
+            result = builder.insert_value(
+                result,
+                self._coerce_value(value, field_type, builder),
+                path,
+            )
+        return result
+
     def _aggregate_literal_layout(
         self,
         type_name: str,
@@ -133,44 +177,6 @@ class ValueExpressionMixin:
             return self._load_address(result, builder, alignment=layout.alignment)
 
         result: ir.Value = ir.Constant(layout.llvm_type, None)
-        if layout.symbol.kind == 'flags':
-            backing = layout.backing_type
-            if not isinstance(backing, ir.IntType):
-                raise FunctionEmissionError(f'El flags {type_name} no tiene entero base')
-            bits: ir.Value = ir.Constant(backing, 0)
-            for field_name, value_node in entries.items():
-                field = self.type_registry.field_spec(type_key, field_name)
-                if field is None or field.bit_offset is None:
-                    raise FunctionEmissionError(f'El campo {type_name}.{field_name} no existe')
-                field_type = self.type_registry.resolve(field.type_spec)
-                if not isinstance(field_type, ir.IntType):
-                    raise FunctionEmissionError(
-                        f'El campo flags {type_name}.{field_name} no es entero'
-                    )
-                value = self._compile_expression(
-                    value_node,
-                    builder,
-                    values,
-                    expected_type=field_type,
-                )
-                value = self._coerce_value(
-                    value,
-                    field_type,
-                    builder,
-                    signed=field.type_spec.name == 'Bint',
-                )
-                if field_type.width < backing.width:
-                    value = builder.zext(value, backing)
-                mask = (1 << field_type.width) - 1
-                value = builder.and_(value, ir.Constant(backing, mask))
-                if field.bit_offset:
-                    value = builder.shl(value, ir.Constant(backing, field.bit_offset))
-                bits = builder.or_(bits, value)
-            storage_path = self.type_registry.storage_path(type_key)
-            if storage_path is None:
-                raise FunctionEmissionError(f'El flags {type_name} no tiene almacenamiento')
-            return builder.insert_value(result, bits, storage_path)
-
         for field_name, value_node in entries.items():
             field = self.type_registry.field_spec(type_key, field_name)
             path = self.type_registry.field_path(type_key, field_name)
@@ -610,17 +616,6 @@ class ValueExpressionMixin:
                     if layout is None or field is None:
                         raise FunctionEmissionError('El miembro del literal agregado no existe')
                     field_type = self.type_registry.resolve(field.type_spec)
-                    if layout.symbol.kind == 'flags':
-                        backing = layout.backing_type
-                        if not isinstance(backing, ir.IntType) or field.bit_offset is None:
-                            raise FunctionEmissionError('El campo flags no tiene layout')
-                        storage_path = self.type_registry.storage_path(type_key)
-                        bits = builder.extract_value(aggregate, storage_path)
-                        if field.bit_offset:
-                            bits = builder.lshr(bits, ir.Constant(backing, field.bit_offset))
-                        mask = (1 << field_type.width) - 1
-                        bits = builder.and_(bits, ir.Constant(backing, mask))
-                        return builder.trunc(bits, field_type)
                     if layout.symbol.kind != 'mold':
                         path = self.type_registry.field_path(type_key, field_name or '')
                         if path is None:
@@ -692,7 +687,12 @@ class ValueExpressionMixin:
             )
             if inner is None:
                 raise FunctionEmissionError('La expresion parentizada esta vacia')
-            value = self._compile_expression(inner, builder, values)
+            value = self._compile_expression(
+                inner,
+                builder,
+                values,
+                expected_type=expected_type,
+            )
             if isinstance(value.type, ir.PointerType):
                 return self._load_address(
                     self._checked_pointer(value, builder),
@@ -709,10 +709,29 @@ class ValueExpressionMixin:
                 expected_type=expected_type,
             )
 
+        if getattr(current, 'name', None) == 'ARRAY_VALUE':
+            if expected_type is not None and self.type_registry is not None:
+                layout = self.type_registry.layout(expected_type)
+                if layout is not None and layout.symbol.kind == 'fields':
+                    return self._compile_fields_literal(
+                        current,
+                        builder,
+                        values,
+                        expected_type,
+                    )
+            raise FunctionEmissionError(
+                'El literal posicional solo puede construir fields'
+            )
+
         if getattr(current, 'name', None) in {'VALUE', 'PRIMARY'}:
             children = self._children(current)
             if len(children) == 1:
-                return self._compile_expression(children[0], builder, values)
+                return self._compile_expression(
+                    children[0],
+                    builder,
+                    values,
+                    expected_type=expected_type,
+                )
 
         kind = self._token_kind(current)
         value = self._token_value(current)

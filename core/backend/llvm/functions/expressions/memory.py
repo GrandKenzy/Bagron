@@ -45,17 +45,6 @@ class _MemoryPlace:
     read_only: bool = False
     after_hooks: tuple[tuple[str, ir.Value, str], ...] = ()
 
-@dataclass
-class _BitfieldPlace:
-    address: ir.Value
-    field_type: ir.IntType
-    backing_type: ir.IntType
-    offset: int
-    alignment: int | None = None
-    volatile: bool = False
-    unsigned: bool = False
-
-
 class MemoryExpressionMixin:
     def _size_integer_type(self) -> ir.IntType:
         return ir.IntType(self._pointer_size * 8)
@@ -274,73 +263,28 @@ class MemoryExpressionMixin:
 
     def _load_place(
         self,
-        place: _MemoryPlace | _BitfieldPlace,
+        place: _MemoryPlace,
         builder: ir.IRBuilder,
     ) -> ir.Value:
-        if isinstance(place, _MemoryPlace):
-            return self._load_address(
-                place.address,
-                builder,
-                alignment=place.alignment,
-                volatile=place.volatile,
-            )
-        stored = self._load_address(
+        return self._load_address(
             place.address,
             builder,
             alignment=place.alignment,
             volatile=place.volatile,
         )
-        shifted = builder.lshr(
-            stored,
-            ir.Constant(place.backing_type, place.offset),
-        )
-        mask = (1 << place.field_type.width) - 1
-        masked = builder.and_(shifted, ir.Constant(place.backing_type, mask))
-        if place.field_type.width == place.backing_type.width:
-            return masked
-        return builder.trunc(masked, place.field_type)
 
     def _store_place(
         self,
         value: ir.Value,
-        place: _MemoryPlace | _BitfieldPlace,
+        place: _MemoryPlace,
         builder: ir.IRBuilder,
     ) -> None:
-        if isinstance(place, _MemoryPlace):
-            if place.read_only:
-                raise FunctionEmissionError(
-                    'No se puede escribir en almacenamiento inmutable'
-                )
-            self._store_address(
-                value,
-                place.address,
-                builder,
-                alignment=place.alignment,
-                volatile=place.volatile,
+        if place.read_only:
+            raise FunctionEmissionError(
+                'No se puede escribir en almacenamiento inmutable'
             )
-            return
-
-        field_value = self._coerce_value(value, place.field_type, builder)
-        if place.field_type.width < place.backing_type.width:
-            field_value = builder.zext(field_value, place.backing_type)
-        mask = (1 << place.field_type.width) - 1
-        placed_mask = mask << place.offset
-        current = self._load_address(
-            place.address,
-            builder,
-            alignment=place.alignment,
-            volatile=place.volatile,
-        )
-        cleared = builder.and_(
-            current,
-            ir.Constant(place.backing_type, ~placed_mask),
-        )
-        inserted = builder.shl(
-            builder.and_(field_value, ir.Constant(place.backing_type, mask)),
-            ir.Constant(place.backing_type, place.offset),
-        )
         self._store_address(
-            builder.or_(cleared, inserted),
+            value,
             place.address,
             builder,
             alignment=place.alignment,
@@ -486,8 +430,8 @@ class MemoryExpressionMixin:
         values: dict[str, ir.Value],
         *,
         hook_mode: str = 'none',
-    ) -> _MemoryPlace | _BitfieldPlace:
-        """Resolve an assignable LLVM place, including union/bitfield views."""
+    ) -> _MemoryPlace:
+        """Resolve an assignable LLVM place, including union views."""
         current = node
         while (
             getattr(current, 'name', None) in {'VALUE', 'PRIMARY'}
@@ -599,10 +543,6 @@ class MemoryExpressionMixin:
                         )
             place = self._compile_place(primary, builder, values)
             for suffix_index, suffix in enumerate(suffixes):
-                if isinstance(place, _BitfieldPlace):
-                    raise FunctionEmissionError(
-                        'Un campo de flags no admite accesos posteriores'
-                    )
                 name = getattr(suffix, 'name', None)
                 if name == 'CALL_SUFFIX':
                     raise FunctionEmissionError(
@@ -724,48 +664,6 @@ class MemoryExpressionMixin:
                             f'{type_name}'
                         )
                     volatile = place.volatile or layout.symbol.is_volatile
-                    if layout.symbol.kind == 'flags':
-                        if suffix_index != len(suffixes) - 1:
-                            raise FunctionEmissionError(
-                                'Un campo de flags debe ser el acceso final'
-                            )
-                        path = layout.storage_path
-                        backing = layout.backing_type
-                        field_type = self.type_registry.resolve(field.type_spec)
-                        if (
-                            path is None
-                            or not isinstance(backing, ir.IntType)
-                            or not isinstance(field_type, ir.IntType)
-                            or field.bit_offset is None
-                        ):
-                            raise FunctionEmissionError(
-                                f'El campo de flags {type_name}.{member} no tiene layout LLVM'
-                            )
-                        storage = builder.gep(
-                            place.address,
-                            [ir.Constant(ir.IntType(32), 0), *(
-                                ir.Constant(ir.IntType(32), item) for item in path
-                            )],
-                            inbounds=False,
-                        )
-                        alignment = 1 if layout.symbol.is_packed else min(
-                            place.alignment or layout.alignment,
-                            self._place_alignment(backing) or 1,
-                        )
-                        place = _BitfieldPlace(
-                            address=storage,
-                            field_type=field_type,
-                            backing_type=backing,
-                            offset=field.bit_offset,
-                            alignment=alignment,
-                            volatile=volatile,
-                            unsigned=(
-                                field.type_spec.name.startswith('u')
-                                or field.type_spec.name == 'byte'
-                            ),
-                        )
-                        continue
-
                     field_type = self.type_registry.resolve(field.type_spec)
                     if layout.symbol.kind == 'mold':
                         path = layout.storage_path
@@ -883,10 +781,6 @@ class MemoryExpressionMixin:
             values,
             hook_mode=hook_mode,
         )
-        if isinstance(place, _BitfieldPlace):
-            raise FunctionEmissionError(
-                'Un campo de flags no tiene una direccion independiente'
-            )
         if place.after_hooks:
             self._emit_after_access_hooks(
                 place.after_hooks,

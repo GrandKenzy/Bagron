@@ -10,7 +10,7 @@ from core.frontend.syntax.items.statements import (
     SIMPLE_STATEMENT,
     WHILE,
 )
-from core.frontend.syntax.items.struct_decl import FLAGS, MOLD, STRUCT
+from core.frontend.syntax.items.struct_decl import MOLD, STRUCT
 from core.frontend.syntax.items.struct_decl import AGGREGATE_DECORATOR
 from core.frontend.syntax.items.value import (
     PARAMETERS,

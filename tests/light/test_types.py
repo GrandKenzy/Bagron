@@ -174,47 +174,46 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_bit_width_types_are_restricted_to_flags(self):
-        with self.assertRaisesRegex(CompilationError, 'solo pueden usarse como campos de flags'):
+    def test_bit_width_types_are_restricted_to_fields(self):
+        with self.assertRaisesRegex(CompilationError, 'solo puede usarse como campo de fields'):
             self.compile_source(
-                'value: Bint<5> = 1\n'
+                'value: Bint(5) = 1\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'solo pueden usarse como campos de flags'):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                'func bad(value: uBint<5>) int32:\n'
+                'func bad(value: uBint(5)) int32:\n'
                 '    return 0\n'
             )
 
         self.compile_source(
-            'flags Permisos uint8:\n'
-            '    leer: uBint<1> = 1\n'
-            '    modo: Bint<3> = 2\n'
-            '    activo: bool = true\n'
-            '    reservado: uBint<3> = 0\n'
+            'fields Permisos:\n'
+            '    leer: Bint(1)\n'
+            '    modo: Bint(3)\n'
+            '    reservado: Bint(3)\n'
             'func main() int32:\n'
             '    return 0\n'
         )
 
-        with self.assertRaisesRegex(CompilationError, 'debe usar Bint, uBint o bool'):
+        with self.assertRaisesRegex(CompilationError, 'debe usar Bint'):
             self.compile_source(
-                'flags Invalidos uint8:\n'
-                '    valor: uint8 = 1\n'
+                'fields Invalidos:\n'
+                '    valor: uint8\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'Bint.*al menos 2 bits'):
+        with self.assertRaisesRegex(CompilationError, 'mayor que cero'):
             self.compile_source(
-                'flags Invalidos uint8:\n'
-                '    valor: Bint<1> = 0\n'
+                'fields Invalidos:\n'
+                '    valor: Bint(0)\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-    def test_registers_enum_aggregates_and_flags(self):
+    def test_registers_enum_aggregates_and_fields(self):
         compiler = self.compile_source(
             'enum Estado int8:\n'
             '    INACTIVO,\n'
@@ -226,10 +225,10 @@ class TypeSemanticTests(unittest.TestCase):
             '    estado: Estado\n'
             'mold PuntoBase:\n'
             '    punto: Punto\n'
-            'flags Permisos uint8:\n'
-            '    leer: uBint<1> = 1\n'
-            '    escribir: uBint<1> = 0\n'
-            '    reservado: uBint<6> = 0\n'
+            'fields Permisos:\n'
+            '    leer: Bint(1)\n'
+            '    escribir: Bint(1)\n'
+            '    reservado: Bint(6)\n'
             '\n'
             'func main() int32:\n'
             '    return 0\n'
@@ -242,19 +241,18 @@ class TypeSemanticTests(unittest.TestCase):
 
         point = compiler.storage.types['Punto']
         mold = compiler.storage.types['PuntoBase']
-        flags = compiler.storage.types['Permisos']
+        fields = compiler.storage.types['Permisos']
         self.assertIsInstance(point, AggregateSymbol)
         self.assertIsInstance(mold, AggregateSymbol)
-        self.assertIsInstance(flags, AggregateSymbol)
+        self.assertIsInstance(fields, AggregateSymbol)
         self.assertEqual('struct', point.kind)
         self.assertEqual('mold', mold.kind)
-        self.assertEqual('flags', flags.kind)
+        self.assertEqual('fields', fields.kind)
         self.assertEqual(['x', 'y', 'estado'], [field.name for field in point.fields])
         self.assertEqual('Estado', point.fields[2].type_spec.name)
         self.assertEqual('Punto', mold.fields[0].type_spec.name)
-        self.assertEqual('uint8', flags.base_type.name)
-        self.assertEqual([1, 0, 0], [field.value_info.value for field in flags.fields])
-        self.assertEqual([0, 1, 2], [field.bit_offset for field in flags.fields])
+        self.assertEqual([1, 1, 6], [field.type_spec.bit_width for field in fields.fields])
+        self.assertTrue(all(field.value_info is None for field in fields.fields))
 
     def test_enum_trailing_comma_is_optional(self):
         compiler = self.compile_source(
@@ -334,7 +332,7 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_rejects_unknown_and_invalid_flags_fields(self):
+    def test_rejects_unknown_and_invalid_fields(self):
         with self.assertRaisesRegex(CompilationError, 'no existe'):
             self.compile_source(
                 'struct Punto:\n'
@@ -343,54 +341,37 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'literal entero'):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                'flags Permisos uint8:\n'
-                '    leer: uBint<1> = true\n'
-                '    reservado: uBint<8> = 0\n'
+                'fields Permisos:\n'
+                '    leer: Bint(1) = true\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'no coincide'):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                'flags Permisos uint8:\n'
-                '    leer: uBint<1> = 2\n'
-                '    reservado: uBint<8> = 0\n'
+                'fields Permisos:\n'
+                '    leer: Bint(1)\n'
+                '    reservado: Bint(8) = 0\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'tipo base'):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                'flags Permisos bool:\n'
-                '    leer: uBint<1> = 1\n'
+                '@packed\n'
+                'fields Permisos:\n'
+                '    leer: Bint(1)\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'debe ser uint8/16/32/64'):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                'flags Permisos int8:\n'
-                '    leer: uBint<1> = 1\n'
-                'func main() int32:\n'
-                '    return 0\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'ocupan 2 bits.*exactamente 8'):
-            self.compile_source(
-                'flags Permisos uint8:\n'
-                '    leer: uBint<1> = 1\n'
-                '    escribir: uBint<1> = 0\n'
-                'func main() int32:\n'
-                '    return 0\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'ocupan 9 bits'):
-            self.compile_source(
-                'flags Permisos uint8:\n'
-                '    primero: uBint<5> = 0\n'
-                '    segundo: uBint<4> = 0\n'
+                '@order_msb\n'
+                'fields Permisos:\n'
+                '    leer: Bint(1)\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
@@ -414,18 +395,15 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_flags_have_no_address_and_mold_pointer_reads_require_unsafe(self):
-        with self.assertRaisesRegex(CompilationError, 'no tiene una direccion'):
-            self.compile_source(
-                'flags Estado uint8:\n'
-                '    activo: uBint<1> = 1\n'
-                '    reservado: uBint<7> = 0\n'
-                'func main() int32:\n'
-                '    estado: Estado\n'
-                '    bit *: void = $estado.activo\n'
-                '    return 0\n'
-            )
-
+    def test_fields_members_are_addressable_and_mold_pointer_reads_require_unsafe(self):
+        self.compile_source(
+            'fields Estado:\n'
+            '    activo: Bint(1)\n'
+            'func main() int32:\n'
+            '    estado: Estado\n'
+            '    estado.activo = 1\n'
+            '    return 0\n'
+        )
         with self.assertRaisesRegex(CompilationError, 'procedencia conocida'):
             self.compile_source(
                 'mold Vista:\n'
@@ -436,7 +414,7 @@ class TypeSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_registers_aggregate_modifiers_and_bit_order(self):
+    def test_registers_aggregate_modifiers_and_signed_fields(self):
         compiler = self.compile_source(
             '@packed\n'
             '@align(8)\n'
@@ -446,31 +424,29 @@ class TypeSemanticTests(unittest.TestCase):
             'volatile mold Registro:\n'
             '    entero: int64\n'
             '    bytes: byte[8]\n'
-            '@order_msb\n'
-            'flags Estado uint8:\n'
-            '    activo: uBint<1> = 1\n'
-            '    modo: uBint<2> = 2\n'
-            '    reservado: uBint<5> = 0\n'
+            '@signed\n'
+            'fields Estado:\n'
+            '    activo: Bint(1)\n'
+            '    modo: Bint(2)\n'
+            '    reservado: Bint(5)\n'
             'func main() int32:\n'
             '    return 0\n'
         )
 
         paquete = compiler.storage.types['Paquete']
         registro = compiler.storage.types['Registro']
-        estado = compiler.storage.types['Estado']
         self.assertTrue(paquete.is_packed)
         self.assertEqual(8, paquete.alignment)
         self.assertTrue(registro.is_volatile)
-        self.assertEqual('msb', estado.bit_order)
-        self.assertEqual([7, 5, 0], [field.bit_offset for field in estado.fields])
+        estado = compiler.storage.types['Estado']
+        self.assertTrue(estado.signed_fields)
 
-    def test_order_lsb_is_rejected_because_lsb_is_the_default(self):
-        with self.assertRaisesRegex(CompilationError, 'decorador @order_lsb no existe'):
+    def test_fields_reject_non_signed_decorators(self):
+        with self.assertRaises(CompilationError):
             self.compile_source(
-                '@order_lsb\n'
-                'flags Estado uint8:\n'
-                '    activo: uBint<1> = 1\n'
-                '    reservado: uBint<7> = 0\n'
+                '@order_msb\n'
+                'fields Estado:\n'
+                '    activo: Bint(1)\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
@@ -483,9 +459,9 @@ class TypeSemanticTests(unittest.TestCase):
             '    x: int32\n'
             'mold Base:\n'
             '    x: int32\n'
-            'flags Permisos uint8:\n'
-            '    leer: uBint<1> = 1\n'
-            '    reservado: uBint<7> = 0\n'
+            'fields Permisos:\n'
+            '    leer: Bint(1)\n'
+            '    reservado: Bint(7)\n'
             '\n'
             'func main() int32:\n'
             '    return 0\n',
@@ -504,7 +480,7 @@ class TypeSemanticTests(unittest.TestCase):
         self.assertEqual('byte[6]', compiler.storage.namespace['bytes'].type)
         self.assertTrue(compiler.storage.namespace['mensaje'].value_is_const)
 
-    def test_designated_aggregate_literals_initialize_structs_flags_and_molds(self):
+    def test_designated_aggregate_literals_initialize_structs_and_molds(self):
         self.compile_source(
             'struct Punto:\n'
             '    x: int32\n'
@@ -512,21 +488,14 @@ class TypeSemanticTests(unittest.TestCase):
             'mold Vista:\n'
             '    entero: int32\n'
             '    bytes: byte[4]\n'
-            'flags Estado uint8:\n'
-            '    activo: uBint<1> = 0\n'
-            '    modo: uBint<2> = 0\n'
-            '    reservado: uBint<5> = 0\n'
             'func main() int32:\n'
             '    base: int32 = 20\n'
             '    punto: Punto = Punto{ .y = 7, .x = base }\n'
             '    vista: Vista = Vista{ .entero = punto.x }\n'
-            '    estado: Estado = Estado{ .modo = 3 }\n'
             '    if vista.entero != 20:\n'
             '        return 1\n'
             '    if punto.y != 7:\n'
             '        return 2\n'
-            '    if estado.modo != 3:\n'
-            '        return 3\n'
             '    return 0\n',
             executable=True,
         )
@@ -548,24 +517,17 @@ class TypeSemanticTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilationError, 'destino no es direccionable'):
             self.compile_source(source + '    Punto{ .x = 1 }.x = 2\n    return 0\n')
 
-    def test_designated_struct_and_flags_literals_are_static_global_initializers(self):
+    def test_designated_struct_literals_are_static_global_initializers(self):
         self.compile_source(
             'struct Punto:\n'
             '    x: int32\n'
             '    y: int32\n'
-            'flags Estado uint8:\n'
-            '    activo: uBint<1> = 1\n'
-            '    modo: uBint<2> = 2\n'
-            '    reservado: uBint<5> = 0\n'
             'point: Punto = Punto{ .x = 4 }\n'
-            'state: Estado = Estado{ .modo = 3 }\n'
             'func main() int32:\n'
             '    if point.x != 4:\n'
             '        return 1\n'
             '    if point.y != 0:\n'
             '        return 2\n'
-            '    if state.modo != 3:\n'
-            '        return 3\n'
             '    return 0\n',
             executable=True,
         )

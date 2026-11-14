@@ -18,7 +18,7 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
         path.write_text(source, encoding='utf-8')
         return Compiler().compile(path, executable=executable)
 
-    def test_dynamic_nested_literals_flags_molds_and_postfix_execute(self):
+    def test_dynamic_nested_literals_fields_molds_and_postfix_execute(self):
         artifacts = self._compile(
             "clause Optimizations 'prod'\n"
             'struct Pair:\n'
@@ -31,10 +31,10 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
             'mold WordView:\n'
             '    word: int32\n'
             '    bytes: byte[4]\n'
-            'flags State uint8:\n'
-            '    enabled: uBint<1> = 1\n'
-            '    mode: uBint<2> = 2\n'
-            '    reserved: uBint<5> = 0\n'
+            'fields State:\n'
+            '    enabled: Bint(1)\n'
+            '    mode: Bint(2)\n'
+            '    reserved: Bint(5)\n'
             'func make_pair(seed: int32) Pair:\n'
             '    return Pair{ .right = seed + 2, .left = seed }\n'
             'func main() int32:\n'
@@ -44,14 +44,14 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
             '        .pair = make_pair(seed),\n'
             '    }\n'
             '    view: WordView = WordView{ .word = packet.pair.right }\n'
-            '    state: State = State{ .mode = 3 }\n'
+            '    state: State = {1, 3, 0}\n'
             '    if Pair{ .left = 9, .right = 1 }.left != 9:\n'
             '        return 1\n'
             '    if packet.pair.left != 40:\n'
             '        return 2\n'
             '    if view.word != 42:\n'
             '        return 3\n'
-            '    if state.enabled != 0:\n'
+            '    if state.enabled != 1:\n'
             '        return 4\n'
             '    if state.mode != 3:\n'
             '        return 5\n'
@@ -105,20 +105,18 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr.decode())
 
-    def test_signed_flags_literal_masks_its_active_field(self):
+    def test_signed_fields_literal_preserves_limbs_and_hidden_sign(self):
         artifacts = self._compile(
-            'flags State uint8:\n'
-            '    delta: Bint<3> = 0\n'
-            '    privileged: uBint<1> = 0\n'
-            '    reserved: uBint<4> = 0\n'
+            '@signed\n'
+            'fields State:\n'
+            '    low: Bint(12)\n'
+            '    high: Bint(33)\n'
             'func main() int32:\n'
-            '    state: State = State{ .delta = -1 }\n'
-            '    if state.delta != -1:\n'
+            '    state: State = {4095, 100}\n'
+            '    if state.low != 4095:\n'
             '        return 1\n'
-            '    if state.privileged != 0:\n'
+            '    if state.high != 100:\n'
             '        return 2\n'
-            '    if state.reserved != 0:\n'
-            '        return 3\n'
             '    return 0\n'
         )
         result = subprocess.run(

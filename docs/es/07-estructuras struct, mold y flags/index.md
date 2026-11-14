@@ -1,14 +1,14 @@
-# `struct`, `mold`, `flags` y `enum`
+# `struct`, `mold`, `fields` y `enum`
 
 ## Índice
 
 - [01. `struct` y layout](01-struct-y-layout.md)
 - [02. `mold` y reinterpretación](02-mold-y-reinterpretacion.md)
-- [03. `flags` y bitfields](03-flags-y-bitfields.md)
+- [03. `fields` y limbs](03-flags-y-bitfields.md)
 - [04. Atributos de layout y `volatile`](04-layout-y-volatile.md)
 - [05. `enum`](05-enum.md)
 
-`struct`, `mold` y `flags` son agregados nominales con layouts distintos.
+`struct`, `mold` y `fields` son agregados nominales con layouts distintos.
 `enum` también es nominal, pero se baja directamente a un entero escalar y no
 es un agregado.
 
@@ -35,30 +35,32 @@ Los campos comparten la misma región. Leer un campo después de escribir otro
 reinterpreta los bytes, no convierte el tipo. Un puntero leído de un `mold`
 tiene procedencia desconocida y su desreferenciación requiere `@unsafe`.
 
-## `flags`
+## `fields`
 
 ```bg
-flags Permissions uint8:
-    read: uBint<1> = 1
-    write: uBint<1> = 0
-    reserved: uBint<6> = 0
+fields Permissions:
+    read: Bint(1)
+    write: Bint(1)
+    reserved: Bint(6)
 ```
 
-La suma de anchos debe coincidir exactamente con la base. Los campos pueden ser
-`uBint<N>`, `Bint<N>` o `bool`; un bitfield no tiene dirección independiente.
-
-El orden predeterminado es LSB: el primer campo empieza en el bit `0`. Para un
-contrato que numera desde el extremo más significativo se usa:
+Cada campo es un limb crudo independiente de `n` bits y puede direccionarse
+como un campo normal. No hay contenedor implícito ni aritmética automática del
+agregado. Los literales son posicionales y deben tener la aridad exacta:
 
 ```bg
-@order_msb
-flags NetworkBits uint8:
-    version: uBint<3> = 0
-    kind: uBint<5> = 0
+bits: Permissions = {1, 0, 63}
 ```
 
-`@order_lsb` no existe: era redundante con el valor predeterminado. Estos
-decoradores no cambian el orden de bytes de un entero.
+`@signed` agrega un único bit oculto de signo al final del layout completo,
+sin ampliar los limbs ni hacerlo accesible desde el código fuente:
+
+~~~bg
+@signed
+fields int128:
+    lo: Bint(64)
+    hi: Bint(64)
+~~~
 
 `volatile` conserva lecturas y escrituras del agregado, útil para registros de
 hardware, pero no vuelve atómicas las operaciones.

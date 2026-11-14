@@ -85,7 +85,7 @@ como un módulo o una clase.
 | `public` | `public struct Punto:` | Hace pública la declaración. |
 | `private` | `private func auxiliar() void:` | Restringe la declaración a su ámbito. |
 
-Pueden aplicarse a variables, funciones, `struct`, `mold`, `flags`, `enum`,
+Pueden aplicarse a variables, funciones, `struct`, `mold`, `fields`, `enum`,
 `class` y `opaque`.
 
 Si no se escribe ninguno, la declaración es pública por defecto.
@@ -149,9 +149,9 @@ volatile struct Registro:
 volatile mold Vista:
     valor: uint32
 
-volatile flags Estado uint8:
-    activo: bool = false
-    reservado: uBint<7> = 0
+volatile fields Estado:
+    activo: Bint(1)
+    reservado: Bint(7)
 ```
 
 Los accesos de lectura y escritura al almacenamiento del agregado se
@@ -255,17 +255,17 @@ pero el contenido de las ramas no seleccionadas no se analiza como Bagron.
 
 ## Decoradores de agregados
 
-Estos decoradores se aplican a `struct`, `mold` y `flags` según la tabla de
+Estos decoradores se aplican a `struct`, `mold` y `fields` según la tabla de
 compatibilidad de [Estructuras](02-Estructuras.md).
 
 | Decorador | Forma | Función |
 |:---|:---|:---|
 | `packed` | `@packed` | Reduce o elimina el padding automático del layout. |
 | `align` | `@align(N)` | Solicita una alineación explícita; `N` debe ser una potencia de dos entre 1 y 64. |
-| `order_msb` | `@order_msb` | En `flags`, asigna los campos desde los bits más significativos. |
+| `signed` | `@signed` | En `fields`, añade un bit oculto de signo al layout. |
 
-Los campos sin decorador usan el orden desde los bits menos significativos;
-`@order_msb` selecciona el orden contrario.
+`fields` usa layouts estructurales de limbs independientes; no existe un orden
+de bitfields ni un contenedor base implícito.
 
 ## Decoradores de `class`
 
@@ -317,17 +317,16 @@ Sirve para cumplir contratos de hardware, ABI o instrucciones que requieren
 direcciones alineadas. No cambia el orden de los campos ni convierte un tipo
 en otro.
 
-#### `@order_msb`
+#### `@signed`
 
-Este decorador determina desde qué extremo del contenedor se asignan los campos
-de `flags`. No es una conversión de endianess ni cambia por sí solo el orden de
-bytes de un entero. Sin decorador se usa el orden menos significativo.
+Este decorador solo puede aparecer antes de `fields` y añade un único bit oculto
+de signo al agregado completo. No amplía ni reinterpreta cada limb.
 
 ## Verificación de `volatile`
 
 El compilador cuenta con pruebas automatizadas para confirmar que `volatile`
-se conserva en lecturas y escrituras de `struct`, `mold` y `flags`, incluidos
-los bitfields de un bit. También se prueba el acceso directo, el acceso a
+se conserva en lecturas y escrituras de `struct`, `mold` y `fields`. También se
+prueba el acceso directo, el acceso a
 registros MMIO mediante punteros con desreferenciación explícita y la
 diferencia frente a agregados no volátiles.
 

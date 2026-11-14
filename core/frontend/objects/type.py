@@ -25,8 +25,8 @@ class TypeSpec:
     @property
     def canonical_name(self) -> str:
         name = self.name
-        if self.name in {'Bint', 'uBint'} and self.bit_width is not None:
-            name = f'{name}<{self.bit_width}>'
+        if self.name == 'Bint' and self.bit_width is not None:
+            name = f'{name}({self.bit_width})'
         if self.is_unique:
             name = f'unique {name}'
         if self.array_lengths:
@@ -51,6 +51,20 @@ class OpaqueSymbol:
     registry_key: str | None = None
 
 
+@dataclass
+class DefinedIntegerSymbol:
+    """Public scalar integer introduced by ``#defint`` or ``#defuint``."""
+
+    name: str
+    bit_width: int
+    signed: bool
+    privacy: str = 'public'
+    module_path: object | None = None
+    llvm_name: str | None = None
+    package_id: str | None = None
+    registry_key: str | None = None
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     """Semantic description of one field in an aggregate type."""
@@ -63,9 +77,8 @@ class FieldSpec:
     # retained so the backend can inline the initializer when emitting a
     # class value.
     initializer_node: object | None = None
-    # ``flags`` fields are logical bitfields rather than LLVM struct fields.
-    # Their offset is fixed by declaration order once the aggregate has been
-    # validated.  It remains ``None`` for struct/mold fields.
+    # Legacy bitfield offset metadata is retained for serialized compatibility
+    # but is always ``None`` for the new structural ``fields`` aggregate.
     bit_offset: int | None = None
     # Class-only declaration owner, used to keep private fields out of
     # subclasses and unrelated classes.
@@ -74,7 +87,7 @@ class FieldSpec:
 
 @dataclass
 class AggregateSymbol:
-    """Nominal declaration for a struct, mold, or flags type."""
+    """Nominal declaration for a struct, mold, or fields type."""
 
     name: str
     kind: str
@@ -86,13 +99,14 @@ class AggregateSymbol:
     # the same struct-backed representation.
     is_frozen: bool = False
     privacy: str = 'public'
-    # ``flags`` owns a fixed, explicit integer container.  The remaining
-    # metadata describes layout properties shared by all aggregate kinds.
+    # ``base_type`` remains for struct/mold compatibility; ``fields`` has no
+    # implicit integer container.
     base_type: TypeSpec | None = None
     is_packed: bool = False
     is_volatile: bool = False
     alignment: int | None = None
     bit_order: str = 'lsb'
+    signed_fields: bool = False
     # ``None`` means this aggregate has no initializer.  Classes use a tuple
     # of ParameterSpec-like objects here; structs and other aggregates leave
     # it unset.  The loose object type avoids a frontend-object import cycle.
@@ -158,9 +172,8 @@ class ValueInfo:
     # Entries are ('index', ValueInfo) or ('member', field_name).  Keeping the
     # path in semantic data lets the global emitter form a constant GEP too.
     address_path: tuple[tuple[str, object], ...] = ()
-    # A bitfield is assignable but has no independently addressable storage.
-    # This lets ``flags.value = 1`` remain legal while ``$flags.value`` is a
-    # frontend error rather than an invalid LLVM address calculation.
+    # Fields limbs are ordinary members and therefore remain independently
+    # addressable; this flag is retained for legacy value metadata.
     is_addressable: bool = True
     # Reading a pointer through raw union storage produces a pointer whose
     # provenance cannot be proven in safe Bagron code.

@@ -114,7 +114,7 @@ def _member_value(
         ),
         storage_origin=value.storage_origin or value.address_origin,
         address_path=(*value.address_path, ('member', member)),
-        is_addressable=aggregate.kind != 'flags',
+        is_addressable=True,
         pointer_provenance_unknown=(
             aggregate.kind == 'mold' and field.type_spec.pointer_level > 0
         ),

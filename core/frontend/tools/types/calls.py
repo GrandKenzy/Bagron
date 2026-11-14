@@ -22,6 +22,47 @@ from .compatibility import is_chain_to_char_array_conversion, is_compatible
 SECURE_CLEAR_INTRINSIC = 'secure_clear'
 
 
+def _infer_argument_value(
+    argument: object,
+    parameter: object,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo:
+    """Infer positional fields literals with the parameter as context."""
+    from .value_inference import infer_fields_literal
+    from .values import infer_value
+
+    current = argument
+    while (
+        isinstance(current, gast.ASTRef)
+        and current.name in {'VALUE', 'POSTFIX_EXPR', 'PRIMARY'}
+        and len(current.nodes) == 1
+    ):
+        current = current.nodes[0]
+    aggregate = _resolve_aggregate(namespace, getattr(parameter.type_spec, 'name', ''))
+    if (
+        aggregate is not None
+        and aggregate.kind == 'fields'
+        and isinstance(current, gast.ASTRef)
+        and current.name == 'ARRAY_VALUE'
+    ):
+        return infer_fields_literal(
+            current,
+            aggregate,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+    return infer_value(
+        argument,
+        namespace,
+        functions,
+        current_function=current_function,
+    )
+
+
 def _infer_secure_clear_call(
     argument_items: list[object],
     namespace: Mapping[str, object] | Callable[[str], object | None],
@@ -333,8 +374,9 @@ def _infer_constructor_call(
 
     argument_infos: dict[str, ValueInfo] = {}
     for parameter, argument in zip(visible_parameters, argument_items):
-        argument_info = infer_value(
+        argument_info = _infer_argument_value(
             argument,
+            parameter,
             namespace,
             functions,
             current_function=current_function,
@@ -700,8 +742,9 @@ def infer_call(
         )
     argument_infos: dict[str, ValueInfo] = {}
     for parameter, argument in zip(visible_parameters, argument_items):
-        argument_info = infer_value(
+        argument_info = _infer_argument_value(
             argument,
+            parameter,
             namespace,
             functions,
             current_function=current_function,

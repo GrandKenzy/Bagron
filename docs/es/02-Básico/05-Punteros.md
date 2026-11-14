@@ -47,7 +47,7 @@ func read(pointer *: int32) int32:
 ```
 
 Las funciones de Bagron no retornan punteros: solo retornan intrínsecos puros o
-valores agregados (`struct`, `mold`, `flags` y clases). Un puntero no es un
+valores agregados (`struct`, `mold`, `fields` y clases). Un puntero no es un
 array y un array no se convierte implícitamente en un puntero ordinario. El
 paso de arrays a funciones tiene una ABI especial descrita en [Arrays](04-Arrays.md).
 
@@ -92,7 +92,8 @@ No se puede aplicar `$` a:
 
 - literales, expresiones temporales o resultados no direccionables;
 - el array completo (`$values`); debe seleccionarse un elemento;
-- un campo individual de `flags`, porque un bitfield no tiene dirección propia;
+- ningún campo de `fields`: sus limbs sí son almacenamiento direccionable,
+  pero la dirección del agregado no expone su bit oculto de signo;
 - un `chain`, que es almacenamiento estático e inmutable;
 - `Null`.
 
@@ -346,8 +347,8 @@ valida que la dirección corresponda al dispositivo correcto. La dirección
 base y el contrato MMIO siguen siendo responsabilidad de la integración con
 el target.
 
-Los campos de `flags` se manipulan como bits dentro de su contenedor y no
-pueden convertirse en punteros independientes. Un campo de `mold` que contiene
+Los campos de `fields` son limbs estructurales independientes y pueden
+direccionarse como campos normales. Un campo de `mold` que contiene
 un puntero se considera de procedencia desconocida al leerse; su
 desreferenciación requiere `@unsafe`.
 
@@ -473,7 +474,7 @@ Bagron aplica estas reglas para mantener los punteros trazables:
 - una función segura no puede llamar a `@unsafe`;
 - una función no puede retornar punteros, arrays ni `buffer`;
 - `chain` no puede declararse como puntero;
-- un bitfield de `flags` no tiene dirección independiente.
+- el bit oculto de signo de `fields` no tiene nombre ni dirección independiente.
 - un descriptor `opaque` es nominal y conserva su estado `owned`/`borrowed`/`closed`
   solo durante el análisis estático.
 

@@ -12,8 +12,8 @@ func helper() int32:                 # @static necesita una clase
 func update(value: int32) void:      # @after necesita un hook de acceso
     return
 
-@order_msb
-struct Packet:                        # solo funciona con flags
+@signed
+fields Packet:
     value: uint8
 
 @unknown
@@ -25,8 +25,8 @@ En una clase, `@static`, `@unsafe`, `@assembler`, `@recursive`, `@after` y `@bef
 validan como decoradores de método. En una función de nivel superior solo son
 válidos `@unsafe`, `@assembler` y `@recursive`. `@frozen` solo pertenece a la
 declaración `class`; `@packed` y `@align(N)` también pueden aplicarse a una
-clase porque su almacenamiento es struct-backed. `@order_msb` sigue reservado
-a `flags`.
+clase porque su almacenamiento es struct-backed. `@signed` queda reservado a
+`fields`.
 
 No repitas un decorador:
 
@@ -39,7 +39,7 @@ func duplicated() void:
 
 El compilador también rechaza los parámetros de `@align` que no sean una
 potencia de dos entre `1` y `64`, más de un `@align` en el mismo agregado y
-`@order_lsb`.
+los decoradores de layout no permitidos para `fields`.
 
 ## Combinaciones permitidas
 

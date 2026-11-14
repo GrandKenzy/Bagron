@@ -50,7 +50,7 @@ tipo. No todas son valores escalares ni tienen almacenamiento independiente:
 | Buffer administrado | `buffer[N]` o `buffer[]` | Descriptor de bytes dinámico; `buffer[]` solo puede usarse con capacidad inferible o como parámetro. Exige `Len_t` y no admite `Size_t`. |
 | Puntero | `T*`, `T**`, ... | Dirección tipada. Cada nivel se declara explícitamente y sus reglas de constancia son independientes. |
 | Cadena estática | `chain` | Referencia constante a bytes UTF-8 terminados en `NUL`; no se combina con arrays ni punteros. |
-| Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `flags Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. `enum` usa la representación de su base y no expone automáticamente sus miembros como constantes de expresión. |
+| Tipo nominal | `enum Nombre`, `struct Nombre`, `mold Nombre`, `fields Nombre`, `class Nombre` | Nombre propio registrado por el compilador; su layout y reglas dependen de la declaración. `enum` usa la representación de su base y no expone automáticamente sus miembros como constantes de expresión. |
 | Descriptor opaco | `opaque Nombre: void*` o `opaque Nombre: entero` | Handle nominal con representación ABI conocida solo por el compilador; no es un puntero ni un entero intercambiable desde el código fuente. |
 
 `Null` es un literal de puntero nulo, no un tipo almacenable. Solo es compatible
@@ -467,27 +467,34 @@ un array estático recibido con metadatos que pueden reenviarse. `chain` es la
 excepción y conserva su firma especial con `Len_t`. `buffer` tiene otra regla
 específica: requiere `Len_t` y rechaza `Size_t`.
 
-## `Bint<n>` y `uBint<n>`
+## `Bint(n)` dentro de `fields`
 
-`Bint<n>` y `uBint<n>` son tipos de ancho bit a bit:
+`Bint(n)` es un limb crudo de ancho fijo y solo puede aparecer dentro de un
+`fields`. Se permite cualquier `n >= 1`, incluido `Bint(1)`. Los limbs no
+forman automáticamente un entero aritmético: el programa decide su orden y
+su interpretación mediante los campos declarados.
 
-- `Bint<n>` representa un campo con signo de exactamente `n` bits;
-- `uBint<n>` representa un campo sin signo de exactamente `n` bits.
+```bg
+@signed
+fields int128:
+    lo: Bint(64)
+    hi: Bint(64)
+```
 
-`Bint<n>` requiere un mínimo de 2 bits, porque un entero con signo de 1 bit
-solo tendría el rango `-1..0`. `uBint<n>` puede usar desde 1 bit y con
-`uBint<1>` su rango es `0..1`.
+`@signed` añade un único bit oculto de signo al agregado completo. No amplía
+cada limb ni expone ese bit como un campo fuente.
 
-No son tipos de almacenamiento libre. Bagron solo los permite como campos de
-`flags`, donde el compilador controla el tipo base, el empaquetado, el orden y
-el desplazamiento de cada campo. No tienen dirección independiente ni deben
-usarse como variables, parámetros, retornos, arrays o punteros.
+## Enteros definidos por directiva
 
-### `bool` dentro de `flags`
+Los escalares enteros con anchos soportados por LLVM se declaran con una
+directiva de módulo:
 
-`bool` se permite como campo de `flags` con un ancho lógico de exactamente
-1 bit. Comparte el almacenamiento empaquetado del tipo base de `flags`, sin
-convertirse en un entero ni permitir conversiones hacia `byte` o `uint8`.
-Su almacenamiento físico mínimo sigue siendo de 1 byte y no puede tomarse su
-dirección de forma independiente.
+```bg
+#defint 128, int128
+#defuint 128, uint128
+```
+
+El nombre es personalizado, público por defecto y puede usarse en variables,
+parámetros, retornos, operaciones y literales. Un nombre solo puede referirse
+a un tipo; no se puede combinar `fields int128` con `#defint 128, int128`.
 

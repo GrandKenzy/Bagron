@@ -2,7 +2,7 @@
 
 ## `@packed`
 
-`@packed` reduce el padding de una `class`, `struct`, `mold` o `flags`:
+`@packed` reduce el padding de una `class`, `struct` o `mold`:
 
 ```bg
 @packed
@@ -41,22 +41,20 @@ No se puede repetir el decorador. La alineación solicitada no puede reducir la
 alineación natural del agregado, salvo las reglas específicas de un agregado
 `@packed`.
 
-## `@order_msb`
+## `@signed` en `fields`
 
-`@order_msb` solo se aplica a `flags` y coloca el primer bitfield desde el
-extremo más significativo:
+`@signed` solo se aplica a `fields` y añade un único bit oculto de signo al
+layout completo:
 
 ```bg
-@order_msb
-flags NetworkBits uint8:
-    version: uBint<3> = 0
-    kind: uBint<5> = 0
+@signed
+fields int128:
+    lo: Bint(64)
+    hi: Bint(64)
 ```
 
-El orden predeterminado es LSB. `@order_lsb` fue retirado por ser redundante y
-debe producir un error. Ninguno de estos decoradores cambia el orden de bytes
-de un entero en memoria.
+El bit oculto no amplía cada limb y no se puede nombrar desde el código fuente.
 
 `volatile` es un calificador separado (`volatile struct`, `volatile mold` o
-`volatile flags`): conserva accesos, pero no es `@volatile` ni hace atómicas las
+`volatile fields`): conserva accesos, pero no es `@volatile` ni hace atómicas las
 operaciones.

@@ -36,8 +36,26 @@ def _is_integer_scalar(type_spec: TypeSpec) -> bool:
     return (
         type_spec.pointer_level == 0
         and type_spec.array_depth == 0
-        and type_spec.name in INTEGER_TYPES
+        and (
+            type_spec.name in INTEGER_TYPES
+            or (
+                type_spec.bit_width is not None
+                and type_spec.signed is not None
+            )
+        )
     )
+
+
+def _is_signed_integer(type_spec: TypeSpec) -> bool:
+    if type_spec.signed is not None:
+        return bool(type_spec.signed)
+    return type_spec.name in SIGNED_INTEGER_TYPES
+
+
+def _is_unsigned_integer(type_spec: TypeSpec) -> bool:
+    if type_spec.signed is not None:
+        return not type_spec.signed
+    return type_spec.name in UNSIGNED_INTEGER_TYPES
 
 
 def _integer_bounds(type_spec: TypeSpec) -> tuple[int, int] | None:
@@ -46,14 +64,11 @@ def _integer_bounds(type_spec: TypeSpec) -> tuple[int, int] | None:
             return -(2 ** (type_spec.bit_width - 1)), 2 ** (type_spec.bit_width - 1) - 1
         return 0, 2 ** type_spec.bit_width - 1
 
-    width = INTEGER_WIDTHS.get(type_spec.name)
+    width = INTEGER_WIDTHS.get(type_spec.name) or type_spec.bit_width
     if width is None:
-        if type_spec.name in {'uBint', 'usize', 'isize'} and type_spec.bit_width is not None:
-            width = type_spec.bit_width
-        else:
-            return None
+        return None
 
-    if type_spec.name in SIGNED_INTEGER_TYPES:
+    if _is_signed_integer(type_spec):
         return -(2 ** (width - 1)), 2 ** (width - 1) - 1
     return 0, 2 ** width - 1
 
@@ -133,7 +148,7 @@ def _same_shape(left: TypeSpec, right: TypeSpec) -> bool:
 
 
 def _integer_width(type_spec: TypeSpec) -> int | None:
-    if type_spec.name in {'Bint', 'uBint', 'usize', 'isize'}:
+    if type_spec.name in {'Bint', 'usize', 'isize'} or type_spec.bit_width is not None:
         return type_spec.bit_width
     return INTEGER_WIDTHS.get(type_spec.name)
 
@@ -171,7 +186,7 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             source.is_literal
             and source_type.pointer_level == 0
             and source_type.array_depth == 0
-            and source_type.name in INTEGER_TYPES
+            and _is_integer_scalar(source_type)
         ):
             return source.value == 0 and target_capacity is not None
         if (
@@ -341,13 +356,13 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         data = _string_bytes(source.value, ascii_only=target.name == 'char')
         return data is not None and len(data) == 1
 
-    if source.is_literal and source_type.name == 'int32' and target.name in INTEGER_TYPES:
+    if source.is_literal and source_type.name == 'int32' and _is_integer_scalar(target):
         if not isinstance(source.value, int) or isinstance(source.value, bool):
             return False
         bounds = _integer_bounds(target)
         return bounds is not None and bounds[0] <= source.value <= bounds[1]
 
-    if source_type.name in INTEGER_TYPES or source_type.name in ('middle', 'float', 'double'):
+    if _is_integer_scalar(source_type) or source_type.name in ('middle', 'float', 'double'):
         if target.name in ('middle', 'float', 'double'):
             return True
 
@@ -356,8 +371,8 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
         and source_type.pointer_level == 0
         and target.array_depth == 0
         and source_type.array_depth == 0
-        and target.name in INTEGER_TYPES
-        and source_type.name in INTEGER_TYPES
+        and _is_integer_scalar(target)
+        and _is_integer_scalar(source_type)
     ):
         target_width = _integer_width(target)
         source_width = _integer_width(source_type)
@@ -367,18 +382,22 @@ def is_compatible(target: TypeSpec, source: ValueInfo) -> bool:
             return True
         if target.name == 'byte' or source_type.name == 'byte':
             return False
+        # A raw Bint limb is an unsigned storage slot.  A narrower integer
+        # can widen into it without truncation, including a signed source.
+        if target.name == 'Bint' and target_width > source_width:
+            return True
         same_sign = (
-            target.name in SIGNED_INTEGER_TYPES
-            and source_type.name in SIGNED_INTEGER_TYPES
+            _is_signed_integer(target)
+            and _is_signed_integer(source_type)
         ) or (
-            target.name in UNSIGNED_INTEGER_TYPES
-            and source_type.name in UNSIGNED_INTEGER_TYPES
+            _is_unsigned_integer(target)
+            and _is_unsigned_integer(source_type)
         )
         if same_sign and target_width > source_width:
             return True
-        if target.name == 'usize' and source_type.name in UNSIGNED_INTEGER_TYPES:
+        if target.name == 'usize' and _is_unsigned_integer(source_type):
             return target_width >= source_width
-        if target.name == 'isize' and source_type.name in SIGNED_INTEGER_TYPES:
+        if target.name == 'isize' and _is_signed_integer(source_type):
             return target_width >= source_width
         return False
 

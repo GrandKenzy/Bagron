@@ -25,9 +25,11 @@ import zipfile
 
 from core.frontend.objects import (
     AggregateSymbol,
+    DefinedIntegerSymbol,
     EnumSymbol,
     FunctionSymbol,
     OpaqueSymbol,
+    TypeSpec,
     Variable,
 )
 
@@ -749,7 +751,7 @@ def _node_name(node: object) -> str | None:
              if getattr(child, 'name', None) in {'VAR_DECLARATION', 'VAR_INITIALIZATION'}),
             node,
         )
-    elif node_name in {'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'OPAQUE'}:
+    elif node_name in {'CLASS', 'STRUCT', 'MOLD', 'FIELDS', 'ENUM', 'OPAQUE'}:
         node = next(
             (child for child in _children(node)
              if getattr(child, 'name', None) == f'{node_name}_SIGNATURE'),
@@ -776,6 +778,7 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
     from core.frontend import BAGRON_SESSION
     from core.frontend.aot import AotParser, AotParserError
     from core.compiler.links import extract_link_directives
+    from core.compiler.integers import extract_integer_directives
     from core.compiler import Compiler
     from core.compiler.prep import extract_prep_blocks, preprocess_conditionals
     from core.frontend.tools.imports import public_definition_names
@@ -817,6 +820,12 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
         )
         if conditional_errors:
             raise LibraryError('\n'.join(conditional_errors))
+        lines, _, integer_errors = extract_integer_directives(
+            lines,
+            source_path,
+        )
+        if integer_errors:
+            raise LibraryError('\n'.join(integer_errors))
         lines, _, link_errors = extract_link_directives(
             lines,
             source_path,
@@ -863,7 +872,7 @@ def _collect_source_data(source_root: Path, files: list[tuple[str, bytes]]):
                     if clause in {'System', 'Arch', 'Boot', 'ABI'}:
                         targets.setdefault(clause, str(_token_value(children[2])))
             if getattr(node, 'name', None) not in {
-                'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'MOLD', 'FLAGS', 'ENUM', 'OPAQUE',
+                'FUNCTION', 'VAR', 'CLASS', 'STRUCT', 'FIELDS', 'ENUM', 'OPAQUE',
             }:
                 continue
             if _is_private(node):
@@ -1198,6 +1207,9 @@ def _collect_compiler_symbols(
         elif isinstance(symbol, AggregateSymbol):
             kind = 'type'
             name = symbol.name
+        elif isinstance(symbol, DefinedIntegerSymbol):
+            kind = 'type'
+            name = symbol.name
         else:
             continue
         item = {
@@ -1225,6 +1237,12 @@ def _collect_compiler_symbols(
                 item['value'] = value_info.value
         if isinstance(symbol, OpaqueSymbol):
             item['representation'] = _serialize_type_spec(symbol.representation)
+        if isinstance(symbol, DefinedIntegerSymbol):
+            item['type'] = _serialize_type_spec(TypeSpec(
+                symbol.name,
+                bit_width=symbol.bit_width,
+                signed=symbol.signed,
+            ))
         symbols.append(item)
     return sorted(
         symbols,

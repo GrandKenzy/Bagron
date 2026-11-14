@@ -97,7 +97,7 @@ def _aggregate_literal_value(
     aggregate = _resolve_aggregate(namespace, type_name or '')
     if aggregate is None or aggregate.is_class:
         raise ValueResolutionError(
-            f'{type_name or "<anonimo>"} no es un struct, mold o flags construible'
+            f'{type_name or "<anonimo>"} no es un struct, mold o fields construible'
         )
 
     owner = _namespace_owner(namespace)
@@ -150,7 +150,7 @@ def _aggregate_literal_value(
     # Keep declaration order for constants and global emission.  Omitted
     # members are represented by an empty value of their concrete type; LLVM
     # lowers that form to the all-zero aggregate member without consulting a
-    # flags declaration default.
+    # Omitted aggregate members use their concrete zero value.
     ordered = tuple(
         values.get(field.name, ValueInfo(field.type_spec, is_literal=True))
         for field in aggregate.all_fields
@@ -160,6 +160,44 @@ def _aggregate_literal_value(
         is_literal=all(value.is_literal for value in values.values()),
         value=tuple(values),
         items=ordered,
+    )
+
+
+def infer_fields_literal(
+    node: gast.ASTRef,
+    aggregate: AggregateSymbol,
+    namespace: Mapping[str, object] | Callable[[str], object | None],
+    functions: Mapping[str, object] | Callable[[str], object | None] | None = None,
+    *,
+    current_function: object | None = None,
+) -> ValueInfo:
+    """Infer a positional ``fields`` literal against its declared limbs."""
+    array_node = next(iter(_children(node)), None)
+    value_nodes = _children(array_node)
+    if len(value_nodes) != len(aggregate.all_fields):
+        raise ValueResolutionError(
+            f'El fields {aggregate.name} requiere exactamente '
+            f'{len(aggregate.all_fields)} limbs'
+        )
+    items: list[ValueInfo] = []
+    for field, value_node in zip(aggregate.all_fields, value_nodes):
+        value = infer_value(
+            value_node,
+            namespace,
+            functions,
+            current_function=current_function,
+        )
+        if not is_compatible(field.type_spec, value):
+            raise ValueResolutionError(
+                f'El valor de {aggregate.name}.{field.name} no coincide con '
+                f'{field.type_spec.canonical_name}'
+            )
+        items.append(value)
+    return ValueInfo(
+        TypeSpec(aggregate.name, nominal_key=aggregate.registry_key),
+        is_literal=all(item.is_literal for item in items),
+        value=tuple(items),
+        items=tuple(items),
     )
 
 
@@ -228,7 +266,7 @@ def infer_value(
                 )
             if not operand.is_addressable:
                 raise ValueResolutionError(
-                    'un campo de flags no tiene una direccion independiente'
+                    'el miembro agregado no tiene una direccion independiente'
                 )
             return ValueInfo(
                 type_spec=_address_type(operand.type_spec),

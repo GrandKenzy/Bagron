@@ -26,15 +26,12 @@ class ARRAY_SUFFIX(cmb.RuleItem):
 
 
 class BITINT_TYPE(cmb.RuleItem):
-    """Fixed-width integer type using Bagron's angle-bracket syntax."""
+    """Fixed-width raw limb type used only by ``fields`` declarations."""
     entrypoint = cmb.Seq(
-        cmb.Alt(
-            cmb.MatchKeyword('Bint'),
-            cmb.MatchKeyword('uBint'),
-        ),
-        cmb.MatchToken('LESS'),
+        cmb.MatchKeyword('Bint'),
+        cmb.MatchToken('LPAREN'),
         cmb.MatchToken('NUMBER'),
-        cmb.MatchToken('GREATER'),
+        cmb.MatchToken('RPAREN'),
     )
     nodeable = True
 

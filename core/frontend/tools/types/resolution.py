@@ -492,23 +492,18 @@ def resolve_type(
         bit_width = pointer_size * 8
         signed = base_name == 'isize'
 
-    match = re.fullmatch(r'(Bint|uBint)<(\d+)>', base_name)
+    match = re.fullmatch(r'Bint\((\d+)\)', base_name)
     if match is not None:
         if not allow_bit_types:
             raise TypeResolutionError(
-                'Bint<n> y uBint<n> solo pueden usarse como campos de flags'
+                'Bint(n) solo puede usarse como campo de fields'
             )
-        base_name = match.group(1)
-        bit_width = int(match.group(2))
-        signed = base_name == 'Bint'
-        minimum_width = 2 if base_name == 'Bint' else 1
-        if bit_width < minimum_width:
-            if base_name == 'Bint':
-                raise TypeResolutionError(
-                    f'El ancho de Bint debe ser de al menos 2 bits: {bit_width}'
-                )
+        base_name = 'Bint'
+        bit_width = int(match.group(1))
+        signed = False
+        if bit_width < 1:
             raise TypeResolutionError(
-                f'El ancho de {base_name} debe ser mayor que cero: {bit_width}'
+                f'El ancho de Bint debe ser mayor que cero: {bit_width}'
             )
 
     return TypeSpec(
@@ -569,4 +564,13 @@ def bind_nominal_type(
     key = getattr(target, 'registry_key', None) if target is not None else None
     if key is None or type_spec.nominal_key == key:
         return type_spec
+    width = getattr(target, 'bit_width', None)
+    signed = getattr(target, 'signed', None)
+    if width is not None and signed is not None and type_spec.bit_width is None:
+        return replace(
+            type_spec,
+            bit_width=int(width),
+            signed=bool(signed),
+            nominal_key=key,
+        )
     return replace(type_spec, nominal_key=key)

@@ -4,7 +4,7 @@
 |:---|:---|:---|
 | `struct` | `struct Nombre:` | Agrupación nominal de campos con almacenamiento independiente. |
 | `mold` | `mold Nombre:` | Vista nominal de almacenamiento superpuesto, similar a una unión. |
-| `flags` | `flags Nombre TipoBase:` | Conjunto nominal de campos empaquetados por bits sobre un tipo base entero sin signo. |
+| `fields` | `fields Nombre:` | Agregado nominal de limbs `Bint(n)` declarados manualmente. |
 | `enum` | `enum Nombre [TipoBase]:` | Conjunto nominal de miembros enteros con valores constantes. |
 | `class` | `class Nombre [Padre]:` | Agregado nominal respaldado por un `struct`, con inicialización y métodos. |
 
@@ -65,48 +65,41 @@ campo. El backend reserva una región del tamaño de la vista más grande y cada
 campo se interpreta desde el inicio de esa región; no existe un tag que indique
 qué vista se escribió. Los `mold` tampoco pueden estar vacíos.
 
-## `flags`
+## `fields`
 
-Un `flags` empaqueta campos lógicos dentro de un tipo entero base explícito.
-Cada campo ocupa únicamente el número de bits que declara, por lo que resulta
-adecuado para estados, permisos y otras combinaciones compactas.
+Un `fields` agrupa limbs `Bint(n)` con almacenamiento estructural
+independiente. Es la herramienta para representar enteros grandes o formatos
+manuales sin que el compilador invente empaquetado, orden de bits o aritmética
+del valor completo.
 
 ### Firma
 
 ```bg
-flags Nombre TipoBase:
-    campo: uBint<1> = 0
-    estado: Bint<3> = 0
-    activo: bool = false
+@signed
+fields Nombre:
+    lo: Bint(64)
+    hi: Bint(64)
 ```
 
-El tipo base debe ser un entero estricto sin signo: `uint8`, `uint16`,
-`uint32` o `uint64`. Los campos solo pueden ser `Bint`, `uBint` o `bool`.
-`Bint` requiere al menos 2 bits; `uBint` puede ocupar desde 1 bit y `bool`
-ocupa 1 bit lógico. Los tipos base con signo no se aceptan porque el
-contenedor solo representa bits y no necesita interpretación signed.
-
-La suma de los anchos de todos los campos debe coincidir exactamente con el
-ancho del tipo base. Si faltan bits o se excede el ancho disponible, el
-compilador rechaza el `flags`; los bits reservados deben declararse de forma
-explícita, por ejemplo con un campo `uBint<N>` inicializado en cero.
+Cada campo debe ser exactamente `Bint(n)`, con `n >= 1`, y no puede tener
+inicializador. `@signed` es opcional; cuando aparece, el backend añade un
+único bit oculto de signo al agregado.
 
 ### Decoradores y especificadores compatibles
 
 | Elemento | Forma | Función |
 |:---|:---|:---|
-| `packed` | `@packed` | Mantiene el almacenamiento del conjunto sin padding adicional. |
-| `align` | `@align(N)` | Solicita una alineación explícita para el contenedor. |
-| `order_msb` | `@order_msb` | Asigna los campos comenzando por los bits más significativos. |
-| `volatile` | `volatile flags Nombre TipoBase:` | Conserva los accesos al contenedor como operaciones volátiles. |
+| `signed` | `@signed` | Añade un bit oculto de signo al agregado completo. |
+| `volatile` | `volatile fields Nombre:` | Conserva los accesos al almacenamiento como operaciones volátiles. |
 
-Los campos sin decorador se asignan desde los bits menos significativos.
-`@order_msb` selecciona el orden contrario.
+Los valores se construyen en el orden declarado mediante un literal posicional:
 
-Los valores escritos en la declaración son los valores iniciales de los
-campos. Un literal designado de `flags` comienza con todos los bits en cero y
-solo escribe los campos designados; no reutiliza automáticamente esos valores
-declarativos. Un bitfield no tiene dirección propia y no puede usarse con `$`.
+```bg
+edad: int32 = 10
+enterogrande: Nombre = {edad, 100}
+```
+
+La aridad debe coincidir exactamente y cada elemento se valida contra su limb.
 
 ## `enum`
 
@@ -173,9 +166,9 @@ el backend usa directamente el ancho y la ABI de su base, sin tag runtime ni
 tabla de miembros. Un `struct` o `mold` puede contener un campo enum, pero la
 reinterpretación de un `mold` sigue siendo responsabilidad de `mold`.
 
-`enum` describe valores enteros nombrados; `flags` describe bits combinables.
-Usa `flags` para permisos que puedan activarse simultáneamente y `enum` para
-estados o códigos individuales. Consulta la [referencia dedicada de
+`enum` describe valores enteros nombrados; `fields` describe limbs combinables
+de forma manual. Usa `fields` para representaciones grandes o formatos de
+hardware, y `enum` para estados o códigos individuales. Consulta la [referencia dedicada de
 `enum`](../07-estructuras%20struct,%20mold%20y%20flags/05-enum.md) para rangos,
 visibilidad, ABI y diagnósticos.
 

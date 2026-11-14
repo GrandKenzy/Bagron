@@ -55,7 +55,7 @@ compilación; los imports nunca cambian el destino global.
   `extern windows "kernel32":`.
 - `package` y `package2`: la creación de librerías usa `library --v1` o
   `library --v2`.
-- `@order_lsb`: LSB es el layout predeterminado; solo `@order_msb` lo cambia.
+- `@signed`: añade un único bit oculto de signo a un agregado `fields`.
 
 El parser conserva diagnósticos específicos para varias formas retiradas, pero
 no las acepta como sintaxis funcional.

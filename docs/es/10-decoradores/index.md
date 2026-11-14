@@ -19,7 +19,7 @@ Los decoradores cambian reglas que el compilador valida.
 | `inline` | funciones | especificador de firma, no decorador `@`; solicita expansión en perfiles optimizados |
 | `@packed` | agregados | reduce padding |
 | `@align(N)` | agregados | solicita alineación entre 1 y 64 |
-| `@order_msb` | `flags` | coloca bitfields desde el extremo MSB |
+| `@signed` | `fields` | añade un bit oculto de signo al layout completo |
 | `@frozen` | clases | limita escrituras a inicializadores |
 | `@after` | hooks de clase | ejecuta hooks después del acceso |
 | `@before` | `__deletion__` | ejecuta el hook de destrucción antes de la limpieza de memoria |
@@ -39,7 +39,7 @@ func factorial(value: int32) int32:
 
 La recursión directa de cola puede convertirse en un bucle sin `@recursive`.
 Los decoradores de layout solo se aceptan en los agregados correspondientes;
-LSB es el orden predeterminado y `@order_msb` la única alternativa explícita.
+`fields` usa limbs estructurales; `@signed` es su único decorador.
 
 `inline` y `volatile` son palabras reservadas con posición propia en la
 sintaxis, no forman parte del inventario de decoradores `@...`. Un nombre
