@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
+from core.frontend.objects import AggregateSymbol, OpaqueSymbol, TypeSpec, ValueInfo, Variable
+
 
 OWNED = 'owned'
 BORROWED = 'borrowed'
@@ -65,6 +67,154 @@ def is_opaque_symbol(symbol: object | None) -> bool:
 
 def is_resource_symbol(symbol: object | None) -> bool:
     return is_buffer_symbol(symbol) or is_opaque_symbol(symbol)
+
+
+def _storage(namespace: object) -> object | None:
+    owner = getattr(namespace, '__self__', None)
+    return getattr(namespace, 'storage', None) or owner
+
+
+def resource_kind(storage: object | None, type_spec: TypeSpec | None) -> str | None:
+    """Classify one direct resource type without creating runtime metadata."""
+
+    if type_spec is None or type_spec.pointer_level or type_spec.array_depth:
+        return None
+    if type_spec.name == 'buffer' and len(type_spec.array_lengths) == 1:
+        return 'buffer'
+    resolver = getattr(storage, 'resolve_type', None)
+    declared = resolver(type_spec.name) if callable(resolver) else None
+    return 'opaque' if isinstance(declared, OpaqueSymbol) else None
+
+
+def contains_resource_type(
+    storage: object | None,
+    type_spec: TypeSpec | None,
+    seen: set[str] | None = None,
+) -> bool:
+    """Return whether a value owns a direct or nested resource."""
+
+    if resource_kind(storage, type_spec) is not None:
+        return True
+    if type_spec is None or type_spec.pointer_level or type_spec.array_depth:
+        return False
+    resolver = getattr(storage, 'resolve_type', None)
+    declared = resolver(type_spec.name) if callable(resolver) else None
+    if not isinstance(declared, AggregateSymbol):
+        return False
+    seen = set() if seen is None else seen
+    key = declared.registry_key or declared.name
+    if key in seen:
+        return False
+    seen.add(key)
+    return any(
+        contains_resource_type(storage, field.type_spec, seen)
+        for field in declared.all_fields
+    )
+
+
+def _place_key(symbol: object, path: tuple[tuple[str, object], ...]) -> object:
+    if not path and is_resource_symbol(symbol):
+        return id(symbol)
+    normalized = tuple(
+        (kind, '*' if kind == 'index' else value)
+        for kind, value in path
+    )
+    return ('place', id(symbol), normalized)
+
+
+def _root_symbol(value: object, namespace: Callable[[str], object | None]):
+    name = getattr(value, 'identifier', None)
+    return namespace(name) if name else None
+
+
+def state_for_value(
+    function: object | None,
+    value: ValueInfo,
+    namespace: Callable[[str], object | None],
+) -> str | None:
+    """Read ownership for a root or resource field place."""
+
+    root = _root_symbol(value, namespace)
+    if root is None:
+        return None
+    storage = _storage(namespace)
+    if not contains_resource_type(storage, value.type_spec):
+        return None
+    states = getattr(function, 'buffer_states', {})
+    path = value.address_path
+    # A moved aggregate root invalidates every resource descendant.
+    for count in range(0, len(path) + 1):
+        key = _place_key(root, path[:count])
+        state = states.get(key)
+        if state in {DEAD, CLOSED, MOVED, MAYBE_DEAD, MAYBE_CLOSED, MAYBE_MOVED}:
+            return state
+    key = _place_key(root, path)
+    if key in states:
+        return states[key]
+    return BORROWED if getattr(root, 'scope_kind', None) == 'parameter' else OWNED
+
+
+def set_state_for_value(
+    function: object | None,
+    value: ValueInfo,
+    namespace: Callable[[str], object | None],
+    state: str,
+) -> None:
+    """Set ownership for the exact place represented by ``value``."""
+
+    root = _root_symbol(value, namespace)
+    states = getattr(function, 'buffer_states', None)
+    if root is None or states is None:
+        return
+    states[_place_key(root, value.address_path)] = state
+
+
+def transfer_resource_value(
+    function: object | None,
+    target: Variable | ValueInfo,
+    source: ValueInfo,
+    namespace: Callable[[str], object | None],
+    *,
+    fresh_target: bool = False,
+) -> str | None:
+    """Move any direct or aggregate resource value into another place."""
+
+    storage = _storage(namespace)
+    target_type = getattr(target, 'type_spec', None)
+    if not contains_resource_type(storage, target_type):
+        return None
+    target_value = target if isinstance(target, ValueInfo) else ValueInfo(
+        target.type_spec,
+        identifier=target.name,
+        is_lvalue=True,
+        storage_origin=getattr(target, 'scope_kind', None),
+    )
+    origin = _root_symbol(source, namespace)
+    destination = _root_symbol(target_value, namespace)
+    if origin is destination and source.address_path == target_value.address_path:
+        return None
+    if origin is not None:
+        if getattr(origin, 'scope_kind', None) == 'global':
+            return (
+                f'El recurso global {origin.name} no puede transferirse: su '
+                'propiedad no es local a la funcion'
+            )
+        state = state_for_value(function, source, namespace)
+        if state != OWNED:
+            return (
+                f'El recurso {source.identifier or "<anonimo>"} esta en estado '
+                f'{state or "desconocido"}; solo un valor owned puede moverse'
+            )
+        set_state_for_value(function, source, namespace, MOVED)
+    if not fresh_target and getattr(target, 'initialized', True):
+        target_state = state_for_value(function, target_value, namespace)
+        if target_state == OWNED:
+            return (
+                f'El destino {target_value.identifier or "<anonimo>"} ya posee '
+                'un recurso; consumelo antes de sobrescribirlo'
+            )
+    set_state_for_value(function, target_value, namespace, OWNED)
+    return None
 
 
 def initial_state(symbol: object | None) -> str | None:
@@ -144,40 +294,33 @@ def consume_opaque_argument(
     binding ``closed``.
     """
     type_spec = getattr(parameter, 'type_spec', None)
-    symbol = (
-        namespace(getattr(argument, 'identifier', ''))
-        if getattr(argument, 'identifier', None)
-        else None
-    )
     if not consumes_opaque_arguments(function, function_name):
         return None
-    if not is_opaque_symbol(symbol):
+    storage = _storage(namespace)
+    if resource_kind(storage, type_spec) != 'opaque':
         return None
-    if (
-        type_spec is None
-        or getattr(type_spec, 'name', None)
-        != getattr(getattr(symbol, 'type_spec', None), 'name', None)
-    ):
+    if resource_kind(storage, getattr(argument, 'type_spec', None)) != 'opaque':
         return None
     if not getattr(argument, 'is_lvalue', False):
         return (
             f'{function_name} consume un descriptor y requiere una variable '
             'lvalue de descriptor opaque'
         )
-    state = state_for(current_function, symbol)
+    state = state_for_value(current_function, argument, namespace)
+    display_name = getattr(argument, 'identifier', None) or '<anonimo>'
     if state == CLOSED:
-        return f'El descriptor {symbol.name} esta closed; no puede cerrarse dos veces'
+        return f'El descriptor {display_name} esta closed; no puede cerrarse dos veces'
     if state == MOVED:
         return (
-            f'El descriptor {symbol.name} esta moved; su propiedad ya se '
+            f'El descriptor {display_name} esta moved; su propiedad ya se '
             'transfirio y no puede cerrarse'
         )
     if state != OWNED:
         return (
             f'{function_name} requiere un descriptor owned para consumirlo; '
-            f'{symbol.name} esta en estado {state or "desconocido"}'
+            f'{display_name} esta en estado {state or "desconocido"}'
         )
-    set_state(current_function, symbol, CLOSED)
+    set_state_for_value(current_function, argument, namespace, CLOSED)
     return None
 
 
@@ -227,11 +370,13 @@ def transfer_opaque(
 
 def snapshot(function: object, symbols: Mapping[str, object]) -> dict[int, str]:
     """Capture the states of all visible resource bindings in a path."""
-    return {
+    captured = dict(getattr(function, 'buffer_states', {}))
+    captured.update({
         id(symbol): state_for(function, symbol)
         for symbol in symbols.values()
         if is_resource_symbol(symbol)
-    }
+    })
+    return captured
 
 
 def restore(function: object, states: Mapping[int, str]) -> None:
@@ -392,7 +537,56 @@ def analyze_loop(
     return consumed_in_loop
 
 
-def leak_messages(function: object, symbols: object) -> list[str]:
+def _resource_paths(
+    storage: object | None,
+    type_spec: TypeSpec,
+    path: tuple[tuple[str, object], ...] = (),
+    seen: set[str] | None = None,
+) -> list[tuple[tuple[tuple[str, object], ...], str]]:
+    kind = resource_kind(storage, type_spec)
+    if kind is not None:
+        return [(path, kind)]
+    resolver = getattr(storage, 'resolve_type', None)
+    declared = resolver(type_spec.name) if callable(resolver) else None
+    if not isinstance(declared, AggregateSymbol):
+        return []
+    seen = set() if seen is None else seen
+    key = declared.registry_key or declared.name
+    if key in seen:
+        return []
+    seen.add(key)
+    paths: list[tuple[tuple[tuple[str, object], ...], str]] = []
+    for field in declared.all_fields:
+        paths.extend(_resource_paths(
+            storage,
+            field.type_spec,
+            (*path, ('member', field.name)),
+            seen.copy(),
+        ))
+    return paths
+
+
+def _state_for_resource_path(
+    function: object,
+    symbol: object,
+    path: tuple[tuple[str, object], ...],
+) -> str:
+    states = getattr(function, 'buffer_states', {})
+    for count in range(0, len(path) + 1):
+        state = states.get(_place_key(symbol, path[:count]))
+        if state in {DEAD, CLOSED, MOVED, MAYBE_DEAD, MAYBE_CLOSED, MAYBE_MOVED}:
+            return state
+    state = states.get(_place_key(symbol, path))
+    if state is not None:
+        return state
+    return BORROWED if getattr(symbol, 'scope_kind', None) == 'parameter' else OWNED
+
+
+def leak_messages(
+    function: object,
+    symbols: object,
+    storage: object | None = None,
+) -> list[str]:
     """Describe resources in ``symbols`` that leave scope still owned.
 
     A buffer or descriptor that is ``owned`` (or ``maybe_*``: consumed only on
@@ -403,26 +597,33 @@ def leak_messages(function: object, symbols: object) -> list[str]:
     name = getattr(function, 'name', None) or '<anonima>'
     messages: list[str] = []
     for symbol in symbols:
-        if not is_resource_symbol(symbol):
-            continue
         if getattr(symbol, 'scope_kind', None) != 'local':
             continue
-        if state_for(function, symbol) not in _LEAK_STATES:
+        type_spec = getattr(symbol, 'type_spec', None)
+        if type_spec is None:
             continue
-        if reported is not None:
-            if id(symbol) in reported:
+        for path, kind in _resource_paths(storage, type_spec):
+            state = _state_for_resource_path(function, symbol, path)
+            if state not in _LEAK_STATES:
                 continue
-            reported.add(id(symbol))
-        partial = state_for(function, symbol) != OWNED
-        where = 'en alguna ruta ' if partial else ''
-        if is_buffer_symbol(symbol):
-            messages.append(
-                f'{name}: el buffer {symbol.name} sale de su ambito '
-                f'{where}sin Del (fuga de memoria)'
+            report_key = (id(symbol), path)
+            if reported is not None:
+                if report_key in reported:
+                    continue
+                reported.add(report_key)
+            partial = state != OWNED
+            where = 'en alguna ruta ' if partial else ''
+            place_name = '.'.join(
+                (symbol.name, *(str(item) for _, item in path))
             )
-        else:
-            messages.append(
-                f'{name}: el descriptor {symbol.name} sale de su ambito '
-                f'{where}sin cerrarse ni transferirse (fuga de recurso)'
-            )
+            if kind == 'buffer':
+                messages.append(
+                    f'{name}: el buffer {place_name} sale de su ambito '
+                    f'{where}sin Del (fuga de memoria)'
+                )
+            else:
+                messages.append(
+                    f'{name}: el descriptor {place_name} sale de su ambito '
+                    f'{where}sin cerrarse ni transferirse (fuga de recurso)'
+                )
     return messages

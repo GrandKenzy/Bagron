@@ -5,6 +5,10 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from core.frontend.objects import AggregateSymbol, TypeSpec, ValueInfo, Variable
+from core.frontend.ownership import (
+    CLOSED, DEAD, MAYBE_CLOSED, MAYBE_DEAD, MAYBE_MOVED, MOVED,
+    state_for_value,
+)
 from gram import ast as gast
 
 from .common import (
@@ -33,25 +37,9 @@ def _member_value(
     current_function: object | None = None,
 ) -> ValueInfo:
     member = _identifier_from_node(suffix)
-    if (
-        member == 'len'
-        and value.type_spec.pointer_level == 0
-        and value.type_spec.array_depth == 1
-    ):
-        length = (
-            value.type_spec.array_lengths[0]
-            if value.type_spec.array_lengths
-            else None
-        )
-        pointer_size = getattr(_namespace_owner(namespace), 'pointer_size', 8)
-        return ValueInfo(
-            TypeSpec(
-                'usize',
-                bit_width=pointer_size * 8,
-                signed=False,
-            ),
-            is_literal=length is not None,
-            value=length,
+    if member == 'len':
+        raise ValueResolutionError(
+            'El miembro .len fue retirado; usa .<len>'
         )
     if value.type_spec.pointer_level or value.type_spec.array_depth:
         raise ValueResolutionError(
@@ -98,7 +86,7 @@ def _member_value(
             f'El atributo privado {declaring_type}.{field.name} solo es '
             'accesible desde dentro de su clase'
         )
-    return ValueInfo(
+    resolved = ValueInfo(
         type_spec=field.type_spec,
         items=member_items,
         # A member of a temporary aggregate literal is readable but has no
@@ -121,6 +109,13 @@ def _member_value(
         member_owner=aggregate.name,
         region_origin=value.region_origin,
     )
+    state = state_for_value(current_function, resolved, namespace)
+    if state in {DEAD, CLOSED, MOVED, MAYBE_DEAD, MAYBE_CLOSED, MAYBE_MOVED}:
+        raise ValueResolutionError(
+            f'El recurso {resolved.identifier or member or "<anonimo>"} esta '
+            f'{state}; no puede usarse'
+        )
+    return resolved
 
 
 def _infer_deref_target(

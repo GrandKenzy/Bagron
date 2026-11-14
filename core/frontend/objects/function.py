@@ -14,29 +14,12 @@ class ParameterSpec:
     name: str
     type_spec: TypeSpec
     has_default: bool = False
-    # ``Len_t``/``Size_t``/``Region_t`` are named parameters whose metadata is
-    # supplied by the compiler from the data parameter immediately before them.
-    is_length: bool = False
-    is_size: bool = False
-    # ``Signed_t`` carries the signedness of the associated data parameter:
-    # zero for signed types and one for non-signed types.
-    is_signed: bool = False
-    length_of: str | None = None
-    signed_of: str | None = None
-    # ``Region_t`` is an immutable compiler-supplied provenance expansion.
-    is_region: bool = False
-    region_of: str | None = None
     # A unique parameter promises exclusive non-overlapping storage.
     is_unique: bool = False
     # Instance methods receive the class object through an implicit first
     # parameter.  It is part of the generated ABI but hidden from source
     # calls.
     is_receiver: bool = False
-
-    @property
-    def is_compiler_supplied(self) -> bool:
-        return self.is_length or self.is_size or self.is_signed or self.is_region
-
 
 @dataclass(frozen=True)
 class FunctionSignature:
@@ -64,6 +47,11 @@ class FunctionSymbol:
     # Resolved call-site targets let later flow analyses inspect the callee's
     # contract without trying to resolve source names a second time.
     call_targets: dict[int, 'FunctionSymbol'] = field(default_factory=dict)
+    # Runtime-only parameters are derived after semantic analysis. Source
+    # signatures never contain compiler metadata.
+    abi_metadata_plan: object | None = None
+    # Compiler member results are keyed by AST identity for backend lowering.
+    compiler_members: dict[int, object] = field(default_factory=dict)
     tail_recursive: bool = False
     decorators: tuple[str, ...] = ()
     is_inline: bool = False

@@ -4,7 +4,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from core.frontend.handles import VariableHandle, handle_variable
-from core.frontend.ownership import BORROWED, OWNED, transfer_opaque
+from core.frontend.ownership import (
+    BORROWED, OWNED, contains_resource_type, transfer_resource_value,
+)
 from core.frontend.objects import TypeSpec, ValueInfo, Variable
 from core.frontend.tools.types import (
     TypeResolutionError,
@@ -121,12 +123,7 @@ def _frontend_initializer_value(
     initializer_name = getattr(aggregate, 'initializer_name', None)
     visible_parameters = [
         parameter for parameter in (parameters or ())
-        if not (
-            getattr(parameter, 'is_length', False)
-            or getattr(parameter, 'is_size', False)
-            or getattr(parameter, 'is_signed', False)
-            or getattr(parameter, 'is_region', False)
-        )
+        if not getattr(parameter, 'is_receiver', False)
     ]
     if initializer_name != '__frontend__' or len(visible_parameters) != 1:
         return source_info, False
@@ -173,13 +170,7 @@ def _frontend_initializer_value(
                 parameter for parameter in (
                     getattr(parent, 'constructor_parameters', None) or ()
                 )
-                if not (
-                    getattr(parameter, 'is_length', False)
-                    or getattr(parameter, 'is_size', False)
-                    or getattr(parameter, 'is_signed', False)
-                    or getattr(parameter, 'is_region', False)
-                    or getattr(parameter, 'is_receiver', False)
-                )
+                if not getattr(parameter, 'is_receiver', False)
             ]
             arguments = getattr(
                 current_aggregate,
@@ -326,16 +317,6 @@ def _validate_initializer(
         )
         symbol.type = symbol.type_spec.canonical_name
 
-    if (
-        is_buffer_type(value_info.type_spec)
-        and not _is_buffer_concat(handle.value_node)
-    ):
-        compiler.error(
-            f'{handle.name}: la propiedad de buffer entre asignaciones y '
-            'funciones aun no esta definida; usa una concatenacion'
-        )
-        return
-
     if not is_compatible(symbol.type_spec, value_info):
         compiler.error(
             f'El valor inicial de {handle.name} no coincide con '
@@ -343,10 +324,18 @@ def _validate_initializer(
         )
         return
 
-    # Copying a named opaque descriptor moves its ownership to the new local.
-    if current_function is not None and symbol.scope_kind == 'local':
-        ownership_error = transfer_opaque(
-            current_function, symbol, value_info, storage.resolve
+    # Resource aggregates, opaque descriptors, and buffers are move-only.
+    if (
+        current_function is not None
+        and symbol.scope_kind == 'local'
+        and contains_resource_type(storage, symbol.type_spec)
+    ):
+        ownership_error = transfer_resource_value(
+            current_function,
+            symbol,
+            value_info,
+            storage.resolve,
+            fresh_target=True,
         )
         if ownership_error is not None:
             compiler.error(f'{handle.name}: {ownership_error}')

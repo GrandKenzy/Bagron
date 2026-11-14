@@ -35,7 +35,7 @@ from core.frontend.objects import (
 
 
 MAGIC = b'BGLIB1\0\0'
-FORMAT_MAJOR = 1
+FORMAT_MAJOR = 2
 FORMAT_MINOR = 0
 KIND_LIB1 = 1
 KIND_LIB2 = 2
@@ -1228,7 +1228,10 @@ def _collect_compiler_symbols(
                 item['is_static'] = bool(symbol.is_static)
         signature = getattr(symbol, 'signature', None)
         if signature is not None:
-            item['signature'] = _serialize_signature(signature)
+            item['signature'] = _serialize_signature(
+                signature,
+                getattr(symbol, 'abi_metadata_plan', None),
+            )
         type_spec = getattr(symbol, 'type_spec', None)
         if type_spec is not None:
             item['type'] = _serialize_type_spec(type_spec)
@@ -1265,26 +1268,31 @@ def _serialize_type_spec(spec: object) -> dict[str, object]:
     }
 
 
-def _serialize_signature(signature: object) -> dict[str, object]:
+def _serialize_signature(
+    signature: object,
+    abi_metadata_plan: object | None = None,
+) -> dict[str, object]:
     parameters = []
     for parameter in getattr(signature, 'parameters', ()):
         parameters.append({
             'name': str(getattr(parameter, 'name', 'arg')),
             'type': _serialize_type_spec(getattr(parameter, 'type_spec', None)),
-            'is_length': bool(getattr(parameter, 'is_length', False)),
-            'is_size': bool(getattr(parameter, 'is_size', False)),
-            'is_signed': bool(getattr(parameter, 'is_signed', False)),
-            'is_region': bool(getattr(parameter, 'is_region', False)),
             'is_receiver': bool(getattr(parameter, 'is_receiver', False)),
             'is_unique': bool(getattr(parameter, 'is_unique', False)),
-            'length_of': getattr(parameter, 'length_of', None),
-            'signed_of': getattr(parameter, 'signed_of', None),
-            'region_of': getattr(parameter, 'region_of', None),
         })
-    return {
+    serialized = {
         'parameters': parameters,
         'return': _serialize_type_spec(getattr(signature, 'return_type', None)),
     }
+    if abi_metadata_plan is not None:
+        serialized['abi'] = [
+            {
+                'kind': str(getattr(parameter, 'kind', 'value')),
+                'source': str(getattr(parameter, 'source_name', '')),
+            }
+            for parameter in getattr(abi_metadata_plan, 'parameters', ())
+        ]
+    return serialized
 
 
 def compute_library_signature(

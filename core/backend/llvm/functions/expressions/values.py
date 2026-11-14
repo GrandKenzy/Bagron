@@ -16,6 +16,70 @@ from .memory import _MemoryPlace
 
 
 class ValueExpressionMixin:
+    def _compile_compiler_member(
+        self,
+        primary: object,
+        suffix: object,
+        builder: ir.IRBuilder,
+        values: dict[str, ir.Value],
+    ) -> ir.Value:
+        """Materialize semantic ``.<...>`` metadata without addressable state."""
+
+        function = self._active_function_symbol
+        info = (
+            getattr(function, 'compiler_members', {}).get(id(suffix))
+            if function is not None
+            else None
+        )
+        if info is None:
+            raise FunctionEmissionError(
+                'El miembro del compilador no tiene metadata semantica'
+            )
+        member = getattr(info, 'compiler_member', None)
+        if member == 'region':
+            raise FunctionEmissionError('.<region> no tiene representacion runtime')
+        if getattr(info, 'is_literal', False):
+            return ir.Constant(self._size_integer_type(), int(info.value))
+
+        source = getattr(info, 'compiler_member_source', None)
+        source_spec = getattr(source, 'type_spec', None)
+        if source_spec is None:
+            raise FunctionEmissionError('El miembro del compilador perdio su tipo fuente')
+        if member == 'len':
+            source_name = self._identifier(primary)
+            forwarded = values.get(f'__bg_len_{source_name}') if source_name else None
+            if forwarded is not None:
+                return forwarded
+            if source_spec.name == 'buffer':
+                descriptor = self._compile_expression(primary, builder, values)
+                _, length = self._buffer_data_and_length(descriptor, builder)
+                return length
+            address = self._compile_address(primary, builder, values)
+            pointee = address.type.pointee
+            if isinstance(pointee, ir.ArrayType):
+                return ir.Constant(self._size_integer_type(), pointee.count)
+            raise FunctionEmissionError('.<len> no pudo recuperar la longitud ABI')
+        if member == 'size' and self.type_registry is not None:
+            target_spec = source_spec
+            if source_spec.array_depth:
+                target_spec = TypeSpec(
+                    source_spec.name,
+                    bit_width=source_spec.bit_width,
+                    signed=source_spec.signed,
+                    pointer_level=source_spec.pointer_level,
+                    array_depth=source_spec.array_depth - 1,
+                    value_is_const=source_spec.value_is_const,
+                    pointer_is_const=source_spec.pointer_is_const,
+                    array_lengths=source_spec.array_lengths[1:],
+                    nominal_key=source_spec.nominal_key,
+                )
+            value_type = self.type_registry.resolve(target_spec)
+            return ir.Constant(
+                self._size_integer_type(),
+                self.type_registry.abi_size(value_type),
+            )
+        raise FunctionEmissionError(f'No se puede materializar .<{member}>')
+
     def _compile_fields_literal(
         self,
         node: object,
@@ -638,29 +702,16 @@ class ValueExpressionMixin:
                         builder,
                         alignment=1,
                     )
-                member_suffix = next(
+                compiler_suffix = next(
                     (
                         suffix for suffix in suffixes
-                        if getattr(suffix, 'name', None) == 'MEMBER_ACCESS'
-                        and self._identifier(suffix) == 'len'
+                        if getattr(suffix, 'name', None) == 'COMPILER_MEMBER_ACCESS'
                     ),
                     None,
                 )
-                if member_suffix is not None and len(suffixes) == 1:
-                    address = self._compile_address(
-                        primary,
-                        builder,
-                        values,
-                        hook_mode='read',
-                    )
-                    pointee = address.type.pointee
-                    if isinstance(pointee, ir.ArrayType):
-                        return ir.Constant(self._size_integer_type(), pointee.count)
-                    if self._is_array_descriptor_type(pointee):
-                        descriptor = builder.load(address)
-                        return builder.extract_value(descriptor, 1)
-                    raise FunctionEmissionError(
-                        'La longitud solo puede obtenerse de un array'
+                if compiler_suffix is not None and len(suffixes) == 1:
+                    return self._compile_compiler_member(
+                        primary, compiler_suffix, builder, values
                     )
                 place = self._compile_place(
                     current,

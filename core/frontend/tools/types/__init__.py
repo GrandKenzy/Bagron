@@ -78,7 +78,6 @@ from .calls import (
     _call_arguments,
     _visible_parameters,
     _validate_array_argument_storage,
-    _validate_expansion_parameters,
     infer_call,
 )
 
@@ -88,6 +87,7 @@ from .values import (
     infer_lvalue,
     infer_value,
 )
+from .compiler_members import compiler_member_value
 
 from .compatibility import (
     is_chain_to_char_array_conversion,
@@ -173,12 +173,12 @@ __all__ = [
     '_call_arguments',
     '_visible_parameters',
     '_validate_array_argument_storage',
-    '_validate_expansion_parameters',
     'infer_call',
     '_member_value',
     '_infer_deref_target',
     'infer_lvalue',
     'infer_value',
+    'compiler_member_value',
     'is_chain_to_char_array_conversion',
     '_is_integer_scalar',
     '_integer_bounds',

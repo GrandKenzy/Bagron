@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from llvmlite import ir
+from core.frontend.abi import runtime_parameters
 
 from core.frontend.objects import TypeSpec
 from core.frontend.tools.types import (
@@ -88,9 +89,7 @@ class OperatorExpressionMixin:
 
         arguments: list[ir.Value] = []
         llvm_index = 0
-        for parameter in method.signature.parameters:
-            if parameter.is_region:
-                continue
+        for parameter in runtime_parameters(method, self._pointer_size):
             if llvm_index >= len(callee.args):
                 raise FunctionEmissionError(
                     f'La firma de {method.name} no coincide con su ABI LLVM'
@@ -119,10 +118,6 @@ class OperatorExpressionMixin:
                     target_type,
                     builder,
                     signed=False,
-                )
-            elif parameter.is_signed:
-                raise FunctionEmissionError(
-                    f'El metodo magico {method.name} no admite Signed_t'
                 )
             else:
                 if attribute_name is None:
@@ -334,16 +329,11 @@ class OperatorExpressionMixin:
                 f'El metodo magico {method.name} no tiene emision LLVM'
             )
 
-        parameters = list(method.signature.parameters)
+        source_parameters = list(method.signature.parameters)
+        parameters = list(runtime_parameters(method, self._pointer_size))
         visible_parameters = [
-            parameter for parameter in parameters
-            if not (
-                parameter.is_receiver
-                or parameter.is_length
-                or parameter.is_size
-                or parameter.is_signed
-                or parameter.is_region
-            )
+            parameter for parameter in source_parameters
+            if not parameter.is_receiver
         ]
         if len(visible_parameters) != len(argument_nodes):
             raise FunctionEmissionError(
@@ -355,8 +345,6 @@ class OperatorExpressionMixin:
         argument_index = 0
         llvm_index = 0
         for parameter in parameters:
-            if parameter.is_region:
-                continue
             target_type = callee.args[llvm_index].type
             if parameter.is_receiver:
                 argument = self._coerce_value(
@@ -364,9 +352,24 @@ class OperatorExpressionMixin:
                     target_type,
                     builder,
                 )
-            elif parameter.is_length or parameter.is_size or parameter.is_signed:
-                raise FunctionEmissionError(
-                    f'El metodo magico {method.name} no admite Len_t/Size_t/Signed_t'
+            elif parameter.is_length:
+                source_index = next(
+                    (
+                        index for index, source in enumerate(visible_parameters)
+                        if source.name == parameter.length_of
+                    ),
+                    None,
+                )
+                if source_index is None:
+                    raise FunctionEmissionError(
+                        f'La longitud ABI de {method.name} no tiene fuente'
+                    )
+                source = visible_parameters[source_index]
+                argument = self._compile_length_argument(
+                    argument_nodes[source_index],
+                    source.type_spec,
+                    builder,
+                    values,
                 )
             else:
                 argument_node = argument_nodes[argument_index]

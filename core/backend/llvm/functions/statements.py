@@ -10,6 +10,7 @@ from core.backend.llvm.types import (
     value_type,
 )
 from core.frontend.objects import FunctionSymbol, TypeSpec
+from core.frontend.abi import runtime_parameters
 from core.frontend.tools.types import (
     FOR_ITERATOR_TYPES,
     INTEGER_TYPES,
@@ -133,7 +134,9 @@ class StatementEmitterMixin:
             return None
         length_parameter = next(
             (
-                parameter for parameter in symbol.signature.parameters
+                parameter for parameter in runtime_parameters(
+                    symbol, self._pointer_size
+                )
                 if (
                     parameter.name == length_name
                     and parameter.is_length
@@ -775,18 +778,7 @@ class StatementEmitterMixin:
         array_parameters = {
             parameter.name
             for parameter in symbol.signature.parameters
-            if (
-                parameter.type_spec.array_depth
-                and not parameter.is_length
-                and not parameter.is_size
-                and not parameter.is_signed
-                and not parameter.is_region
-            )
-        }
-        region_parameters = {
-            parameter.name
-            for parameter in symbol.signature.parameters
-            if parameter.is_region
+            if parameter.type_spec.array_depth
         }
         variables = getattr(symbol, 'local_variables', None)
         if variables is None:
@@ -797,10 +789,7 @@ class StatementEmitterMixin:
             if (
                 self._optimization_profile in {'prod', 'high'}
                 and (
-                    parameter.is_length
-                    or parameter.is_size
-                    or parameter.is_signed
-                    or parameter.type_spec.name == 'chain'
+                    parameter.type_spec.name == 'chain'
                 )
             )
         }
@@ -895,9 +884,7 @@ class StatementEmitterMixin:
                 # code; unproven arrays retain deterministic initialization.
                 continue
             initial_value = (
-                ir.Constant(local_type, 0)
-                if name in region_parameters
-                else ir.Constant(local_type, None)
+                ir.Constant(local_type, None)
                 if name in chain_parameters or name in array_parameters
                 else default_value(
                     variable.type_spec,
@@ -918,12 +905,12 @@ class StatementEmitterMixin:
                     volatile=self._aggregate_volatile(local_type),
                 )
 
-        runtime_parameters = [
-            parameter
-            for parameter in symbol.signature.parameters
-            if not parameter.is_region
-        ]
-        for parameter, argument in zip(runtime_parameters, arguments):
+        abi_parameters = runtime_parameters(symbol, self._pointer_size)
+        for parameter, argument in zip(abi_parameters, arguments):
+            if parameter.is_length:
+                argument.name = parameter.name
+                values[parameter.name] = argument
+                continue
             if (
                 self._optimization_profile in {'prod', 'high'}
                 and parameter.type_spec.name == 'chain'
@@ -938,8 +925,6 @@ class StatementEmitterMixin:
                 self._optimization_profile in {'prod', 'high'}
                 and (
                     parameter.is_length
-                    or parameter.is_size
-                    or parameter.is_signed
                 )
             ):
                 values[parameter.name] = argument
@@ -1270,7 +1255,9 @@ class StatementEmitterMixin:
                 end_name = self._identifier(range_values[1])
                 length_parameter = next(
                     (
-                        parameter for parameter in symbol.signature.parameters
+                        parameter for parameter in runtime_parameters(
+                            symbol, self._pointer_size
+                        )
                         if (
                             parameter.name == end_name
                             and parameter.is_length

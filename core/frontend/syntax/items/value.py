@@ -219,6 +219,18 @@ class MEMBER_ACCESS(cmb.RuleItem):
     nodeable = True
 
 
+class COMPILER_MEMBER_ACCESS(cmb.RuleItem):
+    """Read-only compiler metadata, for example ``value.<size>``."""
+
+    entrypoint = cmb.Seq(
+        cmb.MatchToken('DOT'),
+        cmb.MatchToken('LESS'),
+        cmb.MatchToken('IDENT'),
+        cmb.MatchToken('GREATER'),
+    )
+    nodeable = True
+
+
 class DEREF_ASSIGN_TARGET(cmb.RuleItem):
     entrypoint = cmb.Enclosed(
         open=lexer.Token.LPAREN,
@@ -277,6 +289,7 @@ class POSTFIX_EXPR(cmb.RuleItem):
         cmb.Many(
             cmb.Alt(
                 cmb.SameLine(cmb.Ref(CALL_SUFFIX)),
+                cmb.SameLine(cmb.Ref(COMPILER_MEMBER_ACCESS)),
                 cmb.SameLine(cmb.Ref(MEMBER_ACCESS)),
                 cmb.SameLine(cmb.Ref(INDEX_ACCESS)),
                 cmb.SameLine(cmb.Ref(CAST_SUFFIX)),
@@ -318,6 +331,7 @@ __all__ = [
     'BITINT_TYPE',
     'CAST_SUFFIX',
     'CALL_SUFFIX',
+    'COMPILER_MEMBER_ACCESS',
     'DECLARATOR',
     'DESIGNATED_FIELD',
     'DEREF_ASSIGN_TARGET',

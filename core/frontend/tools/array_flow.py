@@ -118,7 +118,7 @@ def _fixed_array_parameters(symbol: object) -> dict[str, int]:
     return {
         parameter.name: length
         for parameter in getattr(signature, 'parameters', ())
-        if not getattr(parameter, 'is_compiler_supplied', False)
+        if not getattr(parameter, 'is_receiver', False)
         and (length := _array_length_from_type(
             getattr(parameter, 'type_spec', None)
         )) is not None
@@ -421,13 +421,7 @@ class _FixedArrayWriteAnalysis:
         return [
             parameter
             for parameter in getattr(signature, 'parameters', ())
-            if not (
-                getattr(parameter, 'is_length', False)
-                or getattr(parameter, 'is_size', False)
-                or getattr(parameter, 'is_signed', False)
-                or getattr(parameter, 'is_region', False)
-                or getattr(parameter, 'is_receiver', False)
-            )
+            if not getattr(parameter, 'is_receiver', False)
         ]
 
     def _whole_array_name(self, argument: object) -> str | None:

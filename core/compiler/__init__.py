@@ -880,15 +880,8 @@ class Compiler(CompilerState):
             parameters.append(ParameterSpec(
                 name=str(item.get('name', 'arg')),
                 type_spec=cls._library_type_spec(item.get('type', {})),
-                is_length=bool(item.get('is_length', False)),
-                is_size=bool(item.get('is_size', False)),
-                is_signed=bool(item.get('is_signed', False)),
-                is_region=bool(item.get('is_region', False)),
                 is_receiver=bool(item.get('is_receiver', False)),
                 is_unique=bool(item.get('is_unique', False)),
-                length_of=item.get('length_of'),
-                signed_of=item.get('signed_of'),
-                region_of=item.get('region_of'),
             ))
         return FunctionSignature(
             parameters=tuple(parameters),
@@ -984,6 +977,67 @@ class Compiler(CompilerState):
                         is_compiled=True,
                     )
                     symbol.llvm_name = str(item.get('llvm') or symbol_name)
+                    signature_data = item.get('signature', {})
+                    abi_data = (
+                        signature_data.get('abi')
+                        if isinstance(signature_data, dict)
+                        else None
+                    )
+                    if not isinstance(abi_data, list):
+                        self.error(
+                            f'La funcion lib2 {name} no declara metadata ABI v2'
+                        )
+                        continue
+                    from core.frontend.abi import AbiMetadataPlan, AbiParameter
+                    source_parameters = {
+                        parameter.name: parameter
+                        for parameter in symbol.signature.parameters
+                    }
+                    runtime_parameters = []
+                    valid_abi = True
+                    for abi_parameter in abi_data:
+                        if not isinstance(abi_parameter, dict):
+                            valid_abi = False
+                            break
+                        source_name = str(abi_parameter.get('source', ''))
+                        kind_value = str(abi_parameter.get('kind', ''))
+                        source_parameter = source_parameters.get(source_name)
+                        if source_parameter is None or kind_value not in {'value', 'length'}:
+                            valid_abi = False
+                            break
+                        runtime_parameters.append(AbiParameter(
+                            (
+                                source_name if kind_value == 'value'
+                                else f'__bg_len_{source_name}'
+                            ),
+                            (
+                                source_parameter.type_spec if kind_value == 'value'
+                                else TypeSpec(
+                                    'usize',
+                                    bit_width=self.storage.pointer_size * 8,
+                                    signed=False,
+                                )
+                            ),
+                            source_name,
+                            kind=kind_value,
+                            is_unique=(
+                                source_parameter.is_unique
+                                if kind_value == 'value' else False
+                            ),
+                            is_receiver=(
+                                source_parameter.is_receiver
+                                if kind_value == 'value' else False
+                            ),
+                        ))
+                    if not valid_abi:
+                        self.error(
+                            f'La funcion lib2 {name} tiene una ABI incompatible '
+                            'con esta version de Bagron'
+                        )
+                        continue
+                    symbol.abi_metadata_plan = AbiMetadataPlan(
+                        tuple(runtime_parameters)
+                    )
                     registered = (
                         self.storage.define_method(symbol)
                         if kind == 'method'

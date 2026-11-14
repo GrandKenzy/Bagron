@@ -11,7 +11,7 @@ import re
 from pathlib import PurePath
 
 
-MANGLE_VERSION = 'mangling-v1'
+MANGLE_VERSION = 'mangling-v2'
 
 
 def _digest(value: str, length: int = 16) -> str:
@@ -50,10 +50,7 @@ def signature_key(signature: object | None) -> str:
             ':'.join((
                 str(getattr(spec, 'canonical_name', getattr(spec, 'name', ''))),
                 'receiver' if getattr(parameter, 'is_receiver', False) else '',
-                'len' if getattr(parameter, 'is_length', False) else '',
-                'size' if getattr(parameter, 'is_size', False) else '',
-                'signed' if getattr(parameter, 'is_signed', False) else '',
-                'region' if getattr(parameter, 'is_region', False) else '',
+                'unique' if getattr(parameter, 'is_unique', False) else '',
             ))
         )
     result = ','.join(parameters)

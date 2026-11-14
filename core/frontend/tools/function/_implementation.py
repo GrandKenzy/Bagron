@@ -63,9 +63,12 @@ from core.frontend.ownership import (
     is_buffer_symbol,
     is_opaque_symbol,
     leak_messages,
+    contains_resource_type,
+    set_state_for_value,
+    state_for_value,
+    transfer_resource_value,
     set_state as set_buffer_state,
     state_for as buffer_state_for,
-    transfer_opaque,
 )
 from gram import ast as gast
 
@@ -300,11 +303,7 @@ def _tail_recursive_candidate(symbol: FunctionSymbol) -> bool:
     if symbol.name == 'main' or symbol.is_method or symbol.is_external:
         return False
     if any(
-        parameter.is_length
-        or parameter.is_size
-        or parameter.is_signed
-        or parameter.is_region
-        or parameter.type_spec.name == 'chain'
+        parameter.type_spec.name == 'chain'
         for parameter in symbol.signature.parameters
     ):
         return False
@@ -404,10 +403,15 @@ def validate_recursion(compiler: Compiler) -> None:
     """Reject unmarked recursive cycles after all calls have been resolved."""
     symbols: list[FunctionSymbol] = []
     seen: set[int] = set()
-    for symbol in [
+    all_symbols = [
         *compiler.storage.functions.values(),
         *compiler.storage.methods.values(),
-    ]:
+    ]
+    from core.frontend.abi import build_abi_metadata_plans
+
+    build_abi_metadata_plans(all_symbols, compiler.storage.pointer_size)
+
+    for symbol in all_symbols:
         if id(symbol) not in seen and not symbol.is_external:
             seen.add(id(symbol))
             symbols.append(symbol)
@@ -464,37 +468,19 @@ def validate_magic_method_signature(
         )
 
     parameters = signature.parameters
-    visible = [
-        parameter for parameter in parameters
-        if not (
-            parameter.is_length
-            or parameter.is_size
-            or parameter.is_signed
-            or parameter.is_region
-            or parameter.is_receiver
-        )
-    ]
+    visible = [parameter for parameter in parameters if not parameter.is_receiver]
     return_type = signature.return_type
 
     if method_name in _MAGIC_STATUS_METHODS:
-        length_parameters = [
-            parameter for parameter in parameters if parameter.is_length
-        ]
         valid_chain = (
             len(visible) == 1
             and visible[0].type_spec.name == 'chain'
             and visible[0].type_spec.pointer_level == 0
             and visible[0].type_spec.array_depth == 0
         )
-        valid_length = (
-            len(length_parameters) == 1
-            and length_parameters[0].length_of == visible[0].name
-            if visible
-            else False
-        )
-        if not valid_chain or not valid_length:
+        if not valid_chain:
             compiler.error(
-                f'{class_name}.{method_name} debe recibir un chain y su Len_t'
+                f'{class_name}.{method_name} debe recibir exactamente un chain'
             )
         if not (
             return_type.name == 'int32'
@@ -580,34 +566,15 @@ def _parameter_spec(
     name, pointer_level, pointer_is_const = _declarator_info(declarator)
     special_type = _type_name(type_node)
     if special_type in {'Len_t', 'Size_t', 'Signed_t', 'Region_t'}:
-        if special_type == 'Region_t' and not allow_unique:
-            raise TypeResolutionError(
-                'Region_t solo puede usarse en firmas internas de Bagron'
-            )
-        if _type_is_unique(type_node):
-            raise TypeResolutionError(
-                f'{special_type} no puede declararse unique'
-            )
-        if _type_is_const(type_node):
-            raise TypeResolutionError(
-                f'{special_type} ya es inmutable; no puede declararse const'
-            )
-        if pointer_level or len(pair.nodes) > 3:
-            raise TypeResolutionError(
-                f'{special_type} no puede usar punteros ni valores por defecto'
-            )
-        return ParameterSpec(
-            name=name,
-            type_spec=TypeSpec(
-                'usize',
-                bit_width=pointer_size * 8,
-                signed=False,
-                value_is_const=True,
-            ),
-            is_length=special_type == 'Len_t',
-            is_size=special_type == 'Size_t',
-            is_signed=special_type == 'Signed_t',
-            is_region=special_type == 'Region_t',
+        replacement = {
+            'Len_t': '.<len>',
+            'Size_t': '.<size>',
+            'Region_t': '.<region>',
+            'Signed_t': 'el tipo del valor',
+        }[special_type]
+        raise TypeResolutionError(
+            f'{special_type} fue retirado; usa {replacement} sin declararlo '
+            'como parametro'
         )
     type_spec = resolve_type(
         type_node,
@@ -647,9 +614,8 @@ def _signature_parameters(
     pointer_size: int = 8,
     type_resolver=None,
 ) -> tuple[ParameterSpec, ...]:
-    """Resolve visible parameters and named argument-expansion parameters."""
+    """Resolve only parameters explicitly present in the source ABI."""
     parameters: list[ParameterSpec] = []
-    last_data_parameter: ParameterSpec | None = None
     for item in _parameter_items(parameters_node):
         if not isinstance(item, gast.ASTRef) or item.name != 'PAIR_PARAM':
             continue
@@ -659,225 +625,8 @@ def _signature_parameters(
             allow_unique=True,
             type_resolver=type_resolver,
         )
-        if parameter.is_region:
-            if last_data_parameter is None:
-                raise TypeResolutionError(
-                    'Region_t debe seguir a un parametro unique'
-                )
-            if not last_data_parameter.is_unique:
-                raise TypeResolutionError(
-                    f'Region_t solo puede asociarse al parametro unique '
-                    f'{last_data_parameter.name}'
-                )
-            parameters.append(
-                ParameterSpec(
-                    name=parameter.name,
-                    type_spec=parameter.type_spec,
-                    has_default=parameter.has_default,
-                    is_region=True,
-                    region_of=last_data_parameter.name,
-                )
-            )
-            continue
-        if parameter.is_length or parameter.is_size or parameter.is_signed:
-            if last_data_parameter is None:
-                raise TypeResolutionError(
-                    'Len_t, Size_t y Signed_t deben seguir a un parametro de datos'
-                )
-            source_type = last_data_parameter.type_spec
-            lengthable_chain = (
-                source_type.name == 'chain'
-                and source_type.pointer_level == 0
-                and source_type.array_depth == 0
-            )
-            lengthable_array = (
-                source_type.pointer_level == 0
-                and source_type.array_depth > 0
-            )
-            if parameter.is_size and is_buffer_type(source_type):
-                raise TypeResolutionError(
-                    f'Size_t no puede asociarse al buffer {last_data_parameter.name}; '
-                    'un buffer siempre tiene elementos de un byte'
-                )
-            lengthable_buffer = is_buffer_type(source_type)
-            if parameter.is_length and not (
-                lengthable_chain
-                or lengthable_array
-                or lengthable_buffer
-            ):
-                raise TypeResolutionError(
-                    'Len_t solo puede asociarse a un parametro array, buffer o chain'
-                )
-            parameters.append(
-                ParameterSpec(
-                    name=parameter.name,
-                    type_spec=parameter.type_spec,
-                    has_default=parameter.has_default,
-                    is_length=parameter.is_length,
-                    is_size=parameter.is_size,
-                    is_signed=parameter.is_signed,
-                    length_of=last_data_parameter.name,
-                    signed_of=(
-                        last_data_parameter.name if parameter.is_signed else None
-                    ),
-                )
-            )
-            continue
         parameters.append(parameter)
-        last_data_parameter = parameter
-    resolved = tuple(parameters)
-    _validate_array_expansion_parameters(resolved)
-    return resolved
-
-
-def _validate_array_expansion_parameters(
-    parameters: tuple[ParameterSpec, ...],
-) -> None:
-    """Require the appropriate expansion parameters for data parameters.
-
-    The expansion parameters are compiler-supplied, but they are part of the
-    function ABI.  Requiring both values for every array keeps that ABI
-    explicit and prevents unsafe functions from silently omitting metadata.
-    ``chain`` remains a separate static-string case and only uses ``Len_t``.
-    A ``buffer`` carries its byte width in its descriptor, so it only accepts
-    ``Len_t``; ``Size_t`` would always be the redundant value ``1``. ``Signed_t``
-    is optional and follows the other array metadata when requested.
-    """
-    def source_name(candidate: ParameterSpec) -> str | None:
-        if candidate.is_region:
-            return candidate.region_of
-        if candidate.is_signed:
-            return candidate.signed_of
-        return candidate.length_of
-
-    for parameter in parameters:
-        type_spec = parameter.type_spec
-        if parameter.is_region:
-            continue
-        if is_buffer_type(type_spec):
-            linked = [
-                candidate
-                for candidate in parameters
-                if (
-                    (
-                        candidate.is_length
-                        or candidate.is_size
-                        or candidate.is_signed
-                        or candidate.is_region
-                    )
-                    and source_name(candidate) == parameter.name
-                )
-            ]
-            lengths = [candidate for candidate in linked if candidate.is_length]
-            sizes = [candidate for candidate in linked if candidate.is_size]
-            signed = [candidate for candidate in linked if candidate.is_signed]
-            regions = [
-                (index, candidate)
-                for index, candidate in enumerate(parameters)
-                if candidate.is_region and candidate.region_of == parameter.name
-            ]
-            if sizes:
-                raise TypeResolutionError(
-                    f'El buffer {parameter.name} solo puede declarar Len_t; '
-                    'Size_t no aplica a buffers'
-                )
-            if len(signed) > 1:
-                raise TypeResolutionError(
-                    f'El buffer {parameter.name} no puede declarar Signed_t mas de una vez'
-                )
-            if len(lengths) != 1:
-                raise TypeResolutionError(
-                    f'El buffer {parameter.name} debe declarar Len_t para '
-                    'exponer su longitud en bytes'
-                )
-            if parameter.is_unique and len(regions) != 1:
-                raise TypeResolutionError(
-                    f'El buffer unique {parameter.name} debe declarar Region_t'
-                )
-            if signed and parameters.index(signed[0]) < parameters.index(lengths[0]):
-                raise TypeResolutionError(
-                    f'El buffer {parameter.name} debe declarar Signed_t despues de Len_t'
-                )
-            if regions and parameters.index(lengths[0]) > regions[0][0]:
-                raise TypeResolutionError(
-                    f'El buffer {parameter.name} debe declarar Region_t despues de Len_t'
-                )
-            if not parameter.is_unique and regions:
-                raise TypeResolutionError(
-                    f'Region_t solo puede asociarse al buffer unique {parameter.name}'
-                )
-            continue
-        if (
-            parameter.is_length
-            or parameter.is_size
-            or parameter.is_signed
-            or type_spec.pointer_level
-            or type_spec.array_depth == 0
-        ):
-            continue
-
-        linked = [
-            (index, candidate)
-            for index, candidate in enumerate(parameters)
-            if (
-                (
-                    candidate.is_length
-                    or candidate.is_size
-                    or candidate.is_signed
-                    or candidate.is_region
-                )
-                and source_name(candidate) == parameter.name
-            )
-        ]
-        lengths = [
-            (index, candidate)
-            for index, candidate in linked
-            if candidate.is_length
-        ]
-        sizes = [
-            (index, candidate)
-            for index, candidate in linked
-            if candidate.is_size
-        ]
-        signed = [
-            (index, candidate)
-            for index, candidate in linked
-            if candidate.is_signed
-        ]
-        regions = [
-            (index, candidate)
-            for index, candidate in linked
-            if candidate.is_region
-        ]
-        if len(lengths) != 1 or len(sizes) != 1:
-            raise TypeResolutionError(
-                f'El array {parameter.name} debe declarar Len_t y Size_t; '
-                'la longitud y el tamano del elemento son obligatorios'
-            )
-        if len(signed) > 1:
-            raise TypeResolutionError(
-                f'El array {parameter.name} no puede declarar Signed_t mas de una vez'
-            )
-        if lengths[0][0] > sizes[0][0]:
-            raise TypeResolutionError(
-                f'El array {parameter.name} debe declarar Len_t antes de Size_t'
-            )
-        if signed and signed[0][0] < sizes[0][0]:
-            raise TypeResolutionError(
-                f'El array {parameter.name} debe declarar Signed_t despues de Size_t'
-            )
-        if parameter.is_unique and len(regions) != 1:
-            raise TypeResolutionError(
-                f'El array unique {parameter.name} debe declarar Region_t'
-            )
-        if regions and regions[0][0] < sizes[0][0]:
-            raise TypeResolutionError(
-                f'El array {parameter.name} debe declarar Region_t despues de Size_t'
-            )
-        if not parameter.is_unique and regions:
-            raise TypeResolutionError(
-                f'Region_t solo puede asociarse al array unique {parameter.name}'
-            )
+    return tuple(parameters)
 
 
 def signature_from_node(
@@ -1043,7 +792,7 @@ def _bind_parameters(compiler: Compiler, symbol: FunctionSymbol) -> None:
 def _validate_consume_contract(compiler: Compiler, symbol: FunctionSymbol) -> None:
     """Check ``@consume`` and flag the legacy ``close_*`` naming convention."""
     has_opaque_parameter = any(
-        not parameter.is_compiler_supplied
+        not parameter.is_receiver
         and not parameter.type_spec.pointer_level
         and is_opaque_type(compiler.storage, parameter.type_spec)
         for parameter in symbol.signature.parameters
@@ -1219,25 +968,29 @@ def _validate_return(
         )
         return
 
-    if is_opaque_type(compiler.storage, return_type):
+    if contains_resource_type(compiler.storage, return_type):
         returned_name = getattr(value_info, 'identifier', None)
         returned_symbol = scope.resolve(returned_name) if returned_name else None
-        if is_opaque_symbol(returned_symbol):
+        if returned_symbol is not None:
             if getattr(returned_symbol, 'scope_kind', None) == 'global':
                 compiler.error(
-                    f'{symbol.name}: el descriptor global '
+                    f'{symbol.name}: el recurso global '
                     f'{returned_symbol.name} no puede retornarse como owned'
                 )
                 return
-            state = buffer_state_for(symbol, returned_symbol)
+            state = state_for_value(symbol, value_info, scope.resolve)
             if state != OWNED:
+                resource_name = (
+                    'descriptor' if is_opaque_type(compiler.storage, return_type)
+                    else 'recurso'
+                )
                 compiler.error(
-                    f'{symbol.name}: return requiere un descriptor owned; '
+                    f'{symbol.name}: return requiere un {resource_name} owned; '
                     f'{returned_symbol.name} esta en estado '
                     f'{state or "desconocido"}'
                 )
                 return
-            set_buffer_state(symbol, returned_symbol, MOVED)
+            set_state_for_value(symbol, value_info, scope.resolve, MOVED)
 
     symbol.return_values.append(value_info)
     symbol.return_node = value_node
@@ -1500,12 +1253,7 @@ def _validate_buffer_deletion(
     policy separate makes ``_validate_deletion`` readable: class destruction
     and buffer ownership follow different rules.
     """
-    owner = (
-        scope.resolve(value_info.identifier)
-        if value_info.identifier is not None
-        else None
-    )
-    owner_state = buffer_state_for(symbol, owner)
+    owner_state = state_for_value(symbol, value_info, scope.resolve)
     display_name = value_info.identifier or '<anonimo>'
     if owner_state == BORROWED:
         compiler.error(
@@ -1530,7 +1278,7 @@ def _validate_buffer_deletion(
             'dentro de un bucle: una segunda iteracion lo dejaria en estado dead'
         )
         return
-    set_buffer_state(symbol, owner, DEAD)
+    set_state_for_value(symbol, value_info, scope.resolve, DEAD)
 
 
 def _validate_deletion(
@@ -1863,6 +1611,18 @@ def _validate_assignment(
             )
             return
 
+    if (
+        operator == '='
+        and contains_resource_type(compiler.storage, target_info.type_spec)
+        and contains_resource_type(compiler.storage, value_info.type_spec)
+    ):
+        ownership_error = transfer_resource_value(
+            symbol, target_info, value_info, scope.resolve
+        )
+        if ownership_error is not None:
+            compiler.error(f'{symbol.name}: {ownership_error}')
+        return
+
     if is_buffer_type(target_info.type_spec) or is_buffer_type(value_info.type_spec):
         if (
             is_buffer_type(value_info.type_spec)
@@ -1892,15 +1652,6 @@ def _validate_assignment(
             return
         set_buffer_state(symbol, binding, OWNED)
         return
-
-    # Assigning a named descriptor moves its ownership into the target.
-    if operator == '=' and is_opaque_symbol(binding):
-        ownership_error = transfer_opaque(
-            symbol, binding, value_info, scope.resolve
-        )
-        if ownership_error is not None:
-            compiler.error(f'{symbol.name}: {ownership_error}')
-            return
 
     if operator != '=':
         valid_types = (
@@ -2190,7 +1941,7 @@ def _report_leaks(
 ) -> None:
     """Warn (or fail with ``--strict-ownership``) about owned bindings."""
     strict = getattr(compiler, 'strict_ownership', False)
-    for message in leak_messages(symbol, bindings):
+    for message in leak_messages(symbol, bindings, compiler.storage):
         if strict:
             compiler.error(message)
         else:
@@ -2495,6 +2246,7 @@ def process(compiler: Compiler, node: gast.ASTRef) -> None:
     symbol.definite_array_writes.clear()
     symbol.fixed_array_parameter_summary.clear()
     symbol.call_targets.clear()
+    symbol.compiler_members.clear()
 
     _validate_assembler_body(compiler, symbol, body)
 

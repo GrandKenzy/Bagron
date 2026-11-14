@@ -130,7 +130,7 @@ class OwnershipFlowTests(unittest.TestCase):
 
     def test_borrowed_parameters_do_not_leak(self):
         compiler = self._compile(
-            'func peek(data: buffer[], length: Len_t) void:\n    return\n'
+            'func peek(data: buffer[]) void:\n    return\n'
             'func main() int32:\n    return 0\n'
         )
         self.assertEqual([], self._leaks(compiler))

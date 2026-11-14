@@ -296,13 +296,6 @@ def _infer_magic_operator(
     if (
         len(visible_parameters) != expected_count
         or len(explicit_parameters) != expected_count
-        or any(
-            parameter.is_length
-            or parameter.is_size
-            or parameter.is_signed
-            or parameter.is_region
-            for parameter in explicit_parameters
-        )
     ):
         raise ValueResolutionError(
             f'El metodo magico {aggregate.name}.{method.source_name} tiene una '
@@ -389,13 +382,7 @@ def _infer_constructor_call(
                 f'{parameter.type_spec.canonical_name}'
             )
 
-    _validate_expansion_parameters(
-        name,
-        parameters,
-        argument_infos,
-        current_function=current_function,
-    )
-    _validate_unique_arguments(name, parameters, argument_infos)
+    _validate_unique_arguments(name, parameters, argument_infos, namespace)
     return ValueInfo(TypeSpec(aggregate.name))
 
 
@@ -416,13 +403,7 @@ def _call_arguments(call_suffix: object) -> list[object]:
 def _visible_parameters(parameters: object) -> list[object]:
     return [
         parameter for parameter in parameters
-        if not (
-            getattr(parameter, 'is_length', False)
-            or getattr(parameter, 'is_size', False)
-            or getattr(parameter, 'is_signed', False)
-            or getattr(parameter, 'is_region', False)
-            or getattr(parameter, 'is_receiver', False)
-        )
+        if not getattr(parameter, 'is_receiver', False)
     ]
 
 
@@ -468,6 +449,7 @@ def _validate_unique_arguments(
     function_name: str,
     parameters: object,
     argument_infos: Mapping[str, ValueInfo],
+    namespace: object,
 ) -> None:
     """Prove the non-overlap contract before allowing a ``unique`` call.
 
@@ -490,38 +472,71 @@ def _validate_unique_arguments(
             or is_buffer_type(parameter.type_spec)
         )
     ]
-    unique_origins: dict[str, str] = {}
+    def place(value: ValueInfo) -> tuple[str, tuple[tuple[str, object], ...]] | None:
+        root = value.region_origin
+        if root is None:
+            return None
+        path = tuple(
+            ('index', '*') if kind == 'index' else (kind, item)
+            for kind, item in value.address_path
+        )
+        return root, path
+
+    def overlaps(left: ValueInfo, right: ValueInfo) -> bool:
+        left_place = place(left)
+        right_place = place(right)
+        if left_place is None or right_place is None:
+            return True
+        left_root, left_path = left_place
+        right_root, right_path = right_place
+        if left_root != right_root:
+            return False
+        for left_item, right_item in zip(left_path, right_path):
+            if left_item == right_item:
+                continue
+            if left_item[0] == right_item[0] == 'member':
+                owners = {
+                    owner for owner in (left.member_owner, right.member_owner)
+                    if owner
+                }
+                if not any(
+                    getattr(_resolve_aggregate(namespace, owner), 'kind', None)
+                    == 'mold'
+                    for owner in owners
+                ):
+                    return False
+            return True
+        # Equal paths and parent/descendant paths address overlapping storage.
+        return True
+
+    unique_values: list[tuple[object, ValueInfo]] = []
     for parameter in data_parameters:
         argument = argument_infos.get(parameter.name)
-        origin = getattr(argument, 'region_origin', None)
-        if origin is None:
+        if argument is None or place(argument) is None:
             raise ValueResolutionError(
-                f'La llamada a {function_name} no puede demostrar la Region_t '
-                f'de {parameter.name}; el origen debe ser almacenamiento local '
-                'o un parametro unique. Contrato: pasa una region cuya '
-                'procedencia pueda demostrar el compilador'
+                f'La llamada a {function_name} no puede demostrar la region '
+                f'de {parameter.name}; pasa almacenamiento con procedencia '
+                'conocida por el compilador'
             )
         if parameter.is_unique:
-            previous = unique_origins.get(origin)
-            if previous is not None:
-                raise ValueResolutionError(
-                    f'La llamada a {function_name} solapa las regiones unique '
-                    f'{previous} y {parameter.name}. Contrato: cada Region_t '
-                    'unique debe representar almacenamiento distinto'
-                )
-            unique_origins[origin] = parameter.name
+            for previous, previous_value in unique_values:
+                if overlaps(previous_value, argument):
+                    raise ValueResolutionError(
+                        f'La llamada a {function_name} solapa los prestamos '
+                        f'unique {previous.name} y {parameter.name}'
+                    )
+            unique_values.append((parameter, argument))
 
     for parameter in data_parameters:
         if parameter.is_unique:
             continue
-        origin = argument_infos[parameter.name].region_origin
-        if origin in unique_origins:
-            raise ValueResolutionError(
-                f'La llamada a {function_name} pasa {parameter.name} dentro de '
-                f'la Region_t unique de {unique_origins[origin]}. Contrato: '
-                'ningun argumento que comparta esa region puede coexistir con '
-                'el prestamo exclusivo'
-            )
+        argument = argument_infos[parameter.name]
+        for unique_parameter, unique_value in unique_values:
+            if overlaps(unique_value, argument):
+                raise ValueResolutionError(
+                    f'La llamada a {function_name} solapa {parameter.name} con '
+                    f'el prestamo unique de {unique_parameter.name}'
+                )
 
 
 def _validate_expansion_parameters(
@@ -782,13 +797,7 @@ def infer_call(
                 f'La direccion local pasada a {name} no puede escapar '
                 'a traves de un retorno puntero'
             )
-    _validate_expansion_parameters(
-        name,
-        parameters,
-        argument_infos,
-        current_function=current_function,
-    )
-    _validate_unique_arguments(name, parameters, argument_infos)
+    _validate_unique_arguments(name, parameters, argument_infos, namespace)
 
     for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
         ownership_error = consume_opaque_argument(

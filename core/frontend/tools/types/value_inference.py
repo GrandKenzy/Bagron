@@ -753,11 +753,14 @@ def infer_value(
                 )
                 break
         region_origin = parameter_region
-        if region_origin is None and not is_borrowed_parameter and (
-            symbol.type_spec.array_depth or is_buffer_type(symbol.type_spec)
+        if (
+            region_origin is None
+            and not is_borrowed_parameter
+            and getattr(symbol, 'scope_kind', None) != 'parameter'
+            and not symbol.type_spec.pointer_level
         ):
-            # ``id(symbol)`` is stable for this compilation and distinguishes
-            # two locals that otherwise share the same ``scope_kind``.
+            # Every addressable local/global has a stable symbolic root. Paths
+            # into aggregates refine this identity without runtime metadata.
             region_origin = f'symbol:{id(symbol)}'
 
         return ValueInfo(

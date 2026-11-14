@@ -401,8 +401,8 @@ def resolve_type(
 
     if base_name in {'Len_t', 'Size_t', 'Signed_t', 'Region_t'}:
         raise TypeResolutionError(
-            'Len_t, Size_t, Signed_t y Region_t solo pueden aparecer como parametros especiales '
-            'de una funcion'
+            'Len_t, Size_t, Signed_t y Region_t fueron retirados; usa '
+            '.<len>, .<size> o .<region> sobre el valor correspondiente'
         )
     array_lengths = tuple(_constant_dimension_value(suffix) for suffix in suffixes)
     # Static arrays are lowered to LLVM array types and indexed with the

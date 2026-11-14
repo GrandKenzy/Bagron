@@ -12,6 +12,7 @@ from core.backend.llvm.types import (
 )
 from core.backend.llvm.rodata import StringPool
 from core.frontend.objects import FunctionSymbol, TypeSpec
+from core.frontend.abi import runtime_parameters
 from core.frontend.tools.types import UNSIGNED_INTEGER_TYPES
 
 from .errors import FunctionEmissionError
@@ -292,9 +293,7 @@ class FunctionEmitterBase:
             ):
                 return False
 
-            for parameter in symbol.signature.parameters:
-                if getattr(parameter, 'is_region', False):
-                    continue
+            for parameter in runtime_parameters(symbol, self._pointer_size):
                 parameter_type = self._function_parameter_type(
                     parameter.type_spec,
                 )
@@ -378,8 +377,7 @@ class FunctionEmitterBase:
         try:
             parameters = [
                 self._function_parameter_type(parameter.type_spec)
-                for parameter in symbol.signature.parameters
-                if not getattr(parameter, 'is_region', False)
+                for parameter in runtime_parameters(symbol, self._pointer_size)
             ]
             return_type = llvm_type(
                 symbol.signature.return_type,
@@ -414,9 +412,8 @@ class FunctionEmitterBase:
         # parameters. Buffers use a descriptor-by-value ABI, so their data
         # pointer cannot safely receive a parameter attribute here.
         llvm_index = 0
-        for parameter in symbol.signature.parameters:
-            if getattr(parameter, 'is_region', False):
-                continue
+        pointer_size = getattr(type_registry, '_pointer_size', 8)
+        for parameter in runtime_parameters(symbol, pointer_size):
             if (
                 getattr(parameter, 'is_unique', False)
                 and getattr(parameter.type_spec, 'array_depth', 0)

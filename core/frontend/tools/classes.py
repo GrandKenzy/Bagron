@@ -331,14 +331,10 @@ def _initializer_fields(
             )
             continue
         seen_parameters.add(name)
-        if (
-            getattr(parameter, 'is_signed', False)
-            or getattr(parameter, 'is_region', False)
-            or getattr(parameter, 'is_unique', False)
-        ):
+        if getattr(parameter, 'is_unique', False):
             compiler.error(
                 f'El {initializer_name} de {class_name} no admite parametros '
-                'Signed_t/Region_t ni unique'
+                'unique'
             )
             continue
         parameter_scope.add(
@@ -606,12 +602,7 @@ def validate(compiler: Compiler, node: gast.ASTRef):
     if initializer_name == '__frontend__':
         visible_parameters = [
             parameter for parameter in signature.parameters
-            if not (
-                getattr(parameter, 'is_length', False)
-                or getattr(parameter, 'is_size', False)
-                or getattr(parameter, 'is_signed', False)
-                or getattr(parameter, 'is_region', False)
-            )
+            if not getattr(parameter, 'is_receiver', False)
         ]
         if len(visible_parameters) != 1 or len(visible_parameters) != len(
             signature.parameters
@@ -655,12 +646,7 @@ def _initializer_parameter_scope(
         function_scope=True,
     )
     for parameter in symbol.constructor_parameters or ():
-        if (
-            getattr(parameter, 'is_length', False)
-            or getattr(parameter, 'is_size', False)
-            or getattr(parameter, 'is_signed', False)
-            or getattr(parameter, 'is_region', False)
-        ):
+        if getattr(parameter, 'is_receiver', False):
             continue
         name = getattr(parameter, 'name', '')
         if name:
@@ -712,12 +698,7 @@ def _validate_parent_initializer_call(
 
     parameters = [
         parameter for parameter in parent.constructor_parameters or ()
-        if not (
-            getattr(parameter, 'is_length', False)
-            or getattr(parameter, 'is_size', False)
-            or getattr(parameter, 'is_signed', False)
-            or getattr(parameter, 'is_region', False)
-        )
+        if not getattr(parameter, 'is_receiver', False)
     ]
     arguments = child.parent_initializer_arguments
     if len(arguments) != len(parameters):

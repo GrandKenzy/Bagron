@@ -197,3 +197,7 @@ class ValueInfo:
     # A pointer marked here came from indexing Bagron's managed ``buffer``.
     # This is provenance for the extern boundary, not an ownership state.
     buffer_derived: bool = False
+    # Symbolic compiler metadata has no address and is materialized only by
+    # semantic consumers or the backend.
+    compiler_member: str | None = None
+    compiler_member_source: 'ValueInfo | None' = None

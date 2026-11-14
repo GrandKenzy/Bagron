@@ -27,7 +27,7 @@ from .calls import (
     _call_arguments, _infer_constructor_call, _resolve_method_call,
     _record_function_call,
     SECURE_CLEAR_INTRINSIC,
-    _validate_array_argument_storage, _validate_expansion_parameters,
+    _validate_array_argument_storage,
     _validate_external_buffer_argument,
     _validate_unique_arguments,
     _visible_parameters,
@@ -204,6 +204,7 @@ def _infer_postfix(
     functions: Mapping[str, object] | Callable[[str], object | None] | None,
     current_function: object | None = None,
 ) -> ValueInfo:
+    from .compiler_members import compiler_member_value
     from .values import _member_value, infer_value
 
     children = _children(current)
@@ -316,13 +317,7 @@ def _infer_postfix(
                     f'La direccion local pasada a {name} no puede escapar '
                     'a traves de un retorno puntero'
                 )
-        _validate_expansion_parameters(
-            name,
-            parameters,
-            argument_infos,
-            current_function=current_function,
-        )
-        _validate_unique_arguments(name, parameters, argument_infos)
+        _validate_unique_arguments(name, parameters, argument_infos, namespace)
         for parameter, argument_info in zip(visible_parameters, argument_infos.values()):
             ownership_error = consume_opaque_argument(
                 function,
@@ -427,6 +422,13 @@ def _infer_postfix(
                     raise ValueResolutionError('El valor no es indexable')
             elif getattr(suffix, 'name', None) == 'MEMBER_ACCESS':
                 result = _member_value(
+                    result,
+                    suffix,
+                    namespace,
+                    current_function=current_function,
+                )
+            elif getattr(suffix, 'name', None) == 'COMPILER_MEMBER_ACCESS':
+                result = compiler_member_value(
                     result,
                     suffix,
                     namespace,
@@ -542,6 +544,13 @@ def _infer_postfix(
                 raise ValueResolutionError('El valor no es indexable')
         elif name == 'MEMBER_ACCESS':
             result = _member_value(
+                result,
+                suffix,
+                namespace,
+                current_function=current_function,
+            )
+        elif name == 'COMPILER_MEMBER_ACCESS':
+            result = compiler_member_value(
                 result,
                 suffix,
                 namespace,
