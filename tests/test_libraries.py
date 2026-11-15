@@ -219,10 +219,43 @@ class LibraryTests(unittest.TestCase):
                 artifact = Compiler().compile(main, executable=False)
             self.assertTrue(Path(artifact).is_file())
 
+    def test_bare_library_name_uses_library_name_as_default_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bagron_root = root / 'bagron'
+            (bagron_root / 'libs').mkdir(parents=True)
+            dependency_source = root / 'dependency-source'
+            dependency_source.mkdir()
+            (dependency_source / 'value.bg').write_text(
+                'public func convert() int32:\n'
+                '    return 42\n',
+                encoding='utf-8',
+            )
+            pack_library(
+                dependency_source,
+                bagron_root / 'libs' / 'Global.lib',
+                name='Global',
+                version='1.0.0',
+            )
+
+            project = root / 'project'
+            project.mkdir()
+            main = project / 'main.bg'
+            main.write_text(
+                'library Global\n'
+                'func main() int32:\n'
+                '    return Global.convert()\n',
+                encoding='utf-8',
+            )
+
+            with patch('core.globvars.BAGRON_ROOT', bagron_root):
+                artifact = Compiler().compile(main, executable=False)
+            self.assertTrue(Path(artifact).is_file())
+
     def test_library_directive_preserves_global_lookup_scope(self):
         source = Path('project') / 'main.bg'
         _, requests, errors = extract_library_directives(
-            ['library gnulibrary as gnu\n'],
+            ['library gnulibrary\n'],
             source,
             allow=True,
         )
@@ -230,7 +263,19 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual(1, len(requests))
         self.assertEqual('gnulibrary', requests[0].path)
+        self.assertEqual('gnulibrary', requests[0].alias)
         self.assertTrue(requests[0].global_name)
+
+    def test_quoted_library_path_requires_an_alias(self):
+        source = Path('project') / 'main.bg'
+        _, requests, errors = extract_library_directives(
+            ['library "local.lib"\n'],
+            source,
+            allow=True,
+        )
+
+        self.assertEqual([], requests)
+        self.assertTrue(any('requiere' in error for error in errors))
 
     def test_lib1_validation_preserves_global_library_directive(self):
         with tempfile.TemporaryDirectory() as directory:

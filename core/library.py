@@ -1953,6 +1953,11 @@ _LIBRARY_DIRECTIVE = re.compile(
     r'(?P<global>[A-Za-z_][A-Za-z0-9_]*))'
     r'[ \t]+as[ \t]+(?P<alias>[A-Za-z_][A-Za-z0-9_]*)[ \t]*$'
 )
+_BARE_LIBRARY_DIRECTIVE = re.compile(
+    r'^[ \t]*library[ \t]+'
+    r'(?P<global>[A-Za-z_][A-Za-z0-9_]*)'
+    r'(?:[ \t]+as[ \t]+(?P<alias>[A-Za-z_][A-Za-z0-9_]*))?[ \t]*$'
+)
 
 
 def extract_library_directives(
@@ -1970,6 +1975,8 @@ def extract_library_directives(
             transformed.append(line)
             continue
         match = _LIBRARY_DIRECTIVE.fullmatch(raw)
+        if match is None:
+            match = _BARE_LIBRARY_DIRECTIVE.fullmatch(raw)
         if not allow:
             errors.append(
                 f'{source}:{index + 1}: library solo se permite en el modulo principal'
@@ -1979,14 +1986,15 @@ def extract_library_directives(
         if match is None:
             errors.append(
                 f'{source}:{index + 1}: library requiere "ruta.lib" as Alias o '
-                'nombre_global as Alias'
+                'nombre_global [as Alias]'
             )
             transformed.append('\n' if line.endswith(('\n', '\r')) else '')
             continue
         global_name = match.group('global')
+        alias = match.group('alias') or global_name
         requests.append(LibraryRequest(
             global_name if global_name is not None else match.group('path'),
-            match.group('alias'),
+            alias,
             source.resolve(),
             global_name=global_name is not None,
         ))

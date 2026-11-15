@@ -1,5 +1,10 @@
 # Changelog 1.2.0
 
+## Libraries
+
+- Named global libraries may omit `as Alias`; the library name is used as the
+  namespace, while quoted library paths still require an explicit alias.
+
 ## Modules
 
 - Modules under `modules/` may now be organized in nested folders without
