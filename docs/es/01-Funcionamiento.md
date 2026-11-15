@@ -30,8 +30,8 @@ Para un módulo ejecutable, el flujo es, en términos prácticos, el siguiente:
 3. Se cargan los imports, se comprueban las rutas y los destinos de los
    módulos, y se registran sus declaraciones públicas y privadas.
 4. Se ejecutan las comprobaciones semánticas: tipos, firmas, ámbitos, flujo,
-   reglas de punteros y arrays, llamadas `@unsafe`, propiedad y metadatos
-   implícitos como `Len_t`, `Size_t` y `Region_t`.
+   reglas de punteros y arrays, llamadas `@unsafe`, propiedad y metadata
+   derivada consultable mediante `.<len>`, `.<size>` y `.<region>`.
 5. El backend genera LLVM IR y lo verifica. Según el perfil seleccionado,
    conserva ese IR o aplica optimizaciones; el IR resultante vuelve a
    verificarse antes de generar el objeto y enlazar el artefacto final.

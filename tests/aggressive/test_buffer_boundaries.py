@@ -89,23 +89,22 @@ class BufferBoundaryTests(unittest.TestCase):
         )
         self.assertNotEqual(0, result.returncode)
 
-    def test_buffer_parameters_require_only_len_and_are_borrowed(self):
-        self.assert_compile_error(
+    def test_buffer_parameters_are_borrowed_without_source_metadata(self):
+        self.compile_source(
             'func consume(data: buffer[]) void:\n'
             '    return\n'
             'func main() int32:\n'
             '    return 0\n',
-            'debe declarar Len_t',
         )
         self.assert_compile_error(
-            'func consume(data: buffer[], length: Len_t, size: Size_t) void:\n'
-            '    return\n'
+            'func consume(data: buffer[]) usize:\n'
+            '    return data.<size>\n'
             'func main() int32:\n'
             '    return 0\n',
-            'Size_t.*buffer',
+            '<size> no aplica a chain ni buffer',
         )
         self.assert_compile_error(
-            'func consume(data: buffer[], length: Len_t) void:\n'
+            'func consume(data: buffer[]) void:\n'
             '    Del data\n'
             '    return\n'
             'func main() int32:\n'
@@ -113,7 +112,7 @@ class BufferBoundaryTests(unittest.TestCase):
             'no puede liberar un buffer',
         )
 
-    def test_buffer_cannot_be_copied_or_returned(self):
+    def test_buffer_cannot_be_returned_or_overwritten(self):
         self.assert_compile_error(
             'func make() buffer[2]:\n'
             '    data: buffer[2] = 0\n'
@@ -128,7 +127,7 @@ class BufferBoundaryTests(unittest.TestCase):
             '    second: buffer[2] = 0\n'
             '    second = first\n'
             '    return 0\n',
-            'no puede copiar buffers',
+            'ya posee un recurso',
         )
 
     def test_del_is_terminal_across_parentheses_and_branches(self):

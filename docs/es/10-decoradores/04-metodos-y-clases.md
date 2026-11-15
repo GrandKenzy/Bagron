@@ -32,12 +32,12 @@ class Counter:
         self.value = value
 
     @after
-    func __onsetter__(name: chain, length: Len_t) int32:
+    func __onsetter__(name: chain) int32:
         return 1
 ```
 
 El hook conserva su firma reservada: recibe el nombre como `chain` y su
-`Len_t`, y devuelve `int32` (`1` permite la operación y `0` la detiene).
+`chain`, y devuelve `int32` (`1` permite la operación y `0` la detiene).
 `@after` no puede ponerse en un método ordinario ni en otro hook mágico.
 
 ## `@before`

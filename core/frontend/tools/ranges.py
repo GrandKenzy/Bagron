@@ -82,14 +82,39 @@ def _operator(node: object) -> str | None:
     )
 
 
+def _compiler_member_source(node: object, member: str) -> str | None:
+    """Return the direct source in ``source.<member>`` when it is explicit."""
+
+    current = _unwrap(node)
+    if not isinstance(current, gast.ASTRef) or current.name != 'POSTFIX_EXPR':
+        return None
+    children = _children(current)
+    if not children:
+        return None
+    source = _bare_identifier(children[0])
+    if source is None:
+        return None
+    suffixes = _postfix_suffixes(current)
+    if len(suffixes) != 1:
+        return None
+    suffix = suffixes[0]
+    if (
+        isinstance(suffix, gast.ASTRef)
+        and suffix.name == 'COMPILER_MEMBER_ACCESS'
+        and _identifier(suffix) == member
+    ):
+        return source
+    return None
+
+
 def _less_bound(node: object) -> tuple[str, str] | None:
-    """Find ``unsigned_index < compiler_length`` in a conjunction."""
+    """Find ``unsigned_index < array.<len>`` in a conjunction."""
     current = _unwrap(node)
     if type(current).__name__ == 'ASTBinaryOp':
         operator = _operator(current)
         if operator == 'LESS':
             left = _identifier(current.left)
-            right = _identifier(current.right)
+            right = _compiler_member_source(current.right, 'len')
             if left is not None and right is not None:
                 return left, right
         if operator in {'AND_LOGIC', 'LOGIC_AND'}:
@@ -120,19 +145,9 @@ def _less_literal_bound(node: object) -> tuple[str, int] | None:
     return None
 
 
-def _array_source_for_length(function: object, length_name: str):
-    parameters = getattr(getattr(function, 'signature', None), 'parameters', ())
-    parameter = next(
-        (
-            item for item in parameters
-            if getattr(item, 'name', None) == length_name
-            and getattr(item, 'is_length', False)
-        ),
-        None,
-    )
-    source_name = getattr(parameter, 'length_of', None)
-    if source_name is None:
-        return None
+def _array_source_for_length(function: object, source_name: str):
+    """Validate the array source used by a ``.<len>`` range proof."""
+
     source = getattr(function, 'local_variables', {}).get(source_name)
     type_spec = getattr(source, 'type_spec', None)
     if type_spec is None:
@@ -147,12 +162,12 @@ def _array_source_for_length(function: object, length_name: str):
 
 
 def fact_from_condition(function: object, condition: object) -> SafeRangeFact | None:
-    """Build a fact from a direct ``Len_t`` or literal-bound comparison."""
+    """Build a fact from a direct ``.<len>`` or literal-bound comparison."""
     bound = _less_bound(condition)
     literal_bound = _less_literal_bound(condition)
     if bound is not None:
-        index_name, length_name = bound
-        source_name = _array_source_for_length(function, length_name)
+        index_name, member_source = bound
+        source_name = _array_source_for_length(function, member_source)
         if source_name is None:
             return None
         index = getattr(function, 'local_variables', {}).get(index_name)

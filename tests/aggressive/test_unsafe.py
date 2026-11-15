@@ -143,7 +143,7 @@ class UnsafeBoundaryTests(unittest.TestCase):
     def test_unsafe_pointer_sized_index_keeps_target_width(self):
         module_path = self._compile(
             '@unsafe\n'
-            'func read(data: int32[2], length: Len_t, size: Size_t, index: usize) int32:\n'
+            'func read(data: int32[2], index: usize) int32:\n'
             '    return data[index]\n'
             '@unsafe\n'
             'func main() int32:\n'
@@ -190,7 +190,7 @@ class UnsafeBoundaryTests(unittest.TestCase):
 
     def test_array_for_proves_bounds_for_fixed_array_parameter(self):
         artifacts = self._compile(
-            'func sum(values: int32[3], length: Len_t, element_size: Size_t) int32:\n'
+            'func sum(values: int32[3]) int32:\n'
             '    total: int32 = 0\n'
             '    for i: int32 in values:\n'
             '        total = total + values[i]\n'
@@ -220,7 +220,7 @@ class UnsafeBoundaryTests(unittest.TestCase):
 
     def test_array_for_checks_open_length_before_narrowing(self):
         module_path = self._compile(
-            'func scan(data: int32[], length: Len_t, element_size: Size_t) int32:\n'
+            'func scan(data: int32[]) int32:\n'
             '    for i: int8 in data:\n'
             '        pass\n'
             '    return 0\n'

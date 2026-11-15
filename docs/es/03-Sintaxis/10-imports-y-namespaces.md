@@ -79,12 +79,12 @@ simplemente no forma parte de sus exportaciones.
 
 ## Firmas y ciclos
 
-Un alias conserva la firma original, incluidos los parámetros expansivos:
+Un alias conserva la firma original y sus miembros derivados:
 
 ```bg
 ; arrays.bg
-func total(values: int32[], length: Len_t, size: Size_t) int32:
-    return length
+func total(values: int32[]) usize:
+    return values.<len>
 
 ; main.bg
 import { total as sum } from arrays
@@ -94,7 +94,7 @@ func main() int32:
     return sum(values)
 ```
 
-El llamador no escribe `Len_t` ni `Size_t`; la expansión se conserva al
+El llamador no escribe metadata auxiliar; la información derivada se conserva al
 resolver el alias. Los ciclos de imports se rechazan, por ejemplo:
 
 ```text

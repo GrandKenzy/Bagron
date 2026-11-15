@@ -1,31 +1,19 @@
 # 07. ABI y backend
 
-Los parámetros expansivos forman parte de la firma ABI aunque la llamada
-fuente sea corta. En LLVM ocurre lo siguiente:
+La firma fuente contiene únicamente los parámetros que el usuario declaró.
+El backend puede añadir metadata privada cuando una función necesita leer un
+`.<len>` dinámico, por ejemplo en un array abierto o en un `chain` no constante.
 
-- `Len_t`, `Size_t` y `Signed_t` se emiten como argumentos enteros de tamaño
-  de puntero;
-- `Region_t` se conserva solo como metadata semántica y no ocupa un argumento
-  LLVM de runtime;
-- `unique` array puede recibir `noalias` cuando la prueba de exclusividad es
-  válida;
-- `unique buffer[]` conserva el descriptor por valor y no recibe `noalias`
-  sobre su puntero interno.
+Los arrays de tamaño fijo no reciben longitud oculta. `.<size>` se materializa
+con el layout ABI del tipo y `.<region>` no ocupa ningún argumento LLVM.
+`buffer[]` conserva su descriptor, que contiene sus propios datos y longitud.
 
-Por eso una función que se exporta o se consume desde una librería debe
-conservar exactamente la misma firma expansiva. Cambiar el orden de los
-metadatos altera el contrato aunque las llamadas visibles parezcan iguales.
+La firma visible de una función sigue siendo estable para quien la llama:
 
 ```bg
-func process(
-    data: uint16[4],
-    length: Len_t,
-    element_size: Size_t,
-    signed: Signed_t
-) void:
-    return
+func process(data: uint16[4]) usize:
+    return data.<len> * data.<size>
 ```
 
-La representación final es responsabilidad del backend; el código fuente
-solo declara qué metadatos necesita el cuerpo y en qué relación están con el
-dato principal.
+Las librerías compiladas guardan la versión de este contrato. Un artefacto
+producido con el formato anterior debe reconstruirse antes de enlazarse.

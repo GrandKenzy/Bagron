@@ -8,7 +8,7 @@ values: const int32[2] = {1, 2}
 values[0] = 3                 # error: array constante
 
 func inspect(data: unique int32[]) void:
-    return                    # error: falta Len_t, Size_t y Region_t
+    return
 
 @unsafe
 func read(data: int32[]) void:
@@ -17,7 +17,7 @@ func read(data: int32[]) void:
 
 Errores frecuentes:
 
-- `const` delante de `chain`, `Len_t`, `Size_t`, `Signed_t` o `Region_t`;
+- `const` delante de un miembro del compilador;
 - `unique` en un escalar, puntero crudo o tipo que no es array/buffer;
 - `volatile` escrito como `@volatile`;
 - `inline` escrito como `@inline`;
@@ -28,7 +28,6 @@ Errores frecuentes:
 sistema de decoradores y tienen sus propias posiciones. Consulta
 [Decoradores](../10-decoradores/index.md) para sus contratos y combinaciones.
 
-Del mismo modo, `Len_t`, `Size_t`, `Signed_t` y `Region_t` son parámetros
-expansivos: se declaran en una firma, pero el llamador no los proporciona
-manualmente. Consulta [Datos expansivos](../09-datos%20expansivos/index.md)
-para su orden y asociación.
+Los antiguos tipos expansivos fueron retirados. Consulta [Miembros del
+compilador](../09-datos%20expansivos/index.md) para la API `.<len>`, `.<size>`
+y `.<region>`.

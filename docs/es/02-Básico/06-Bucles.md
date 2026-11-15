@@ -2,7 +2,7 @@
 
 `for` tiene dos formas canónicas en Bagron. La forma `ran` recorre un rango
 numérico explícito; la forma `in` recorre la primera dimensión de un array y
-obtiene su tamaño exacto desde el tipo o desde el `Len_t` oculto de un
+obtiene su tamaño exacto desde el tipo o desde `.<len>` de un
 parámetro.
 
 ## Sintaxis
@@ -18,7 +18,7 @@ Para recorrer un array se puede escribir:
 
 ```bg
 for i: int32 in MiArray:
-    ; i toma los valores 0 .. MiArray.len - 1
+    ; i toma los valores 0 .. MiArray.<len> - 1
 ```
 
 La forma `in` equivale semánticamente a un rango ascendente desde `0`, con
@@ -29,7 +29,7 @@ de un valor externo.
 `MiArray` debe ser un array direccionable. Se rechazan escalares, punteros
 crudos, literales y temporales. En una matriz, el bucle recorre la primera
 dimensión. Un array de tamaño fijo usa su longitud estática; un parámetro de
-array abierto usa el `Len_t` oculto que acompaña a la firma.
+array abierto usa la metadata oculta asociada a `.<len>`.
 
 Los tres valores del rango son obligatorios:
 
@@ -78,7 +78,7 @@ iterador:
 - `byte` o `char`;
 - `bool`;
 - `Bint(n)`, únicamente como tipo de limb dentro de `fields`;
-- punteros, arrays, matrices, `chain`, `Len_t` o `Size_t`.
+- punteros, arrays, matrices o `chain`.
 
 Estos errores son independientes de `@unsafe`: una función insegura tampoco
 puede cambiar el tipo requerido por el `for`.
@@ -310,7 +310,7 @@ bucle más cercano.
 La forma `in` es la forma canónica para recorrer un array:
 
 ```bg
-func sum(values: int32[3], length: Len_t, element_size: Size_t) int32:
+func sum(values: int32[3]) int32:
     total: int32 = 0
     for i: int32 in values:
         total += values[i]
@@ -326,7 +326,7 @@ acceso `values[i]` es seguro en una función normal porque el índice solo puede
 tomar valores dentro de la primera dimensión. Esa garantía no se transfiere a
 otro array, aunque tenga un tamaño parecido, ni a una expresión distinta.
 
-En un parámetro de array abierto, el límite proviene de `Len_t` en tiempo de
+En un parámetro de array abierto, el límite proviene de `values.<len>` en tiempo de
 ejecución. La forma `in` sigue siendo válida, pero un acceso dinámico dentro de
 una función segura requiere una prueba estática adicional; si no puede
 demostrarse, la función debe marcarse `@unsafe`. `@unsafe` no relaja la forma
@@ -335,7 +335,7 @@ del `for`, la regla de solo lectura ni el límite máximo del target.
 ## Prueba de rango para `buffer`
 
 En `prod` y `high`, el backend reconoce la forma exacta `while indice <
-longitud` cuando `longitud` es el `Len_t` oculto del mismo parámetro
+longitud` cuando se compara con `data.<len>` del mismo parámetro
 `buffer[]`. Si el cuerpo no reasigna el descriptor ni toma su dirección, esa
 comparación domina los accesos `buffer[indice]` de la iteración y no se emite
 una comprobación de rango completa por cada elemento. La validación del límite
@@ -346,10 +346,10 @@ una única actualización directa del índice al final del cuerpo.
 
 ```bg
 @unsafe
-func sum(data: buffer[], length: Len_t) byte:
+func sum(data: buffer[]) byte:
     total: byte = 0
     index: usize = 0
-    while index < length:
+    while index < data.<len>:
         total += data[index]
         index += 1
     return total

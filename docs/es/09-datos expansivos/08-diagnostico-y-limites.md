@@ -1,35 +1,24 @@
 # 08. Diagnóstico y límites
 
-Estas firmas son inválidas:
+Los tipos expansivos retirados no son aliases de compatibilidad. Esta
+declaración produce un diagnóstico:
 
 ```bg
-func missing_size(values: int32[], length: Len_t) void:
-    return
-
-func wrong_order(values: int32[], size: Size_t, length: Len_t) void:
-    return
-
-func buffer_size(data: buffer[], length: Len_t, size: Size_t) void:
-    return
+func old(values: int32[], length: Len_t) void:
+    pass
 ```
 
-Un array exige `Len_t` y `Size_t`, en ese orden. `Signed_t` debe ir después de
-ambos y `Region_t` solo puede seguir a un parámetro `unique`. Un `buffer` solo
-acepta `Len_t`.
-
-También se rechazan estas llamadas:
+Debe escribirse:
 
 ```bg
-func consume(values: int32[], length: Len_t, size: Size_t) void:
-    return
-
-func bad() int32:
-    values: int32[2] = {1, 2}
-    consume(values, 2, 4)  # los metadatos no son argumentos visibles
-    return 0
+func current(values: int32[]) usize:
+    return values.<len>
 ```
 
-Un array abierto necesita una longitud conocida o propagada. Una matriz debe
-conservar su forma exacta y no puede exceder tres dimensiones. `@unsafe` no
-permite omitir metadatos, cambiar la forma del array ni fabricar un
-`Region_t`.
+También se diagnostican `value.len`, miembros de compilador desconocidos y el
+uso de `.<len>` sobre escalares o punteros crudos. `.<size>` no aplica a
+`chain` ni `buffer`, y `.<region>` solo es una consulta simbólica de
+procedencia conocida.
+
+Los miembros de compilador son de solo lectura y no sustituyen a los campos
+de un tipo nominal.

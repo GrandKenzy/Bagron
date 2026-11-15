@@ -104,7 +104,7 @@ class OperatorExpressionMixin:
             elif parameter.is_length:
                 if attribute_name is None:
                     raise FunctionEmissionError(
-                        f'{method.name} requiere un atributo para Len_t'
+                        f'{method.name} requiere un atributo para .<len>'
                     )
                 try:
                     length = len(attribute_name.encode('ascii')) + 1

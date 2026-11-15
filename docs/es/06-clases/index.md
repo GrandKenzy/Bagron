@@ -49,7 +49,7 @@ estática: la hija llama explícitamente a `super.__init__` y los campos se
 aplanan en el layout.
 
 `__eq__() bool` controla una instancia usada como condición. Los hooks
-`__ongetter__` y `__onsetter__` reciben el nombre como `chain` y su `Len_t`;
+`__ongetter__` y `__onsetter__` reciben el nombre como `chain`;
 devuelven `1` para permitir el acceso y `0` para detenerlo. `@after` los mueve
 después de la operación.
 

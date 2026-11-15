@@ -30,5 +30,5 @@ extern windows "kernel32":
 
 Se admiten escalares, `void*`, punteros tipados, agregados compatibles y
 descriptores `opaque`. No se admiten parámetros por defecto, arrays, `chain`,
-`callptr`, `Null`, `Len_t`, `Size_t`, `Signed_t` ni `Region_t` en una firma
+`callptr`, `Null` ni miembros de compilador en una firma
 externa.

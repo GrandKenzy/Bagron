@@ -23,24 +23,8 @@ class AbiParameter:
         return self.kind == 'length'
 
     @property
-    def is_size(self) -> bool:
-        return False
-
-    @property
-    def is_signed(self) -> bool:
-        return False
-
-    @property
-    def is_region(self) -> bool:
-        return False
-
-    @property
     def length_of(self) -> str | None:
         return self.source_name if self.is_length else None
-
-    @property
-    def signed_of(self) -> None:
-        return None
 
 
 @dataclass(frozen=True)
@@ -115,8 +99,13 @@ def _children(node: object) -> list[object]:
 
 
 def _call_arguments(node: object) -> list[object]:
+    direct_children = [
+        nested
+        for child in _children(node)
+        for nested in (child if isinstance(child, list) else [child])
+    ]
     call = next(
-        (child for child in _children(node)
+        (child for child in direct_children
          if getattr(child, 'name', None) == 'CALL_SUFFIX'),
         None,
     )
@@ -138,9 +127,8 @@ def _identifier(node: object) -> str | None:
         if not children:
             return None
         current = children[0]
-    token = getattr(current, 'token', current)
-    token = getattr(token, 'token', token)
-    kind = getattr(token, 'name', None)
+    token = getattr(current, 'token', None)
+    kind = getattr(getattr(token, 'token', None), 'name', None)
     value = getattr(token, 'value', None)
     return str(value) if kind == 'IDENT' and value is not None else None
 

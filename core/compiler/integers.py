@@ -70,10 +70,14 @@ def extract_integer_directives(
             _validate_width(width)
         except TypeResolutionError as error:
             errors.append(f'{source}:{line_number}: {error}')
+            output.append('\n' if line.endswith('\n') else '')
+            continue
         if name in INTRINSIC_TYPES or name in {'Bint', 'fields', 'struct', 'mold'}:
             errors.append(
                 f'{source}:{line_number}: el nombre de tipo {name} esta reservado'
             )
+            output.append('\n' if line.endswith('\n') else '')
+            continue
         directives.append(IntegerDirective(kind, width, name, line_number))
         output.append('\n' if line.endswith('\n') else '')
     return (output if was_list else ''.join(output)), tuple(directives), tuple(errors)

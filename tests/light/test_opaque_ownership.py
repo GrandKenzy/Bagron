@@ -59,7 +59,7 @@ class OpaqueOwnershipTests(unittest.TestCase):
             _OPAQUE
             + 'func f(p: FD) void:\n    g: FD = p\n    return\n'
             'func main() int32:\n    return 0\n',
-            'borrowed; no puede transferirse',
+            'estado borrowed; solo un valor owned puede moverse',
         )
 
     # Marcador explicito @consume

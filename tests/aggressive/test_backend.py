@@ -147,24 +147,18 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_optimized_large_buffer_promotes_scalars(self):
         module = self.compile_source(
-            'func consume(data: char[2048], length: Len_t, '
-            'size: Size_t) usize:\n'
-            '    return length + size\n'
-            'func fill(input: char[2048], input_length: Len_t, '
-            'input_size: Size_t) usize:\n'
+            'func consume(data: char[2048]) usize:\n'
+            '    return data.<len> + data.<size>\n'
+            'func fill(input: char[2048]) usize:\n'
             '    output: char[2048]\n'
             '    output[0] = "A"\n'
-            '    return consume(output) + input_length + input_size\n',
+            '    return consume(output) + input.<len> + input.<size>\n',
             optimization_profile='prod',
         )
 
-        # The byte aggregate remains addressable, while scalar metadata is
-        # promoted to SSA even in the same function.
+        # The byte aggregate remains addressable while members are constants.
         self.assertIn('[2048 x i8]', module)
-        self.assertNotIn('length.addr', module)
-        self.assertNotIn('size.addr', module)
-        self.assertNotIn('input_length.addr', module)
-        self.assertNotIn('input_size.addr', module)
+        self.assertNotIn('__bg_len_data', module)
 
     def test_optimized_volatile_accesses_survive_ir_pipeline(self):
         module = self.compile_source(
@@ -231,7 +225,7 @@ class GlobalBackendTests(unittest.TestCase):
             '    text: chain = "A"\n'
             '    return text[0]\n'
             '@unsafe\n'
-            'func read_parameter(text: chain, length: Len_t) char:\n'
+            'func read_parameter(text: chain) char:\n'
             '    return text[0]\n'
         )
 
@@ -275,7 +269,7 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_fixed_array_parameters_publish_memory_contract(self):
         module = self.compile_source(
-            'func inspect(data: char[4], length: Len_t, size: Size_t) char:\n'
+            'func inspect(data: char[4]) char:\n'
             '    return data[0]\n',
             optimization_profile='prod',
         )
@@ -288,10 +282,10 @@ class GlobalBackendTests(unittest.TestCase):
 
     def test_prod_for_buffer_uses_one_loop_range_proof(self):
         source = (
-            'func sum(data: buffer[], length: Len_t) byte:\n'
+            'func sum(data: buffer[]) byte:\n'
             '    total: byte = 0\n'
             '    index: usize = 0\n'
-            '    while index < length:\n'
+            '    while index < data.<len>:\n'
             '        total += data[index]\n'
             '        index += 1\n'
             '    return total\n'
@@ -305,17 +299,17 @@ class GlobalBackendTests(unittest.TestCase):
     def test_prod_for_buffer_keeps_check_after_index_reassignment(self):
         module = self.compile_source(
             '@unsafe\n'
-            'func unsafe_sum(data: buffer[], length: Len_t) byte:\n'
+            'func unsafe_sum(data: buffer[]) byte:\n'
             '    total: byte = 0\n'
             '    index: usize = 0\n'
-            '    while index < length:\n'
-            '        index = length + 1\n'
+            '    while index < data.<len>:\n'
+            '        index = data.<len> + 1\n'
             '        total += data[index]\n'
             '    return total\n',
             optimization_profile='prod',
         )
 
-        self.assertIn('buffer.index.valid.', module)
+        self.assertIn('llvm.trap', module)
 
     def test_builds_and_runs_local_char_and_byte(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -55,12 +55,9 @@ class FunctionSemanticTests(unittest.TestCase):
         self.assertIsNone(function.scope.resolve('nested'))  # type: ignore[union-attr]
         self.assertIs(function.scope.resolve('base'), compiler.storage.namespace['base'])
 
-    def test_unique_requires_region_and_emits_noalias_for_arrays(self):
+    def test_unique_arrays_emit_noalias_without_region_parameters(self):
         source = (
-            'func consume(left: unique int32[], left_len: Len_t, '
-            'left_size: Size_t, left_region: Region_t, '
-            'right: unique int32[], right_len: Len_t, '
-            'right_size: Size_t, right_region: Region_t) void:\n'
+            'func consume(left: unique int32[], right: unique int32[]) void:\n'
             '    return\n'
         )
         directory = tempfile.TemporaryDirectory()
@@ -79,51 +76,12 @@ class FunctionSemanticTests(unittest.TestCase):
         ir_path = compiler.compile(path, executable=False)
         parameters = compiler.storage.functions['consume'].signature.parameters
         self.assertTrue(parameters[0].is_unique)
-        self.assertTrue(parameters[3].is_region)
         self.assertIn('noalias', Path(ir_path).read_text(encoding='utf-8'))
 
-    def test_signed_t_expands_to_zero_for_signed_and_one_for_unsigned_arrays(self):
-        source = (
-            'func signed_data(data: int32[2], length: Len_t, '
-            'size: Size_t, sign_flag: Signed_t) void:\n'
-            '    return\n'
-            'func unsigned_data(data: uint32[2], length: Len_t, '
-            'size: Size_t, sign_flag: Signed_t) void:\n'
-            '    return\n'
-        )
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        path = Path(directory.name) / '_main.bg'
-        path.write_text(
-            source
-            + '\nfunc main() int32:\n'
-            + '    signed_values: int32[2] = {1, 2}\n'
-            + '    unsigned_values: uint32[2] = {3, 4}\n'
-            + '    signed_data(signed_values)\n'
-            + '    unsigned_data(unsigned_values)\n'
-            + '    return 0\n',
-            encoding='utf-8',
-        )
-
-        ir_path = Compiler().compile(path, executable=False)
-        module = Path(ir_path).read_text(encoding='utf-8')
-
-        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_signed_data_[^"\s]*"?\([^)]*i64 0\)')
-        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_unsigned_data_[^"\s]*"?\([^)]*i64 1\)')
-
-    def test_unique_rejects_same_storage_and_missing_region(self):
-        with self.assertRaisesRegex(CompilationError, 'debe declarar Region_t'):
+    def test_unique_rejects_same_storage(self):
+        with self.assertRaisesRegex(CompilationError, 'solapa los prestamos unique'):
             self.compile_source(
-                'func bad(data: unique int32[], length: Len_t, size: Size_t) void:\n'
-                '    return\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'solapa las regiones unique'):
-            self.compile_source(
-                'func bad(left: unique int32[], left_len: Len_t, '
-                'left_size: Size_t, left_region: Region_t, '
-                'right: unique int32[], right_len: Len_t, '
-                'right_size: Size_t, right_region: Region_t) void:\n'
+                'func bad(left: unique int32[], right: unique int32[]) void:\n'
                 '    return\n'
                 '\n'
                 'func caller() int32:\n'
@@ -132,14 +90,12 @@ class FunctionSemanticTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_unique_parameter_can_forward_its_region(self):
+    def test_unique_parameter_can_be_forwarded(self):
         compiler = self.compile_source(
-            'func inner(data: unique int32[], length: Len_t, size: Size_t, '
-            'region: Region_t) void:\n'
+            'func inner(data: unique int32[]) void:\n'
             '    return\n'
             '\n'
-            'func outer(data: unique int32[], length: Len_t, size: Size_t, '
-            'region: Region_t) void:\n'
+            'func outer(data: unique int32[]) void:\n'
             '    inner(data)\n'
             '    return\n'
         )
@@ -149,8 +105,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_ordinary_array_aliasing_remains_legal(self):
         self.compile_source(
-            'func consume(left: int32[], left_len: Len_t, left_size: Size_t, '
-            'right: int32[], right_len: Len_t, right_size: Size_t) void:\n'
+            'func consume(left: int32[], right: int32[]) void:\n'
             '    return\n'
             '\n'
             'func caller() int32:\n'
@@ -160,13 +115,12 @@ class FunctionSemanticTests(unittest.TestCase):
         )
 
     def test_unique_rejects_unknown_provenance_from_ordinary_parameter(self):
-        with self.assertRaisesRegex(CompilationError, 'no puede demostrar la Region_t'):
+        with self.assertRaisesRegex(CompilationError, 'no puede demostrar la region'):
             self.compile_source(
-                'func inner(data: unique int32[], length: Len_t, size: Size_t, '
-                'region: Region_t) void:\n'
+                'func inner(data: unique int32[]) void:\n'
                 '    return\n'
                 '\n'
-                'func outer(data: int32[], length: Len_t, size: Size_t) void:\n'
+                'func outer(data: int32[]) void:\n'
                 '    inner(data)\n'
                 '    return\n'
             )
@@ -329,12 +283,12 @@ class FunctionSemanticTests(unittest.TestCase):
                 'public func bad() void: pass\n'
             )
 
-    def test_len_t_is_injected_for_a_concrete_array(self):
+    def test_open_array_length_is_added_to_the_runtime_abi(self):
         source = (
             "clause Optimizations 'dev'\n"
             "clause Arch 'x86'\n"
-            'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
-            '    return\n'
+            'func consume(buffer: char[]) usize:\n'
+            '    return buffer.<len>\n'
         )
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -349,17 +303,16 @@ class FunctionSemanticTests(unittest.TestCase):
         )
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
-        metadata = compiler.storage.functions['consume'].signature.parameters
-        self.assertEqual('usize', metadata[1].type_spec.name)
-        self.assertEqual(32, metadata[1].type_spec.bit_width)
+        parameters = compiler.storage.functions['consume'].signature.parameters
+        self.assertEqual(['buffer'], [parameter.name for parameter in parameters])
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call void @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i32 16, i32 1\)')
+        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i32 16\)')
 
-    def test_len_t_is_injected_for_a_static_chain(self):
+    def test_chain_length_is_added_when_the_body_reads_it(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func consume(text: chain, length: Len_t) usize:\n'
-            '    return length\n'
+            'func consume(text: chain) usize:\n'
+            '    return text.<len>\n'
         )
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -377,11 +330,11 @@ class FunctionSemanticTests(unittest.TestCase):
         module = Path(ir_path).read_text(encoding='utf-8')
         self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i64 5\)')
 
-    def test_len_t_can_be_forwarded_for_a_chain_parameter(self):
+    def test_chain_length_is_forwarded_for_a_chain_parameter(self):
         source = (
-            'func consume(text: chain, length: Len_t) usize:\n'
-            '    return length\n'
-            'func relay(text: chain, length: Len_t) usize:\n'
+            'func consume(text: chain) usize:\n'
+            '    return text.<len>\n'
+            'func relay(text: chain) usize:\n'
             '    return consume(text)\n'
         )
         directory = tempfile.TemporaryDirectory()
@@ -397,49 +350,32 @@ class FunctionSemanticTests(unittest.TestCase):
         )
         Compiler().compile(path, executable=False)
 
-    def test_len_t_rejects_an_unknown_chain_length(self):
-        with self.assertRaisesRegex(CompilationError, 'chain.*Len_t'):
+    def test_legacy_expansion_types_are_rejected(self):
+        for legacy_type in ('Len_t', 'Size_t', 'Signed_t', 'Region_t'):
+            with self.subTest(legacy_type=legacy_type):
+                with self.assertRaisesRegex(CompilationError, 'fue retirado'):
+                    self.compile_source(
+                        f'func consume(value: int32, legacy: {legacy_type}) void:\n'
+                        '    return\n'
+                    )
+
+    def test_array_parameters_need_no_source_metadata(self):
+        self.compile_source(
+            'func consume(buffer: char[]) void:\n'
+            '    return\n'
+        )
+
+    def test_fixed_array_parameters_need_no_source_metadata(self):
+        self.compile_source(
+            'func consume(buffer: char[4]) void:\n'
+            '    return\n'
+        )
+
+    def test_legacy_expansion_parameter_is_not_a_compatibility_alias(self):
+        with self.assertRaisesRegex(CompilationError, 'Len_t fue retirado'):
             self.compile_source(
                 'func consume(text: chain, length: Len_t) usize:\n'
                 '    return length\n'
-                'func relay(text: chain) usize:\n'
-                '    return consume(text)\n'
-            )
-
-    def test_safe_array_parameter_requires_len_t(self):
-        with self.assertRaisesRegex(CompilationError, r'Len_t.*longitud'):
-            self.compile_source(
-                'func consume(buffer: char[]) void:\n'
-                '    return\n'
-            )
-
-    def test_array_parameter_requires_size_t_after_len_t(self):
-        with self.assertRaisesRegex(CompilationError, r'Size_t.*tamano'):
-            self.compile_source(
-                'func consume(buffer: char[], long: Len_t) void:\n'
-                '    return\n'
-            )
-
-    def test_fixed_array_parameter_requires_both_metadata_types(self):
-        with self.assertRaisesRegex(CompilationError, r'Len_t.*Size_t'):
-            self.compile_source(
-                'func consume(buffer: char[4]) void:\n'
-                '    return\n'
-            )
-
-    def test_unsafe_array_parameter_also_requires_both_metadata_types(self):
-        with self.assertRaisesRegex(CompilationError, r'Len_t.*Size_t'):
-            self.compile_source(
-                '@unsafe\n'
-                'func consume(buffer: char[]) void:\n'
-                '    return\n'
-            )
-
-    def test_array_metadata_must_be_ordered_len_then_size(self):
-        with self.assertRaisesRegex(CompilationError, r'Len_t antes de Size_t'):
-            self.compile_source(
-                'func consume(buffer: char[], size: Size_t, long: Len_t) void:\n'
-                '    return\n'
             )
 
     def test_matrix_parameters_require_all_dimensions(self):
@@ -450,8 +386,7 @@ class FunctionSemanticTests(unittest.TestCase):
                     'debe declarar todas sus dimensiones',
                 ):
                     self.compile_source(
-                        f'func consume(data: {matrix_type}, rows: Len_t, '
-                        'row_size: Size_t) void:\n'
+                        f'func consume(data: {matrix_type}) void:\n'
                         '    return\n'
                     )
 
@@ -463,8 +398,7 @@ class FunctionSemanticTests(unittest.TestCase):
                     'debe declarar todas sus dimensiones',
                 ):
                     self.compile_source(
-                        f'@unsafe\nfunc consume(data: {matrix_type}, '
-                        'rows: Len_t, row_size: Size_t) void:\n'
+                        f'@unsafe\nfunc consume(data: {matrix_type}) void:\n'
                         '    return\n'
                     )
 
@@ -479,15 +413,14 @@ class FunctionSemanticTests(unittest.TestCase):
     def test_matrices_are_limited_to_three_dimensions(self):
         with self.assertRaisesRegex(CompilationError, 'hasta tres dimensiones'):
             self.compile_source(
-                'func consume(data: int32[2][3][4][5], depth: Len_t, '
-                'block_size: Size_t) void:\n'
+                'func consume(data: int32[2][3][4][5]) void:\n'
                 '    return\n'
             )
 
     def test_fixed_matrix_parameter_is_a_reference_with_full_shape(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func mutate(data: int32[2][3], rows: Len_t, row_size: Size_t) void:\n'
+            'func mutate(data: int32[2][3]) void:\n'
             '    data[0][0] = 99\n'
             '    return\n'
         )
@@ -509,15 +442,11 @@ class FunctionSemanticTests(unittest.TestCase):
             module,
             r'define void @"?__bg_[^"\s]*_mutate_[^"\s]*"?\(\[2 x \[3 x i32\]\]\*',
         )
-        self.assertRegex(
-            module,
-            r'call void @"?__bg_[^"\s]*_mutate_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 12\)',
-        )
 
     def test_fixed_one_dimensional_array_parameter_is_a_reference(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func mutate(data: int32[3], length: Len_t, size: Size_t) void:\n'
+            'func mutate(data: int32[3]) void:\n'
             '    data[1] = 77\n'
             '    return\n'
         )
@@ -540,8 +469,8 @@ class FunctionSemanticTests(unittest.TestCase):
     def test_three_dimensional_matrix_size_is_the_outer_element_size(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func inspect(data: int16[2][3][4], depth: Len_t, size: Size_t) usize:\n'
-            '    return size\n'
+            'func inspect(data: int16[2][3][4]) usize:\n'
+            '    return data.<size>\n'
         )
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -561,19 +490,14 @@ class FunctionSemanticTests(unittest.TestCase):
             module,
             r'define i64 @"?__bg_[^"\s]*_inspect_[^"\s]*"?\(\[2 x \[3 x \[4 x i16\]\]\]\*',
         )
-        self.assertRegex(
-            module,
-            r'call i64 @"?__bg_[^"\s]*_inspect_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 24\)',
-        )
+        self.assertIn('ret i64 24', module)
 
-    def test_three_dimensional_shape_and_metadata_survive_forwarding(self):
+    def test_three_dimensional_shape_and_size_member_survive_forwarding(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func sink(data: int32[2][3][4], depth: Len_t, block_size: Size_t) usize:\n'
-            '    if depth != 2:\n'
-            '        return 100\n'
-            '    return block_size\n'
-            'func forward(data: int32[2][3][4], depth: Len_t, block_size: Size_t) usize:\n'
+            'func sink(data: int32[2][3][4]) usize:\n'
+            '    return data.<size>\n'
+            'func forward(data: int32[2][3][4]) usize:\n'
             '    return sink(data)\n'
         )
         directory = tempfile.TemporaryDirectory()
@@ -593,20 +517,11 @@ class FunctionSemanticTests(unittest.TestCase):
         signature = '[2 x [3 x [4 x i32]]]*'
         self.assertRegex(module, rf'define i64 @"?__bg_[^"\s]*_sink_[^"\s]*"?\({re.escape(signature)}')
         self.assertRegex(module, rf'define i64 @"?__bg_[^"\s]*_forward_[^"\s]*"?\({re.escape(signature)}')
-        self.assertRegex(
-            module,
-            r'call i64 @"?__bg_[^"\s]*_sink_[^"\s]*"?\([^)]*i64 %"[^\"]+", i64 %"[^\"]+"\)',
-        )
-        self.assertRegex(
-            module,
-            r'call i64 @"?__bg_[^"\s]*_forward_[^"\s]*"?\([^)]*i\d+ 2, i\d+ 48\)',
-        )
 
     def test_matrix_argument_requires_the_exact_shape(self):
         with self.assertRaisesRegex(CompilationError, 'no coincide'):
             self.compile_source(
-                'func consume(data: int32[2][3], rows: Len_t, '
-                'row_size: Size_t) void:\n'
+                'func consume(data: int32[2][3]) void:\n'
                 '    return\n'
                 'func bad() int32:\n'
                 '    matrix: int32[2][4] = {{1, 2, 3, 4}, {5, 6, 7, 8}}\n'
@@ -617,8 +532,7 @@ class FunctionSemanticTests(unittest.TestCase):
     def test_array_reference_rejects_literal_arguments(self):
         with self.assertRaisesRegex(CompilationError, 'almacenamiento propio'):
             self.compile_source(
-                'func consume(data: int32[3], rows: Len_t, '
-                'row_size: Size_t) void:\n'
+                'func consume(data: int32[3]) void:\n'
                 '    return\n'
                 'func bad() int32:\n'
                 '    consume({1, 2, 3})\n'
@@ -627,8 +541,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
     def test_matrix_constness_is_strict_at_call_boundaries(self):
         self.compile_source(
-            'func read(data: const int32[2][3], rows: Len_t, '
-            'row_size: Size_t) int32:\n'
+            'func read(data: const int32[2][3]) int32:\n'
             '    return data[0][0]\n'
             'func use() int32:\n'
             '    matrix: int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
@@ -637,8 +550,7 @@ class FunctionSemanticTests(unittest.TestCase):
 
         with self.assertRaisesRegex(CompilationError, 'no coincide'):
             self.compile_source(
-                'func write(data: int32[2][3], rows: Len_t, '
-                'row_size: Size_t) void:\n'
+                'func write(data: int32[2][3]) void:\n'
                 '    return\n'
                 'func bad() int32:\n'
                 '    matrix: const int32[2][3] = {{1, 2, 3}, {4, 5, 6}}\n'
@@ -660,11 +572,11 @@ class FunctionSemanticTests(unittest.TestCase):
                         '    return 0\n'
                     )
 
-    def test_size_t_is_injected_for_a_scalar(self):
+    def test_scalar_size_member_uses_the_abi_size(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func consume(value: int32, size: Size_t) usize:\n'
-            '    return size\n'
+            'func consume(value: int32) usize:\n'
+            '    return value.<size>\n'
         )
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -679,13 +591,13 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(i32 10, i64 4\)')
+        self.assertIn('ret i64 4', module)
 
-    def test_size_t_is_injected_as_array_element_bytes(self):
+    def test_array_size_member_uses_outer_element_bytes(self):
         source = (
             "clause Optimizations 'dev'\n"
-            'func consume(values: int32[], long: Len_t, size: Size_t) usize:\n'
-            '    return size\n'
+            'func consume(values: int32[]) usize:\n'
+            '    return values.<size>\n'
         )
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -701,39 +613,23 @@ class FunctionSemanticTests(unittest.TestCase):
         compiler = Compiler()
         ir_path = compiler.compile(path, executable=False)
         module = Path(ir_path).read_text(encoding='utf-8')
-        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\([^)]*i64 4\)')
+        self.assertIn('ret i64 4', module)
 
-    def test_expansion_parameters_cannot_be_const_or_pointers(self):
-        with self.assertRaisesRegex(CompilationError, 'Len_t ya es inmutable'):
+    def test_len_member_rejects_a_scalar_source(self):
+        with self.assertRaisesRegex(CompilationError, r'<len> solo aplica'):
             self.compile_source(
-                'func bad(values: char[], long: const Len_t) void:\n'
-                '    return\n'
-            )
-
-        with self.assertRaisesRegex(CompilationError, 'Len_t.*punteros'):
-            self.compile_source(
-                'func bad(values: char[], long *: Len_t) void:\n'
-                '    return\n'
-            )
-
-    def test_len_t_rejects_a_scalar_source(self):
-        with self.assertRaisesRegex(CompilationError, r'char\[\]|Len_t'):
-            self.compile_source(
-                'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
-                '    return\n'
-                'func bad() int32:\n'
+                'func bad() usize:\n'
                 '    letter: char = "A"\n'
-                '    consume(letter)\n'
-                '    return 0\n'
+                '    return letter.<len>\n'
             )
 
-    def test_array_metadata_can_be_forwarded_between_strict_parameters(self):
+    def test_open_array_length_is_forwarded_between_parameters(self):
         self.compile_source(
-            'func consume(buffer: char[], long: Len_t, size: Size_t) void:\n'
-            '    return\n'
-            'func relay(buffer: char[], long: Len_t, size: Size_t) void:\n'
+            'func consume(buffer: char[]) usize:\n'
+            '    return buffer.<len>\n'
+            'func relay(buffer: char[]) usize:\n'
             '    consume(buffer)\n'
-            '    return\n'
+            '    return buffer.<len>\n'
         )
 
     def test_void_function_accepts_empty_return(self):

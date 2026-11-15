@@ -16,5 +16,5 @@ un parámetro.
 
 Si el compilador no encuentra la biblioteca, revisa primero el target, el
 dominio, el nombre normalizado y los directorios `#link` del módulo de entrada.
-Si encuentra la biblioteca pero rechaza la firma, sustituye tipos de metadatos
-(`Len_t`, `Size_t`, etc.) por escalares ABI explícitos como `uint64`.
+Si encuentra la biblioteca pero rechaza la firma, usa escalares ABI explícitos
+como `uint64` en lugar de datos derivados del compilador.

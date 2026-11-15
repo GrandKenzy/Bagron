@@ -1,35 +1,20 @@
-# 04. `Signed_t` y tamaños
+# 04. Tamaños
 
-`Signed_t` es opcional y debe ir después de `Len_t` y `Size_t` cuando se usa
-con un array:
-
-```bg
-func classify(
-    values: int32[],
-    length: Len_t,
-    element_size: Size_t,
-    signed: Signed_t
-) int32:
-    if signed == 0:
-        return 1
-    return 0
-```
-
-El compilador suministra `0` para tipos signed y `1` para tipos unsigned o
-`byte`. En una matriz, el indicador describe el tipo de los elementos, no cada
-dimensión.
-
-`Size_t` también puede solicitarse para un escalar:
+La API actual no usa `Len_t`, `Size_t` ni `Signed_t` en las firmas. El tamaño
+se consulta en el valor que lo origina:
 
 ```bg
-func bytes_of(value: int32, size: Size_t) usize:
-    return size
+func bytes_of(value: int32) usize:
+    return value.<size>
+
+func element_bytes(values: uint16[4][3]) usize:
+    return values.<size>
 ```
 
-En ese caso el tamaño es el de `int32`. No declares `Len_t` para un escalar:
-la longitud solo pertenece a `array`, `buffer[]` o `chain`.
+`.<size>` devuelve el tamaño ABI del escalar. En una matriz devuelve el tamaño
+del elemento de la primera dimensión; en el ejemplo de `uint16[4][3]` es `6`.
+Los tipos enteros definidos por `#defint` y `#defuint` siguen las reglas de
+tamaño de LLVM.
 
-En una llamada, `Len_t` se completa automáticamente cuando el compilador
-conoce la longitud del array, del buffer o del `chain`. Si la longitud llega
-desde otro parámetro, la función intermediaria debe conservar y reenviar ese
-`Len_t`; no se calcula leyendo memoria ni se acepta una longitud inventada.
+La signedness ya pertenece al tipo. No hace falta transportarla como un valor
+auxiliar.

@@ -47,17 +47,17 @@ class ChainCharArrayConversionTests(unittest.TestCase):
             directory.cleanup()
         self.assertEqual(0, result.returncode)
 
-    def test_chain_literal_is_adapted_with_length_and_element_size(self):
+    def test_chain_literal_is_adapted_with_compiler_members(self):
         source = (
             '@unsafe\n'
-            'func write(buffer: char[], length: Len_t, size: Size_t) int32:\n'
-            '    if length == 1:\n'
-            '        if size != 1:\n'
+            'func write(buffer: char[]) int32:\n'
+            '    if buffer.<len> == 1:\n'
+            '        if buffer.<size> != 1:\n'
             '            return 1\n'
             '        return 0\n'
-            '    if length != 5:\n'
+            '    if buffer.<len> != 5:\n'
             '        return 2\n'
-            '    if size != 1:\n'
+            '    if buffer.<size> != 1:\n'
             '        return 3\n'
             '    expected: char = "h"\n'
             '    if buffer[0] != expected:\n'

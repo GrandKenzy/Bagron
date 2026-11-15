@@ -9,11 +9,11 @@ probar una característica y partir de ahí.
 | Archivo | Tema |
 | --- | --- |
 | `01_basico.bg` | variables, constantes, funciones, operadores y condiciones |
-| `02_tipos_y_arrays.bg` | tipos intrínsecos, `chain`, arrays y metadatos |
+| `02_tipos_y_arrays.bg` | tipos intrínsecos, `chain`, arrays y miembros `.<len>`/`.<size>` |
 | `03_bucles.bg` | `for ran`, `for in`, `while`, `break`, `continue` y lógica |
 | `04_agregados.bg` | `enum`, `struct`, `mold`, `flags` y layouts |
 | `05_punteros.bg` | direcciones, desreferenciación, `Null` y `@unsafe` |
-| `06_buffer.bg` | buffers dinámicos, concatenación, `Len_t` y `Del` |
+| `06_buffer.bg` | buffers dinámicos, concatenación, `.<len>` y `Del` |
 | `07_clases.bg` | clases, métodos, herencia, `@static`, `@frozen` y hooks |
 | `08_modulos/` | imports por namespace, alias y selección de símbolos |
 | `09_preprocesador.bg` | cláusulas de destino y preprocesador condicional |

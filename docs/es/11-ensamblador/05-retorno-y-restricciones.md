@@ -60,4 +60,4 @@ public func exit(code: int32) Never:
 
 1. **Tipos de retorno ASM:** Una función ASM con resultado debe retornar un entero escalar. No se permiten arrays, punteros ni estructuras.
 2. **Prohibición de `ret`:** El cuerpo ASM no puede contener instrucciones `ret` o `retq`, ya que entrarían en conflicto con el retorno ABI generado por el compilador.
-3. **Parámetros:** Los parámetros de una función ASM no pueden ser arrays. Los tipos expansivos (`Len_t`, `Size_t`, `Signed_t`, `Region_t`), `chain` y agregados no son una interfaz de registros soportada por esta fase; usa enteros escalares de 8 a 64 bits o punteros explícitos.
+3. **Parámetros:** Los parámetros de una función ASM no pueden ser arrays. Los miembros derivados de compilador, `chain` y agregados no son una interfaz de registros soportada por esta fase; usa enteros escalares de 8 a 64 bits o punteros explícitos.

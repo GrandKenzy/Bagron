@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from core.frontend.objects import AggregateSymbol, OpaqueSymbol, TypeSpec, ValueInfo, Variable
+from core.frontend.objects import (
+    AggregateSymbol,
+    OpaqueSymbol,
+    TypeSpec,
+    ValueInfo,
+    Variable,
+)
 
 
 OWNED = 'owned'
@@ -151,6 +157,9 @@ def state_for_value(
     key = _place_key(root, path)
     if key in states:
         return states[key]
+    initial = initial_state(root)
+    if initial is not None:
+        return initial
     return BORROWED if getattr(root, 'scope_kind', None) == 'parameter' else OWNED
 
 
@@ -324,67 +333,28 @@ def consume_opaque_argument(
     return None
 
 
-def transfer_opaque(
-    function: object | None,
-    target: object | None,
-    source: object,
-    namespace: Callable[[str], object | None],
-) -> str | None:
-    """Move an owned opaque descriptor into ``target`` on copy or assignment.
-
-    A descriptor is a unique handle: copying it would leave two owners able to
-    close the same resource.  The source becomes ``moved`` and ``target``
-    becomes ``owned``.  Values that are not a named binding (for example call
-    results) are fresh handles and only make ``target`` owned.
-    """
-    if not is_opaque_symbol(target):
-        return None
-    name = getattr(source, 'identifier', None)
-    origin = namespace(name) if name else None
-    if origin is None or not is_opaque_symbol(origin):
-        set_state(function, target, OWNED)
-        return None
-    if origin is target:
-        return None
-    if getattr(origin, 'scope_kind', None) == 'global':
-        return (
-            f'El descriptor global {origin.name} no puede transferirse: su '
-            'propiedad no es local a la funcion'
-        )
-    state = state_for(function, origin)
-    if state == BORROWED:
-        return (
-            f'El descriptor {origin.name} es borrowed; no puede transferirse '
-            'a otra variable'
-        )
-    if state != OWNED:
-        return (
-            f'El descriptor {origin.name} esta en estado '
-            f'{state or "desconocido"}; solo un descriptor owned puede '
-            'transferirse'
-        )
-    set_state(function, origin, MOVED)
-    set_state(function, target, OWNED)
-    return None
-
-
-def snapshot(function: object, symbols: Mapping[str, object]) -> dict[int, str]:
+def snapshot(function: object, symbols: Mapping[str, object]) -> dict[object, str]:
     """Capture the states of all visible resource bindings in a path."""
     captured = dict(getattr(function, 'buffer_states', {}))
-    captured.update({
-        id(symbol): state_for(function, symbol)
-        for symbol in symbols.values()
-        if is_resource_symbol(symbol)
-    })
+    for symbol in symbols.values():
+        if is_resource_symbol(symbol):
+            captured[id(symbol)] = state_for(function, symbol)
+        type_spec = getattr(symbol, 'type_spec', None)
+        if type_spec is None:
+            continue
+        for path, _ in _resource_paths(getattr(function, 'scope', None), type_spec):
+            captured[_place_key(symbol, path)] = _state_for_resource_path(
+                function, symbol, path
+            )
     return captured
 
 
-def restore(function: object, states: Mapping[int, str]) -> None:
+def restore(function: object, states: Mapping[object, str]) -> None:
     """Restore one path before visiting another control-flow branch."""
     function.buffer_states = dict(states)
 
 
-def merge(function: object, snapshots: list[Mapping[int, str]]) -> None:
+def merge(function: object, snapshots: list[Mapping[object, str]]) -> None:
     """Merge paths conservatively without introducing a runtime state.
 
     A resource consumed on every path keeps that state.  When it is consumed on
@@ -393,7 +363,7 @@ def merge(function: object, snapshots: list[Mapping[int, str]]) -> None:
     ``owned`` and ``borrowed`` only differ for parameters, which cannot become
     owned in the current language, so equal live states are preserved.
     """
-    merged: dict[int, str] = {}
+    merged: dict[object, str] = {}
     keys = set().union(*(states.keys() for states in snapshots))
     for key in keys:
         values = [states[key] for states in snapshots if key in states]
@@ -579,6 +549,9 @@ def _state_for_resource_path(
     state = states.get(_place_key(symbol, path))
     if state is not None:
         return state
+    initial = initial_state(symbol)
+    if initial is not None:
+        return initial
     return BORROWED if getattr(symbol, 'scope_kind', None) == 'parameter' else OWNED
 
 

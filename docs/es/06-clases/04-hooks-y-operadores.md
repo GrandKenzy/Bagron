@@ -11,15 +11,15 @@ class Box:
     func __eq__(other: Box) bool:
         return self.value == other.value
 
-    func __ongetter__(name: chain, length: Len_t) int32:
+    func __ongetter__(name: chain) int32:
         return 1
 
-    func __onsetter__(name: chain, length: Len_t) int32:
+    func __onsetter__(name: chain) int32:
         return 1
 ```
 
 `__eq__() bool` define la igualdad de instancias. `__ongetter__` y
-`__onsetter__` reciben el nombre como `chain` y su `Len_t`; devuelven `1` para
+`__onsetter__` reciben el nombre como `chain`; devuelven `1` para
 permitir el acceso y `0` para detenerlo. `@after` hace que el hook se ejecute
 después de la operación en lugar de antes.
 

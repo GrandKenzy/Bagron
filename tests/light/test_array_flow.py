@@ -96,7 +96,7 @@ class FixedArrayFlowTests(unittest.TestCase):
 
     def test_fixed_array_parameters_are_not_local_write_candidates(self):
         compiler = self.compile_source(
-            'func inspect(data: int32[2], length: Len_t, size: Size_t) int32:\n'
+            'func inspect(data: int32[2]) int32:\n'
             '    return data[0]\n'
         )
         self.assertEqual(
@@ -106,7 +106,7 @@ class FixedArrayFlowTests(unittest.TestCase):
 
     def test_private_scratch_helper_proves_caller_array(self):
         compiler = self.compile_source(
-            'private func fill(data: int32[4], length: Len_t, size: Size_t) void:\n'
+            'private func fill(data: int32[4]) void:\n'
             '    data[0] = 10\n'
             '    data[1] = 20\n'
             '    data[2] = 30\n'
@@ -127,7 +127,7 @@ class FixedArrayFlowTests(unittest.TestCase):
 
     def test_private_input_helper_requires_initialized_array(self):
         compiler = self.compile_source(
-            'private func read_first(data: int32[4], length: Len_t, size: Size_t) int32:\n'
+            'private func read_first(data: int32[4]) int32:\n'
             '    return data[0]\n'
             'func caller() int32:\n'
             '    data: int32[4]\n'
@@ -164,7 +164,7 @@ class FixedArrayFlowTests(unittest.TestCase):
     def test_loop_recurrence_proves_scratch_schedule(self):
         compiler = self.compile_source(
             '@unsafe\n'
-            'private func schedule(data: uint32[64], length: Len_t, size: Size_t) void:\n'
+            'private func schedule(data: uint32[64]) void:\n'
             '    for i: uint32 ran (0, 16, 1):\n'
             '        data[i] = 1\n'
             '    for i: uint32 ran (16, 64, 1):\n'

@@ -30,11 +30,10 @@ class OwnershipBoundaryTests(unittest.TestCase):
 
     def test_ordinary_buffer_borrows_can_alias_and_mutate_without_transferring(self):
         compiler = self.compile_source(
-            'func touch(first: buffer[], first_length: Len_t, '
-            'second: buffer[], second_length: Len_t) void:\n'
-            '    if first_length > 0:\n'
+            'func touch(first: buffer[], second: buffer[]) void:\n'
+            '    if first.<len> > 0:\n'
             '        first[0] = 7\n'
-            '    if second_length > 0:\n'
+            '    if second.<len> > 0:\n'
             '        second[0] = 8\n'
             '    return\n'
             'func main() int32:\n'
@@ -47,35 +46,31 @@ class OwnershipBoundaryTests(unittest.TestCase):
 
     def test_unique_arguments_reject_same_region_twice(self):
         self.assert_compile_error(
-            'func split(left: unique buffer[], left_length: Len_t, '
-            'region_left: Region_t, right: unique buffer[], '
-            'right_length: Len_t, region_right: Region_t) void:\n'
+            'func split(left: unique buffer[], right: unique buffer[]) void:\n'
             '    return\n'
             'func main() int32:\n'
             '    data: buffer[4] = 0\n'
             '    split(data, data)\n'
             '    Del data\n'
             '    return 0\n',
-            'solapa las regiones unique',
+            'solapa los prestamos unique',
         )
 
     def test_unique_region_cannot_overlap_an_ordinary_argument(self):
         self.assert_compile_error(
-            'func split(left: unique buffer[], left_length: Len_t, '
-            'region: Region_t, right: buffer[], right_length: Len_t) void:\n'
+            'func split(left: unique buffer[], right: buffer[]) void:\n'
             '    return\n'
             'func main() int32:\n'
             '    data: buffer[4] = 0\n'
             '    split(data, data)\n'
             '    Del data\n'
             '    return 0\n',
-            'pasa right dentro de la Region_t unique de left',
+            'solapa right con el prestamo unique de left',
         )
 
     def test_unique_borrow_does_not_consume_the_callers_buffer(self):
         compiler = self.compile_source(
-            'func inspect(data: unique buffer[], length: Len_t, '
-            'region: Region_t) void:\n'
+            'func inspect(data: unique buffer[]) void:\n'
             '    return\n'
             'func main() int32:\n'
             '    data: buffer[4] = 0\n'

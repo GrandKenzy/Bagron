@@ -10,7 +10,6 @@ from core.frontend.abi import runtime_parameters
 from core.frontend.tools.types import (
     MAGIC_BINARY_OPERATORS,
     MAGIC_UNARY_OPERATORS,
-    SIGNED_INTEGER_TYPES,
 )
 
 from core.storage import Storage
@@ -261,36 +260,28 @@ class CallExpressionMixin:
 
         if not isinstance(value, str):
             raise FunctionEmissionError(
-                'Len_t requiere un chain constante con longitud conocida '
+                '.<len> requiere un chain constante con longitud conocida '
                 'en compilacion'
             )
         return len(value.encode('utf-8')) + 1
 
-    def _compile_forwarded_expansion(
+    def _compile_forwarded_length(
         self,
         argument: object,
         *,
-        is_length: bool,
         builder: ir.IRBuilder,
         values: dict[str, ir.Value],
     ) -> ir.Value | None:
         source_name = self._identifier(argument)
         if not source_name:
             return None
-        initializer_value = self._active_initializer_expansions.get(
-            (source_name, is_length)
-        )
-        if initializer_value is not None:
-            return initializer_value
         if self._active_function_symbol is None:
-            return None
-        if not is_length:
             return None
         pointer = values.get(f'__bg_len_{source_name}')
         if pointer is None:
             return None
-        # Len_t/Size_t parameters are emitted directly as immutable SSA
-        # arguments; older storage-backed values still use their alloca.
+        # Hidden lengths are emitted directly as immutable SSA arguments;
+        # older storage-backed values still use their alloca.
         if getattr(pointer, 'opname', None) == 'alloca':
             return builder.load(pointer)
         return pointer
@@ -308,9 +299,8 @@ class CallExpressionMixin:
                 self._compile_chain_length(argument),
             )
         if getattr(source_spec, 'name', None) == 'chain':
-            forwarded = self._compile_forwarded_expansion(
+            forwarded = self._compile_forwarded_length(
                 argument,
-                is_length=True,
                 builder=builder,
                 values=values,
             )
@@ -321,9 +311,8 @@ class CallExpressionMixin:
                 self._compile_chain_length(argument),
             )
         if getattr(source_spec, 'name', None) == 'buffer':
-            forwarded = self._compile_forwarded_expansion(
+            forwarded = self._compile_forwarded_length(
                 argument,
-                is_length=True,
                 builder=builder,
                 values=values,
             )
@@ -332,9 +321,8 @@ class CallExpressionMixin:
             descriptor = self._compile_expression(argument, builder, values)
             _, length = self._buffer_data_and_length(descriptor, builder)
             return length
-        forwarded = self._compile_forwarded_expansion(
+        forwarded = self._compile_forwarded_length(
             argument,
-            is_length=True,
             builder=builder,
             values=values,
         )
@@ -344,89 +332,9 @@ class CallExpressionMixin:
         pointee = address.type.pointee
         if not isinstance(pointee, ir.ArrayType):
             raise FunctionEmissionError(
-                'Len_t requiere un array con tamano conocido en compilacion'
+                '.<len> requiere un array con tamano conocido en compilacion'
             )
         return ir.Constant(self._size_integer_type(), pointee.count)
-
-    @staticmethod
-    def _llvm_type_size(value_type: ir.Type, pointer_size: int) -> int:
-        if isinstance(value_type, ir.ArrayType):
-            return value_type.count * CallExpressionMixin._llvm_type_size(
-                value_type.element,
-                pointer_size,
-            )
-        if isinstance(value_type, ir.IntType):
-            return max(1, (value_type.width + 7) // 8)
-        if isinstance(value_type, ir.HalfType):
-            return 2
-        if isinstance(value_type, ir.FloatType):
-            return 4
-        if isinstance(value_type, ir.DoubleType):
-            return 8
-        if isinstance(value_type, ir.PointerType):
-            return pointer_size
-        raise FunctionEmissionError(
-            f'No se puede determinar el tamano LLVM de {value_type}'
-        )
-
-    def _compile_array_element_size(
-        self,
-        argument: object,
-        source_type: ir.Type,
-        builder: ir.IRBuilder,
-        values: dict[str, ir.Value],
-    ) -> ir.Value:
-        address = self._compile_address(argument, builder, values)
-        pointee = address.type.pointee
-        if not isinstance(pointee, ir.ArrayType):
-            raise FunctionEmissionError(
-                'Size_t requiere un array con tipo de elemento conocido'
-            )
-        return ir.Constant(
-            self._size_integer_type(),
-            self._llvm_type_size(pointee.element, self._pointer_size),
-        )
-
-    def _compile_size_argument(
-        self,
-        argument: object,
-        source_type: ir.Type,
-        source_spec: object,
-        builder: ir.IRBuilder,
-        values: dict[str, ir.Value],
-    ) -> ir.Value:
-        if self._is_chain_array_argument(argument, source_spec):
-            return ir.Constant(self._size_integer_type(), 1)
-        if (
-            getattr(source_spec, 'array_depth', 0) > 0
-            and not getattr(source_spec, 'pointer_level', 0)
-        ):
-            forwarded = self._compile_forwarded_expansion(
-                argument,
-                is_length=False,
-                builder=builder,
-                values=values,
-            )
-            if forwarded is not None:
-                return forwarded
-            return self._compile_array_element_size(
-                argument,
-                source_type,
-                builder,
-                values,
-            )
-        return ir.Constant(
-            self._size_integer_type(),
-            self._llvm_type_size(source_type, self._pointer_size),
-        )
-
-    def _compile_signed_argument(self, source_spec: object) -> ir.Constant:
-        """Encode signedness as 0 for signed types and 1 otherwise."""
-        type_name = getattr(source_spec, 'name', None)
-        signed = getattr(source_spec, 'signed', None)
-        if signed is None:
-            signed = type_name in SIGNED_INTEGER_TYPES
-        return ir.Constant(self._size_integer_type(), 0 if signed else 1)
 
     @staticmethod
     def _visible_initializer_parameters(parameters: object) -> list[object]:
@@ -482,7 +390,6 @@ class CallExpressionMixin:
         previous_specs = self._active_specs
         previous_hook_suppression = self._suppress_magic_hooks
         self._active_specs = dict(initializer_specs)
-        self._active_initializer_expansions = {}
         self._suppress_magic_hooks = True
         try:
             parent_name = getattr(aggregate, 'parent_type', None)
@@ -570,7 +477,6 @@ class CallExpressionMixin:
             return result
         finally:
             self._active_specs = previous_specs
-            self._active_initializer_expansions = {}
             self._suppress_magic_hooks = previous_hook_suppression
 
     def _compile_constructor(
@@ -811,19 +717,6 @@ class CallExpressionMixin:
             parameter.name: parameter
             for parameter in visible_parameters
         }
-        source_llvm_indices: dict[str, int] = {}
-        source_llvm_index = 0
-        for index, parameter in enumerate(parameters):
-            if getattr(parameter, 'is_region', False):
-                continue
-            if not (
-                getattr(parameter, 'is_length', False)
-                or getattr(parameter, 'is_size', False)
-                or getattr(parameter, 'is_signed', False)
-                or getattr(parameter, 'is_receiver', False)
-            ):
-                source_llvm_indices[parameter.name] = source_llvm_index
-            source_llvm_index += 1
         argument_index = 0
         llvm_index = 0
         for parameter in parameters:
@@ -839,7 +732,7 @@ class CallExpressionMixin:
                 llvm_index += 1
                 continue
 
-            if parameter.is_length or parameter.is_size or parameter.is_signed:
+            if parameter.is_length:
                 source_name = parameter.length_of
                 source = source_arguments.get(source_name or '')
                 source_parameter = source_parameters.get(source_name or '')
@@ -851,41 +744,15 @@ class CallExpressionMixin:
                     raise FunctionEmissionError(
                         'La longitud ABI no tiene un parametro fuente asociado'
                     )
-                source_llvm_type = callee.args[
-                    source_llvm_indices[source_parameter.name]
-                ].type
-                if parameter.is_length:
-                    compiled.append(
-                        self._compile_length_argument(
-                            source,
-                            source_parameter.type_spec,
-                            builder,
-                            values,
-                        )
+                compiled.append(
+                    self._compile_length_argument(
+                        source,
+                        source_parameter.type_spec,
+                        builder,
+                        values,
                     )
-                elif parameter.is_size:
-                    compiled.append(
-                        self._compile_size_argument(
-                            source,
-                            source_llvm_type,
-                            source_parameter.type_spec,
-                            builder,
-                            values,
-                        )
-                    )
-                else:
-                    compiled.append(
-                        self._compile_signed_argument(
-                            source_parameter.type_spec,
-                        )
-                    )
+                )
                 llvm_index += 1
-                continue
-
-            if getattr(parameter, 'is_region', False):
-                # Region_t is immutable provenance metadata, not a runtime
-                # argument. Its source slot is materialized as a local zero
-                # only when the function body refers to the marker.
                 continue
 
             if argument_index >= len(argument_items):

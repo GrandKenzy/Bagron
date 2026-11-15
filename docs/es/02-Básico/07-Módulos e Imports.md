@@ -61,14 +61,13 @@ La declaración `global` ya no existe; los globals públicos mutables también
 se pueden leer y escribir directamente. Los globals privados siguen siendo
 inaccesibles desde otro módulo.
 
-El alias de una función conserva exactamente su firma original. Esto incluye
-los parámetros expansivos `Len_t` y `Size_t`, que el compilador sigue
-inyectando a partir del argumento real:
+El alias de una función conserva exactamente su firma original y sus miembros
+derivados:
 
 ```bg
 ; arrays.bg
-func total(values: int32[], length: Len_t, size: Size_t) int32:
-    return 0
+func total(values: int32[]) usize:
+    return values.<len>
 
 ; _main.bg
 import arrays as a
@@ -78,8 +77,8 @@ func main() int32:
     return a.total(values)
 ```
 
-En este ejemplo la llamada recibe internamente la longitud `3` y el tamaño de
-elemento `4`, sin que el código fuente tenga que escribirlos.
+En este ejemplo la llamada solo recibe `values`; la metadata necesaria queda
+oculta en el ABI.
 
 ## Resolución de archivos
 

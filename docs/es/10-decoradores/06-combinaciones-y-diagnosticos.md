@@ -50,5 +50,5 @@ contener métodos `@unsafe`, pero sus atributos siguen sujetos a la regla de
 inicialización.
 
 Los decoradores no sustituyen las comprobaciones de la firma. Por ejemplo,
-`@unsafe` no permite omitir `Len_t`/`Size_t` de un array, y `@recursive` no
+`@unsafe` no permite romper la forma de un array ni sus miembros derivados, y `@recursive` no
 autoriza devolver un puntero local.

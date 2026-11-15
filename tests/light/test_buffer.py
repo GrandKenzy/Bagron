@@ -61,8 +61,8 @@ class BufferTests(unittest.TestCase):
         self.assertIn('call void @"free"(i8*', module)
         self.assertIn('store %"__bagron_buffer" zeroinitializer', module)
 
-    def test_rejects_buffer_copy_and_function_boundaries(self):
-        with self.assertRaisesRegex(CompilationError, 'no puede copiar buffers'):
+    def test_rejects_buffer_overwrite_and_allows_plain_boundaries(self):
+        with self.assertRaisesRegex(CompilationError, 'ya posee un recurso'):
             self._compile(
                 'func main() int32:\n'
                 '    first: buffer[2] = 0\n'
@@ -71,19 +71,21 @@ class BufferTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'debe declarar Len_t'):
-            self._compile(
-                'func consume(data: buffer[4]) void:\n'
-                '    return\n'
-                'func main() int32:\n'
-                '    return 0\n'
-            )
+        self._compile(
+            'func consume(data: buffer[4]) void:\n'
+            '    return\n'
+            'func main() int32:\n'
+            '    data: buffer[4] = 0\n'
+            '    consume(data)\n'
+            '    Del data\n'
+            '    return 0\n'
+        )
 
-    def test_len_t_expands_buffer_length_and_forwards(self):
+    def test_buffer_length_comes_from_the_descriptor_and_forwards(self):
         module_path = self._compile(
-            'func consume(data: buffer[], length: Len_t) usize:\n'
-            '    return length\n'
-            'func relay(data: buffer[], length: Len_t) usize:\n'
+            'func consume(data: buffer[]) usize:\n'
+            '    return data.<len>\n'
+            'func relay(data: buffer[]) usize:\n'
             '    return consume(data)\n'
             'func main() int32:\n'
             '    data: buffer[4] = 0\n'
@@ -94,32 +96,31 @@ class BufferTests(unittest.TestCase):
         module = Path(module_path).read_text(encoding='utf-8')
         self.assertRegex(
             module,
-            r'define i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
+            r'define i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data"\)',
         )
         self.assertRegex(
             module,
-            r'define i64 @"?__bg_[^"\s]*_relay_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
+            r'define i64 @"?__bg_[^"\s]*_relay_[^"\s]*"?\(%"__bagron_buffer" %"data"\)',
         )
         self.assertRegex(
             module,
-            r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"\.\d+", '
-            r'i64 %"\.\d+"\)',
+            r'call i64 @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"\.\d+"\)',
         )
 
-    def test_buffer_len_t_is_borrowed_and_size_t_is_rejected(self):
+    def test_buffer_borrow_is_preserved_and_size_member_is_rejected(self):
         with self.assertRaisesRegex(CompilationError, 'no puede liberar un buffer'):
             self._compile(
-                'func consume(data: buffer[], length: Len_t) void:\n'
+                'func consume(data: buffer[]) void:\n'
                 '    Del data\n'
                 '    return\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'Size_t.*buffer'):
+        with self.assertRaisesRegex(CompilationError, '<size> no aplica a chain ni buffer'):
             self._compile(
-                'func consume(data: buffer[], length: Len_t, size: Size_t) void:\n'
-                '    return\n'
+                'func consume(data: buffer[]) usize:\n'
+                '    return data.<size>\n'
                 'func main() int32:\n'
                 '    return 0\n'
             )
@@ -164,10 +165,9 @@ class BufferTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-    def test_unique_buffer_requires_region_but_keeps_descriptor_abi(self):
+    def test_unique_buffer_keeps_the_descriptor_abi(self):
         module_path = self._compile(
-            'func consume(data: unique buffer[], length: Len_t, '
-            'region: Region_t) void:\n'
+            'func consume(data: unique buffer[]) void:\n'
             '    return\n'
             'func main() int32:\n'
             '    data: buffer[4] = 0\n'
@@ -178,7 +178,7 @@ class BufferTests(unittest.TestCase):
         module = Path(module_path).read_text(encoding='utf-8')
         self.assertRegex(
             module,
-            r'define void @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data", i64 %"length"\)',
+            r'define void @"?__bg_[^"\s]*_consume_[^"\s]*"?\(%"__bagron_buffer" %"data"\)',
         )
         header = next(
             line for line in module.splitlines()

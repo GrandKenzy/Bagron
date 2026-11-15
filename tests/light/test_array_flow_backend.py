@@ -70,7 +70,7 @@ class FixedArrayBackendTests(unittest.TestCase):
 
     def test_private_scratch_call_omits_caller_zero_initialization(self):
         ir = self.compile_source(
-            'private func fill(data: int32[4], length: Len_t, size: Size_t) void:\n'
+            'private func fill(data: int32[4]) void:\n'
             '    data[0] = 10\n'
             '    data[1] = 20\n'
             '    data[2] = 30\n'

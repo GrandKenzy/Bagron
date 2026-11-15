@@ -16,6 +16,8 @@
   scalar integer widths.
 - Fixed signedness preservation when a `#defuint` value is returned from a
   function and then compared or coerced.
+- Invalid integer directives no longer alter the intrinsic type set used by a
+  later compilation.
 
 ## Preprocessor
 
@@ -27,3 +29,17 @@
 
 - Removed `return asm`; `#assembler` blocks now use an implicit ABI return.
 - `void` and `Never` functions may omit an explicit `return`.
+
+## Compiler members and ownership
+
+- Replaced the source-level `Len_t`, `Size_t`, `Signed_t`, and `Region_t`
+  parameters with the read-only compiler members `.<len>`, `.<size>`, and
+  `.<region>`.
+- Compiler members derive array, chain, buffer, scalar, and aggregate metadata
+  from the value being inspected. Calls keep only their explicit source
+  arguments.
+- Added field-aware ownership tracking for resource-bearing aggregates. Unique
+  borrows distinguish disjoint struct fields, while moved or closed aggregate
+  resources remain invalid on every affected path.
+- Updated the compiled-library signature format so libraries built against the
+  retired metadata-parameter ABI are rejected and must be rebuilt.

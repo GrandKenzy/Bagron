@@ -17,7 +17,7 @@ class StaticArrayRangeTests(unittest.TestCase):
 
     def test_while_literal_bound_proves_fixed_array_index(self):
         self.compile_source(
-            'func sum(values: int32[4], length: Len_t, size: Size_t) int32:\n'
+            'func sum(values: int32[4]) int32:\n'
             '    index: uint32 = 0\n'
             '    total: int32 = 0\n'
             '    while index < 4:\n'
@@ -28,7 +28,7 @@ class StaticArrayRangeTests(unittest.TestCase):
 
     def test_numeric_for_bound_proves_fixed_array_index(self):
         self.compile_source(
-            'func sum(values: int32[4], length: Len_t, size: Size_t) int32:\n'
+            'func sum(values: int32[4]) int32:\n'
             '    total: int32 = 0\n'
             '    for index: uint32 ran (0, 4, 1):\n'
             '        total += values[index]\n'
@@ -70,7 +70,7 @@ class StaticArrayRangeTests(unittest.TestCase):
     def test_bound_larger_than_array_is_not_accepted(self):
         with self.assertRaisesRegex(CompilationError, 'indice dinamico'):
             self.compile_source(
-                'func bad(values: int32[4], length: Len_t, size: Size_t) int32:\n'
+                'func bad(values: int32[4]) int32:\n'
                 '    index: uint32 = 0\n'
                 '    while index < 5:\n'
                 '        return values[index]\n'
@@ -80,7 +80,7 @@ class StaticArrayRangeTests(unittest.TestCase):
     def test_index_write_before_access_invalidates_bound(self):
         with self.assertRaisesRegex(CompilationError, 'indice dinamico'):
             self.compile_source(
-                'func bad(values: int32[4], length: Len_t, size: Size_t) int32:\n'
+                'func bad(values: int32[4]) int32:\n'
                 '    index: uint32 = 0\n'
                 '    while index < 4:\n'
                 '        index += 1\n'

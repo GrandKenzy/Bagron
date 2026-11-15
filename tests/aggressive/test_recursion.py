@@ -89,8 +89,8 @@ class RecursionTests(unittest.TestCase):
     def test_buffer_frames_require_explicit_recursive_annotation(self):
         with self.assertRaisesRegex(CompilationError, '@recursive'):
             self.compile_source(
-                'func walk(data: buffer[], length: Len_t) int32:\n'
-                '    if length == 0:\n'
+                'func walk(data: buffer[]) int32:\n'
+                '    if data.<len> == 0:\n'
                 '        return 0\n'
                 '    return walk(data)\n'
                 'func main() int32:\n'
@@ -99,8 +99,8 @@ class RecursionTests(unittest.TestCase):
 
         self.compile_source(
             '@recursive\n'
-            'func walk(data: buffer[], length: Len_t) int32:\n'
-            '    if length == 0:\n'
+            'func walk(data: buffer[]) int32:\n'
+            '    if data.<len> == 0:\n'
             '        return 0\n'
             '    return walk(data)\n'
             'func main() int32:\n'

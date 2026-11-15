@@ -19,7 +19,7 @@ Puede llevar `public` o `private`; si se omite, es pública. La base es
 La base debe ser un entero escalar sin `const`. `byte` sí es válido como entero
 sin signo de 8 bits. No puede ser `bool`, `Bint(n)`, un puntero, un
 array, `buffer` ni un metatipo
-(`Len_t`, `Size_t`, `Signed_t` o `Region_t`).
+(`.<len>`, `.<size>` o `.<region>`).
 
 ## Secuencia de valores
 

@@ -277,7 +277,7 @@ result: int32 = (second) ; 7
 ```
 
 `unique` no modifica esta regla de punteros crudos. Solo aplica a parámetros de
-array y `buffer`, y requiere una `Region_t` demostrable; una dirección obtenida
+array y `buffer`, y requiere procedencia demostrable; una dirección obtenida
 de un puntero no puede proporcionar por sí sola ese contrato seguro.
 
 ## Indexación de punteros
@@ -294,8 +294,8 @@ func read_at(pointer *: int32, index: usize) int32:
 El compilador no puede demostrar que `index` apunta a un objeto válido. La
 indexación de un array fijo es diferente: el tipo contiene sus dimensiones y
 un índice literal puede comprobarse en una función segura. Un `T[]` de una
-firma conserva sus metadatos, pero un parámetro `T*` no tiene `Len_t` ni
-`Size_t` asociados.
+firma conserva su forma, pero un parámetro `T*` no tiene miembros de longitud
+o tamaño asociados.
 
 No existe aritmética implícita de punteros:
 
@@ -409,8 +409,8 @@ La forma antigua `extern "library":` ya no es válida después de migrar los
 usos internos; la gramática la reconoce solo para emitir un diagnóstico claro.
 
 Una firma `extern` puede usar punteros a escalares, `void` y agregados
-compatibles con la ABI. No puede usar arrays, `chain`, `Null` como tipo de
-firma ni metatipos `Len_t`/`Size_t`.
+compatibles con la ABI. No puede usar arrays, `chain` ni `Null` como tipo de
+firma, y no recibe miembros de compilador como parámetros.
 
 ### Descriptores opaque
 

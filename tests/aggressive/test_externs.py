@@ -279,7 +279,7 @@ class ExternTests(unittest.TestCase):
                 '    return 0\n'
             )
 
-        with self.assertRaisesRegex(CompilationError, 'no puede usar Len_t'):
+        with self.assertRaisesRegex(CompilationError, 'Len_t fue retirado'):
             self.compile_source(
                 'extern windows "kernel32":\n'
                 '    Native(values: char[], long: Len_t) void\n'

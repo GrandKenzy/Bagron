@@ -454,12 +454,12 @@ class ModuleTests(unittest.TestCase):
             with self.assertRaisesRegex(CompilationError, 'no es publico'):
                 Compiler().compile(main, executable=False)
 
-    def test_imported_alias_preserves_array_expansion_signature(self):
+    def test_imported_alias_derives_open_array_length_from_the_abi(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'arrays.bg').write_text(
-                'func total(values: int32[], length: Len_t, size: Size_t) int32:\n'
-                '    return 0\n',
+                'func total(values: int32[]) usize:\n'
+                '    return values.<len>\n',
                 encoding='utf-8',
             )
             main = root / '_main.bg'
@@ -468,15 +468,16 @@ class ModuleTests(unittest.TestCase):
                 'import arrays as a\n'
                 'func main() int32:\n'
                 '    values: int32[3] = {1, 2, 3}\n'
-                '    return a.total(values)\n',
+                '    total: usize = a.total(values)\n'
+                '    return 0\n',
                 encoding='utf-8',
             )
 
             module_path = Compiler().compile(main, executable=False)
             module = Path(module_path).read_text(encoding='utf-8')
 
-        self.assertRegex(module, r'define i32 @"?__bg_[^"\s]*_total_[^"\s]*"?\(')
-        self.assertRegex(module, r'call i32 @"?__bg_[^"\s]*_total_[^"\s]*"?\([^)]*i64 3, i64 4\)')
+        self.assertRegex(module, r'define i64 @"?__bg_[^"\s]*_total_[^"\s]*"?\(')
+        self.assertRegex(module, r'call i64 @"?__bg_[^"\s]*_total_[^"\s]*"?\([^)]*i64 3\)')
 
     def test_private_function_is_not_visible_through_flattened_import_storage(self):
         with tempfile.TemporaryDirectory() as directory:

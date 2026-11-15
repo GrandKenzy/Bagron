@@ -795,7 +795,7 @@ class StatementEmitterMixin:
         }
         for name, variable in variables.items():
             if name in direct_parameters:
-                # Len_t/Size_t/Signed_t metadata and optimized chain parameters are
+                # Hidden compiler metadata and optimized chain parameters are
                 # already SSA values; neither needs a local storage slot.
                 continue
             value_info = getattr(variable, 'value_info', None)
@@ -1113,12 +1113,22 @@ class StatementEmitterMixin:
             source_spec = self._active_type_spec(
                 self._identifier(array_node) or ''
             )
-            end_source = self._compile_forwarded_expansion(
+            end_source = self._compile_forwarded_length(
                 array_node,
-                is_length=True,
                 builder=builder,
                 values=values,
             )
+            if (
+                end_source is None
+                and source_spec is not None
+                and source_spec.array_depth
+                and source_spec.array_lengths
+                and source_spec.array_lengths[0] is not None
+            ):
+                end_source = ir.Constant(
+                    self._size_integer_type(),
+                    int(source_spec.array_lengths[0]),
+                )
             if end_source is None:
                 end_source = self._compile_length_argument(
                     array_node,

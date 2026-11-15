@@ -24,9 +24,9 @@ const both *: const int32     # ambas propiedades
 `const` no hace que el dato sea privado ni impide que otro acceso mutable
 válido lo modifique. Solo controla el acceso descrito por esa declaración.
 
-`chain` ya es constante y no puede declararse `const chain`. Los metadatos
-`Len_t`, `Size_t`, `Signed_t` y `Region_t` tampoco aceptan `const`: el
-compilador los suministra o controla internamente.
+`chain` ya es constante y no puede declararse `const chain`. Los miembros
+`.<len>`, `.<size>` y `.<region>` son metadata de solo lectura y tampoco son
+calificadores de tipo.
 
 ## `unique`
 
@@ -34,20 +34,16 @@ compilador los suministra o controla internamente.
 
 ```bg
 func normalize(
-    values: unique int32[],
-    length: Len_t,
-    size: Size_t,
-    region: Region_t
+    values: unique int32[]
 ) void:
-    if length > 0:
+    if values.<len> > 0:
         values[0] = 0
     return
 ```
 
 La llamada visible es `normalize(values)`. Bagron debe demostrar que el
 argumento tiene una región de almacenamiento concreta y que no se solapa con
-otra región `unique`. `Region_t` acompaña al parámetro y no se escribe en la
-llamada.
+otra región `unique`.
 
 No uses `unique` en escalares, punteros crudos, `chain` o metadatos. No
 transfiere por sí solo ownership y no convierte una dirección obtenida con `$`

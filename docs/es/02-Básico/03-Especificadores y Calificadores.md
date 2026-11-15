@@ -29,8 +29,8 @@ La clasificación práctica es esta:
 | Calificador de almacenamiento | dentro de la declaración del agregado | `volatile struct` |
 | Decorador | línea `@...` previa | `@frozen`, `@align(8)`, `@unsafe` |
 
-`static` pertenece a los decoradores de métodos; `Len_t`, `Size_t`, `Signed_t`
-y `Region_t` son metadatos expansivos de firma, no calificadores que se puedan
+`static` pertenece a los decoradores de métodos; `.<len>`, `.<size>` y
+`.<region>` son miembros de compilador, no calificadores que se puedan
 anteponer libremente a un tipo.
 
 Estas palabras no cambian arbitrariamente el tipo de un valor. Hacen explícitas
@@ -69,8 +69,7 @@ convierte los datos en secretos ni impide que otro puntero válido los cambie;
 solo establece una garantía para ese acceso.
 
 `chain` ya es inmutable por definición y no puede declararse como `const
-chain`. `Len_t` y `Size_t` también son parámetros expansivos de compilación y
-no aceptan `const`.
+chain`. Los miembros de compilador son de solo lectura.
 
 ## Especificadores de declaración
 
@@ -220,8 +219,7 @@ es la recursión directa de cola que Bagron puede demostrar convertible a un
 bucle para un marco simple: una llamada directa que constituye el `return`
 final se baja a un bucle LLVM y no crea un nuevo marco de pila. Esta
 optimización no se aplica a
-métodos, funciones con variables locales, parámetros auxiliares como `Len_t`,
-`Size_t`, `Signed_t` o `Region_t`, parámetros `chain`, ni a formas cuyo marco
+métodos, funciones con variables locales, parámetros `chain`, ni a formas cuyo marco
 requiera metadatos adicionales.
 
 `@recursive` no promete una profundidad máxima ni instala una comprobación de

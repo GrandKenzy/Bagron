@@ -8,7 +8,7 @@ detectar firmas incompatibles, privacidad y ciclos de imports.
 
 - `func main()` dentro de una clase no es el entrypoint global.
 - `int` y `uint` no existen; usa un ancho explícito.
-- Un array de parámetros necesita `Len_t` y `Size_t` consecutivos.
+- Los valores derivados de un array se consultan con `.<len>` y `.<size>`.
 - Un `while` necesita una condición `bool`.
 - Un puntero recibido con procedencia desconocida solo se puede desreferenciar
   dentro de `@unsafe`.

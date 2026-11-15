@@ -176,7 +176,7 @@ class ClassBoundaryTests(unittest.TestCase):
         )
         self.assert_compile_error(
             'class Broken:\n'
-            '    func __ongetter__(name: chain, length: Len_t) bool:\n'
+            '    func __ongetter__(name: chain) bool:\n'
             '        return true\n'
             'func main() int32:\n'
             '    return 0\n',

@@ -22,8 +22,9 @@ Los dominios actuales son `windows` y `c`. Deben ser compatibles con `System`;
 ningún dominio externo se permite en `baremetal`.
 
 Una firma externa puede usar escalares, `void*`, punteros tipados y agregados
-compatibles con la ABI. No puede recibir arrays, `chain`, `buffer` derivado ni
-`Len_t`/`Size_t`.
+compatibles con la ABI. No puede recibir arrays, `chain` ni `buffer` derivado.
+Los miembros `.<len>` y `.<size>` tampoco forman parte de una firma externa;
+usa escalares ABI explícitos.
 
 ## Directorios locales
 

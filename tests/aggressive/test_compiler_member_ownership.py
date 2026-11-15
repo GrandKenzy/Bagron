@@ -89,6 +89,45 @@ class CompilerMemberOwnershipTests(unittest.TestCase):
         compiler.compile(path, executable=False)
         self.assertTrue(any('owner.handle' in warning for warning in compiler.warnings))
 
+    def test_conditional_field_consumption_keeps_a_possible_leak(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / 'main.bg'
+        path.write_text(
+            'opaque Handle: int32\n'
+            '@consume\n'
+            'func close(handle: Handle) void:\n'
+            '    return\n'
+            'struct Owner:\n'
+            '    handle: Handle\n'
+            'func report(flag: bool) void:\n'
+            '    owner: Owner\n'
+            '    if flag:\n'
+            '        close(owner.handle)\n'
+            'func main() int32:\n'
+            '    report(true)\n'
+            '    return 0\n',
+            encoding='utf-8',
+        )
+        compiler = Compiler()
+        compiler.compile(path, executable=False)
+        self.assertTrue(any('owner.handle' in warning for warning in compiler.warnings))
+
+    def test_aggregate_resource_assignment_moves_the_owner(self):
+        self._compile(
+            'opaque Handle: int32\n'
+            '@consume\n'
+            'func close(handle: Handle) void:\n'
+            '    return\n'
+            'struct Owner:\n'
+            '    handle: Handle\n'
+            'func main() int32:\n'
+            '    first: Owner\n'
+            '    second: Owner = first\n'
+            '    close(second.handle)\n'
+            '    return 0\n'
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

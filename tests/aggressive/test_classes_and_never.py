@@ -376,9 +376,9 @@ class ClassAndNeverTests(unittest.TestCase):
             'class Guarded:\n'
             '    func __init__(value: int32) void:\n'
             '        self.value = value\n'
-            '    func __ongetter__(name: chain, length: Len_t) int32:\n'
+            '    func __ongetter__(name: chain) int32:\n'
             '        return 0\n'
-            '    func __onsetter__(name: chain, length: Len_t) int32:\n'
+            '    func __onsetter__(name: chain) int32:\n'
             '        return 0\n'
             '    func read_internal() int32:\n'
             '        return self.value\n'
@@ -393,9 +393,9 @@ class ClassAndNeverTests(unittest.TestCase):
             'class Guarded:\n'
             '    func __init__(value: int32) void:\n'
             '        self.value = value\n'
-            '    func __ongetter__(name: chain, length: Len_t) int32:\n'
+            '    func __ongetter__(name: chain) int32:\n'
             '        return 1\n'
-            '    func __onsetter__(name: chain, length: Len_t) int32:\n'
+            '    func __onsetter__(name: chain) int32:\n'
             '        return 1\n'
             'func main() int32:\n'
             '    guarded: Guarded = Guarded(7)\n'
@@ -426,10 +426,10 @@ class ClassAndNeverTests(unittest.TestCase):
             '    func __init__(value: int32) void:\n'
             '        self.value = value\n'
             '    @after\n'
-            '    func __ongetter__(name: chain, length: Len_t) int32:\n'
+            '    func __ongetter__(name: chain) int32:\n'
             '        return 1\n'
             '    @after\n'
-            '    func __onsetter__(name: chain, length: Len_t) int32:\n'
+            '    func __onsetter__(name: chain) int32:\n'
             '        return 1\n'
             'func main() int32:\n'
             '    guarded: Guarded = Guarded(7)\n'
@@ -459,9 +459,9 @@ class ClassAndNeverTests(unittest.TestCase):
             'class Guarded:\n'
             '    func __init__(value: int32) void:\n'
             '        self.value = value\n'
-            '    func __ongetter__(name: chain, length: Len_t) int32:\n'
+            '    func __ongetter__(name: chain) int32:\n'
             '        return 0\n'
-            '    func __onsetter__(name: chain, length: Len_t) int32:\n'
+            '    func __onsetter__(name: chain) int32:\n'
             '        return 0\n'
             'func main() int32:\n'
             '    guarded: Guarded = Guarded(7)\n'
@@ -840,11 +840,11 @@ class ClassAndNeverTests(unittest.TestCase):
         )
         self.assert_compile_error(
             'class Broken:\n'
-            '    func __ongetter__(name: int32, length: Len_t) int32:\n'
+            '    func __ongetter__(name: int32) int32:\n'
             '        return 1\n'
             'func main() int32:\n'
             '    return 0\n',
-            'Len_t solo puede asociarse|debe recibir un chain y su Len_t',
+            'debe recibir(?: exactamente)? un chain',
         )
         self.assert_compile_error(
             'class Broken:\n'

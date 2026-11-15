@@ -3,7 +3,7 @@
 ## Índice
 
 - [01. Estados de `buffer`](01-estados-de-buffer.md)
-- [02. `unique` y `Region_t`](02-unique-y-region.md)
+- [02. `unique` y procedencia](02-unique-y-region.md)
 - [03. Descriptores `opaque`](03-opaque-y-cierre.md)
 - [04. `@unsafe` y la frontera de punteros](04-unsafe-y-punteros.md)
 - [05. Alcance real del borrow checker](05-alcance-del-borrow-checker.md)
@@ -52,8 +52,8 @@ posterior es un error de compilación. Un parámetro `buffer[]` es `borrowed`: s
 puede leer y modificar, pero la función receptora no puede liberarlo.
 
 ```bg
-func fill(data: buffer[], length: Len_t) void:
-    if length > 0:
+func fill(data: buffer[]) void:
+    if data.<len> > 0:
         data[0] = 1
     return
 ```
@@ -66,13 +66,11 @@ reserva dinámica; el segundo es un array estático.
 ```bg
 func transform(
     data: unique buffer[],
-    length: Len_t,
-    region: Region_t
 ) void:
     return
 ```
 
-`Region_t` es oculto en la llamada y solo se acepta cuando el compilador puede
+La procedencia es metadata simbólica y solo se acepta cuando el compilador puede
 demostrar una procedencia exclusiva. El contrato también se aplica a arrays
 `unique T[]`; no cambia las reglas de los punteros crudos.
 

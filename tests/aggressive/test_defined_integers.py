@@ -132,6 +132,14 @@ class DefinedIntegerBoundaryTests(unittest.TestCase):
                         + '    return 0\n'
                     )
 
+        # A rejected directive must not unregister the intrinsic it collided
+        # with from the next compiler session.
+        self._compile(
+            'value: int8 = 1\n'
+            'func main() int32:\n'
+            '    return 0\n'
+        )
+
     def test_signed_and_unsigned_defined_integers_round_trip_through_library_abi(self):
         with tempfile.TemporaryDirectory(prefix='bagron-defined-integer-library-') as directory:
             root = Path(directory)

@@ -1,9 +1,9 @@
-func consume(data: buffer[], length: Len_t) usize:
+func consume(data: buffer[]) usize:
     index: usize = 0
-    while index < length:
+    while index < data.<len>:
         data[index] = 1
         index += 1
-    return length
+    return data.<len>
 
 func main() int32:
     left: buffer[2] = {10, 20}

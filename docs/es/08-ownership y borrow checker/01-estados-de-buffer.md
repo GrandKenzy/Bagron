@@ -16,8 +16,8 @@ se rechaza durante el análisis. Un parámetro `buffer[]` es `borrowed`: la
 función puede leerlo y modificarlo, pero no puede liberarlo.
 
 ```bg
-func fill(data: buffer[], length: Len_t) void:
-    if length > 0:
+func fill(data: buffer[]) void:
+    if data.<len> > 0:
         data[0] = 1
     return
 ```

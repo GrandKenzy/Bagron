@@ -304,6 +304,12 @@ def _tail_recursive_candidate(symbol: FunctionSymbol) -> bool:
         return False
     if any(
         parameter.type_spec.name == 'chain'
+        or parameter.type_spec.name == 'buffer'
+        or (
+            parameter.type_spec.array_depth > 0
+            and parameter.type_spec.array_lengths
+            and parameter.type_spec.array_lengths[0] is None
+        )
         for parameter in symbol.signature.parameters
     ):
         return False
@@ -1617,10 +1623,16 @@ def _validate_assignment(
         and contains_resource_type(compiler.storage, value_info.type_spec)
     ):
         ownership_error = transfer_resource_value(
-            symbol, target_info, value_info, scope.resolve
+            symbol,
+            target_info,
+            value_info,
+            scope.resolve,
+            fresh_target=(binding is not None and not binding.initialized),
         )
         if ownership_error is not None:
             compiler.error(f'{symbol.name}: {ownership_error}')
+        elif binding is not None:
+            binding.initialized = True
         return
 
     if is_buffer_type(target_info.type_spec) or is_buffer_type(value_info.type_spec):

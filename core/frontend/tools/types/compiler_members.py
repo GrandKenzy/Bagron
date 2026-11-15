@@ -46,7 +46,10 @@ def _scalar_size(type_spec: TypeSpec, namespace: object) -> int | None:
         return None
     if width is None:
         return None
-    return max(1, (int(width) + 7) // 8)
+    # LLVM stores integers in whole bytes and gives odd byte widths their
+    # natural power-of-two ABI slot (for example, i24 occupies four bytes).
+    byte_width = max(1, (int(width) + 7) // 8)
+    return 1 << (byte_width - 1).bit_length()
 
 
 def _array_element_size(type_spec: TypeSpec, namespace: object) -> int | None:
