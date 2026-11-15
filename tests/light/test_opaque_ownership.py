@@ -8,7 +8,11 @@ from core.compiler import CompilationError, Compiler
 
 _OPAQUE = 'opaque FD: int32\n'
 _CLOSE = _OPAQUE + 'func close_file(handle: FD) void:\n    return\n'
-_CONSUME = _OPAQUE + '@consume\nfunc shut(handle: FD) void:\n    return\n'
+_CONSUME = (
+    _CLOSE
+    + '@consume\nfunc shut(handle: FD) void:\n'
+    + '    close_file(handle)\n'
+)
 
 
 class OpaqueOwnershipTests(unittest.TestCase):
@@ -88,6 +92,68 @@ class OpaqueOwnershipTests(unittest.TestCase):
             'requiere un descriptor owned',
         )
 
+    def test_consume_parameter_must_be_discharged_before_exit(self):
+        self._rejects(
+            _CONSUME
+            + '@consume\nfunc leak(handle: FD) void:\n    return\n'
+            'func main() int32:\n    return 0\n',
+            'descriptor handle de @consume.*cerrarse o transferirse',
+        )
+
+    def test_consume_parameter_is_checked_on_implicit_void_exit(self):
+        self._rejects(
+            _CONSUME
+            + '@consume\nfunc leak(handle: FD) void:\n'
+            '    marker: int32 = 0\n'
+            'func main() int32:\n    return 0\n',
+            'descriptor handle de @consume.*cerrarse o transferirse',
+        )
+
+    def test_consume_parameter_is_checked_on_every_branch(self):
+        self._rejects(
+            _CONSUME
+            + '@consume\nfunc partial(handle: FD) void:\n'
+            '    if true:\n        close_file(handle)\n'
+            'func main() int32:\n    return 0\n',
+            'descriptor handle de @consume.*en alguna ruta.*cerrarse o transferirse',
+        )
+
+    def test_consume_rejects_a_global_descriptor(self):
+        self._rejects(
+            _CONSUME
+            + 'global_fd: FD\n'
+            + 'func main() int32:\n    shut(global_fd)\n    return 0\n',
+            'descriptor global global_fd.*no puede consumirse',
+        )
+
+    def test_multiple_consume_parameters_must_all_be_discharged(self):
+        source = (
+            'opaque FD: int32\n'
+            'opaque Token: int32\n'
+            'func close_fd(handle: FD) void:\n'
+            '    return\n'
+            'func close_token(handle: Token) void:\n'
+            '    return\n'
+            '@consume\n'
+            'func close_both(first: FD, second: Token) void:\n'
+            '    close_fd(first)\n'
+            '    close_token(second)\n'
+            'func main() int32:\n'
+            '    first: FD\n'
+            '    second: Token\n'
+            '    close_both(first, second)\n'
+            '    return 0\n'
+        )
+        self._compile(source)
+        self._rejects(
+            source.replace(
+                '    close_token(second)\n',
+                '',
+                1,
+            ),
+            'descriptor second de @consume.*cerrarse o transferirse',
+        )
+
     def test_consume_requires_an_opaque_parameter(self):
         self._rejects(
             '@consume\nfunc f(x: int32) void:\n    return\n'
@@ -119,7 +185,9 @@ class OpaqueOwnershipTests(unittest.TestCase):
         compiler = self._compile(
             _CONSUME + 'func main() int32:\n    return 0\n'
         )
-        self.assertEqual([], compiler.warnings)
+        self.assertTrue(
+            any('close_file consume' in warning for warning in compiler.warnings)
+        )
 
     # Bucles
     def test_consuming_an_outer_descriptor_in_a_loop_is_rejected(self):

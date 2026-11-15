@@ -105,6 +105,23 @@ class AggregateLiteralIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(0, result.returncode, result.stderr.decode())
 
+    def test_volatile_mold_literal_keeps_both_stores_observable(self):
+        ir_path = self._compile(
+            'volatile mold WordView:\n'
+            '    word: int32\n'
+            '    bytes: byte[4]\n'
+            'func main() int32:\n'
+            '    view: WordView = WordView{ .word = 1 }\n'
+            '    return view.word\n',
+            executable=False,
+        )
+        module = Path(ir_path).read_text(encoding='utf-8')
+        mold_stores = [
+            line for line in module.splitlines()
+            if 'store volatile' in line and 'mold.literal' in line
+        ]
+        self.assertEqual(2, len(mold_stores), module)
+
     def test_signed_fields_literal_preserves_limbs_and_hidden_sign(self):
         artifacts = self._compile(
             '@signed\n'

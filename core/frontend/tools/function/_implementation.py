@@ -64,6 +64,7 @@ from core.frontend.ownership import (
     is_opaque_symbol,
     leak_messages,
     contains_resource_type,
+    consume_parameter_leak_messages,
     set_state_for_value,
     state_for_value,
     transfer_resource_value,
@@ -1951,8 +1952,14 @@ def _report_leaks(
     symbol: FunctionSymbol,
     bindings: object,
 ) -> None:
-    """Warn (or fail with ``--strict-ownership``) about owned bindings."""
+    """Report owned bindings and enforce ``@consume`` exit contracts."""
     strict = getattr(compiler, 'strict_ownership', False)
+    for message in consume_parameter_leak_messages(
+        symbol,
+        bindings,
+        compiler.storage,
+    ):
+        compiler.error(message)
     for message in leak_messages(symbol, bindings, compiler.storage):
         if strict:
             compiler.error(message)

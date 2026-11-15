@@ -8,7 +8,11 @@ from core.compiler import CompilationError, Compiler
 
 
 _OPAQUE = 'opaque Handle: int32\n'
-_CLOSE = _OPAQUE + '@consume\nfunc close_handle(handle: Handle) void:\n    return\n'
+_CLOSE = (
+    _OPAQUE
+    + 'func close_handle(handle: Handle) void:\n'
+    + '    return\n'
+)
 
 
 class OwnershipBoundaryTests(unittest.TestCase):

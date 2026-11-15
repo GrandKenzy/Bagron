@@ -8,7 +8,9 @@ from core.compiler import CompilationError, Compiler
 
 _OPAQUE = (
     'opaque FD: int32\n'
-    '@consume\nfunc shut(handle: FD) void:\n    return\n'
+    'func close_file(handle: FD) void:\n'
+    '    return\n'
+    '@consume\nfunc shut(handle: FD) void:\n    close_file(handle)\n'
 )
 
 

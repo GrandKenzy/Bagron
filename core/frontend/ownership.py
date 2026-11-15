@@ -315,6 +315,12 @@ def consume_opaque_argument(
             f'{function_name} consume un descriptor y requiere una variable '
             'lvalue de descriptor opaque'
         )
+    root = _root_symbol(argument, namespace)
+    if root is not None and getattr(root, 'scope_kind', None) == 'global':
+        return (
+            f'El descriptor global {root.name} no puede consumirse desde '
+            'una funcion; su ownership no es local'
+        )
     state = state_for_value(current_function, argument, namespace)
     display_name = getattr(argument, 'identifier', None) or '<anonimo>'
     if state == CLOSED:
@@ -599,4 +605,44 @@ def leak_messages(
                     f'{name}: el descriptor {place_name} sale de su ambito '
                     f'{where}sin cerrarse ni transferirse (fuga de recurso)'
                 )
+    return messages
+
+
+def consume_parameter_leak_messages(
+    function: object,
+    symbols: object,
+    storage: object | None = None,
+) -> list[str]:
+    """Report opaque ``@consume`` parameters not discharged on every path.
+
+    Ordinary parameters are borrowed and therefore do not leak from the
+    callee.  A consuming parameter is different: the callee owns it after
+    entry and must close or move it before every return, ``Never`` call, or
+    normal function exit.
+    """
+
+    if not has_consume_decorator(function):
+        return []
+    reported = getattr(function, 'leak_reported', None)
+    name = getattr(function, 'name', None) or '<anonima>'
+    messages: list[str] = []
+    for symbol in symbols:
+        if getattr(symbol, 'scope_kind', None) != 'parameter':
+            continue
+        type_spec = getattr(symbol, 'type_spec', None)
+        if resource_kind(storage, type_spec) != 'opaque':
+            continue
+        state = state_for(function, symbol)
+        if state not in _LEAK_STATES:
+            continue
+        report_key = ('consume-parameter', id(symbol))
+        if reported is not None:
+            if report_key in reported:
+                continue
+            reported.add(report_key)
+        partial = 'en alguna ruta ' if state != OWNED else ''
+        messages.append(
+            f'{name}: el descriptor {symbol.name} de @consume sale de la '
+            f'funcion {partial}en estado {state}; debe cerrarse o transferirse'
+        )
     return messages

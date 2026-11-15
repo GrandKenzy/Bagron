@@ -7,6 +7,16 @@ from pathlib import Path
 from core.compiler import CompilationError, Compiler
 
 
+_CONSUME = (
+    'opaque Handle: int32\n'
+    'func close_handle(handle: Handle) void:\n'
+    '    return\n'
+    '@consume\n'
+    'func close(handle: Handle) void:\n'
+    '    close_handle(handle)\n'
+)
+
+
 class CompilerMemberOwnershipTests(unittest.TestCase):
     """Adversarial place overlap rules for temporary ``unique`` loans."""
 
@@ -59,11 +69,8 @@ class CompilerMemberOwnershipTests(unittest.TestCase):
     def test_opaque_field_cannot_be_consumed_twice(self):
         with self.assertRaisesRegex(CompilationError, 'esta closed'):
             self._compile(
-                'opaque Handle: int32\n'
-                '@consume\n'
-                'func close(handle: Handle) void:\n'
-                '    return\n'
-                'struct Owner:\n'
+                _CONSUME
+                + 'struct Owner:\n'
                 '    handle: Handle\n'
                 'func main() int32:\n'
                 '    owner: Owner\n'
@@ -94,11 +101,8 @@ class CompilerMemberOwnershipTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / 'main.bg'
         path.write_text(
-            'opaque Handle: int32\n'
-            '@consume\n'
-            'func close(handle: Handle) void:\n'
-            '    return\n'
-            'struct Owner:\n'
+            _CONSUME
+            + 'struct Owner:\n'
             '    handle: Handle\n'
             'func report(flag: bool) void:\n'
             '    owner: Owner\n'
@@ -115,11 +119,8 @@ class CompilerMemberOwnershipTests(unittest.TestCase):
 
     def test_aggregate_resource_assignment_moves_the_owner(self):
         self._compile(
-            'opaque Handle: int32\n'
-            '@consume\n'
-            'func close(handle: Handle) void:\n'
-            '    return\n'
-            'struct Owner:\n'
+            _CONSUME
+            + 'struct Owner:\n'
             '    handle: Handle\n'
             'func main() int32:\n'
             '    first: Owner\n'

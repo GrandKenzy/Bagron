@@ -237,6 +237,7 @@ class ValueExpressionMixin:
                 address,
                 builder,
                 alignment=1,
+                volatile=layout.symbol.is_volatile,
             )
             return self._load_address(result, builder, alignment=layout.alignment)
 

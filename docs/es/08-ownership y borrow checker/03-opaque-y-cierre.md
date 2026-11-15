@@ -16,10 +16,10 @@ opaque HANDLE: void*
 
 extern windows "kernel32":
     GetStdHandle(kind: uint32) HANDLE
-    CloseHandle(handle: HANDLE) int32
+    close_handle_native(handle: HANDLE) int32
 
 func close_handle(handle: HANDLE) void:
-    status: int32 = CloseHandle(handle)
+    status: int32 = close_handle_native(handle)
     return
 
 func release_one() void:
@@ -35,12 +35,12 @@ recibe la propiedad de sus parámetros `opaque`: el argumento del llamador pasa
 a `moved` y el parámetro consumidor debe cerrarlo o transferirlo antes de salir.
 Al cerrar un descriptor consumido, su estado queda `closed`; usarlo o cerrarlo
 otra vez se diagnostica estáticamente. En este ejemplo, `GetStdHandle`
-representa la adquisición y `CloseHandle` la operación nativa real:
+representa la adquisición y `close_handle_native` la operación nativa real:
 
 ```bg
 @consume
 func close_handle(handle: HANDLE) void:
-    status: int32 = CloseHandle(handle)
+    status: int32 = close_handle_native(handle)
     return
 ```
 
@@ -64,6 +64,10 @@ Un descriptor es un handle único: copiarlo mueve su propiedad. Tras
 `g: FD = h` o `g = h`, `g` es `owned` y `h` pasa a `moved`; usar `h` después se
 diagnostica. Solo se puede mover un descriptor `owned` local: un parámetro
 `borrowed` o un global no pueden transferirse.
+
+Un descriptor `opaque` global tampoco puede consumirse desde una función. Esto
+evita que varias funciones parezcan propietarias del mismo recurso y permite
+que el ownership siga siendo local y trazable.
 
 ### Bucles
 

@@ -41,5 +41,9 @@
 - Added field-aware ownership tracking for resource-bearing aggregates. Unique
   borrows distinguish disjoint struct fields, while moved or closed aggregate
   resources remain invalid on every affected path.
+- `@consume` functions now must close or transfer every owned opaque parameter
+  before leaving, and opaque globals cannot be consumed from a function.
+- Volatile mold literals preserve observable volatile stores for both temporary
+  clearing and active-member initialization.
 - Updated the compiled-library signature format so libraries built against the
   retired metadata-parameter ABI are rejected and must be rebuilt.
