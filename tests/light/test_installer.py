@@ -721,8 +721,9 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('changelog_1.1.7.md', names)
         self.assertIn('changelog_1.1.8.md', names)
         self.assertIn('changelog_1.2.0.md', names)
+        self.assertIn('changelog_0.2.0.md', names)
         self.assertEqual(
-            14,
+            15,
             sum(name.startswith('changelog_') for name in names),
         )
 
@@ -738,7 +739,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('extension/snippets/snippets.json', names)
         self.assertEqual('./extension.js', package['main'])
         self.assertEqual('bagron-language-support', package['name'])
-        self.assertEqual('1.1.6', package['version'])
+        self.assertEqual('1.1.7', package['version'])
         self.assertEqual('assets/icon.png', package['icon'])
 
 

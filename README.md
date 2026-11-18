@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.8-blue.svg" alt="Versión">
+  <img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Versión">
   <img src="https://img.shields.io/badge/backend-LLVM%20IR-orange.svg" alt="Backend LLVM IR">
   <img src="https://img.shields.io/badge/license-Apache--2.0-purple.svg" alt="Licencia">
   <img src="https://img.shields.io/badge/status-active-brightgreen.svg" alt="Estado">
@@ -31,6 +31,14 @@ comprobaciones estáticas.
 
 La explicación completa del flujo y de los límites de seguridad está en
 [Cómo funciona Bagron](docs/es/01-Funcionamiento.md).
+
+## Versionado
+
+Bagron seguirá estrictamente [SemVer 2.0.0](https://semver.org/): las versiones
+estables usan el formato `MAJOR.MINOR.PATCH`, sin ceros iniciales, y el tag de
+GitHub coincide exactamente con la versión del compilador. La línea `1.x` se
+conserva únicamente como registro histórico de la etapa de inmadurez del
+proyecto; la línea activa de desarrollo comienza en `0.2.0`.
 
 ## Primer programa
 
